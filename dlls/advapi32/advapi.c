@@ -50,8 +50,8 @@ BOOL WINAPI GetUserNameA( LPSTR name, LPDWORD size )
     /* CrossOver Hack 12735: Use a consistent username */
     if (!getenv( "CX_REPORT_REAL_USERNAME" ))
     {
-        len = sizeof("crossover");
-        if ((ret = (len <= *size))) strcpy( name, "crossover" );
+        len = sizeof("emet-selch");
+        if ((ret = (len <= *size))) strcpy( name, "emet-selch" );
         else SetLastError( ERROR_INSUFFICIENT_BUFFER );
         *size = len;
         return ret;
@@ -75,8 +75,8 @@ BOOL WINAPI GetUserNameW( LPWSTR name, LPDWORD size )
     /* CrossOver Hack 12735: Use a consistent username */
     if (!getenv( "CX_REPORT_REAL_USERNAME" ))
     {
-        len = ARRAY_SIZE( L"crossover" );
-        if ((ret = (len <= *size))) wcscpy( name, L"crossover" );
+        len = ARRAY_SIZE( L"emet-selch" );
+        if ((ret = (len <= *size))) wcscpy( name, L"emet-selch" );
         else SetLastError( ERROR_INSUFFICIENT_BUFFER );
         *size = len;
         return ret;
