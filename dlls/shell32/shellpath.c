@@ -2607,7 +2607,7 @@ static HRESULT _SHExpandEnvironmentStrings(LPCWSTR szSrc, LPWSTR szDest)
         else if (!wcsnicmp(szTemp, L"%USERPROFILE%", lstrlenW(L"%USERPROFILE%")))
         {
             /* CrossOver Hack 12735 */
-            static const WCHAR userName[] = {'c','r','o','s','s','o','v','e','r',0};
+            static const WCHAR userName[] = {'e','m','e','t','-','s','e','l','c','h',0};
 
             lstrcpyW(szDest, szProfilesPrefix);
             PathAppendW(szDest, userName);
