@@ -728,7 +728,7 @@ HRESULT WINAPI DllRegisterServer(void)
         0, 1, in, ARRAY_SIZE(in), &out);
     if (FAILED(hr)) return hr;
 
-    return __wine_register_resources();
+    return __wine_register_resources(wmadmod_instance);
 }
 
 /***********************************************************************
@@ -741,5 +741,5 @@ HRESULT WINAPI DllUnregisterServer(void)
     hr = DMOUnregister(&CLSID_CWMADecMediaObject, &DMOCATEGORY_AUDIO_DECODER);
     if (FAILED(hr)) return hr;
 
-    return __wine_unregister_resources();
+    return __wine_unregister_resources(wmadmod_instance);
 }
