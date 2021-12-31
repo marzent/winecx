@@ -393,7 +393,7 @@ NTSTATUS WINAPI NtQueryInformationToken( HANDLE token, TOKEN_INFORMATION_CLASS c
         {
             TOKEN_ELEVATION_TYPE *type = info;
             FIXME("QueryInformationToken( ..., TokenElevationType, ...) semi-stub\n");
-            *type = TokenElevationTypeFull;
+            *type = TokenElevationTypeLimited;
         }
         break;
 
