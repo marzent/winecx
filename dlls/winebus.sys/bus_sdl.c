@@ -1174,7 +1174,7 @@ NTSTATUS sdl_driver_init(void)
         pSDL_JoystickGetVendor = dlsym(sdl_handle, "SDL_JoystickGetVendor");
     }
 
-    map_controllers = 1; //check_bus_option(&controller_mode, 1);
+    map_controllers = check_bus_option(&controller_mode, 1);
 
     if (!(events[0] = CreateEventW(NULL, TRUE, FALSE, NULL)))
     {
