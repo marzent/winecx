@@ -52,6 +52,7 @@ struct object_header
     DWORD notify_mask;
     struct list entry;
     volatile LONG pending_sends;
+    volatile LONG pending_receives;
 };
 
 struct hostdata
