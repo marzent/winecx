@@ -51,6 +51,8 @@ struct object_header
     WINHTTP_STATUS_CALLBACK callback;
     DWORD notify_mask;
     struct list entry;
+    volatile LONG pending_sends;
+    volatile LONG pending_receives;
 };
 
 struct hostdata
@@ -108,7 +110,7 @@ struct netconn
     ULONGLONG keep_until;
     CtxtHandle ssl_ctx;
     SecPkgContext_StreamSizes ssl_sizes;
-    char *ssl_buf;
+    char *ssl_read_buf, *ssl_write_buf;
     char *extra_buf;
     size_t extra_len;
     char *peek_msg;
@@ -245,6 +247,8 @@ struct socket
     struct queue recv_q;
     enum socket_opcode opcode;
     DWORD read_size;
+    BOOL close_frame_received;
+    DWORD close_frame_receive_err;
     USHORT status;
     char reason[123];
     DWORD reason_len;
@@ -309,6 +313,7 @@ struct socket_shutdown
     USHORT status;
     char reason[123];
     DWORD len;
+    BOOL send_callback;
 };
 
 struct object_header *addref_object( struct object_header * ) DECLSPEC_HIDDEN;
