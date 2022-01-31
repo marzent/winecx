@@ -3427,6 +3427,8 @@ static DWORD receive_close_status( struct socket *socket, unsigned int len )
 
 static DWORD handle_control_frame( struct socket *socket )
 {
+    DWORD ret;
+    
     TRACE( "opcode %u.\n", socket->opcode );
         
     switch (socket->opcode)
@@ -3438,7 +3440,7 @@ static DWORD handle_control_frame( struct socket *socket )
         return socket_drain( socket );
             
     case SOCKET_OPCODE_CLOSE:
-         if (socket->state != SOCKET_STATE_CLOSED)
+        if (socket->state < SOCKET_STATE_SHUTDOWN)
              WARN( "SOCKET_OPCODE_CLOSE received, socket->state %u.\n", socket->state );
          if (socket->close_frame_received)
          {
@@ -3446,9 +3448,9 @@ static DWORD handle_control_frame( struct socket *socket )
              return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
          }
 
-         receive_close_status( socket, socket->read_size );
+        ret = receive_close_status( socket, socket->read_size );
          socket->read_size = 0;
-         return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
+         return ret;
 
     default:
         ERR("unhandled control opcode %02x\n", socket->opcode);
@@ -3491,7 +3493,8 @@ static DWORD socket_receive( struct socket *socket, void *buf, DWORD len, DWORD 
         {
             if (!(ret = receive_frame( netconn, &socket->read_size, &socket->opcode )))
             {
-                if (!(socket->opcode & CONTROL_BIT) || (ret = handle_control_frame( socket ))) break;
+                if (!(socket->opcode & CONTROL_BIT) || (ret = handle_control_frame( socket ))
+                                     || socket->opcode == SOCKET_OPCODE_CLOSE) break;
             }
             else if (ret == WSAETIMEDOUT) ret = socket_send_pong( socket );
             if (ret) break;
