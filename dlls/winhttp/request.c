@@ -3160,12 +3160,11 @@ static DWORD send_frame( struct netconn *netconn, enum socket_opcode opcode, USH
     }
 
     if ((ret = send_bytes( netconn, hdr, offset ))) return ret;
-    if (len)
-    {
-        mask = &hdr[offset];
-        RtlGenRandom( mask, 4 );
-        if ((ret = send_bytes( netconn, mask, 4 ))) return ret;
-    }
+
+    mask = &hdr[offset];
+    RtlGenRandom( mask, 4 );
+    if ((ret = send_bytes( netconn, mask, 4 ))) return ret;
+
 
     if (opcode == SOCKET_OPCODE_CLOSE) /* prepend status code */
     {
