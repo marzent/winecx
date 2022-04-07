@@ -207,7 +207,11 @@ static BYTE * HOSTPTR pages_vprot;
 #endif
 
 static struct file_view *view_block_start, *view_block_end, *next_free_view;
+#ifdef _WIN64
+static const size_t view_block_size = 0x200000;
+#else
 static const size_t view_block_size = 0x100000;
+#endif
 static void *preload_reserve_start;
 static void *preload_reserve_end;
 static BOOL force_exec_prot;  /* whether to force PROT_EXEC on all PROT_READ mmaps */
@@ -3462,6 +3466,7 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
 
     if (!size) return STATUS_INVALID_PARAMETER;
     if (zero_bits > 21 && zero_bits < 32) return STATUS_INVALID_PARAMETER_3;
+    if (zero_bits > 32 && zero_bits < granularity_mask) return STATUS_INVALID_PARAMETER_3;
     if (!is_win64 && !is_wow64 && zero_bits >= 32) return STATUS_INVALID_PARAMETER_3;
 
     if (process != NtCurrentProcess())
@@ -3574,6 +3579,10 @@ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR z
     {
         *ret = base;
         *size_ptr = size;
+    }
+    else
+    {
+        TRACE( "ret:%X  size:%X  zero:%lu status:%X type:%X protect:%X\n", *ret, *size_ptr, zero_bits, status, type, protect );
     }
     return status;
 }
@@ -3984,13 +3993,31 @@ NTSTATUS WINAPI NtQueryVirtualMemory( HANDLE process, LPCVOID addr,
                                       MEMORY_INFORMATION_CLASS info_class,
                                       PVOID buffer, SIZE_T len, SIZE_T *res_len )
 {
+    NTSTATUS status;
     TRACE("(%p, %p, info_class=%d, %p, %ld, %p)\n",
           process, addr, info_class, buffer, len, res_len);
 
     switch(info_class)
     {
         case MemoryBasicInformation:
-            return get_basic_memory_info( process, addr, buffer, len, res_len );
+            status = get_basic_memory_info( process, addr, buffer, len, res_len );
+            if (status != STATUS_SUCCESS) {
+                return status;
+            }
+            MEMORY_BASIC_INFORMATION *info = (MEMORY_BASIC_INFORMATION*) buffer;
+            TRACE("meminfo state:%X addr:%X size:%X protect:%X type:%X\n",
+                  info->State, info->BaseAddress, info->RegionSize, info->Protect, info-> Type);
+            const size_t alloc_size = 0x10000;
+            if (info->State == 0x10000 && info->RegionSize >= alloc_size && info->Protect == 1 && info->Type == 0)
+            {
+                if (find_view_range( addr , alloc_size ))
+                {
+                    TRACE("Dalamud Memory Hack fired\n");
+                    info->RegionSize = 0x1000;
+                }
+            }
+            return status;
+            
 
         case MemoryWorkingSetExInformation:
             return get_working_set_ex( process, addr, buffer, len, res_len );
