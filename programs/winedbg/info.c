@@ -29,6 +29,7 @@
 #include "winuser.h"
 #include "tlhelp32.h"
 #include "wine/debug.h"
+#include "wine/server.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winedbg);
 
@@ -100,6 +101,7 @@ void info_help(void)
             "  info locals          Displays values of all local vars for current frame",
             "  info maps <pid>      Shows virtual mappings (in a given process)",
             "  info process         Shows all running processes",
+            "  info processmap      Shows a windows to unix process map",
             "  info reg             Displays values of the general registers at top of stack",
             "  info all-reg         Displays the general and floating point registers",
             "  info segments <pid>  Displays information about all known segments",
@@ -547,6 +549,81 @@ struct dump_proc
     unsigned               alloc;
 };
 
+struct pid_map
+{
+    unsigned int pid;
+    unsigned int unix_pid;
+};
+
+static struct pid_map *get_pid_map( unsigned int *num_entries )
+{
+    struct pid_map *map;
+    unsigned int i = 0, map_count = 16, buffer_len = 4096, process_count, pos = 0;
+    NTSTATUS ret;
+    char *buffer = NULL, *new_buffer;
+
+    if (!(buffer = HeapAlloc( GetProcessHeap(), 0, buffer_len ))) return NULL;
+
+    for (;;)
+    {
+        SERVER_START_REQ( list_processes )
+        {
+            wine_server_set_reply( req, buffer, buffer_len );
+            ret = wine_server_call( req );
+            buffer_len = reply->info_size;
+            process_count = reply->process_count;
+        }
+        SERVER_END_REQ;
+
+        if (ret != STATUS_INFO_LENGTH_MISMATCH) break;
+
+        if (!(new_buffer = HeapReAlloc( GetProcessHeap(), 0, buffer, buffer_len )))
+        {
+            HeapFree( GetProcessHeap(), 0, buffer );
+            return NULL;
+        }
+        buffer = new_buffer;
+    }
+
+    if (!(map = HeapAlloc( GetProcessHeap(), 0, map_count * sizeof(*map) )))
+    {
+        HeapFree( GetProcessHeap(), 0, buffer );
+        return NULL;
+    }
+
+    for (i = 0; i < process_count; ++i)
+    {
+        const struct process_info *process;
+
+        pos = (pos + 7) & ~7;
+        process = (const struct process_info *)(buffer + pos);
+
+        if (i >= map_count)
+        {
+            struct pid_map *new_map;
+            map_count *= 2;
+            if (!(new_map = HeapReAlloc( GetProcessHeap(), 0, map, map_count * sizeof(*map))))
+            {
+                HeapFree( GetProcessHeap(), 0, map );
+                HeapFree( GetProcessHeap(), 0, buffer );
+                return NULL;
+            }
+            map = new_map;
+        }
+
+        map[i].pid = process->pid;
+        map[i].unix_pid = process->unix_pid;
+
+        pos += sizeof(struct process_info) + process->name_len;
+        pos = (pos + 7) & ~7;
+        pos += process->thread_count * sizeof(struct thread_info);
+    }
+
+    HeapFree( GetProcessHeap(), 0, buffer );
+    *num_entries = process_count;
+    return map;
+}
+
 static unsigned get_parent(const struct dump_proc* dp, unsigned idx)
 {
     unsigned i;
@@ -583,6 +660,48 @@ static void dump_proc_info(const struct dump_proc* dp, unsigned idx, unsigned de
         dbg_printf("'%s'\n", dpe->proc.szExeFile);
         dump_proc_info(dp, dpe->children, depth + 1);
     }
+}
+
+static unsigned int find_unix_pid( struct pid_map *map, unsigned int num_entries, unsigned int pid )
+{
+    unsigned int i;
+    
+    for (i = 0; i < num_entries; i++)
+        if (map[i].pid == pid)
+            return map[i].unix_pid;
+    
+    return 0;
+}
+
+static void dump_proc_info_map(const struct dump_proc* dp, unsigned idx, unsigned depth)
+{
+    struct pid_map *map = NULL;
+    struct dump_proc_entry* dpe;
+    unsigned int num_entries = 0;
+    
+    map = get_pid_map( &num_entries );
+    
+    for ( ; idx != -1; idx = dp->entries[idx].sibling)
+    {
+        assert(idx < dp->count);
+        dpe = &dp->entries[idx];
+        dbg_printf("%c%08lx %08x %-8ld ",
+                   (dpe->proc.th32ProcessID == (dbg_curr_process ?
+                                                dbg_curr_process->pid : 0)) ? '>' : ' ',
+                   dpe->proc.th32ProcessID,
+                   find_unix_pid(map, num_entries, dpe->proc.th32ProcessID),
+                   dpe->proc.cntThreads);
+        if (depth)
+        {
+            unsigned i;
+            for (i = 3 * (depth - 1); i > 0; i--) dbg_printf(" ");
+            dbg_printf("\\_ ");
+        }
+        dbg_printf("'%s'\n", dpe->proc.szExeFile);
+        dump_proc_info_map(dp, dpe->children, depth + 1);
+    }
+    
+    HeapFree( GetProcessHeap(), 0, map );
 }
 
 void info_win32_processes(void)
@@ -636,6 +755,54 @@ void info_win32_processes(void)
         dbg_printf(" %-8.8s %-8.8s %s (all id:s are in hex)\n", "pid", "threads", "executable");
         dump_proc_info(&dp, first, 0);
         free(dp.entries);
+    }
+}
+
+void info_win32_processes_map(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE)
+    {
+        struct dump_proc  dp;
+        unsigned          i, first = -1;
+        BOOL              ok;
+
+        dp.count   = 0;
+        dp.alloc   = 16;
+        dp.entries = HeapAlloc(GetProcessHeap(), 0, sizeof(*dp.entries) * dp.alloc);
+        if (!dp.entries)
+        {
+             CloseHandle(snap);
+             return;
+        }
+        dp.entries[dp.count].proc.dwSize = sizeof(dp.entries[dp.count].proc);
+        ok = Process32First(snap, &dp.entries[dp.count].proc);
+
+        /* fetch all process information into dp (skipping this debugger) */
+        while (ok)
+        {
+            if (dp.entries[dp.count].proc.th32ProcessID != GetCurrentProcessId())
+                dp.entries[dp.count++].children = -1;
+            if (dp.count >= dp.alloc)
+            {
+                dp.entries = HeapReAlloc(GetProcessHeap(), 0, dp.entries, sizeof(*dp.entries) * (dp.alloc *= 2));
+                if (!dp.entries) return;
+            }
+            dp.entries[dp.count].proc.dwSize = sizeof(dp.entries[dp.count].proc);
+            ok = Process32Next(snap, &dp.entries[dp.count].proc);
+        }
+        CloseHandle(snap);
+        /* chain the siblings wrt. their parent */
+        for (i = 0; i < dp.count; i++)
+        {
+            unsigned parent = get_parent(&dp, i);
+            unsigned *chain = parent == -1 ? &first : &dp.entries[parent].children;
+            dp.entries[i].sibling = *chain;
+            *chain = i;
+        }
+        dbg_printf(" %-8.8s %-8.8s %-8.8s %s (all id:s are in hex)\n", "pid", "unix_pid", "threads", "executable");
+        dump_proc_info_map(&dp, first, 0);
+        HeapFree(GetProcessHeap(), 0, dp.entries);
     }
 }
 
