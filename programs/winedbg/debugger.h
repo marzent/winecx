@@ -389,6 +389,7 @@ extern void             info_win32_module(DWORD64 mod, BOOL multi_machine);
 extern void             info_win32_class(HWND hWnd, const char* clsName);
 extern void             info_win32_window(HWND hWnd, BOOL detailed);
 extern void             info_win32_processes(void);
+extern void             info_win32_processes_map(void);
 extern void             info_win32_threads(void);
 extern void             info_win32_frame_exceptions(DWORD tid);
 extern void             info_win32_virtual(DWORD pid);
