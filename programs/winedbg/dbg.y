@@ -52,7 +52,7 @@ static void parser(const char*);
 %token tENABLE tDISABLE tBREAK tHBREAK tWATCH tRWATCH tDELETE tSET tPRINT tEXAM
 %token tABORT tECHO
 %token tCLASS tMAPS tSTACK tSEGMENTS tSYMBOL tREGS tALLREGS tWND tLOCAL tEXCEPTION
-%token tPROCESS tTHREAD tEOL tEOF
+%token tPROCESS tPROCESSMAP tTHREAD tEOL tEOF
 %token tFRAME tSHARE tMODULE tCOND tDISPLAY tUNDISPLAY tDISASSEMBLE tSYSTEM
 %token tSTEPI tNEXTI tFINISH tSHOW tDIR tWHATIS tSOURCE
 %token <string> tPATH tIDENTIFIER tSTRING tINTVAR
@@ -288,6 +288,7 @@ info_command:
     | tINFO '*' tWND            { info_win32_window(NULL, TRUE); }
     | tINFO '*' tWND expr_rvalue { info_win32_window((HWND)(DWORD_PTR)$4, TRUE); }
     | tINFO tPROCESS            { info_win32_processes(); }
+    | tINFO tPROCESSMAP         { info_win32_processes_map(); }
     | tINFO tTHREAD             { info_win32_threads(); }
     | tINFO tFRAME              { info_win32_frame_exceptions(dbg_curr_tid); }
     | tINFO tFRAME expr_rvalue  { info_win32_frame_exceptions($3); }
