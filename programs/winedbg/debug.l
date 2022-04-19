@@ -236,6 +236,7 @@ STRING     \"(\\[^\n]|[^\\"\n])*\"
 <INFO_CMD>locals|local|loca|loc		{ return tLOCAL; }
 <INFO_CMD>class|clas|cla                { return tCLASS; }
 <INFO_CMD>process|proces|proce|proc   	{ return tPROCESS; }
+<INFO_CMD>processmap|procesmap|procemap|procmap       { return tPROCESSMAP; }
 <INFO_CMD>threads|thread|threa|thre|thr|th { return tTHREAD; }
 <INFO_CMD>exception|except|exc|ex	{ return tEXCEPTION; }
 <INFO_CMD>registers|regs|reg|re		{ return tREGS; }
