@@ -31,6 +31,7 @@
 #include "winuser.h"
 #include "tlhelp32.h"
 #include "wine/debug.h"
+#include "wine/server.h"
 #include "wine/exception.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winedbg);
