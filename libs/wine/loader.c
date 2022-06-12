@@ -34,6 +34,9 @@
 #endif
 #include <unistd.h>
 #include <dlfcn.h>
+#ifdef HAVE_SYS_SYSCTL_H
+# include <sys/sysctl.h>
+#endif
 
 #ifdef __APPLE__
 #include <crt_externs.h>
@@ -800,13 +803,29 @@ static void set_max_limit( int limit )
         rlimit.rlim_cur = rlimit.rlim_max;
         if (setrlimit( limit, &rlimit ) != 0)
         {
-#if defined(__APPLE__) && defined(RLIMIT_NOFILE) && defined(OPEN_MAX)
-            /* On Leopard, setrlimit(RLIMIT_NOFILE, ...) fails on attempts to set
-             * rlim_cur above OPEN_MAX (even if rlim_max > OPEN_MAX). */
-            if (limit == RLIMIT_NOFILE && rlimit.rlim_cur > OPEN_MAX)
+#if defined(__APPLE__) && defined(RLIMIT_NOFILE) && (defined(OPEN_MAX) || defined(KERN_MAXFILESPERPROC))
+            if (limit == RLIMIT_NOFILE)
             {
-                rlimit.rlim_cur = OPEN_MAX;
-                setrlimit( limit, &rlimit );
+                /* On Leopard, setrlimit(RLIMIT_NOFILE, ...) fails on attempts to set
+                 * rlim_cur above OPEN_MAX (even if rlim_max > OPEN_MAX). */
+                int open_max = INT_MAX;
+#ifdef KERN_MAXFILESPERPROC
+                /* This is the true OPEN_MAX; it may be greater than the constant.
+                 * sysconf(_SC_OPEN_MAX) won't work here: it just returns getrlimit(RLIMIT_NOFILE). */
+                static int maxfilesperproc_oid[] = { CTL_KERN, KERN_MAXFILESPERPROC };
+                size_t len = sizeof(open_max);
+                if (sysctl(maxfilesperproc_oid, ARRAY_SIZE(maxfilesperproc_oid), &open_max, &len, NULL, 0) != 0)
+                    open_max = INT_MAX;
+#endif
+#ifdef OPEN_MAX
+                if (open_max == INT_MAX)
+                    open_max = OPEN_MAX;
+#endif
+                if (rlimit.rlim_cur > open_max)
+                {
+                    rlimit.rlim_cur = open_max;
+                    setrlimit( limit, &rlimit );
+                }
             }
 #endif
         }
