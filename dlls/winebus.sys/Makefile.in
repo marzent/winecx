@@ -1,0 +1,18 @@
+MODULE    = winebus.sys
+UNIXLIB   = winebus.so
+IMPORTS   = ntoskrnl hidparse
+EXTRALIBS = $(IOKIT_LIBS) $(UDEV_LIBS) $(PTHREAD_LIBS) $(INOTIFY_LIBS)
+EXTRAINCL = $(UDEV_CFLAGS) $(SDL2_CFLAGS)
+
+EXTRADLLFLAGS = -Wl,--subsystem,native
+
+C_SRCS = \
+	bus_iohid.c \
+	bus_sdl.c \
+	bus_udev.c \
+	bus_xbox360.c \
+	hid.c \
+	main.c \
+	unixlib.c
+
+RC_SRCS = winebus.rc

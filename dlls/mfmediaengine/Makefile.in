@@ -1,0 +1,11 @@
+MODULE    = mfmediaengine.dll
+IMPORTS = oleaut32 ole32 mfplat mf mfuuid dxguid uuid
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	main.c
+
+IDL_SRCS = \
+	mediaengine.idl \
+	mediaengine_classes.idl

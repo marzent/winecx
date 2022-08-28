@@ -1,0 +1,6 @@
+MODULE    = icacls.exe
+
+EXTRADLLFLAGS = -mconsole
+
+C_SRCS = \
+	icacls_main.c

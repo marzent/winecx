@@ -1,0 +1,79 @@
+EXTRADEFS = -DWINE_NO_LONG_TYPES -D_NTSYSTEM_ -D_ACRTIMP= -DWINBASEAPI=
+MODULE    = ntdll.dll
+UNIXLIB   = ntdll.so
+IMPORTLIB = ntdll
+IMPORTS   = winecrt0
+EXTRAINCL = $(UNWIND_CFLAGS)
+EXTRALIBS = $(IOKIT_LIBS) $(COREFOUNDATION_LIBS) $(CORESERVICES_LIBS) $(RT_LIBS) $(PTHREAD_LIBS) $(UNWIND_LIBS) $(I386_LIBS) $(PROCSTAT_LIBS)
+
+EXTRADLLFLAGS = -nodefaultlibs -Wl,--image-base,0x7bc00000
+x86_64_EXTRADLLFLAGS = -nodefaultlibs -Wl,--image-base,0x170000000
+
+C_SRCS = \
+	actctx.c \
+	atom.c \
+	crypt.c \
+	debugbuffer.c \
+	env.c \
+	error.c \
+	exception.c \
+	handletable.c \
+	heap.c \
+	large_int.c \
+	loader.c \
+	locale.c \
+	math.c \
+	misc.c \
+	path.c \
+	printf.c \
+	process.c \
+	reg.c \
+	relay.c \
+	resource.c \
+	rtl.c \
+	rtlbitmap.c \
+	rtlstr.c \
+	sec.c \
+	signal_arm.c \
+	signal_arm64.c \
+	signal_i386.c \
+	signal_x86_64.c \
+	string.c \
+	sync.c \
+	thread.c \
+	threadpool.c \
+	time.c \
+	unix/cdrom.c \
+	unix/debug.c \
+	unix/env.c \
+	unix/esync.c \
+	unix/file.c \
+	unix/loader.c \
+	unix/loadorder.c \
+	unix/process.c \
+	unix/registry.c \
+	unix/security.c \
+	unix/serial.c \
+	unix/server.c \
+	unix/signal_arm.c \
+	unix/signal_arm64.c \
+	unix/signal_i386.c \
+	unix/signal_x86_64.c \
+	unix/socket.c \
+	unix/sync.c \
+	unix/system.c \
+	unix/tape.c \
+	unix/thread.c \
+	unix/virtual.c \
+	version.c \
+	wcstring.c
+
+RC_SRCS = version.rc
+
+EXTRA_OBJS = unix/version.o
+
+unix_loader_EXTRADEFS = \
+	-DBINDIR=\"${bindir}\" \
+	-DSYSTEMDLLPATH=\"${system_dllpath}\" \
+	-DDLL_TO_BINDIR=\"`${MAKEDEP} -R ${dlldir} ${bindir}`\" \
+	-DBIN_TO_DATADIR=\"`${MAKEDEP} -R ${bindir} ${datadir}/wine`\"

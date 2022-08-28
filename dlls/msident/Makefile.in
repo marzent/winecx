@@ -1,0 +1,8 @@
+MODULE    = msident.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	msident.c
+
+IDL_SRCS = msident_classes.idl

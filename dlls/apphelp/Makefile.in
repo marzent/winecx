@@ -1,0 +1,5 @@
+MODULE = apphelp.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = apphelp.c

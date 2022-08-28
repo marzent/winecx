@@ -1,0 +1,10 @@
+MODULE    = xactengine3_5.dll
+IMPORTS   = $(FAUDIO_PE_LIBS) ole32 uuid
+EXTRAINCL = $(FAUDIO_PE_CFLAGS)
+EXTRADEFS = -DXACT3_VER=0x0305
+PARENTSRC = ../xactengine3_7
+
+C_SRCS = \
+	xact_dll.c
+
+IDL_SRCS = xact_classes.idl

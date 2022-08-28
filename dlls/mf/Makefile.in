@@ -1,0 +1,21 @@
+MODULE    = mf.dll
+IMPORTLIB = mf
+IMPORTS   = advapi32 mfplat ole32 uuid mfuuid strmiids
+DELAYIMPORTS = evr user32
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	clock.c \
+	copier.c \
+	evr.c \
+	main.c \
+	quality.c \
+	samplegrabber.c \
+	sar.c \
+	session.c \
+	topology.c
+
+IDL_SRCS = mf.idl
+
+RC_SRCS = mf.rc

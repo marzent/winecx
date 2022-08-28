@@ -1,0 +1,7 @@
+MODULE    = qwave.dll
+IMPORTLIB = qwave
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	main.c

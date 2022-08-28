@@ -1,0 +1,15 @@
+MODULE    = ntoskrnl.exe
+IMPORTLIB = ntoskrnl
+IMPORTS   = advapi32 hal msvcrt
+DELAYIMPORTS = rpcrt4 setupapi
+
+C_SRCS = \
+	instr.c \
+	ntoskrnl.c \
+	pnp.c \
+	sync.c
+
+RC_SRCS = ntoskrnl.rc
+
+IDL_SRCS = \
+	plugplay.idl

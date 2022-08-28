@@ -1,0 +1,6 @@
+MODULE    = xolehlp.dll
+IMPORTS   = uuid
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = xolehlp.c

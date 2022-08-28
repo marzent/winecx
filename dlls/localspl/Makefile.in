@@ -1,0 +1,10 @@
+MODULE    = localspl.dll
+IMPORTS   = spoolss user32 advapi32
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	localmon.c \
+	provider.c
+
+RC_SRCS = localspl.rc

@@ -1,0 +1,21 @@
+MODULE    = dinput8.dll
+IMPORTLIB = dinput8
+IMPORTS   = dinput8 dxguid uuid comctl32 ole32 user32 advapi32 hid setupapi
+EXTRADEFS = -DDIRECTINPUT_VERSION=0x0800
+PARENTSRC = ../dinput
+
+C_SRCS = \
+	ansi.c \
+	config.c \
+	data_formats.c \
+	device.c \
+	dinput_main.c \
+	joystick_hid.c \
+	keyboard.c \
+	mouse.c
+
+IDL_SRCS = dinput8.idl
+
+RC_SRCS = \
+	dinput.rc \
+	version.rc

@@ -1,0 +1,5 @@
+MODULE = photometadatahandler.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+RC_SRCS = photometadatahandler.rc

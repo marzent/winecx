@@ -1,0 +1,6 @@
+MODULE    = msvcm80.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	msvcm_main.c

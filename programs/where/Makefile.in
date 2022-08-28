@@ -1,0 +1,6 @@
+MODULE    = where.exe
+
+EXTRADLLFLAGS = -mconsole -municode
+
+C_SRCS = \
+	main.c

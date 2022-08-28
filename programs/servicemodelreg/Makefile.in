@@ -1,0 +1,6 @@
+MODULE    = servicemodelreg.exe
+
+EXTRADLLFLAGS = -mconsole -municode
+
+C_SRCS = \
+	main.c

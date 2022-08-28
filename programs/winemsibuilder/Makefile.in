@@ -1,0 +1,6 @@
+MODULE    = winemsibuilder.exe
+IMPORTS   = msi ole32
+
+EXTRADLLFLAGS = -mconsole -municode
+
+C_SRCS = main.c

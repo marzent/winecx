@@ -1,0 +1,9 @@
+MODULE    = d3dx10_40.dll
+IMPORTLIB = d3dx10_40
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	d3dx10_40_main.c
+
+RC_SRCS = version.rc

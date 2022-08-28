@@ -1,0 +1,50 @@
+EXTRADEFS = -DWINE_NO_LONG_TYPES
+MODULE    = winemac.drv
+IMPORTS   = uuid rpcrt4 user32 gdi32 advapi32 win32u
+DELAYIMPORTS = ole32 shell32 imm32
+EXTRALIBS = -framework AppKit -framework Carbon -framework Security -framework OpenGL -framework IOKit -framework CoreVideo -framework QuartzCore $(METAL_LIBS)
+
+EXTRADLLFLAGS = -mcygwin
+
+C_SRCS = \
+	32on64hack.c \
+	clipboard.c \
+	display.c \
+	dragdrop.c \
+	event.c \
+	gdi.c \
+	image.c \
+	ime.c \
+	keyboard.c \
+	macdrv_main.c \
+	mouse.c \
+	opengl.c \
+	surface.c \
+	surface_hoststack.c \
+	systray.c \
+	vulkan.c \
+	window.c
+
+OBJC_SRCS = \
+	cocoa_app.m \
+	cocoa_clipboard.m \
+	cocoa_cursorclipping.m \
+	cocoa_display.m \
+	cocoa_event.m \
+	cocoa_main.m \
+	cocoa_opengl.m \
+	cocoa_status_item.m \
+	cocoa_window.m
+
+RC_SRCS = winemac.rc
+
+cocoa_app_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_clipboard_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_cursorclipping_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_display_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_event_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_main_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_opengl_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_status_item_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+cocoa_window_EXTRADEFS = $(HOSTSTACK_CFLAGS)
+surface_hoststack_EXTRADEFS = $(HOSTSTACK_CFLAGS)

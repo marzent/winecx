@@ -1,0 +1,6 @@
+MODULE    = httpapi.dll
+IMPORTLIB = httpapi
+IMPORTS   = advapi32
+
+C_SRCS = \
+	httpapi_main.c

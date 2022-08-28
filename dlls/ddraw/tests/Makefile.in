@@ -1,0 +1,14 @@
+EXTRADEFS = -DWINE_NO_LONG_TYPES
+TESTDLL   = ddraw.dll
+IMPORTS   = ddraw user32 gdi32 ole32
+
+C_SRCS = \
+	d3d.c \
+	ddraw1.c \
+	ddraw2.c \
+	ddraw4.c \
+	ddraw7.c \
+	ddrawmodes.c \
+	dsurface.c \
+	refcount.c \
+	visual.c

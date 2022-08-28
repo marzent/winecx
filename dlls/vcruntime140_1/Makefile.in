@@ -1,0 +1,4 @@
+MODULE = vcruntime140_1.dll
+
+C_SRCS = \
+	except_x86_64.c

@@ -1,0 +1,7 @@
+MODULE = dhcpcsvc.dll
+DELAYIMPORTS = iphlpapi
+IMPORTLIB = dhcpcsvc
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = dhcpcsvc.c

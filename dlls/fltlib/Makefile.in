@@ -1,0 +1,8 @@
+MODULE    = fltlib.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	fltlib.c
+
+RC_SRCS = rsrc.rc

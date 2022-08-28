@@ -1,0 +1,10 @@
+MODULE    = netprofm.dll
+IMPORTS   = iphlpapi
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	list.c \
+	main.c
+
+IDL_SRCS = netprofm.idl

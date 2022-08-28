@@ -1,0 +1,7 @@
+MODULE    = rasdlg.dll
+IMPORTLIB = rasdlg
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	rasdlg_main.c

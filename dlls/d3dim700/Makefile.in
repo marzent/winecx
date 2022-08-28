@@ -1,0 +1,5 @@
+MODULE    = d3dim700.dll
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+RC_SRCS = version.rc

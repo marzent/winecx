@@ -1,0 +1,13 @@
+MODULE    = wiaservc.dll
+IMPORTS   = uuid ole32 advapi32
+
+EXTRADLLFLAGS = -Wb,--prefer-native
+
+C_SRCS = \
+	factory.c \
+	service.c \
+	wiadevmgr.c
+
+IDL_SRCS = wiaservc.idl
+
+RC_SRCS = rsrc.rc
