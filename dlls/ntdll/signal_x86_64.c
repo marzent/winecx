@@ -348,23 +348,6 @@ __ASM_GLOBAL_FUNC( RtlCaptureContext,
                    "ret" );
 
 
-/******************************************************************************
- *              RtlWow64GetThreadContext  (NTDLL.@)
- */
-NTSTATUS WINAPI RtlWow64GetThreadContext( HANDLE handle, WOW64_CONTEXT *context )
-{
-    return NtQueryInformationThread( handle, ThreadWow64Context, context, sizeof(*context), NULL );
-}
-
-
-/******************************************************************************
- *              RtlWow64SetThreadContext  (NTDLL.@)
- */
-NTSTATUS WINAPI RtlWow64SetThreadContext( HANDLE handle, const WOW64_CONTEXT *context )
-{
-    return NtSetInformationThread( handle, ThreadWow64Context, context, sizeof(*context) );
-}
-
 
 DWORD __cdecl nested_exception_handler( EXCEPTION_RECORD *rec, EXCEPTION_REGISTRATION_RECORD *frame,
                                                CONTEXT *context, EXCEPTION_REGISTRATION_RECORD **dispatcher )
