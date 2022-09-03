@@ -6170,10 +6170,48 @@ INT WINAPI DECLSPEC_HOTPATCH NormalizeString(NORM_FORM form, const WCHAR *src, I
  */
 INT WINAPI DECLSPEC_HOTPATCH ResolveLocaleName( LPCWSTR name, LPWSTR buffer, INT len )
 {
-    FIXME( "stub: %s, %p, %d\n", wine_dbgstr_w(name), buffer, len );
+    LCID lcid;
+    WCHAR local_buffer[LOCALE_NAME_MAX_LENGTH];
+    WCHAR *output_buffer = buffer ? buffer : local_buffer;
+    WCHAR *p = 0;
+    INT new_len;
 
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return 0;
+    if (!name)
+    {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    TRACE( "(%s, %p, %d)\n", debugstr_w(name), buffer, len );
+
+    for (;;)
+    {
+        lcid = LocaleNameToLCID( p ? local_buffer : name, 0 );
+        if (lcid) break;
+
+        if (!p) /* first loop iteration */
+        {
+            lstrcpynW( local_buffer, name, LOCALE_NAME_MAX_LENGTH );
+            local_buffer[LOCALE_NAME_MAX_LENGTH - 1] = L'\0';
+            p = local_buffer + lstrlenW( local_buffer );
+        }
+        if (p == local_buffer)
+        {
+            /* fail-safe in case LocaleNameToLCID doesn't recognize "" */
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return 0;
+        }
+
+        for (--p; p > local_buffer; --p)
+        {
+            if (*p == L'-' || *p == L'_') break;
+        }
+        *p = L'\0';
+    }
+    new_len = LCIDToLocaleName( lcid, output_buffer, len, 0 );
+
+    TRACE( "(%s, %p, %d) returning %d %s\n", debugstr_w(name), buffer, len, new_len, debugstr_w(output_buffer) );
+    return new_len;
 }
 
 
