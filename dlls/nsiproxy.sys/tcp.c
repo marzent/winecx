@@ -498,7 +498,7 @@ unsigned int find_owning_pid( struct pid_map *map, unsigned int num_entries, UIN
             if (fds[j].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
 
             proc_pidfdinfo( map[i].unix_pid, fds[j].proc_fd, PROC_PIDFDSOCKETINFO, &sock, sizeof(sock) );
-            if (sock.psi.soi_pcb == inode)
+            if ((unsigned int)(sock.psi.soi_pcb) == (unsigned int)inode)
             {
                 free( fds );
                 return map[i].pid;
