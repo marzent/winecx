@@ -264,10 +264,9 @@ static struct sockaddr_hdr *dup_sockaddr( const struct sockaddr_hdr *addr )
     {
     case AF_INET:
     {
-        struct sockaddr_in_win *dst;
-        struct sockaddr_in *src = (struct sockaddr_in *)addr;
+        struct sockaddr_in *dst, *src = (struct sockaddr_in *)addr;
         if (!(dst = calloc( 1, sizeof(*dst) ))) return NULL;
-        dst->sin_family = AF_INET;
+        dst->sin_family = src->sin_family;
         dst->sin_port   = src->sin_port;
         dst->sin_addr   = src->sin_addr;
         ret = (struct sockaddr_hdr *)dst;
@@ -275,10 +274,9 @@ static struct sockaddr_hdr *dup_sockaddr( const struct sockaddr_hdr *addr )
     }
     case AF_INET6:
     {
-        struct sockaddr_in6_win *dst;
-        struct sockaddr_in6 *src = (struct sockaddr_in6 *)addr;
+        struct sockaddr_in6 *dst, *src = (struct sockaddr_in6 *)addr;
         if (!(dst = malloc( sizeof(*dst) ))) return NULL;
-        dst->sin6_family   = AF_INET6;
+        dst->sin6_family   = src->sin6_family;
         dst->sin6_port     = src->sin6_port;
         dst->sin6_flowinfo = src->sin6_flowinfo;
         dst->sin6_addr     = src->sin6_addr;

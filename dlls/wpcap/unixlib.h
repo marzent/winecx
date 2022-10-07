@@ -19,22 +19,7 @@
 
 struct sockaddr_hdr
 {
-    unsigned char    sa_len;
-    unsigned char    sa_family;
-};
-
-struct sockaddr_in_win {
-    short            sin_family;
-    unsigned short   sin_port;
-    struct in_addr   sin_addr;
-};
-
-struct sockaddr_in6_win {
-    short               sin6_family;
-    unsigned short      sin6_port;
-    unsigned int        sin6_flowinfo;
-    struct in6_addr     sin6_addr;
-    unsigned int        sin6_scope_id;
+    unsigned short sa_family;
 };
 
 struct pcap_address
