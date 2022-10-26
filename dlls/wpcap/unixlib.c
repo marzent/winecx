@@ -34,6 +34,12 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
+#define USE_WS_PREFIX
+/* the following 2 libpcap defines interfere with winsock2.h */
+#undef SOCKET
+#undef INVALID_SOCKET
+#include "winsock2.h"
+#include "ws2ipdef.h"
 
 #include "wine/unixlib.h"
 #include "wine/debug.h"
