@@ -256,51 +256,45 @@ static char *build_win32_description( const struct pcap_interface *unix_dev )
     return ret;
 }
 
-static struct sockaddr_hdr *dup_sockaddr( const struct sockaddr_hdr *addr )
+static int dup_sockaddr( const struct sockaddr_storage *unix_addr, struct sockaddr_storage *win32_addr )
 {
-    struct sockaddr_hdr *ret;
-
-    switch (addr->sa_family)
+    switch (unix_addr->ss_family)
     {
     case AF_INET:
     {
-        struct sockaddr_in *dst, *src = (struct sockaddr_in *)addr;
-        if (!(dst = calloc( 1, sizeof(*dst) ))) return NULL;
+        struct sockaddr_in *src = (struct sockaddr_in *)unix_addr;
+        struct sockaddr_in *dst = (struct sockaddr_in *)win32_addr;
         dst->sin_family = src->sin_family;
         dst->sin_port   = src->sin_port;
         dst->sin_addr   = src->sin_addr;
-        ret = (struct sockaddr_hdr *)dst;
-        break;
+        return 0;
     }
     case AF_INET6:
     {
-        struct sockaddr_in6 *dst, *src = (struct sockaddr_in6 *)addr;
-        if (!(dst = malloc( sizeof(*dst) ))) return NULL;
+        struct sockaddr_in6 *src = (struct sockaddr_in6 *)unix_addr;
+        struct sockaddr_in6 *dst = (struct sockaddr_in6 *)win32_addr;
         dst->sin6_family   = src->sin6_family;
         dst->sin6_port     = src->sin6_port;
         dst->sin6_flowinfo = src->sin6_flowinfo;
         dst->sin6_addr     = src->sin6_addr;
         dst->sin6_scope_id = src->sin6_scope_id;
-        ret = (struct sockaddr_hdr *)dst;
-        break;
+        return 0;
     }
     default:
-        FIXME( "address family %u not supported\n", addr->sa_family );
-        return NULL;
+        FIXME( "address family %u not supported\n", unix_addr->ss_family );
+        return -1;
     }
-
-    return ret;
 }
 
-static struct pcap_address *build_win32_address( struct pcap_address *src )
+static struct pcap_address *alloc_win32_address( const struct pcap_address *src )
 {
     struct pcap_address *dst;
 
     if (!(dst = calloc( 1, sizeof(*dst) ))) return NULL;
-    if (src->addr && !(dst->addr = dup_sockaddr( src->addr ))) goto err;
-    if (src->netmask && !(dst->netmask = dup_sockaddr( src->netmask ))) goto err;
-    if (src->broadaddr && !(dst->broadaddr = dup_sockaddr( src->broadaddr ))) goto err;
-    if (src->dstaddr && !(dst->dstaddr = dup_sockaddr( src->dstaddr ))) goto err;
+    if (src->addr && !(dst->addr = calloc( 1, sizeof( *dst->addr )))) goto err;
+    if (src->netmask && !(dst->netmask = calloc( 1, sizeof( *dst->netmask )))) goto err;
+    if (src->broadaddr && !(dst->broadaddr = calloc( 1, sizeof( *dst->broadaddr )))) goto err;
+    if (src->dstaddr && !(dst->dstaddr = calloc( 1, sizeof( *dst->dstaddr )))) goto err;
     return dst;
 
 err:
@@ -310,6 +304,15 @@ err:
     free( dst->dstaddr );
     free( dst );
     return NULL;
+}
+
+static int build_win32_address( const struct pcap_address *unix_addr, struct pcap_address *win32_addr )
+{
+    if (unix_addr->addr && dup_sockaddr( unix_addr->addr, win32_addr->addr )) return -1;
+    if (unix_addr->netmask && dup_sockaddr( unix_addr->netmask, win32_addr->netmask )) return -1;
+    if (unix_addr->broadaddr && dup_sockaddr( unix_addr->broadaddr, win32_addr->broadaddr )) return -1;
+    if (unix_addr->dstaddr && dup_sockaddr( unix_addr->dstaddr, win32_addr->dstaddr )) return -1;
+    return 0;
 }
 
 static void add_win32_address( struct pcap_address **list, struct pcap_address *addr )
@@ -323,19 +326,31 @@ static void add_win32_address( struct pcap_address **list, struct pcap_address *
     }
 }
 
-static struct pcap_address *build_win32_addresses( struct pcap_address *addrs )
+static struct pcap_address *alloc_win32_addresses( struct pcap_address *addrs )
 {
     struct pcap_address *src, *dst, *ret = NULL;
     src = addrs;
     while (src)
     {
-        if ((dst = build_win32_address( src ))) add_win32_address( &ret, dst );
+        if ((dst = alloc_win32_address( src ))) add_win32_address( &ret, dst );
         src = src->next;
     }
     return ret;
 }
 
-static struct pcap_interface *build_win32_device( const struct pcap_interface *unix_dev, const char *source,
+static void build_win32_addresses( struct pcap_address *unix_addrs, struct pcap_address *win32_addrs )
+{
+    while (unix_addrs && win32_addrs)
+    {
+        if (!build_win32_address( unix_addrs, win32_addrs ))
+            win32_addrs = win32_addrs->next;
+        unix_addrs = unix_addrs->next;
+    }
+
+    free_addresses( win32_addrs ); /* addresses whose socket family could not be mapped */
+}
+
+static struct pcap_interface *alloc_win32_device( const struct pcap_interface *unix_dev, const char *source,
                                                   const char *adapter_name )
 {
     struct pcap_interface *ret;
@@ -343,8 +358,7 @@ static struct pcap_interface *build_win32_device( const struct pcap_interface *u
     if (!(ret = calloc( 1, sizeof(*ret) ))) return NULL;
     if (!(ret->name = build_win32_name( source, adapter_name ))) goto err;
     if (!(ret->description = build_win32_description( unix_dev ))) goto err;
-    ret->addresses = build_win32_addresses( unix_dev->addresses );
-    ret->flags = unix_dev->flags;
+    if (!(ret->addresses = alloc_win32_addresses( unix_dev->addresses ))) goto err;
     return ret;
 
 err:
@@ -353,6 +367,12 @@ err:
     free_addresses( ret->addresses );
     free( ret );
     return NULL;
+}
+
+static void build_win32_device( const struct pcap_interface *unix_dev,  struct pcap_interface *win32_dev)
+{
+    build_win32_addresses( unix_dev->addresses, win32_dev->addresses );
+    win32_dev->flags = unix_dev->flags;
 }
 
 static void add_win32_device( struct pcap_interface **list, struct pcap_interface *dev )
@@ -366,35 +386,58 @@ static void add_win32_device( struct pcap_interface **list, struct pcap_interfac
     }
 }
 
-static int find_all_devices( const char *source, struct pcap_interface **devs, char *errbuf )
+static struct pcap_interface *alloc_win32_devs(  const char *source, struct pcap_interface *unix_devs )
 {
-    struct pcap_interface *unix_devs, *win32_devs = NULL, *cur, *dev;
+    struct pcap_interface *ret = NULL, *cur, *dev;
     IP_ADAPTER_ADDRESSES *ptr, *adapters = get_adapters();
-    struct findalldevs_params params = { &unix_devs, errbuf };
-    int ret;
 
     if (!adapters)
-    {
-        if (errbuf) sprintf( errbuf, "Out of memory." );
-        return -1;
-    }
+        return NULL;
 
-    if (!(ret = PCAP_CALL( findalldevs, &params )))
+    cur = unix_devs;
+    while (cur)
     {
-        cur = unix_devs;
-        while (cur)
+        if ((ptr = find_adapter( adapters, cur->name )) && (dev = alloc_win32_device( cur, source, ptr->AdapterName )))
         {
-            if ((ptr = find_adapter( adapters, cur->name )) && (dev = build_win32_device( cur, source, ptr->AdapterName )))
-            {
-                add_win32_device( &win32_devs, dev );
-            }
-            cur = cur->next;
+            add_win32_device( &ret, dev );
         }
-        *devs = win32_devs;
-        PCAP_CALL( freealldevs, unix_devs );
+        cur = cur->next;
     }
 
     free( adapters );
+
+    return ret;
+}
+
+static int find_all_devices( const char *source, struct pcap_interface **devs, char *errbuf )
+{
+    struct pcap_interface *unix_devs, *win32_devs = NULL, *unix_cur, *win32_cur;
+    struct findalldevs_params params = { &unix_devs, errbuf };
+    int ret = PCAP_CALL( findalldevs, &params );
+
+    if (ret) {
+        PCAP_CALL( freealldevs, unix_devs );
+        return ret;
+    }
+
+    if (!(win32_devs = alloc_win32_devs( source, unix_devs )))
+    {
+        if (errbuf) sprintf( errbuf, "Out of memory." );
+        PCAP_CALL( freealldevs, unix_devs );
+        return -1;
+    }
+
+    unix_cur = unix_devs;
+    win32_cur = win32_devs;
+    while (unix_cur && win32_cur)
+    {
+        build_win32_device( unix_cur, win32_cur );
+        unix_cur = unix_cur->next;
+        win32_cur = win32_cur->next;
+    }
+    *devs = win32_devs;
+    PCAP_CALL( freealldevs, unix_devs );
+
     return ret;
 }
 
