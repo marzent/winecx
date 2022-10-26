@@ -21,10 +21,10 @@
 struct pcap_address
 {
     struct pcap_address *next;
-    SOCKADDR_STORAGE *addr;
-    SOCKADDR_STORAGE *netmask;
-    SOCKADDR_STORAGE *broadaddr;
-    SOCKADDR_STORAGE *dstaddr;
+    struct sockaddr_storage *addr;
+    struct sockaddr_storage *netmask;
+    struct sockaddr_storage *broadaddr;
+    struct sockaddr_storage *dstaddr;
 };
 
 struct pcap_interface
@@ -103,7 +103,8 @@ struct dump_open_params
 
 struct findalldevs_params
 {
-    struct pcap_interface **devs;
+    struct pcap_interface **unix_devs;
+    struct pcap_interface **win32_devs;
     char *errbuf;
 };
 

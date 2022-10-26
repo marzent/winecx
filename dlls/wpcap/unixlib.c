@@ -141,14 +141,89 @@ static NTSTATUS wrap_dump_open( void *args )
     return STATUS_SUCCESS;
 }
 
+static int dup_sockaddr( const struct sockaddr *unix_addr, struct sockaddr_storage *win32_addr )
+{
+    switch (unix_addr->sa_family)
+    {
+    case AF_INET:
+    {
+        struct sockaddr_in *src = (struct sockaddr_in *)unix_addr;
+        SOCKADDR_IN *dst        = (SOCKADDR_IN *)win32_addr;
+        dst->sin_family         = WS_AF_INET;
+        dst->sin_port           = (USHORT)src->sin_port;
+        memcpy(&dst->sin_addr, &src->sin_addr, sizeof(IN_ADDR));
+        return 0;
+    }
+    case AF_INET6:
+    {
+        struct sockaddr_in6 *src = (struct sockaddr_in6 *)unix_addr;
+        SOCKADDR_IN6 *dst        = (SOCKADDR_IN6 *)win32_addr;
+        dst->sin6_family         = WS_AF_INET6;
+        dst->sin6_port           = (USHORT)src->sin6_port;
+        dst->sin6_flowinfo       = (ULONG)src->sin6_flowinfo;
+        memcpy(&dst->sin6_addr, &src->sin6_addr, sizeof(IN6_ADDR));
+        dst->sin6_scope_id       = (ULONG)src->sin6_scope_id;
+        return 0;
+    }
+    default:
+        FIXME( "unix address family %u not supported\n", unix_addr->sa_family );
+        return -1;
+    }
+}
+
+static int build_win32_address( const struct pcap_addr *unix_addr, struct pcap_address *win32_addr )
+{
+    if (unix_addr->addr && win32_addr->addr && dup_sockaddr( unix_addr->addr, win32_addr->addr )) return -1;
+    if (unix_addr->netmask && win32_addr->netmask && dup_sockaddr( unix_addr->netmask, win32_addr->netmask )) return -1;
+    if (unix_addr->broadaddr && win32_addr->broadaddr && dup_sockaddr( unix_addr->broadaddr, win32_addr->broadaddr )) return -1;
+    if (unix_addr->dstaddr && win32_addr->dstaddr && dup_sockaddr( unix_addr->dstaddr, win32_addr->dstaddr )) return -1;
+    return 0;
+}
+
+static void build_win32_addresses( struct pcap_addr *unix_addrs, struct pcap_address *win32_addrs )
+{
+    while (unix_addrs && win32_addrs)
+    {
+        if (!build_win32_address( unix_addrs, win32_addrs ))
+            win32_addrs = win32_addrs->next;
+        unix_addrs = unix_addrs->next;
+    }
+}
+
+static void build_win32_device( const pcap_if_t *unix_dev,  struct pcap_interface *win32_dev)
+{
+    build_win32_addresses( unix_dev->addresses, win32_dev->addresses );
+    win32_dev->flags = unix_dev->flags;
+}
+
 static NTSTATUS wrap_findalldevs( void *args )
 {
     const struct findalldevs_params *params = args;
+    pcap_if_t **unix_devs = (pcap_if_t **)params->unix_devs;
+    pcap_if_t *unix_cur;
+    struct pcap_interface **win32_devs = params->win32_devs;
+    struct pcap_interface *win32_cur;
     int ret;
-    ret = pcap_findalldevs( (pcap_if_t **)params->devs, params->errbuf );
-    if (params->devs && !*params->devs)
-        ERR_(winediag)( "Failed to access raw network (pcap), this requires special permissions.\n" );
-    return ret;
+
+    if (!*win32_devs)
+    {
+        ret = pcap_findalldevs( unix_devs, params->errbuf );
+        if ((unix_devs && !*unix_devs) || ret == PCAP_ERROR_PERM_DENIED)
+            ERR_(winediag)( "Failed to access raw network (pcap), this requires special permissions.\n" );
+        return ret;
+    }
+
+    unix_cur = *unix_devs;
+    win32_cur = *win32_devs;
+    while (unix_cur && win32_cur)
+    {
+        build_win32_device( unix_cur, win32_cur );
+        unix_cur = unix_cur->next;
+        win32_cur = win32_cur->next;
+    }
+    pcap_freealldevs( *unix_devs );
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS wrap_free_datalinks( void *args )
