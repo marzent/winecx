@@ -169,6 +169,12 @@ case $host in
       notice_platform="64-bit "
       TARGETFLAGS="$TARGETFLAGS -mwine32"
       AC_SUBST(WIDLFLAGS,"-m32")
+      enable_loader=no
+      with_gphoto=no
+      with_krb5=no
+      with_sane=no
+      with_usb=no
+      with_vulkan=no
     else
       if test "x${GCC}" = "xyes"
       then
