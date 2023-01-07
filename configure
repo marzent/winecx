@@ -6205,7 +6205,19 @@ fi
 
 case $host in
   *-darwin*)
+    ac_cv_lib_soname_vulkan=
+    with_alsa=${with_alsa:-no}
+    with_capi=${with_capi:-no}
+    with_dbus=${with_dbus:-no}
     with_fontconfig=${with_fontconfig:-no}
+    with_inotify=${with_inotify:-no}
+    with_netapi=${with_netapi:-no}
+    with_oss=${with_oss:-no}
+    with_pulse=${with_pulse:-no}
+    with_udev=${with_udev:-no}
+    with_usb=${with_usb:-no}
+    with_v4l2=${with_v4l2:-no}
+    with_x=${with_x:-no}
     ;;
   *-mingw32*|*-cygwin*)
     enable_win16=${enable_win16:-no}
