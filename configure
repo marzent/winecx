@@ -6229,7 +6229,7 @@ esac
 
 case $host in
   x86_64*|amd64*)
-    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" != "xyes" -a "$cross_compiling" != "yes"
+    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" != "xyes"
     then
       CC="$CC -m32"
       CXX="$CXX -m32"
@@ -6271,7 +6271,7 @@ printf "%s\n" "$wine_cv_cc_m32" >&6; }
       export PKG_CONFIG_PATH
       enable_win16=${enable_win16:-yes}
       with_unwind=${with_unwind:-no}
-    elif test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes" -a "$cross_compiling" != "yes"
+    elif test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes"
     then
       if test "x${GCC}" = "xyes"
       then
@@ -19577,7 +19577,7 @@ then :
 fi
   fi
 
-    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes" -a "$cross_compiling" != "yes"
+    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes"
   then
       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Werror=extra-tokens" >&5
 printf %s "checking whether the compiler supports -Werror=extra-tokens... " >&6; }

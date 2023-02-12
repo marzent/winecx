@@ -137,7 +137,7 @@ AC_SUBST(HOSTSTACK_CFLAGS)
 AC_SUBST(TARGETFLAGS)
 case $host in
   x86_64*|amd64*)
-    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" != "xyes" -a "$cross_compiling" != "yes"
+    if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" != "xyes"
     then
       CC="$CC -m32"
       CXX="$CXX -m32"
@@ -152,7 +152,7 @@ case $host in
       export PKG_CONFIG_PATH
       enable_win16=${enable_win16:-yes}
       with_unwind=${with_unwind:-no}
-    elif test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes" -a "$cross_compiling" != "yes"
+    elif test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes"
     then
       if test "x${GCC}" = "xyes"
       then
@@ -1991,7 +1991,7 @@ int a(int b, ...) { __builtin_ms_va_list list; __builtin_ms_va_start(list,b); }]
   fi
 
   dnl Extra errors for 32-on-64-bit mode, to catch address space issues
-  if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes" -a "$cross_compiling" != "yes"
+  if test "x$enable_win64" != "xyes" -a "x$enable_win32on64" = "xyes"
   then
       WINE_TRY_CFLAGS([-Werror=extra-tokens],[EXTRACFLAGS="$EXTRACFLAGS -Werror=extra-tokens"])
       WINE_TRY_CFLAGS([-Werror=implicit-function-declaration],[EXTRACFLAGS="$EXTRACFLAGS -Werror=implicit-function-declaration"])
