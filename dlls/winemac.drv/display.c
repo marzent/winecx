@@ -1217,7 +1217,8 @@ BOOL macdrv_UpdateDisplayDevices( const struct gdi_device_manager *device_manage
                 .state_flags = adapter->state_flags,
             };
             device_manager->add_adapter( &gdi_adapter, param );
-
+            
+            check_retina_status();
             if (macdrv_get_monitors(adapter->id, &monitors, &monitor_count)) break;
             TRACE("adapter: %#x, monitor count: %d\n", adapter->id, monitor_count);
 
