@@ -5085,7 +5085,7 @@ NTSTATUS WINAPI NtAreMappedFilesTheSame(PVOID addr1, PVOID addr2)
 NTSTATUS WINAPI NtFlushInstructionCache( HANDLE handle, const void *addr, SIZE_T size )
 {
 #if defined(__APPLE__)
-    toggle_executable_pages_for_rosetta( handle, addr, size );
+    toggle_executable_pages_for_rosetta( handle, (void *)addr, size );
 #elif defined(__x86_64__) || defined(__i386__)
     /* no-op */
 #elif defined(HAVE___CLEAR_CACHE)
