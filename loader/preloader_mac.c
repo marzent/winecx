@@ -605,8 +605,8 @@ static int map_region( struct wine_preload_info *info )
         flags |= MAP_FIXED;
     }
 
-    /* don't warn for zero page */
-    if (info->addr >= (void *)0x1000)
+    /* don't warn for zero page & dos area */
+    if (info->addr >= (void *)0x110000)
         wld_printf( "preloader: Warning: failed to reserve range %p-%p\n",
                     info->addr, (char *)info->addr + info->size );
     return 0;
