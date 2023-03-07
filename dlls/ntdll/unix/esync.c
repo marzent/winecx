@@ -736,7 +736,7 @@ NTSTATUS esync_pulse_event( HANDLE handle )
 
     /* Try to give other threads a chance to wake up. Hopefully erring on this
      * side is the better thing to do... */
-    NtYieldExecution();
+    usleep(0);
 
     efd_read( obj );
 
