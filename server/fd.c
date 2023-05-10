@@ -1941,20 +1941,42 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
         {
             /* check for trailing slash on file path */
             if ((errno == ENOENT || (errno == ENOTDIR && !(options & FILE_DIRECTORY_FILE))) && name[strlen(name) - 1] == '/')
+            {
                 set_error( STATUS_OBJECT_NAME_INVALID );
-            else
+                goto error;
+            }
+
+            if (stat( name, &st ))
+            {
                 file_set_error();
-            goto error;
+                goto error;
+            }
+
+            /* POSIX requires that open(2) throws EOPNOTSUPP when `path` is a Unix
+             * socket. BSD throws EOPNOTSUPP in this case and the additional case of
+             * O_SHLOCK or O_EXLOCK being passed when `path` resides on a filesystem
+             * without lock support. Contrary to POSIX, Linux returns ENXIO in this
+             * case, so we also check that error code here.
+             */
+            if ((errno == EOPNOTSUPP || errno == ENXIO) && S_ISSOCK(st.st_mode) && (options & FILE_DELETE_ON_CLOSE))
+                ; /* no error, go to regular deletion code path */
+            else
+            {
+                file_set_error();
+                goto error;
+            }
         }
     }
 
     fd->nt_name = dup_nt_name( root, nt_name, &fd->nt_namelen );
     fd->unix_name = NULL;
-    fstat( fd->unix_fd, &st );
+    /* st was set from the file name if the file could not be opened */
+    if (fd->unix_fd != -1)
+        fstat( fd->unix_fd, &st );
     *mode = st.st_mode;
 
     /* only bother with an inode for normal files and directories */
-    if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode))
+    if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode) || S_ISSOCK(st.st_mode))
     {
         unsigned int err;
         struct inode *inode = get_inode( st.st_dev, st.st_ino, fd->unix_fd );
@@ -2016,7 +2038,10 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
                 set_error( STATUS_OBJECT_NAME_COLLISION );
                 goto error;
             }
-            ftruncate( fd->unix_fd, 0 );
+            if (fd->unix_fd != -1)
+                ftruncate( fd->unix_fd, 0 );
+            else
+                truncate( fd->unix_name, 0 );
         }
     }
     else  /* special file */
