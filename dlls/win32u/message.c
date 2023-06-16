@@ -2750,6 +2750,7 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
             if (buffer != buffer_init) free( buffer );
             if (res == STATUS_PENDING)
             {
+                NtYieldExecution();
                 return 0;
             }
             if (res != STATUS_BUFFER_OVERFLOW)
