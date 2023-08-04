@@ -841,6 +841,7 @@ struct shared_cursor
 
 struct desktop_shared_memory
 {
+    unsigned int         seq;
     struct shared_cursor cursor;
 };
 typedef volatile struct desktop_shared_memory desktop_shm_t;
@@ -6569,7 +6570,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 764
+#define SERVER_PROTOCOL_VERSION 765
 
 /* ### protocol_version end ### */
 
