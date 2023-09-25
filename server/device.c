@@ -851,6 +851,9 @@ static void device_manager_destroy( struct object *obj )
         assert( !irp->file && !irp->async );
         release_object( irp );
     }
+    
+    if (do_msync())
+        msync_destroy_semaphore( manager->msync_idx );
 
     if (do_esync())
         esync_close_fd( manager->esync_fd );

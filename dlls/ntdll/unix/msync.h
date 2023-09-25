@@ -1,7 +1,8 @@
 /*
- * futex-based synchronization objects
+ * mach semaphore-based synchronization objects
  *
  * Copyright (C) 2018 Zebediah Figura
+ * Copyright (C) 2023 Marc-Aurel Zent
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public

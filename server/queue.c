@@ -336,6 +336,9 @@ static struct msg_queue *create_msg_queue( struct thread *thread, struct thread_
 
         if (do_esync())
             queue->esync_fd = esync_create_fd( 0, 0 );
+        
+        if (do_msync())
+            queue->msync_idx = msync_alloc_shm( 0, 0 );
 
         thread->queue = queue;
     }
@@ -515,6 +518,9 @@ static inline void clear_queue_bits( struct msg_queue *queue, unsigned int bits 
 {
     queue->wake_bits &= ~bits;
     queue->changed_bits &= ~bits;
+    
+    if (do_msync() && !is_signaled( queue ))
+        msync_clear( &queue->obj );
 
     if (do_esync() && !is_signaled( queue ))
         esync_clear( queue->esync_fd );
@@ -1100,6 +1106,9 @@ static void msg_queue_destroy( struct object *obj )
 
     if (do_esync())
         esync_close_fd( queue->esync_fd );
+    
+    if (do_msync())
+        msync_destroy_semaphore( queue->msync_idx );
 }
 
 static void msg_queue_poll_event( struct fd *fd, int event )
@@ -2783,6 +2792,9 @@ DECL_HANDLER(get_message)
     queue->wake_mask = req->wake_mask;
     queue->changed_mask = req->changed_mask;
     set_error( STATUS_PENDING );  /* FIXME */
+    
+    if (do_msync() && !is_signaled( queue ))
+        msync_clear( &queue->obj );
 
     if (do_esync() && !is_signaled( queue ))
         esync_clear( queue->esync_fd );

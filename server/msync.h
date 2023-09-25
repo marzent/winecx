@@ -1,7 +1,8 @@
 /*
- * futex-based synchronization objects
+ * mach semaphore-based synchronization objects
  *
  * Copyright (C) 2018 Zebediah Figura
+ * Copyright (C) 2023 Marc-Aurel Zent
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,8 +22,9 @@
 extern int do_msync(void);
 extern void msync_init(void);
 extern unsigned int msync_alloc_shm( int low, int high );
-extern void msync_wake_futex( unsigned int shm_idx );
-extern void msync_clear_futex( unsigned int shm_idx );
+extern void msync_signal_all( unsigned int shm_idx );
+extern void msync_clear_shm( unsigned int shm_idx );
+extern void msync_destroy_semaphore( unsigned int shm_idx );
 extern void msync_wake_up( struct object *obj );
 extern void msync_clear( struct object *obj );
 

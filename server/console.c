@@ -612,7 +612,7 @@ static void disconnect_console_server( struct console_server *server )
     }
 
     if (do_msync())
-        msync_clear_futex( server->msync_idx );
+        msync_clear_shm( server->msync_idx );
 
     if (do_esync())
         esync_clear( server->esync_fd );
@@ -898,6 +898,7 @@ static void console_server_destroy( struct object *obj )
     disconnect_console_server( server );
     if (server->fd) release_object( server->fd );
     if (do_esync()) esync_close_fd( server->esync_fd );
+    if (do_msync()) msync_destroy_semaphore( server->msync_idx );
 }
 
 static struct object *console_server_lookup_name( struct object *obj, struct unicode_str *name,
@@ -1606,7 +1607,7 @@ DECL_HANDLER(get_next_console_request)
         list_remove( &ioctl->entry );
 
         if (do_msync() && list_empty( &server->queue ))
-            msync_clear_futex( server->msync_idx );
+            msync_clear_shm( server->msync_idx );
 
         if (do_esync() && list_empty( &server->queue ))
             esync_clear( server->esync_fd );
@@ -1697,7 +1698,7 @@ DECL_HANDLER(get_next_console_request)
     }
 
     if (do_msync() && list_empty( &server->queue ))
-        msync_clear_futex( server->msync_idx );
+        msync_clear_shm( server->msync_idx );
 
     if (do_esync() && list_empty( &server->queue ))
         esync_clear( server->esync_fd );

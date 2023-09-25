@@ -485,6 +485,12 @@ static void destroy_thread( struct object *obj )
         esync_close_fd( thread->esync_fd );
         esync_close_fd( thread->esync_apc_fd );
     }
+    
+    if (do_msync())
+    {
+        msync_destroy_semaphore( thread->msync_idx );
+        msync_destroy_semaphore( thread->msync_apc_idx );
+    }
 }
 
 /* dump a thread on stdout for debugging purposes */
@@ -1202,7 +1208,7 @@ static int queue_apc( struct process *process, struct thread *thread, struct thr
         wake_thread( thread );
 
         if (do_msync() && queue == &thread->user_apc)
-            msync_wake_futex( thread->msync_apc_idx );
+            msync_signal_all( thread->msync_apc_idx );
 
         if (do_esync() && queue == &thread->user_apc)
             esync_wake_fd( thread->esync_apc_fd );
@@ -1255,7 +1261,7 @@ static struct thread_apc *thread_dequeue_apc( struct thread *thread, int system 
     }
 
     if (do_msync() && list_empty( &thread->system_apc ) && list_empty( &thread->user_apc ))
-        msync_clear_futex( thread->msync_apc_idx );
+        msync_clear( &thread->obj );
 
     if (do_esync() && list_empty( &thread->system_apc ) && list_empty( &thread->user_apc ))
         esync_clear( thread->esync_apc_fd );

@@ -960,6 +960,7 @@ static void process_destroy( struct object *obj )
     free( process->dir_cache );
     free( process->image );
     if (do_esync()) esync_close_fd( process->esync_fd );
+    if (do_msync()) msync_destroy_semaphore( process->msync_idx );
 }
 
 /* dump a process on stdout for debugging purposes */

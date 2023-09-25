@@ -298,6 +298,9 @@ static void event_destroy( struct object *obj )
 {
     struct event *event = (struct event *)obj;
 
+    if (do_msync())
+        msync_destroy_semaphore( event->msync_idx );
+    
     if (do_esync())
         esync_close_fd( event->esync_fd );
 }

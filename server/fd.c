@@ -1600,6 +1600,9 @@ static void fd_destroy( struct object *obj )
         free( fd->unix_name );
     }
 
+    if (do_msync())
+        msync_destroy_semaphore( fd->msync_idx );
+    
     if (do_esync())
         esync_close_fd( fd->esync_fd );
 }

@@ -259,6 +259,8 @@ static void timer_destroy( struct object *obj )
     if (timer->thread) release_object( timer->thread );
     if (do_esync())
         esync_close_fd( timer->esync_fd );
+    if (do_msync())
+        msync_destroy_semaphore( timer->msync_idx );
 }
 
 /* create a timer */

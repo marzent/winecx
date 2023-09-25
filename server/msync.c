@@ -1,7 +1,8 @@
 /*
- * futex-based synchronization objects
+ * mach semaphore-based synchronization objects
  *
  * Copyright (C) 2018 Zebediah Figura
+ * Copyright (C) 2023 Marc-Aurel Zent
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,9 +30,16 @@
 #ifdef HAVE_SYS_STAT_H
 # include <sys/stat.h>
 #endif
-#ifdef HAVE_SYS_SYSCALL_H
-# include <sys/syscall.h>
+#ifdef __APPLE__
+# include <mach/mach_init.h>
+# include <mach/mach_port.h>
+# include <mach/message.h>
+# include <mach/port.h>
+# include <mach/task.h>
+# include <mach/semaphore.h>
+# include <servers/bootstrap.h>
 #endif
+#include <pthread.h>
 #include <unistd.h>
 
 #include "ntstatus.h"
@@ -43,29 +51,287 @@
 #include "request.h"
 #include "msync.h"
 
-struct futex_wait_block
+/*
+ * We can't go higher because the maximum default size of of shared memory on XNU
+ * is 4MB and we are using 8 bytes per entry.
+ */
+#define MAX_INDEX 0x80000
+
+#ifdef __APPLE__
+
+#define MACH_CHECK_ERROR(ret, operation) \
+    if (ret != KERN_SUCCESS) \
+        fprintf(stderr, "msync: error: %s failed with %d: %s\n", \
+            operation, ret, mach_error_string(ret));
+
+/* Private API to register a mach port with the bootstrap server */
+extern kern_return_t bootstrap_register2( mach_port_t bp, name_t service_name, mach_port_t sp, int flags );
+
+static mach_port_name_t receive_port;
+
+struct sem_node
 {
-    int *addr;
-    int pad;
-    int val;
+    struct sem_node *next;
+    semaphore_t sem;
+    semaphore_t orig_sem;
+    int tid;
 };
 
-static inline int futex_wait_multiple( const struct futex_wait_block *futexes,
-        int count, const struct timespec *timeout )
+struct sem_list
 {
-    return 0;
+    struct sem_node *head;
+    int is_used;
+    volatile int lock;
+};
+
+static inline void small_pause(void)
+{
+#if defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__( "rep;nop" : : : "memory" );
+#else
+    __asm__ __volatile__( "" : : : "memory" );
+#endif
 }
+
+static inline void spinlock_lock( volatile int *lock )
+{
+    while(__atomic_test_and_set(lock, __ATOMIC_ACQUIRE))
+        while(__atomic_load_n(lock, __ATOMIC_RELAXED))
+            small_pause();
+}
+
+static inline void spinlock_unlock( volatile int *lock )
+{
+    __atomic_clear(lock, __ATOMIC_RELEASE);
+}
+
+static void add_sem( struct sem_list *list, semaphore_t sem, semaphore_t orig_sem, int tid )
+{
+    struct sem_node *current, *new_node;
+    
+    new_node = (struct sem_node *)malloc( sizeof(struct sem_node) );
+    new_node->sem = sem;
+    new_node->orig_sem = orig_sem;
+    new_node->tid = tid;
+    new_node->next = NULL;
+
+    spinlock_lock(&list->lock);
+    if (list->head == NULL)
+        list->head = new_node;
+    else
+    {
+        current = list->head;
+        while (current->next)
+            current = current->next;
+        current->next = new_node;
+    }
+    spinlock_unlock(&list->lock);
+}
+
+static void remove_sem( struct sem_list *list, semaphore_t orig_sem, int tid )
+{
+    struct sem_node *current, *prev = NULL;
+
+    spinlock_lock(&list->lock);
+    current = list->head;
+    while (current != NULL)
+    {
+        if (current->orig_sem == orig_sem && current->tid == tid)
+        {
+            if (prev == NULL)
+                list->head = current->next;
+            else
+                prev->next = current->next;
+            free(current);
+            break;
+        }
+        prev = current;
+        current = current->next;
+    }
+    spinlock_unlock(&list->lock);
+}
+
+
+static void destroy_all( struct sem_list *list )
+{
+    struct sem_node *temp, *current;
+    
+    spinlock_lock(&list->lock);
+    current = list->head;
+    list->head = NULL;
+    list->is_used = 0;
+    spinlock_unlock(&list->lock);
+    
+    while (current)
+    {
+        semaphore_destroy( mach_task_self(), current->sem );
+        temp = current;
+        current = current->next;
+        free(temp);
+    }
+}
+
+static struct sem_list mach_semaphore_map[MAX_INDEX];
+
+static void signal_all_internal( unsigned int shm_idx )
+{
+    struct sem_node *current, *temp;
+    struct sem_list *list = mach_semaphore_map + shm_idx;
+
+    spinlock_lock(&list->lock);
+    current = list->head;
+    list->head = NULL;
+    spinlock_unlock(&list->lock);
+
+    while (current)
+    {
+        semaphore_signal( current->sem );
+        semaphore_destroy( mach_task_self(), current->sem );
+        temp = current;
+        current = current->next;
+        free(temp);
+    }
+}
+
+/* thread-safe sequentially consistent guarantees relative to register/unregister
+ * are made by the mach messaging queue */
+static inline mach_msg_return_t signal_all( unsigned int shm_idx )
+{
+    __thread static mach_msg_header_t send_header;
+    send_header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
+    send_header.msgh_id = shm_idx;
+    send_header.msgh_size = sizeof(send_header);
+    send_header.msgh_remote_port = receive_port;
+    
+    return mach_msg( &send_header,
+                     MACH_SEND_MSG,
+                     send_header.msgh_size,
+                     0,
+                     MACH_PORT_NULL,
+                     MACH_MSG_TIMEOUT_NONE,
+                     MACH_PORT_NULL );
+}
+
+static inline void add_sem_to_map( unsigned int index, semaphore_t sem,
+                                   semaphore_t orig_sem, int tid )
+{
+    add_sem( mach_semaphore_map + index, sem, orig_sem, tid );
+}
+
+static inline void remove_sem_from_map( unsigned int index, semaphore_t orig_sem, int tid )
+{
+    remove_sem( mach_semaphore_map + index, orig_sem, tid );
+}
+
+typedef struct
+{
+    unsigned int shm_idx;
+    int value;
+} extra_data_t;
+
+typedef struct
+{
+    mach_msg_header_t header;
+    mach_msg_body_t body;
+    mach_msg_port_descriptor_t descriptor;
+    semaphore_t orig_sem;
+    int tid;
+    int count;
+    extra_data_t extra_data[MAXIMUM_WAIT_OBJECTS + 1];
+    mach_msg_trailer_t trailer;
+} mach_port_message_t;
+
+static inline mach_msg_return_t receive_mach_msg( mach_port_message_t *buffer )
+{
+    return mach_msg( (mach_msg_header_t *)buffer,
+                     MACH_RCV_MSG,
+                     0,
+                     sizeof(*buffer),
+                     receive_port,
+                     MACH_MSG_TIMEOUT_NONE,
+                     MACH_PORT_NULL );
+}
+
+static void *get_shm( unsigned int idx );
+
+static void *mach_message_pump( void *args )
+{
+    int i, val;
+    int *addr;
+    mach_msg_return_t ret;
+    semaphore_t sem;
+    mach_port_message_t receive_message = { 0 };
+    extra_data_t *extra_data;
+    sigset_t set;
+
+    sigfillset( &set );
+    pthread_sigmask( SIG_BLOCK, &set, NULL );
+
+    for (;;)
+    {
+        ret = receive_mach_msg( &receive_message );
+        if (ret != MACH_MSG_SUCCESS)
+        {
+            fprintf( stderr, "msync: error: receive_mach_msg %s\n", ret, mach_error_string(ret) );
+            continue;
+        }
+
+        /*
+         * A message with no body is a signal_all operation where the shm_idx is the msgh_id.
+         * See signal_all( unsigned int shm_idx ) above.
+         */
+        if (receive_message.header.msgh_size == sizeof(mach_msg_header_t))
+        {
+            signal_all_internal( receive_message.header.msgh_id );
+            continue;
+        }
+        
+        /*
+         * A message with a body and a count of 0 port rights transferred means
+         * this is a server_remove_wait operation
+         */
+        if (!receive_message.body.msgh_descriptor_count)
+        {
+            for (i = 0; i < receive_message.count; i++)
+            {
+                extra_data = receive_message.extra_data + i;
+                remove_sem_from_map( extra_data->shm_idx, receive_message.orig_sem,
+                                     receive_message.tid );
+            }
+            continue;
+        }
+        
+        /*
+         * Finally server_register_wait
+         */
+        sem = receive_message.descriptor.name;
+        for (i = 0; i < receive_message.count; i++)
+        {
+            extra_data = receive_message.extra_data + i;
+            addr = (int *)get_shm( extra_data->shm_idx );
+            if ( __atomic_load_n( addr, __ATOMIC_SEQ_CST ) != extra_data->value )
+            {
+                /* The client had a TOCTTOU we need to fix */
+                semaphore_signal( sem );
+                continue;
+            }
+            add_sem_to_map( extra_data->shm_idx, sem, receive_message.orig_sem, receive_message.tid );
+        }
+    }
+
+    return NULL;
+}
+
+#endif
 
 int do_msync(void)
 {
-#ifdef __linux__
+#ifdef __APPLE__
     static int do_msync_cached = -1;
 
     if (do_msync_cached == -1)
     {
-        static const struct timespec zero;
-        futex_wait_multiple( NULL, 0, &zero );
-        do_msync_cached = getenv("WINEMSYNC") && atoi(getenv("WINEMSYNC")) && errno != ENOSYS;
+        do_msync_cached = getenv("WINEMSYNC") && atoi(getenv("WINEMSYNC"));
     }
 
     return do_msync_cached;
@@ -76,23 +342,28 @@ int do_msync(void)
 
 static char shm_name[29];
 static int shm_fd;
-static off_t shm_size;
+static const off_t shm_size = MAX_INDEX * 8;
 static void **shm_addrs;
 static int shm_addrs_size;  /* length of the allocated shm_addrs array */
 static long pagesize;
+static pthread_t message_thread;
 
 static int is_msync_initialized;
 
-static void shm_cleanup(void)
+static void cleanup(void)
 {
     close( shm_fd );
     if (shm_unlink( shm_name ) == -1)
         perror( "shm_unlink" );
+    pthread_cancel( message_thread );
+    //pthread_join( message_thread );
 }
 
 void msync_init(void)
 {
+#ifdef __APPLE__
     struct stat st;
+    mach_port_t bootstrap_port;
 
     if (fstat( config_dir_fd, &st ) == -1)
         fatal_error( "cannot stat config dir\n" );
@@ -111,18 +382,36 @@ void msync_init(void)
 
     pagesize = sysconf( _SC_PAGESIZE );
 
+    mach_semaphore_map[0].is_used = 1;
     shm_addrs = calloc( 128, sizeof(shm_addrs[0]) );
     shm_addrs_size = 128;
 
-    shm_size = pagesize;
     if (ftruncate( shm_fd, shm_size ) == -1)
+    {
         perror( "ftruncate" );
+        fatal_error( "could not initialize shared memory\n" );
+    }
+    
+    /* Bootstrap mach server message pump */
+    
+    MACH_CHECK_ERROR(mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &receive_port), "mach_port_allocate");
+
+    MACH_CHECK_ERROR(mach_port_insert_right(mach_task_self(), receive_port, receive_port, MACH_MSG_TYPE_MAKE_SEND), "mach_port_insert_right");
+
+    MACH_CHECK_ERROR(task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port), "task_get_special_port");
+
+    MACH_CHECK_ERROR(bootstrap_register2(bootstrap_port, shm_name + 1, receive_port, 0), "bootstrap_register2");
+
+    pthread_create( &message_thread, NULL, mach_message_pump, NULL );
+
+    fprintf( stderr, "msync: bootstrapped mach port on %s.\n", shm_name + 1 );
 
     is_msync_initialized = 1;
 
     fprintf( stderr, "msync: up and running.\n" );
 
-    atexit( shm_cleanup );
+    atexit( cleanup );
+#endif
 }
 
 static struct list mutex_list = LIST_INIT(mutex_list);
@@ -195,6 +484,9 @@ static void msync_destroy( struct object *obj )
     struct msync *msync = (struct msync *)obj;
     if (msync->type == MSYNC_MUTEX)
         list_remove( &msync->mutex_entry );
+#ifdef __APPLE__
+    msync_destroy_semaphore( msync->shm_idx );
+#endif
 }
 
 static void *get_shm( unsigned int idx )
@@ -233,33 +525,37 @@ static void *get_shm( unsigned int idx )
     return (void *)((unsigned long)shm_addrs[entry] + offset);
 }
 
-/* FIXME: This is rather inefficient... */
 static unsigned int shm_idx_counter = 1;
 
 unsigned int msync_alloc_shm( int low, int high )
 {
-#ifdef __linux__
-    int shm_idx;
+#ifdef __APPLE__
+    int shm_idx, tries = 0;
     int *shm;
+    kern_return_t kr;
+    semaphore_t sem;
 
     /* this is arguably a bit of a hack, but we need some way to prevent
      * allocating shm for the master socket */
     if (!is_msync_initialized)
         return 0;
 
-    shm_idx = shm_idx_counter++;
+    shm_idx = shm_idx_counter;
 
-    while (shm_idx * 8 >= shm_size)
+    while (mach_semaphore_map[shm_idx].is_used)
     {
-        /* Better expand the shm section. */
-        shm_size += pagesize;
-        if (ftruncate( shm_fd, shm_size ) == -1)
+        shm_idx = (shm_idx + 1) % MAX_INDEX;
+        if (tries++ > MAX_INDEX)
         {
-            fprintf( stderr, "msync: couldn't expand %s to size %jd: ",
-                shm_name, shm_size );
-            perror( "ftruncate" );
+            /* The ftruncate call can only be succesfully done with a non-zero length
+             * once per shared memory region with XNU. We need to terminate now.
+             * Also we initialized with the default maximum size anyways... */
+            fatal_error( "too many msync objects\n" );
         }
     }
+    mach_semaphore_map[shm_idx].is_used = 1;
+    assert(mach_semaphore_map[shm_idx].head == NULL);
+    shm_idx_counter = (shm_idx + 1) % MAX_INDEX;
 
     shm = get_shm( shm_idx );
     assert(shm);
@@ -283,7 +579,7 @@ struct msync *create_msync( struct object *root, const struct unicode_str *name,
     unsigned int attr, int low, int high, enum msync_type type,
     const struct security_descriptor *sd )
 {
-#ifdef __linux__
+#ifdef __APPLE__
     struct msync *msync;
 
     if ((msync = create_named_object( root, &msync_ops, name, attr, sd )))
@@ -321,11 +617,6 @@ struct msync *create_msync( struct object *root, const struct unicode_str *name,
 #endif
 }
 
-static inline int futex_wake( int *addr, int val )
-{
-    return 0;
-}
-
 /* shm layout for events or event-like objects. */
 struct msync_event
 {
@@ -333,19 +624,19 @@ struct msync_event
     int unused;
 };
 
-void msync_wake_futex( unsigned int shm_idx )
+void msync_signal_all( unsigned int shm_idx )
 {
     struct msync_event *event;
 
     if (debug_level)
-        fprintf( stderr, "msync_wake_futex: index %u\n", shm_idx );
+        fprintf( stderr, "msync_signal_all: index %u\n", shm_idx );
 
     if (!shm_idx)
         return;
 
     event = get_shm( shm_idx );
     if (!__atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST ))
-        futex_wake( &event->signaled, INT_MAX );
+        signal_all( shm_idx );
 }
 
 void msync_wake_up( struct object *obj )
@@ -356,15 +647,22 @@ void msync_wake_up( struct object *obj )
         fprintf( stderr, "msync_wake_up: object %p\n", obj );
 
     if (obj->ops->get_msync_idx)
-        msync_wake_futex( obj->ops->get_msync_idx( obj, &type ) );
+        msync_signal_all( obj->ops->get_msync_idx( obj, &type ) );
 }
 
-void msync_clear_futex( unsigned int shm_idx )
+void msync_destroy_semaphore( unsigned int shm_idx )
+{
+    if (!shm_idx) return;
+
+    destroy_all( mach_semaphore_map + shm_idx );
+}
+
+void msync_clear_shm( unsigned int shm_idx )
 {
     struct msync_event *event;
 
     if (debug_level)
-        fprintf( stderr, "msync_clear_futex: index %u\n", shm_idx );
+        fprintf( stderr, "msync_clear_shm: index %u\n", shm_idx );
 
     if (!shm_idx)
         return;
@@ -381,7 +679,7 @@ void msync_clear( struct object *obj )
         fprintf( stderr, "msync_clear: object %p\n", obj );
 
     if (obj->ops->get_msync_idx)
-        msync_clear_futex( obj->ops->get_msync_idx( obj, &type ) );
+        msync_clear_shm( obj->ops->get_msync_idx( obj, &type ) );
 }
 
 void msync_set_event( struct msync *msync )
@@ -390,7 +688,7 @@ void msync_set_event( struct msync *msync )
     assert( msync->obj.ops == &msync_ops );
 
     if (!__atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST ))
-        futex_wake( &event->signaled, INT_MAX );
+        signal_all( msync->shm_idx );
 }
 
 void msync_reset_event( struct msync *msync )
@@ -421,7 +719,7 @@ void msync_abandon_mutexes( struct thread *thread )
                 fprintf( stderr, "msync_abandon_mutexes() idx=%d\n", msync->shm_idx );
             mutex->tid = ~0;
             mutex->count = 0;
-            futex_wake( &mutex->tid, INT_MAX );
+            signal_all ( msync->shm_idx );
         }
     }
 }

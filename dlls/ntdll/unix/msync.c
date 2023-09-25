@@ -1,7 +1,8 @@
 /*
- * futex-based synchronization objects
+ * mach semaphore-based synchronization objects
  *
  * Copyright (C) 2018 Zebediah Figura
+ * Copyright (C) 2023 Marc-Aurel Zent
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -38,6 +39,16 @@
 #ifdef HAVE_SYS_SYSCALL_H
 # include <sys/syscall.h>
 #endif
+#ifdef __APPLE__
+# include <mach/mach_init.h>
+# include <mach/mach_port.h>
+# include <mach/message.h>
+# include <mach/port.h>
+# include <mach/task.h>
+# include <mach/semaphore.h>
+# include <servers/bootstrap.h>
+#endif
+#include <sched.h>
 #include <unistd.h>
 
 #include "ntstatus.h"
@@ -53,14 +64,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(msync);
 
-struct futex_wait_block
-{
-    int *addr;
-    int pad;
-    int val;
-    int bitset;
-};
-
 static inline void small_pause(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
@@ -70,21 +73,225 @@ static inline void small_pause(void)
 #endif
 }
 
-static inline int futex_wait_multiple( const struct futex_wait_block *futexes,
-        int count, const struct timespec *timeout )
+static LONGLONG update_timeout( ULONGLONG end )
 {
-    return 0;
+    LARGE_INTEGER now;
+    LONGLONG timeleft;
+
+    NtQuerySystemTime( &now );
+    timeleft = end - now.QuadPart;
+    if (timeleft < 0) timeleft = 0;
+    return timeleft;
 }
 
-static inline int futex_wake( int *addr, int val )
+static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
 {
-    return 0;
+    mach_timespec_t ret;
+    
+    ret.tv_sec = win32_time / (ULONGLONG)TICKSPERSEC;
+    ret.tv_nsec = (win32_time % TICKSPERSEC) * 100;
+    return ret;
 }
 
-static inline int futex_wait( int *addr, int val, struct timespec *timeout )
+struct msync_wait_block
 {
-    return 0;
+    int* addr;
+    int val;
+    semaphore_t sem;
+    unsigned int shm_idx;
+};
+
+static inline void resize_wait_block( struct msync_wait_block *block, int *count )
+{
+    int read_index = 0;
+    int write_index = 0;
+
+    for (; read_index < *count; read_index++)
+    {
+        if (block[read_index].addr != NULL)
+        {
+            if (read_index != write_index)
+                block[write_index] = block[read_index];
+            write_index++;
+        }
+    }
+    *count = write_index;
 }
+
+typedef struct
+{
+    mach_msg_header_t header;
+    mach_msg_body_t body;
+    mach_msg_port_descriptor_t descriptor;
+    semaphore_t orig_sem;
+    int tid;
+    int count;
+} mach_port_message_prolog_t;
+
+typedef struct
+{
+    unsigned int shm_idx;
+    int value;
+} extra_data_t;
+
+typedef struct
+{
+    mach_port_message_prolog_t prolog;
+    extra_data_t extra_data[MAXIMUM_WAIT_OBJECTS + 1];
+} mach_port_message_t;
+
+static mach_port_t server_port;
+
+static mach_msg_return_t server_register_wait( semaphore_t sem,
+                    struct msync_wait_block *block, int count )
+{
+    int i;
+    __thread static mach_port_message_t message;
+    
+    message.prolog.header.msgh_remote_port = server_port;
+    message.prolog.header.msgh_bits = MACH_MSGH_BITS_SET(MACH_MSG_TYPE_COPY_SEND,
+                                                         0,
+                                                         0,
+                                                         MACH_MSGH_BITS_COMPLEX);
+    message.prolog.header.msgh_id = 0;
+    message.prolog.header.msgh_size = sizeof(mach_port_message_prolog_t) +
+                                      count * sizeof(extra_data_t);
+    message.prolog.body.msgh_descriptor_count = 1;
+    
+    message.prolog.descriptor.name = sem;
+    message.prolog.descriptor.disposition = MACH_MSG_TYPE_COPY_SEND;
+    message.prolog.descriptor.type = MACH_MSG_PORT_DESCRIPTOR;
+    
+    message.prolog.orig_sem = sem;
+    message.prolog.tid = GetCurrentThreadId();
+    message.prolog.count = count;
+    
+    for (i = 0; i < count; i++)
+    {
+        message.extra_data[i].shm_idx = block[i].shm_idx;
+        message.extra_data[i].value = block[i].val;
+    }
+
+    return mach_msg( (mach_msg_header_t *)&message,
+                     MACH_SEND_MSG,
+                     message.prolog.header.msgh_size,
+                     0,
+                     MACH_PORT_NULL,
+                     MACH_MSG_TIMEOUT_NONE,
+                     MACH_PORT_NULL );
+}
+
+static mach_msg_return_t server_remove_wait( semaphore_t sem,
+                                    struct msync_wait_block *block, int count )
+{
+    int i;
+    __thread static mach_port_message_t message;
+    
+    message.prolog.header.msgh_remote_port = server_port;
+    message.prolog.header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
+    message.prolog.header.msgh_id = 0;
+    message.prolog.header.msgh_size = sizeof(mach_port_message_prolog_t) +
+                                      count * sizeof(extra_data_t);
+    message.prolog.body.msgh_descriptor_count = 0;
+    
+    message.prolog.orig_sem = sem;
+    message.prolog.tid = GetCurrentThreadId();
+    message.prolog.count = count;
+    
+    for (i = 0; i < count; i++)
+        message.extra_data[i].shm_idx = block[i].shm_idx;
+
+    return mach_msg( (mach_msg_header_t *)&message,
+                     MACH_SEND_MSG,
+                     message.prolog.header.msgh_size,
+                     0,
+                     MACH_PORT_NULL,
+                     MACH_MSG_TIMEOUT_NONE,
+                     MACH_PORT_NULL );
+}
+
+static NTSTATUS msync_wait_multiple( struct msync_wait_block *block,
+                                     int count, ULONGLONG *end )
+{
+    int i;
+    semaphore_t sem;
+    kern_return_t kr;
+    LONGLONG timeleft;
+    
+    TRACE("block %p, count %d, end %p.\n", block, count, end);
+    
+    resize_wait_block( block, &count );
+    
+    assert(count != 0);
+    
+    for (i = 0; i < count; i++)
+    {
+        if (__atomic_load_n(block[i].addr, __ATOMIC_SEQ_CST) != block[i].val)
+            return STATUS_PENDING;
+    }
+    
+    if (count == 1)
+    {
+        sem = block[0].sem;
+    }
+    else
+    {
+        kr = semaphore_create( mach_task_self(), &sem, SYNC_POLICY_FIFO, 0 );
+        if (kr != KERN_SUCCESS)
+        {
+            ERR("Cannot create shared msync semaphore: %#x %s\n", kr, mach_error_string(kr));
+            return STATUS_PENDING;
+        }
+    }
+
+    server_register_wait( sem, block, count );
+
+    do
+    {
+        if (end)
+        {
+            timeleft = update_timeout( *end );
+            if (!timeleft)
+            {
+                server_remove_wait( sem, block, count );
+                return STATUS_TIMEOUT;
+            }
+            kr = semaphore_timedwait( sem, convert_to_mach_time( timeleft ) );
+        }
+        else
+            kr = semaphore_wait( sem );
+    } while (kr == KERN_ABORTED);
+    
+    if (count > 1) semaphore_destroy( mach_task_self(), sem );
+    
+    switch (kr) {
+        case KERN_SUCCESS:
+            if (count > 1)
+                server_remove_wait( sem, block, count );
+            return STATUS_SUCCESS;
+        case KERN_OPERATION_TIMED_OUT:
+            server_remove_wait( sem, block, count );
+            return STATUS_TIMEOUT;
+        case KERN_TERMINATED:
+            /* This is the rare case for a single wait where the underlying
+             * handle and subesquently semaphore got destroyed.
+             * NT does the sane thing to continue waiting then... */
+            server_remove_wait( sem, block, count );
+            if (end)
+            {
+                timeleft = update_timeout( *end );
+                usleep(timeleft / 10);
+                return STATUS_TIMEOUT;
+            }
+            pause();
+            return STATUS_PENDING;
+        default:
+            server_remove_wait( sem, block, count );
+            ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string(kr));
+            return STATUS_PENDING;
+    }
+}
+
 
 static unsigned int spincount = 100;
 
@@ -95,9 +302,7 @@ int do_msync(void)
 
     if (do_msync_cached == -1)
     {
-        static const struct timespec zero;
-        futex_wait_multiple( NULL, 0, &zero );
-        do_msync_cached = getenv("WINEMSYNC") && atoi(getenv("WINEMSYNC")) && errno != ENOSYS;
+        do_msync_cached = getenv("WINEMSYNC") && atoi(getenv("WINEMSYNC"));
         if (getenv("WINEMSYNC_SPINCOUNT"))
             spincount = atoi(getenv("WINEMSYNC_SPINCOUNT"));
     }
@@ -106,16 +311,36 @@ int do_msync(void)
 #else
     static int once;
     if (!once++)
-        FIXME("futexes not supported on this platform.\n");
+        FIXME("mach semaphores not supported on this platform.\n");
     return 0;
 #endif
 }
 
 struct msync
 {
-    enum msync_type type;
     void *shm;              /* pointer to shm section */
+    enum msync_type type;
+    int refcount;
+    unsigned int shm_idx;
+    semaphore_t sem;
 };
+
+static void grab_object( struct msync *obj )
+{
+    __atomic_fetch_add(&obj->refcount, 1, __ATOMIC_SEQ_CST);
+}
+
+static void release_object( struct msync *obj )
+{
+    kern_return_t kr;
+    
+    if (!__atomic_sub_fetch( &obj->refcount, 1, __ATOMIC_SEQ_CST ))
+    {
+        kr = semaphore_destroy( mach_task_self(), obj->sem );
+        if (kr != KERN_SUCCESS)
+            WARN("Cannot destroy semaphore %#x: %#x %s\n", obj->sem, kr, mach_error_string(kr));
+    }
+}
 
 struct semaphore
 {
@@ -199,9 +424,12 @@ static inline UINT_PTR handle_to_index( HANDLE handle, UINT_PTR *entry )
     return idx % MSYNC_LIST_BLOCK_SIZE;
 }
 
-static struct msync *add_to_list( HANDLE handle, enum msync_type type, void *shm )
+static struct msync *add_to_list( HANDLE handle, enum msync_type type, unsigned int shm_idx )
 {
     UINT_PTR entry, idx = handle_to_index( handle, &entry );
+    void *shm = get_shm( shm_idx );
+    kern_return_t kr;
+    semaphore_t sem;
 
     if (entry >= MSYNC_LIST_ENTRIES)
     {
@@ -220,9 +448,21 @@ static struct msync *add_to_list( HANDLE handle, enum msync_type type, void *shm
             msync_list[entry] = ptr;
         }
     }
+    
+    kr = semaphore_create( mach_task_self(), &sem, SYNC_POLICY_FIFO, 0 );
+    if (kr != KERN_SUCCESS)
+    {
+        ERR( "Cannot create msync semaphore: %#x %s\n", kr, mach_error_string(kr));
+        return FALSE;
+    }
 
     if (!__sync_val_compare_and_swap((int *)&msync_list[entry][idx].type, 0, type ))
+    {
         msync_list[entry][idx].shm = shm;
+        msync_list[entry][idx].sem = sem;
+        msync_list[entry][idx].shm_idx = shm_idx;
+        msync_list[entry][idx].refcount = 1;
+    }
 
     return &msync_list[entry][idx];
 }
@@ -275,8 +515,7 @@ static NTSTATUS get_object( HANDLE handle, struct msync **obj )
     }
 
     TRACE("Got shm index %d for handle %p.\n", shm_idx, handle);
-
-    *obj = add_to_list( handle, type, get_shm( shm_idx ) );
+    *obj = add_to_list( handle, type, shm_idx );
     return ret;
 }
 
@@ -289,7 +528,10 @@ NTSTATUS msync_close( HANDLE handle )
     if (entry < MSYNC_LIST_ENTRIES && msync_list[entry])
     {
         if (__atomic_exchange_n( &msync_list[entry][idx].type, 0, __ATOMIC_SEQ_CST ))
+        {
+            release_object( &msync_list[entry][idx] );
             return STATUS_SUCCESS;
+        }
     }
 
     return STATUS_INVALID_HANDLE;
@@ -324,7 +566,7 @@ static NTSTATUS create_msync( enum msync_type type, HANDLE *handle,
 
     if (!ret || ret == STATUS_OBJECT_NAME_EXISTS)
     {
-        add_to_list( *handle, type, get_shm( shm_idx ));
+        add_to_list( *handle, type, shm_idx );
         TRACE("-> handle %p, shm index %d.\n", *handle, shm_idx);
     }
 
@@ -357,8 +599,7 @@ static NTSTATUS open_msync( enum msync_type type, HANDLE *handle,
 
     if (!ret)
     {
-        add_to_list( *handle, type, get_shm( shm_idx ) );
-
+        add_to_list( *handle, type, shm_idx );
         TRACE("-> handle %p, shm index %u.\n", *handle, shm_idx);
     }
     return ret;
@@ -367,6 +608,7 @@ static NTSTATUS open_msync( enum msync_type type, HANDLE *handle,
 void msync_init(void)
 {
     struct stat st;
+    mach_port_t bootstrap_port;
 
     if (!do_msync())
     {
@@ -406,6 +648,20 @@ void msync_init(void)
 
     shm_addrs = calloc( 128, sizeof(shm_addrs[0]) );
     shm_addrs_size = 128;
+    
+    /* Bootstrap mach wineserver communication */
+    
+    if (task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port) != KERN_SUCCESS)
+    {
+        ERR("Failed task_get_special_port\n");
+        exit(1);
+    }
+
+    if (bootstrap_look_up(bootstrap_port, shm_name + 1, &server_port) != KERN_SUCCESS)
+    {
+        ERR("Failed bootstrap_look_up for %s\n", shm_name + 1);
+        exit(1);
+    }
 }
 
 NTSTATUS msync_create_semaphore( HANDLE *handle, ACCESS_MASK access,
@@ -423,6 +679,23 @@ NTSTATUS msync_open_semaphore( HANDLE *handle, ACCESS_MASK access,
     TRACE("name %s.\n", debugstr_us(attr->ObjectName));
 
     return open_msync( MSYNC_SEMAPHORE, handle, access, attr );
+}
+
+static inline mach_msg_return_t signal_all( unsigned int shm_idx )
+{
+    __thread static mach_msg_header_t send_header;
+    send_header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
+    send_header.msgh_id = shm_idx;
+    send_header.msgh_size = sizeof(send_header);
+    send_header.msgh_remote_port = server_port;
+    
+    return mach_msg( &send_header,
+                     MACH_SEND_MSG,
+                     send_header.msgh_size,
+                     0,
+                     MACH_PORT_NULL,
+                     MACH_MSG_TIMEOUT_NONE,
+                     MACH_PORT_NULL );
 }
 
 NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
@@ -446,7 +719,7 @@ NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
 
     if (prev) *prev = current;
 
-    futex_wake( &semaphore->count, INT_MAX );
+    signal_all( obj->shm_idx );
 
     return STATUS_SUCCESS;
 }
@@ -506,7 +779,7 @@ NTSTATUS msync_set_event( HANDLE handle, LONG *prev )
         return STATUS_OBJECT_TYPE_MISMATCH;
 
     if (!(current = __atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST )))
-        futex_wake( &event->signaled, INT_MAX );
+        signal_all( obj->shm_idx );
 
     if (prev) *prev = current;
 
@@ -548,11 +821,11 @@ NTSTATUS msync_pulse_event( HANDLE handle, LONG *prev )
      * Unfortunately we can't really do much better. Fortunately this is rarely
      * used (and publicly deprecated). */
     if (!(current = __atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST )))
-        futex_wake( &event->signaled, INT_MAX );
+        signal_all( obj->shm_idx );
 
     /* Try to give other threads a chance to wake up. Hopefully erring on this
      * side is the better thing to do... */
-    usleep(0);
+    sched_yield();
 
     __atomic_store_n( &event->signaled, 0, __ATOMIC_SEQ_CST );
 
@@ -616,7 +889,7 @@ NTSTATUS msync_release_mutex( HANDLE handle, LONG *prev )
     if (!--mutex->count)
     {
         __atomic_store_n( &mutex->tid, 0, __ATOMIC_SEQ_CST );
-        futex_wake( &mutex->tid, INT_MAX );
+        signal_all( obj->shm_idx );
     }
 
     return STATUS_SUCCESS;
@@ -642,72 +915,39 @@ NTSTATUS msync_query_mutex( HANDLE handle, void *info, ULONG *ret_len )
     return STATUS_SUCCESS;
 }
 
-static LONGLONG update_timeout( ULONGLONG end )
+static NTSTATUS do_single_wait( semaphore_t sem, int shm_idx, int *addr,
+                                int val, ULONGLONG *end, BOOLEAN alertable )
 {
-    LARGE_INTEGER now;
-    LONGLONG timeleft;
-
-    NtQuerySystemTime( &now );
-    timeleft = end - now.QuadPart;
-    if (timeleft < 0) timeleft = 0;
-    return timeleft;
-}
-
-static NTSTATUS do_single_wait( int *addr, int val, ULONGLONG *end, BOOLEAN alertable )
-{
-    int ret;
-
+    NTSTATUS status;
+    struct msync_wait_block block[2];
+    
+    block[0].sem = sem;
+    block[0].shm_idx = shm_idx;
+    block[0].addr = addr;
+    block[0].val = val;
+    
     if (alertable)
     {
-        int *apc_futex = ntdll_get_thread_data()->msync_apc_futex;
-        struct futex_wait_block futexes[2];
-
-        if (__atomic_load_n( apc_futex, __ATOMIC_SEQ_CST ))
+        int *apc_addr = ntdll_get_thread_data()->msync_apc_addr;
+        
+        if (__atomic_load_n( apc_addr, __ATOMIC_SEQ_CST ))
             return STATUS_USER_APC;
-
-        futexes[0].addr = addr;
-        futexes[0].val = val;
-        futexes[1].addr = apc_futex;
-        futexes[1].val = 0;
-#if __SIZEOF_POINTER__ == 4
-        futexes[0].pad = futexes[1].pad = 0;
-#endif
-        futexes[0].bitset = futexes[1].bitset = ~0;
-
-        if (end)
-        {
-            LONGLONG timeleft = update_timeout( *end );
-            struct timespec tmo_p;
-            tmo_p.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
-            tmo_p.tv_nsec = (timeleft % TICKSPERSEC) * 100;
-            ret = futex_wait_multiple( futexes, 2, &tmo_p );
-        }
-        else
-            ret = futex_wait_multiple( futexes, 2, NULL );
-
-        if (__atomic_load_n( apc_futex, __ATOMIC_SEQ_CST ))
+        
+        block[1].sem = ntdll_get_thread_data()->msync_apc_semaphore;
+        block[1].shm_idx = ntdll_get_thread_data()->msync_apc_idx;
+        block[1].addr = apc_addr;
+        block[1].val = 0;
+        
+        status = msync_wait_multiple( block, 2, end );
+        
+        if (__atomic_load_n( apc_addr, __ATOMIC_SEQ_CST ))
             return STATUS_USER_APC;
     }
     else
     {
-        if (end)
-        {
-            LONGLONG timeleft = update_timeout( *end );
-            struct timespec tmo_p;
-            tmo_p.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
-            tmo_p.tv_nsec = (timeleft % TICKSPERSEC) * 100;
-            ret = futex_wait( addr, val, &tmo_p );
-        }
-        else
-            ret = futex_wait( addr, val, NULL );
+        status = msync_wait_multiple( block, 1, end );
     }
-
-    if (!ret)
-        return 0;
-    else if (ret < 0 && errno == ETIMEDOUT)
-        return STATUS_TIMEOUT;
-    else
-        return STATUS_PENDING;
+    return status;
 }
 
 static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
@@ -715,20 +955,20 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
 {
     static const LARGE_INTEGER zero = {0};
 
-    struct futex_wait_block futexes[MAXIMUM_WAIT_OBJECTS + 1];
+    struct msync_wait_block block[MAXIMUM_WAIT_OBJECTS + 1];
     struct msync *objs[MAXIMUM_WAIT_OBJECTS];
     int has_msync = 0, has_server = 0;
     BOOL msgwait = FALSE;
-    int dummy_futex = 0;
     unsigned int spin;
     LONGLONG timeleft;
     LARGE_INTEGER now;
+    NTSTATUS status;
     DWORD waitcount;
     ULONGLONG end;
     int i, ret;
 
-    /* Grab the APC futex if we don't already have it. */
-    if (alertable && !ntdll_get_thread_data()->msync_apc_futex)
+    /* Grab the APC idx if we don't already have it. */
+    if (alertable && !ntdll_get_thread_data()->msync_apc_addr)
     {
         unsigned int idx = 0;
         SERVER_START_REQ( get_msync_apc_idx )
@@ -741,7 +981,14 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
         if (idx)
         {
             struct event *apc_event = get_shm( idx );
-            ntdll_get_thread_data()->msync_apc_futex = &apc_event->signaled;
+            semaphore_t apc_sem;
+            ntdll_get_thread_data()->msync_apc_addr = &apc_event->signaled;
+            kern_return_t kr = semaphore_create( mach_task_self(), &ntdll_get_thread_data()->msync_apc_semaphore, SYNC_POLICY_FIFO, 0 );
+            if (kr != KERN_SUCCESS)
+            {
+                ERR("Cannot create apc semaphore: %#x %s\n", kr, mach_error_string(kr));
+                ntdll_get_thread_data()->msync_apc_addr = NULL;
+            }
         }
     }
 
@@ -795,6 +1042,12 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                 (long) (timeleft / TICKSPERSEC), (long) (timeleft % TICKSPERSEC));
         }
     }
+    
+    for (i = 0; i < count; i++)
+    {
+        if (objs[i])
+            grab_object( objs[i] );
+    }
 
     if (wait_any || count <= 1)
     {
@@ -806,7 +1059,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
             {
                 /* We must check this first! The server may set an event that
                  * we're waiting on, but we need to return STATUS_USER_APC. */
-                if (__atomic_load_n( ntdll_get_thread_data()->msync_apc_futex, __ATOMIC_SEQ_CST ))
+                if (__atomic_load_n( ntdll_get_thread_data()->msync_apc_addr, __ATOMIC_SEQ_CST ))
                     goto userapc;
             }
 
@@ -820,7 +1073,8 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         /* Someone probably closed an object while waiting on it. */
                         WARN("Handle %p has type 0; was it closed?\n", handles[i]);
-                        return STATUS_INVALID_HANDLE;
+                        status = STATUS_INVALID_HANDLE;
+                        goto done;
                     }
 
                     switch (obj->type)
@@ -840,13 +1094,16 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                                     && __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) == current)
                             {
                                 TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                return i;
+                                status = i;
+                                goto done;
                             }
                             small_pause();
                         }
 
-                        futexes[i].addr = &semaphore->count;
-                        futexes[i].val = 0;
+                        block[i].sem = obj->sem;
+                        block[i].shm_idx = obj->shm_idx;
+                        block[i].addr = &semaphore->count;
+                        block[i].val = 0;
                         break;
                     }
                     case MSYNC_MUTEX:
@@ -858,7 +1115,8 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             mutex->count++;
-                            return i;
+                            status = i;
+                            goto done;
                         }
 
                         for (spin = 0; spin <= spincount; ++spin)
@@ -867,19 +1125,23 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                             {
                                 TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                                 mutex->count = 1;
-                                return i;
+                                status = i;
+                                goto done;
                             }
                             else if (tid == ~0 && (tid = __sync_val_compare_and_swap( &mutex->tid, ~0, GetCurrentThreadId() )) == ~0)
                             {
                                 TRACE("Woken up by abandoned mutex %p [%d].\n", handles[i], i);
                                 mutex->count = 1;
-                                return STATUS_ABANDONED_WAIT_0 + i;
+                                status = STATUS_ABANDONED_WAIT_0 + i;
+                                goto done;
                             }
                             small_pause();
                         }
 
-                        futexes[i].addr = &mutex->tid;
-                        futexes[i].val  = tid;
+                        block[i].sem = obj->sem;
+                        block[i].shm_idx = obj->shm_idx;
+                        block[i].addr = &mutex->tid;
+                        block[i].val = tid;
                         break;
                     }
                     case MSYNC_AUTO_EVENT:
@@ -892,13 +1154,16 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                             if (__sync_val_compare_and_swap( &event->signaled, 1, 0 ))
                             {
                                 TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                return i;
+                                status = i;
+                                goto done;
                             }
                             small_pause();
                         }
 
-                        futexes[i].addr = &event->signaled;
-                        futexes[i].val = 0;
+                        block[i].sem = obj->sem;
+                        block[i].shm_idx = obj->shm_idx;
+                        block[i].addr = &event->signaled;
+                        block[i].val = 0;
                         break;
                     }
                     case MSYNC_MANUAL_EVENT:
@@ -912,13 +1177,16 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                             if (__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
                             {
                                 TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                return i;
+                                status = i;
+                                goto done;
                             }
                             small_pause();
                         }
 
-                        futexes[i].addr = &event->signaled;
-                        futexes[i].val = 0;
+                        block[i].sem = obj->sem;
+                        block[i].shm_idx = obj->shm_idx;
+                        block[i].addr = &event->signaled;
+                        block[i].val = 0;
                         break;
                     }
                     default:
@@ -926,28 +1194,16 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         assert(0);
                     }
                 }
-                else
-                {
-                    /* Avoid breaking things entirely. */
-                    futexes[i].addr = &dummy_futex;
-                    futexes[i].val = dummy_futex;
-                }
-
-#if __SIZEOF_POINTER__ == 4
-                futexes[i].pad = 0;
-#endif
-                futexes[i].bitset = ~0;
+                else block[i].addr = NULL;
             }
 
             if (alertable)
             {
                 /* We already checked if it was signaled; don't bother doing it again. */
-                futexes[i].addr = ntdll_get_thread_data()->msync_apc_futex;
-                futexes[i].val = 0;
-#if __SIZEOF_POINTER__ == 4
-                futexes[i].pad = 0;
-#endif
-                futexes[i].bitset = ~0;
+                block[i].sem = ntdll_get_thread_data()->msync_apc_semaphore;
+                block[i].shm_idx = ntdll_get_thread_data()->msync_apc_idx;
+                block[i].addr = ntdll_get_thread_data()->msync_apc_addr;
+                block[i].val = 0;
                 i++;
             }
             waitcount = i;
@@ -959,28 +1215,17 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                 /* Unlike esync, we already know that we've timed out, so we
                  * can avoid a syscall. */
                 TRACE("Wait timed out.\n");
-                return STATUS_TIMEOUT;
+                status = STATUS_TIMEOUT;
+                goto done;
             }
-            else if (timeout)
-            {
-                LONGLONG timeleft = update_timeout( end );
-                struct timespec tmo_p;
-                tmo_p.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
-                tmo_p.tv_nsec = (timeleft % TICKSPERSEC) * 100;
+            
+            ret = msync_wait_multiple( block, waitcount, timeout ? &end : NULL );
 
-                ret = futex_wait_multiple( futexes, waitcount, &tmo_p );
-            }
-            else
-                ret = futex_wait_multiple( futexes, waitcount, NULL );
-
-            /* FUTEX_WAIT_MULTIPLE can succeed or return -EINTR, -EAGAIN,
-             * -EFAULT/-EACCES, -ETIMEDOUT. In the first three cases we need to
-             * try again, bad address is already handled by the fact that we
-             * tried to read from it, so only break out on a timeout. */
-            if (ret == -1 && errno == ETIMEDOUT)
+            if (ret == STATUS_TIMEOUT)
             {
                 TRACE("Wait timed out.\n");
-                return STATUS_TIMEOUT;
+                status = STATUS_TIMEOUT;
+                goto done;
             }
         } /* while (1) */
     }
@@ -1007,7 +1252,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
          * signaled. In either case anyone who tries to wait on A or B will be
          * waiting for an instant while we put things back. */
 
-        NTSTATUS status = STATUS_SUCCESS;
+        status = STATUS_SUCCESS;
         int current;
 
         while (1)
@@ -1032,7 +1277,7 @@ tryagain:
 
                     while ((current = __atomic_load_n( &mutex->tid, __ATOMIC_SEQ_CST )))
                     {
-                        status = do_single_wait( &mutex->tid, current, timeout ? &end : NULL, alertable );
+                        status = do_single_wait( obj->sem, obj->shm_idx, &mutex->tid, current, timeout ? &end : NULL, alertable );
                         if (status != STATUS_PENDING)
                             break;
                     }
@@ -1044,7 +1289,7 @@ tryagain:
 
                     while (!__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
                     {
-                        status = do_single_wait( &event->signaled, 0, timeout ? &end : NULL, alertable );
+                        status = do_single_wait( obj->sem, obj->shm_idx, &event->signaled, 0, timeout ? &end : NULL, alertable );
                         if (status != STATUS_PENDING)
                             break;
                     }
@@ -1053,7 +1298,7 @@ tryagain:
                 if (status == STATUS_TIMEOUT)
                 {
                     TRACE("Wait timed out.\n");
-                    return status;
+                    goto done;
                 }
                 else if (status == STATUS_USER_APC)
                     goto userapc;
@@ -1138,10 +1383,12 @@ tryagain:
             if (abandoned)
             {
                 TRACE("Wait successful, but some object(s) were abandoned.\n");
-                return STATUS_ABANDONED;
+                status = STATUS_ABANDONED;
+                goto done;
             }
             TRACE("Wait successful.\n");
-            return STATUS_SUCCESS;
+            status = STATUS_SUCCESS;
+            goto done;
 
 tooslow:
             for (--i; i >= 0; i--)
@@ -1192,7 +1439,15 @@ userapc:
      * before we got SIGUSR1. poll() doesn't return EINTR in that case. The
      * right thing to do seems to be to return STATUS_USER_APC anyway. */
     if (ret == STATUS_TIMEOUT) ret = STATUS_USER_APC;
-    return ret;
+    status = ret;
+
+done:
+    for (i = 0; i < count; i++)
+    {
+        if (objs[i])
+            release_object( objs[i] );
+    }
+    return status;
 }
 
 /* Like esync, we need to let the server know when we are doing a message wait,
