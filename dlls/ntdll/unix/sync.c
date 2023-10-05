@@ -120,18 +120,15 @@ static inline int futex_wait( const int *addr, int val, struct timespec *timeout
             long tv_sec;
             long tv_nsec;
         } timeout32 = { timeout->tv_sec, timeout->tv_nsec };
-        return 0;
-        //return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, &timeout32, 0, 0 );
+        return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, &timeout32, 0, 0 );
     }
 #endif
-    return 0;
-    //return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, timeout, 0, 0 );
+    return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, timeout, 0, 0 );
 }
 
 static inline int futex_wake( const int *addr, int val )
 {
-    return 0;
-    //return syscall( __NR_futex, addr, FUTEX_WAKE | futex_private, val, NULL, 0, 0 );
+    return syscall( __NR_futex, addr, FUTEX_WAKE | futex_private, val, NULL, 0, 0 );
 }
 
 static inline int use_futexes(void)

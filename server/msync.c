@@ -39,6 +39,7 @@
 # include <mach/semaphore.h>
 # include <servers/bootstrap.h>
 #endif
+#include <sched.h>
 #include <pthread.h>
 #include <unistd.h>
 
@@ -67,15 +68,120 @@
 /* Private API to register a mach port with the bootstrap server */
 extern kern_return_t bootstrap_register2( mach_port_t bp, name_t service_name, mach_port_t sp, int flags );
 
+/*
+ * Faster to directly do the syscall and inline everything, taken and slightly adapted
+ * from xnu/libsyscall/mach/mach_msg.c
+ */
+
+#define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
+#define MACH64_SEND_MQ_CALL 0x0000000400000000ull
+
+extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
+    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout);
+
+static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
+    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout)
+{
+    mach_msg_return_t mr;
+
+    mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
+             msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+             rcv_size_and_priority, timeout );
+
+    if (mr == MACH_MSG_SUCCESS)
+        return MACH_MSG_SUCCESS;
+
+    while (mr == MACH_SEND_INTERRUPTED)
+        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
+                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+                 rcv_size_and_priority, timeout );
+
+    while (mr == MACH_RCV_INTERRUPTED)
+        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size & 0xffffffffull,
+                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+                 rcv_size_and_priority, timeout);
+
+    return mr;
+}
+
+static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
+    mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
+    uint32_t priority)
+{
+    mach_msg_base_t *base;
+    mach_msg_size_t descriptors;
+
+    base = (mach_msg_base_t *)data;
+
+    if ((option64 & MACH_SEND_MSG) &&
+        (base->header.msgh_bits & MACH_MSGH_BITS_COMPLEX))
+        descriptors = base->body.msgh_descriptor_count;
+    else
+        descriptors = 0;
+
+#define MACH_MSG2_SHIFT_ARGS(lo, hi) ((uint64_t)hi << 32 | (uint32_t)lo)
+    return mach_msg2_internal(data, option64 | MACH64_SEND_MQ_CALL,
+               MACH_MSG2_SHIFT_ARGS(data->msgh_bits, send_size),
+               MACH_MSG2_SHIFT_ARGS(data->msgh_remote_port, data->msgh_local_port),
+               MACH_MSG2_SHIFT_ARGS(data->msgh_voucher_port, data->msgh_id),
+               MACH_MSG2_SHIFT_ARGS(descriptors, rcv_name),
+               MACH_MSG2_SHIFT_ARGS(rcv_size, priority), timeout);
+#undef MACH_MSG2_SHIFT_ARGS
+}
+
 static mach_port_name_t receive_port;
 
 struct sem_node
 {
     struct sem_node *next;
     semaphore_t sem;
-    semaphore_t orig_sem;
     int tid;
 };
+
+#define MAX_POOL_NODES MAX_INDEX * 2
+
+struct node_memory_pool
+{
+    struct sem_node *nodes;
+    struct sem_node **free_nodes;
+    unsigned int count;
+};
+
+static struct node_memory_pool *pool;
+
+static void pool_init(void)
+{
+    unsigned int i;
+    pool = malloc( sizeof(struct node_memory_pool) );
+    pool->nodes = malloc( MAX_POOL_NODES * sizeof(struct sem_node) );
+    pool->free_nodes = malloc( MAX_POOL_NODES * sizeof(struct sem_node *) );
+    pool->count = MAX_POOL_NODES;
+
+    for (i = 0; i < MAX_POOL_NODES; i++)
+        pool->free_nodes[i] = &pool->nodes[i];
+}
+
+static inline struct sem_node *pool_alloc(void)
+{
+    if (pool->count == 0)
+    {
+        fprintf( stderr, "msync: warn: node memory pool exhausted\n" );
+        return malloc( sizeof(struct sem_node) );
+    }
+    return pool->free_nodes[--pool->count];
+}
+
+static inline void pool_free( struct sem_node *node )
+{
+    if (node < pool->nodes || node >= pool->nodes + MAX_POOL_NODES)
+    {
+        free(node);
+        return;
+    }
+    pool->free_nodes[pool->count++] = node;
+}
 
 struct sem_list
 {
@@ -105,30 +211,21 @@ static inline void spinlock_unlock( volatile int *lock )
     __atomic_clear(lock, __ATOMIC_RELEASE);
 }
 
-static void add_sem( struct sem_list *list, semaphore_t sem, semaphore_t orig_sem, int tid )
+static inline void add_sem( struct sem_list *list, semaphore_t sem, int tid )
 {
-    struct sem_node *current, *new_node;
-    
-    new_node = (struct sem_node *)malloc( sizeof(struct sem_node) );
+    struct sem_node *new_node;
+
+    new_node = pool_alloc();
     new_node->sem = sem;
-    new_node->orig_sem = orig_sem;
     new_node->tid = tid;
-    new_node->next = NULL;
 
     spinlock_lock(&list->lock);
-    if (list->head == NULL)
-        list->head = new_node;
-    else
-    {
-        current = list->head;
-        while (current->next)
-            current = current->next;
-        current->next = new_node;
-    }
+    new_node->next = list->head;
+    list->head = new_node;
     spinlock_unlock(&list->lock);
 }
 
-static void remove_sem( struct sem_list *list, semaphore_t orig_sem, int tid )
+static inline void remove_sem( struct sem_list *list, int tid )
 {
     struct sem_node *current, *prev = NULL;
 
@@ -136,13 +233,13 @@ static void remove_sem( struct sem_list *list, semaphore_t orig_sem, int tid )
     current = list->head;
     while (current != NULL)
     {
-        if (current->orig_sem == orig_sem && current->tid == tid)
+        if (current->tid == tid)
         {
             if (prev == NULL)
                 list->head = current->next;
             else
                 prev->next = current->next;
-            free(current);
+            pool_free(current);
             break;
         }
         prev = current;
@@ -151,23 +248,22 @@ static void remove_sem( struct sem_list *list, semaphore_t orig_sem, int tid )
     spinlock_unlock(&list->lock);
 }
 
-
-static void destroy_all( struct sem_list *list )
+static inline void destroy_all( struct sem_list *list )
 {
     struct sem_node *temp, *current;
-    
+
     spinlock_lock(&list->lock);
     current = list->head;
     list->head = NULL;
     list->is_used = 0;
     spinlock_unlock(&list->lock);
-    
+
     while (current)
     {
         semaphore_destroy( mach_task_self(), current->sem );
         temp = current;
         current = current->next;
-        free(temp);
+        pool_free(temp);
     }
 }
 
@@ -189,7 +285,7 @@ static void signal_all_internal( unsigned int shm_idx )
         semaphore_destroy( mach_task_self(), current->sem );
         temp = current;
         current = current->next;
-        free(temp);
+        pool_free(temp);
     }
 }
 
@@ -203,65 +299,66 @@ static inline mach_msg_return_t signal_all( unsigned int shm_idx )
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = receive_port;
     
-    return mach_msg( &send_header,
-                     MACH_SEND_MSG,
-                     send_header.msgh_size,
-                     0,
-                     MACH_PORT_NULL,
-                     MACH_MSG_TIMEOUT_NONE,
-                     MACH_PORT_NULL );
+    return mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size,
+                0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0);
 }
 
-static inline void add_sem_to_map( unsigned int index, semaphore_t sem,
-                                   semaphore_t orig_sem, int tid )
+static inline void add_sem_to_map( unsigned int index, semaphore_t sem, int tid )
 {
-    add_sem( mach_semaphore_map + index, sem, orig_sem, tid );
+    add_sem( mach_semaphore_map + index, sem, tid );
 }
 
-static inline void remove_sem_from_map( unsigned int index, semaphore_t orig_sem, int tid )
+static inline void remove_sem_from_map( unsigned int index, int tid )
 {
-    remove_sem( mach_semaphore_map + index, orig_sem, tid );
+    remove_sem( mach_semaphore_map + index, tid );
 }
-
-typedef struct
-{
-    unsigned int shm_idx;
-    int value;
-} extra_data_t;
 
 typedef struct
 {
     mach_msg_header_t header;
     mach_msg_body_t body;
     mach_msg_port_descriptor_t descriptor;
-    semaphore_t orig_sem;
-    int tid;
-    int count;
-    extra_data_t extra_data[MAXIMUM_WAIT_OBJECTS + 1];
+    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
     mach_msg_trailer_t trailer;
-} mach_port_message_t;
+} mach_register_message_t;
 
-static inline mach_msg_return_t receive_mach_msg( mach_port_message_t *buffer )
+typedef struct
 {
-    return mach_msg( (mach_msg_header_t *)buffer,
-                     MACH_RCV_MSG,
-                     0,
-                     sizeof(*buffer),
-                     receive_port,
-                     MACH_MSG_TIMEOUT_NONE,
-                     MACH_PORT_NULL );
+    mach_msg_header_t header;
+    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
+    mach_msg_trailer_t trailer;
+} mach_unregister_message_t;
+
+static inline mach_msg_return_t receive_mach_msg( mach_register_message_t *buffer )
+{
+    return mach_msg2( (mach_msg_header_t *)buffer, MACH_RCV_MSG, 0,
+            sizeof(*buffer), receive_port, MACH_MSG_TIMEOUT_NONE, 0 );
 }
 
 static void *get_shm( unsigned int idx );
 
+static inline void decode_msgh_id( unsigned int msgh_id, unsigned int *tid, unsigned int *count )
+{
+    *tid = msgh_id >> 8;
+    *count = msgh_id & 0xFF;
+}
+
+static inline unsigned int check_if_mutex(unsigned int *shm_idx)
+{
+    unsigned int is_mutex = (*shm_idx >> 19) & 1;
+    *shm_idx &= ~(1 << 19);
+    return is_mutex;
+}
+
 static void *mach_message_pump( void *args )
 {
     int i, val;
+    unsigned int tid, count, is_mutex;
     int *addr;
-    mach_msg_return_t ret;
+    mach_msg_return_t mr;
     semaphore_t sem;
-    mach_port_message_t receive_message = { 0 };
-    extra_data_t *extra_data;
+    mach_register_message_t receive_message = { 0 };
+    mach_unregister_message_t *mach_unregister_message;
     sigset_t set;
 
     sigfillset( &set );
@@ -269,10 +366,10 @@ static void *mach_message_pump( void *args )
 
     for (;;)
     {
-        ret = receive_mach_msg( &receive_message );
-        if (ret != MACH_MSG_SUCCESS)
+        mr = receive_mach_msg( &receive_message );
+        if (mr != MACH_MSG_SUCCESS)
         {
-            fprintf( stderr, "msync: error: receive_mach_msg %s\n", ret, mach_error_string(ret) );
+            fprintf( stderr, "msync: failed to receive message\n");
             continue;
         }
 
@@ -285,37 +382,39 @@ static void *mach_message_pump( void *args )
             signal_all_internal( receive_message.header.msgh_id );
             continue;
         }
-        
+
         /*
-         * A message with a body and a count of 0 port rights transferred means
-         * this is a server_remove_wait operation
+         * A message with a body which is not complex means this is a
+         * server_remove_wait operation
          */
-        if (!receive_message.body.msgh_descriptor_count)
+        decode_msgh_id( receive_message.header.msgh_id, &tid, &count );
+        if (!MACH_MSGH_BITS_IS_COMPLEX(receive_message.header.msgh_bits))
         {
-            for (i = 0; i < receive_message.count; i++)
-            {
-                extra_data = receive_message.extra_data + i;
-                remove_sem_from_map( extra_data->shm_idx, receive_message.orig_sem,
-                                     receive_message.tid );
-            }
+            mach_unregister_message = (mach_unregister_message_t *)&receive_message;
+            for (i = 0; i < count; i++)
+                remove_sem_from_map( mach_unregister_message->shm_idx[i], tid );
+                
+
             continue;
         }
-        
+
         /*
          * Finally server_register_wait
          */
         sem = receive_message.descriptor.name;
-        for (i = 0; i < receive_message.count; i++)
+        for (i = 0; i < count; i++)
         {
-            extra_data = receive_message.extra_data + i;
-            addr = (int *)get_shm( extra_data->shm_idx );
-            if ( __atomic_load_n( addr, __ATOMIC_SEQ_CST ) != extra_data->value )
+            is_mutex = check_if_mutex( receive_message.shm_idx + i );
+            addr = (int *)get_shm( receive_message.shm_idx[i] );
+            val = __atomic_load_n( addr, __ATOMIC_SEQ_CST );
+            if ((is_mutex && (val == 0 || val == ~0 || val == tid)) || (!is_mutex && val != 0))
             {
                 /* The client had a TOCTTOU we need to fix */
                 semaphore_signal( sem );
+                semaphore_destroy( mach_task_self(), sem );
                 continue;
             }
-            add_sem_to_map( extra_data->shm_idx, sem, receive_message.orig_sem, receive_message.tid );
+            add_sem_to_map( receive_message.shm_idx[i], sem, tid );
         }
     }
 
@@ -355,8 +454,6 @@ static void cleanup(void)
     close( shm_fd );
     if (shm_unlink( shm_name ) == -1)
         perror( "shm_unlink" );
-    pthread_cancel( message_thread );
-    //pthread_join( message_thread );
 }
 
 void msync_init(void)
@@ -364,6 +461,9 @@ void msync_init(void)
 #ifdef __APPLE__
     struct stat st;
     mach_port_t bootstrap_port;
+    pthread_attr_t attr;
+    mach_port_limits_t limits;
+    struct sched_param param;
 
     if (fstat( config_dir_fd, &st ) == -1)
         fatal_error( "cannot stat config dir\n" );
@@ -398,11 +498,28 @@ void msync_init(void)
 
     MACH_CHECK_ERROR(mach_port_insert_right(mach_task_self(), receive_port, receive_port, MACH_MSG_TYPE_MAKE_SEND), "mach_port_insert_right");
 
+    limits.mpl_qlimit = 50;
+
+    if (getenv("WINEMSYNC_QLIMIT"))
+        limits.mpl_qlimit = atoi(getenv("WINEMSYNC_QLIMIT"));
+
+    MACH_CHECK_ERROR(mach_port_set_attributes( mach_task_self(), receive_port, MACH_PORT_LIMITS_INFO,
+                                        (mach_port_info_t)&limits, MACH_PORT_LIMITS_INFO_COUNT), "mach_port_set_attributes");
+
     MACH_CHECK_ERROR(task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port), "task_get_special_port");
 
     MACH_CHECK_ERROR(bootstrap_register2(bootstrap_port, shm_name + 1, receive_port, 0), "bootstrap_register2");
+    
+    pool_init();
 
-    pthread_create( &message_thread, NULL, mach_message_pump, NULL );
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+
+    if (pthread_create( &message_thread, NULL, mach_message_pump, NULL ))
+    {
+        perror("pthread_create");
+        fatal_error( "could not create mach message pump thread\n" );
+    }
 
     fprintf( stderr, "msync: bootstrapped mach port on %s.\n", shm_name + 1 );
 
@@ -532,8 +649,6 @@ unsigned int msync_alloc_shm( int low, int high )
 #ifdef __APPLE__
     int shm_idx, tries = 0;
     int *shm;
-    kern_return_t kr;
-    semaphore_t sem;
 
     /* this is arguably a bit of a hack, but we need some way to prevent
      * allocating shm for the master socket */

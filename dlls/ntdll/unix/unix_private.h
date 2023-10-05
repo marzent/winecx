@@ -66,7 +66,6 @@ struct ntdll_thread_data
     int                esync_apc_fd;  /* fd to wait on for user APCs */
     int               *msync_apc_addr;
     unsigned int       msync_apc_idx;
-    unsigned int       msync_apc_semaphore;
     int                request_fd;    /* fd for sending server requests */
     int                reply_fd;      /* fd for receiving server replies */
     int                wait_fd[2];    /* fd for sleeping server requests */

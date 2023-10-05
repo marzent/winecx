@@ -62,8 +62,6 @@
 #if defined(__APPLE__)
 # include <mach/mach_init.h>
 # include <mach/mach_vm.h>
-# include <mach/task.h>
-# include <mach/semaphore.h>
 # include <mach-o/dyld.h> /* CrossOver Hack #16371 */
 #endif
 
@@ -3074,7 +3072,6 @@ static TEB *init_teb( void *ptr, BOOL is_wow )
     thread_data->esync_apc_fd = -1;
     thread_data->msync_apc_addr = NULL;
     thread_data->msync_apc_idx = 0;
-    thread_data->msync_apc_semaphore = 0;
     thread_data->request_fd = -1;
     thread_data->reply_fd   = -1;
     thread_data->wait_fd[0] = -1;
@@ -3194,10 +3191,7 @@ void virtual_free_teb( TEB *teb )
         size = 0;
         NtFreeVirtualMemory( GetCurrentProcess(), &ptr, &size, MEM_RELEASE );
     }
-#ifdef __APPLE__
-    /* we can always do this, even when not using msync */
-    semaphore_destroy( mach_task_self(), thread_data->msync_apc_semaphore );
-#endif
+
     server_enter_uninterrupted_section( &virtual_mutex, &sigset );
     list_remove( &thread_data->entry );
     ptr = teb;

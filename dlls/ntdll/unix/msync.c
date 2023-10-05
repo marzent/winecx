@@ -64,15 +64,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(msync);
 
-static inline void small_pause(void)
-{
-#if defined(__i386__) || defined(__x86_64__)
-    __asm__ __volatile__( "rep;nop" : : : "memory" );
-#else
-    __asm__ __volatile__( "" : : : "memory" );
-#endif
-}
-
 static LONGLONG update_timeout( ULONGLONG end )
 {
     LARGE_INTEGER now;
@@ -93,25 +84,194 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
     return ret;
 }
 
-struct msync_wait_block
+#define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
+#define MACH64_SEND_MQ_CALL 0x0000000400000000ull
+
+extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
+    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout);
+
+static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
+    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout)
 {
-    int* addr;
-    int val;
-    semaphore_t sem;
+    mach_msg_return_t mr;
+
+    mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
+             msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+             rcv_size_and_priority, timeout );
+
+    if (mr == MACH_MSG_SUCCESS)
+        return MACH_MSG_SUCCESS;
+
+    while (mr == MACH_SEND_INTERRUPTED)
+        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
+                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+                 rcv_size_and_priority, timeout );
+
+    while (mr == MACH_RCV_INTERRUPTED)
+        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size & 0xffffffffull,
+                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
+                 rcv_size_and_priority, timeout);
+
+    return mr;
+}
+
+static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
+    mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
+    uint32_t priority)
+{
+    mach_msg_base_t *base;
+    mach_msg_size_t descriptors;
+
+    base = (mach_msg_base_t *)data;
+
+    if ((option64 & MACH_SEND_MSG) &&
+        (base->header.msgh_bits & MACH_MSGH_BITS_COMPLEX))
+        descriptors = base->body.msgh_descriptor_count;
+    else
+        descriptors = 0;
+
+#define MACH_MSG2_SHIFT_ARGS(lo, hi) ((uint64_t)hi << 32 | (uint32_t)lo)
+    return mach_msg2_internal(data, option64 | MACH64_SEND_MQ_CALL,
+               MACH_MSG2_SHIFT_ARGS(data->msgh_bits, send_size),
+               MACH_MSG2_SHIFT_ARGS(data->msgh_remote_port, data->msgh_local_port),
+               MACH_MSG2_SHIFT_ARGS(data->msgh_voucher_port, data->msgh_id),
+               MACH_MSG2_SHIFT_ARGS(descriptors, rcv_name),
+               MACH_MSG2_SHIFT_ARGS(rcv_size, priority), timeout);
+#undef MACH_MSG2_SHIFT_ARGS
+}
+
+/* this is a lot, but running out cripples performance */
+#define MAX_POOL_SEMAPHORES 1024
+#define POOL_SHRINK_THRESHOLD 30
+#define POOL_SHRINK_COUNT 10
+
+struct semaphore_memory_pool
+{
+    semaphore_t semaphores[MAX_POOL_SEMAPHORES];
+    semaphore_t *free_semaphores[MAX_POOL_SEMAPHORES];
+    unsigned int count;
+    unsigned int total;
+    pthread_mutex_t mutex;
+};
+
+static struct semaphore_memory_pool *pool;
+
+static void semaphore_pool_init(void)
+{
+    unsigned int i;
+    kern_return_t kr;
+
+    pool = malloc( sizeof(struct semaphore_memory_pool) );
+
+    pthread_mutex_init(&pool->mutex, NULL);
+
+    for (i = 0; i < MAX_POOL_SEMAPHORES; i++)
+    {
+        pool->free_semaphores[i] = &pool->semaphores[i];
+    }
+    
+    pool->count = 0;
+    pool->total = 0;
+}
+
+static inline semaphore_t *semaphore_pool_alloc(void)
+{
+    semaphore_t *new_semaphore;
+    kern_return_t kr;
+
+    pthread_mutex_lock(&pool->mutex);
+
+    if (pool->count == 0)
+    {
+        if (pool->total < MAX_POOL_SEMAPHORES)
+        {
+            WARN("Dynamically growing semaphore pool\n");
+            kr = semaphore_create(mach_task_self(), &pool->semaphores[pool->total], SYNC_POLICY_FIFO, 0);
+            if (kr != KERN_SUCCESS)
+                ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
+            
+            new_semaphore = &pool->semaphores[pool->total];
+            pool->total++;
+
+            pthread_mutex_unlock(&pool->mutex);
+
+            return new_semaphore;
+        }
+        else
+        {
+            WARN("Semaphore pool exhausted, consider increasing MAX_POOL_SEMAPHORES\n");
+            new_semaphore = malloc(sizeof(semaphore_t));
+            kr = semaphore_create(mach_task_self(), new_semaphore, SYNC_POLICY_FIFO, 0);
+            if (kr != KERN_SUCCESS)
+                ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
+
+            pthread_mutex_unlock(&pool->mutex);
+
+            return new_semaphore;
+        }
+    }
+
+    new_semaphore = pool->free_semaphores[pool->count - 1];
+    pool->count--;
+
+    pthread_mutex_unlock(&pool->mutex);
+
+    return new_semaphore;
+}
+
+static inline void semaphore_pool_free(semaphore_t *sem)
+{
+    int i;
+    
+    pthread_mutex_lock(&pool->mutex);
+
+    if (sem < pool->semaphores || sem >= pool->semaphores + MAX_POOL_SEMAPHORES)
+    {
+        semaphore_destroy(mach_task_self(), *sem);
+        free(sem);
+
+        pthread_mutex_unlock(&pool->mutex);
+
+        return;
+    }
+    
+    if (pool->count >= POOL_SHRINK_THRESHOLD)
+    {
+        for (i = 0; i < POOL_SHRINK_COUNT; i++)
+        {
+            semaphore_destroy(mach_task_self(), *sem);
+            pool->total--;
+        }
+    }
+    else
+    {
+        pool->free_semaphores[pool->count] = sem;
+        pool->count++;
+    }
+
+    pthread_mutex_unlock(&pool->mutex);
+}
+
+struct msync
+{
+    void *shm;              /* pointer to shm section */
+    enum msync_type type;
     unsigned int shm_idx;
 };
 
-static inline void resize_wait_block( struct msync_wait_block *block, int *count )
+static inline void resize_wait_objs( struct msync **wait_objs, int *count )
 {
     int read_index = 0;
     int write_index = 0;
 
     for (; read_index < *count; read_index++)
     {
-        if (block[read_index].addr != NULL)
+        if (wait_objs[read_index] != NULL)
         {
             if (read_index != write_index)
-                block[write_index] = block[read_index];
+                wait_objs[write_index] = wait_objs[read_index];
             write_index++;
         }
     }
@@ -123,128 +283,112 @@ typedef struct
     mach_msg_header_t header;
     mach_msg_body_t body;
     mach_msg_port_descriptor_t descriptor;
-    semaphore_t orig_sem;
-    int tid;
-    int count;
-} mach_port_message_prolog_t;
+} mach_register_message_prolog_t;
 
 typedef struct
 {
-    unsigned int shm_idx;
-    int value;
-} extra_data_t;
+    mach_register_message_prolog_t prolog;
+    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
+} mach_register_message_t;
 
 typedef struct
 {
-    mach_port_message_prolog_t prolog;
-    extra_data_t extra_data[MAXIMUM_WAIT_OBJECTS + 1];
-} mach_port_message_t;
+    mach_msg_header_t header;
+    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
+} mach_unregister_message_t;
 
 static mach_port_t server_port;
 
-static mach_msg_return_t server_register_wait( semaphore_t sem,
-                    struct msync_wait_block *block, int count )
+static const mach_msg_bits_t msgh_bits_complex_send = MACH_MSGH_BITS_SET(
+                MACH_MSG_TYPE_COPY_SEND, 0, 0, MACH_MSGH_BITS_COMPLEX);
+
+static const mach_msg_bits_t msgh_bits_send = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
+
+static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
+                                        struct msync **wait_objs, const int count )
 {
-    int i;
-    __thread static mach_port_message_t message;
+    int i, is_mutex;
+    mach_msg_return_t mr;
+    __thread static mach_register_message_t message;
     
     message.prolog.header.msgh_remote_port = server_port;
-    message.prolog.header.msgh_bits = MACH_MSGH_BITS_SET(MACH_MSG_TYPE_COPY_SEND,
-                                                         0,
-                                                         0,
-                                                         MACH_MSGH_BITS_COMPLEX);
-    message.prolog.header.msgh_id = 0;
-    message.prolog.header.msgh_size = sizeof(mach_port_message_prolog_t) +
-                                      count * sizeof(extra_data_t);
+    message.prolog.header.msgh_bits = msgh_bits_complex_send;
+    message.prolog.header.msgh_id = msgh_id;
+
     message.prolog.body.msgh_descriptor_count = 1;
     
     message.prolog.descriptor.name = sem;
     message.prolog.descriptor.disposition = MACH_MSG_TYPE_COPY_SEND;
     message.prolog.descriptor.type = MACH_MSG_PORT_DESCRIPTOR;
     
-    message.prolog.orig_sem = sem;
-    message.prolog.tid = GetCurrentThreadId();
-    message.prolog.count = count;
-    
     for (i = 0; i < count; i++)
     {
-        message.extra_data[i].shm_idx = block[i].shm_idx;
-        message.extra_data[i].value = block[i].val;
+        is_mutex = wait_objs[i]->type == MSYNC_MUTEX ? 1 : 0;
+        message.shm_idx[i] = wait_objs[i]->shm_idx | (is_mutex << 19);
     }
 
-    return mach_msg( (mach_msg_header_t *)&message,
-                     MACH_SEND_MSG,
-                     message.prolog.header.msgh_size,
-                     0,
-                     MACH_PORT_NULL,
-                     MACH_MSG_TIMEOUT_NONE,
-                     MACH_PORT_NULL );
+    message.prolog.header.msgh_size = sizeof(mach_register_message_prolog_t) +
+                                      count * sizeof(unsigned int);
+
+    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.prolog.header.msgh_size,
+                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+    
+    if (mr != MACH_MSG_SUCCESS)
+        ERR("Failed to send server register wait: %#x\n", mr);
 }
 
-static mach_msg_return_t server_remove_wait( semaphore_t sem,
-                                    struct msync_wait_block *block, int count )
+static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
+                                        struct msync **wait_objs, const int count )
 {
-    int i;
-    __thread static mach_port_message_t message;
+    int i, pack_size;
+    mach_msg_return_t mr;
+    __thread static mach_unregister_message_t message;
     
-    message.prolog.header.msgh_remote_port = server_port;
-    message.prolog.header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
-    message.prolog.header.msgh_id = 0;
-    message.prolog.header.msgh_size = sizeof(mach_port_message_prolog_t) +
-                                      count * sizeof(extra_data_t);
-    message.prolog.body.msgh_descriptor_count = 0;
-    
-    message.prolog.orig_sem = sem;
-    message.prolog.tid = GetCurrentThreadId();
-    message.prolog.count = count;
+    message.header.msgh_remote_port = server_port;
+    message.header.msgh_bits = msgh_bits_send;
+    message.header.msgh_id = msgh_id;
     
     for (i = 0; i < count; i++)
-        message.extra_data[i].shm_idx = block[i].shm_idx;
+        message.shm_idx[i] = wait_objs[i]->shm_idx;
+    
+    message.header.msgh_size = sizeof(mach_msg_header_t) +
+                               count * sizeof(unsigned int);
 
-    return mach_msg( (mach_msg_header_t *)&message,
-                     MACH_SEND_MSG,
-                     message.prolog.header.msgh_size,
-                     0,
-                     MACH_PORT_NULL,
-                     MACH_MSG_TIMEOUT_NONE,
-                     MACH_PORT_NULL );
+    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.header.msgh_size,
+                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+    
+    if (mr != MACH_MSG_SUCCESS)
+        ERR("Failed to send server remove wait: %#x\n", mr);
 }
 
-static NTSTATUS msync_wait_multiple( struct msync_wait_block *block,
+static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
                                      int count, ULONGLONG *end )
 {
-    int i;
-    semaphore_t sem;
+    int i, val, tid;
+    semaphore_t *sem;
     kern_return_t kr;
     LONGLONG timeleft;
-    
-    TRACE("block %p, count %d, end %p.\n", block, count, end);
-    
-    resize_wait_block( block, &count );
-    
-    assert(count != 0);
-    
+    unsigned int msgh_id;
+
+    resize_wait_objs( wait_objs, &count );
+
+    tid = GetCurrentThreadId();
     for (i = 0; i < count; i++)
     {
-        if (__atomic_load_n(block[i].addr, __ATOMIC_SEQ_CST) != block[i].val)
-            return STATUS_PENDING;
-    }
-    
-    if (count == 1)
-    {
-        sem = block[0].sem;
-    }
-    else
-    {
-        kr = semaphore_create( mach_task_self(), &sem, SYNC_POLICY_FIFO, 0 );
-        if (kr != KERN_SUCCESS)
+        val = __atomic_load_n((int *)wait_objs[i]->shm, __ATOMIC_SEQ_CST);
+        if (wait_objs[i]->type == MSYNC_MUTEX)
         {
-            ERR("Cannot create shared msync semaphore: %#x %s\n", kr, mach_error_string(kr));
-            return STATUS_PENDING;
+            if (val == 0 || val == ~0 || val == tid) return STATUS_PENDING;
+        }
+        else
+        {
+            if (val != 0)  return STATUS_PENDING;
         }
     }
 
-    server_register_wait( sem, block, count );
+    sem = semaphore_pool_alloc();
+    msgh_id = (tid << 8) | count;
+    server_register_wait( *sem, msgh_id, wait_objs, count );
 
     do
     {
@@ -253,30 +397,27 @@ static NTSTATUS msync_wait_multiple( struct msync_wait_block *block,
             timeleft = update_timeout( *end );
             if (!timeleft)
             {
-                server_remove_wait( sem, block, count );
-                return STATUS_TIMEOUT;
+                kr = KERN_OPERATION_TIMED_OUT;
+                break;
             }
-            kr = semaphore_timedwait( sem, convert_to_mach_time( timeleft ) );
+            kr = semaphore_timedwait( *sem, convert_to_mach_time( timeleft ) );
         }
         else
-            kr = semaphore_wait( sem );
+            kr = semaphore_wait( *sem );
     } while (kr == KERN_ABORTED);
     
-    if (count > 1) semaphore_destroy( mach_task_self(), sem );
-    
+    semaphore_pool_free( sem );
+
     switch (kr) {
         case KERN_SUCCESS:
             if (count > 1)
-                server_remove_wait( sem, block, count );
+                server_remove_wait( *sem, msgh_id, wait_objs, count );
             return STATUS_SUCCESS;
         case KERN_OPERATION_TIMED_OUT:
-            server_remove_wait( sem, block, count );
+            server_remove_wait( *sem, msgh_id, wait_objs, count );
             return STATUS_TIMEOUT;
         case KERN_TERMINATED:
-            /* This is the rare case for a single wait where the underlying
-             * handle and subesquently semaphore got destroyed.
-             * NT does the sane thing to continue waiting then... */
-            server_remove_wait( sem, block, count );
+            server_remove_wait( *sem, msgh_id, wait_objs, count );
             if (end)
             {
                 timeleft = update_timeout( *end );
@@ -286,14 +427,11 @@ static NTSTATUS msync_wait_multiple( struct msync_wait_block *block,
             pause();
             return STATUS_PENDING;
         default:
-            server_remove_wait( sem, block, count );
+            server_remove_wait( *sem, msgh_id, wait_objs, count );
             ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string(kr));
             return STATUS_PENDING;
     }
 }
-
-
-static unsigned int spincount = 100;
 
 int do_msync(void)
 {
@@ -301,11 +439,7 @@ int do_msync(void)
     static int do_msync_cached = -1;
 
     if (do_msync_cached == -1)
-    {
         do_msync_cached = getenv("WINEMSYNC") && atoi(getenv("WINEMSYNC"));
-        if (getenv("WINEMSYNC_SPINCOUNT"))
-            spincount = atoi(getenv("WINEMSYNC_SPINCOUNT"));
-    }
 
     return do_msync_cached;
 #else
@@ -314,32 +448,6 @@ int do_msync(void)
         FIXME("mach semaphores not supported on this platform.\n");
     return 0;
 #endif
-}
-
-struct msync
-{
-    void *shm;              /* pointer to shm section */
-    enum msync_type type;
-    int refcount;
-    unsigned int shm_idx;
-    semaphore_t sem;
-};
-
-static void grab_object( struct msync *obj )
-{
-    __atomic_fetch_add(&obj->refcount, 1, __ATOMIC_SEQ_CST);
-}
-
-static void release_object( struct msync *obj )
-{
-    kern_return_t kr;
-    
-    if (!__atomic_sub_fetch( &obj->refcount, 1, __ATOMIC_SEQ_CST ))
-    {
-        kr = semaphore_destroy( mach_task_self(), obj->sem );
-        if (kr != KERN_SUCCESS)
-            WARN("Cannot destroy semaphore %#x: %#x %s\n", obj->sem, kr, mach_error_string(kr));
-    }
 }
 
 struct semaphore
@@ -428,8 +536,6 @@ static struct msync *add_to_list( HANDLE handle, enum msync_type type, unsigned 
 {
     UINT_PTR entry, idx = handle_to_index( handle, &entry );
     void *shm = get_shm( shm_idx );
-    kern_return_t kr;
-    semaphore_t sem;
 
     if (entry >= MSYNC_LIST_ENTRIES)
     {
@@ -448,20 +554,11 @@ static struct msync *add_to_list( HANDLE handle, enum msync_type type, unsigned 
             msync_list[entry] = ptr;
         }
     }
-    
-    kr = semaphore_create( mach_task_self(), &sem, SYNC_POLICY_FIFO, 0 );
-    if (kr != KERN_SUCCESS)
-    {
-        ERR( "Cannot create msync semaphore: %#x %s\n", kr, mach_error_string(kr));
-        return FALSE;
-    }
 
     if (!__sync_val_compare_and_swap((int *)&msync_list[entry][idx].type, 0, type ))
     {
         msync_list[entry][idx].shm = shm;
-        msync_list[entry][idx].sem = sem;
         msync_list[entry][idx].shm_idx = shm_idx;
-        msync_list[entry][idx].refcount = 1;
     }
 
     return &msync_list[entry][idx];
@@ -528,10 +625,7 @@ NTSTATUS msync_close( HANDLE handle )
     if (entry < MSYNC_LIST_ENTRIES && msync_list[entry])
     {
         if (__atomic_exchange_n( &msync_list[entry][idx].type, 0, __ATOMIC_SEQ_CST ))
-        {
-            release_object( &msync_list[entry][idx] );
             return STATUS_SUCCESS;
-        }
     }
 
     return STATUS_INVALID_HANDLE;
@@ -649,6 +743,8 @@ void msync_init(void)
     shm_addrs = calloc( 128, sizeof(shm_addrs[0]) );
     shm_addrs_size = 128;
     
+    semaphore_pool_init();
+    
     /* Bootstrap mach wineserver communication */
     
     if (task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port) != KERN_SUCCESS)
@@ -681,21 +777,17 @@ NTSTATUS msync_open_semaphore( HANDLE *handle, ACCESS_MASK access,
     return open_msync( MSYNC_SEMAPHORE, handle, access, attr );
 }
 
-static inline mach_msg_return_t signal_all( unsigned int shm_idx )
+static inline void signal_all( struct msync *obj )
 {
     __thread static mach_msg_header_t send_header;
-    send_header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
-    send_header.msgh_id = shm_idx;
+
+    send_header.msgh_bits = msgh_bits_send;
+    send_header.msgh_id = obj->shm_idx;
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = server_port;
     
-    return mach_msg( &send_header,
-                     MACH_SEND_MSG,
-                     send_header.msgh_size,
-                     0,
-                     MACH_PORT_NULL,
-                     MACH_MSG_TIMEOUT_NONE,
-                     MACH_PORT_NULL );
+    mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size, 0,
+              MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
 }
 
 NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
@@ -719,7 +811,7 @@ NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
 
     if (prev) *prev = current;
 
-    signal_all( obj->shm_idx );
+    signal_all( obj );
 
     return STATUS_SUCCESS;
 }
@@ -779,7 +871,7 @@ NTSTATUS msync_set_event( HANDLE handle, LONG *prev )
         return STATUS_OBJECT_TYPE_MISMATCH;
 
     if (!(current = __atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST )))
-        signal_all( obj->shm_idx );
+        signal_all( obj );
 
     if (prev) *prev = current;
 
@@ -821,7 +913,7 @@ NTSTATUS msync_pulse_event( HANDLE handle, LONG *prev )
      * Unfortunately we can't really do much better. Fortunately this is rarely
      * used (and publicly deprecated). */
     if (!(current = __atomic_exchange_n( &event->signaled, 1, __ATOMIC_SEQ_CST )))
-        signal_all( obj->shm_idx );
+        signal_all( obj );
 
     /* Try to give other threads a chance to wake up. Hopefully erring on this
      * side is the better thing to do... */
@@ -889,7 +981,7 @@ NTSTATUS msync_release_mutex( HANDLE handle, LONG *prev )
     if (!--mutex->count)
     {
         __atomic_store_n( &mutex->tid, 0, __ATOMIC_SEQ_CST );
-        signal_all( obj->shm_idx );
+        signal_all( obj );
     }
 
     return STATUS_SUCCESS;
@@ -915,37 +1007,35 @@ NTSTATUS msync_query_mutex( HANDLE handle, void *info, ULONG *ret_len )
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_single_wait( semaphore_t sem, int shm_idx, int *addr,
-                                int val, ULONGLONG *end, BOOLEAN alertable )
+static NTSTATUS do_single_wait( struct msync *obj, ULONGLONG *end, BOOLEAN alertable )
 {
     NTSTATUS status;
-    struct msync_wait_block block[2];
+    struct msync *wait_objs[2];
     
-    block[0].sem = sem;
-    block[0].shm_idx = shm_idx;
-    block[0].addr = addr;
-    block[0].val = val;
+    wait_objs[0] = obj;
     
     if (alertable)
     {
+        struct msync apc_obj;
         int *apc_addr = ntdll_get_thread_data()->msync_apc_addr;
-        
+
+        apc_obj.type = MSYNC_AUTO_EVENT;
+        apc_obj.shm = (void *)apc_addr;
+        apc_obj.shm_idx = ntdll_get_thread_data()->msync_apc_idx;
+
         if (__atomic_load_n( apc_addr, __ATOMIC_SEQ_CST ))
             return STATUS_USER_APC;
-        
-        block[1].sem = ntdll_get_thread_data()->msync_apc_semaphore;
-        block[1].shm_idx = ntdll_get_thread_data()->msync_apc_idx;
-        block[1].addr = apc_addr;
-        block[1].val = 0;
-        
-        status = msync_wait_multiple( block, 2, end );
+
+        wait_objs[1] = &apc_obj;
+
+        status = msync_wait_multiple( wait_objs, 2, end );
         
         if (__atomic_load_n( apc_addr, __ATOMIC_SEQ_CST ))
             return STATUS_USER_APC;
     }
     else
     {
-        status = msync_wait_multiple( block, 1, end );
+        status = msync_wait_multiple( wait_objs, 1, end );
     }
     return status;
 }
@@ -954,15 +1044,13 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
     BOOLEAN wait_any, BOOLEAN alertable, const LARGE_INTEGER *timeout )
 {
     static const LARGE_INTEGER zero = {0};
-
-    struct msync_wait_block block[MAXIMUM_WAIT_OBJECTS + 1];
-    struct msync *objs[MAXIMUM_WAIT_OBJECTS];
+    
+    struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
+    struct msync apc_obj;
     int has_msync = 0, has_server = 0;
     BOOL msgwait = FALSE;
-    unsigned int spin;
     LONGLONG timeleft;
     LARGE_INTEGER now;
-    NTSTATUS status;
     DWORD waitcount;
     ULONGLONG end;
     int i, ret;
@@ -981,14 +1069,8 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
         if (idx)
         {
             struct event *apc_event = get_shm( idx );
-            semaphore_t apc_sem;
             ntdll_get_thread_data()->msync_apc_addr = &apc_event->signaled;
-            kern_return_t kr = semaphore_create( mach_task_self(), &ntdll_get_thread_data()->msync_apc_semaphore, SYNC_POLICY_FIFO, 0 );
-            if (kr != KERN_SUCCESS)
-            {
-                ERR("Cannot create apc semaphore: %#x %s\n", kr, mach_error_string(kr));
-                ntdll_get_thread_data()->msync_apc_addr = NULL;
-            }
+            ntdll_get_thread_data()->msync_apc_idx = idx;
         }
     }
 
@@ -1042,12 +1124,6 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                 (long) (timeleft / TICKSPERSEC), (long) (timeleft % TICKSPERSEC));
         }
     }
-    
-    for (i = 0; i < count; i++)
-    {
-        if (objs[i])
-            grab_object( objs[i] );
-    }
 
     if (wait_any || count <= 1)
     {
@@ -1057,6 +1133,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
 
             if (alertable)
             {
+                apc_obj.type = MSYNC_AUTO_EVENT;
                 /* We must check this first! The server may set an event that
                  * we're waiting on, but we need to return STATUS_USER_APC. */
                 if (__atomic_load_n( ntdll_get_thread_data()->msync_apc_addr, __ATOMIC_SEQ_CST ))
@@ -1073,8 +1150,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         /* Someone probably closed an object while waiting on it. */
                         WARN("Handle %p has type 0; was it closed?\n", handles[i]);
-                        status = STATUS_INVALID_HANDLE;
-                        goto done;
+                        return STATUS_INVALID_HANDLE;
                     }
 
                     switch (obj->type)
@@ -1084,26 +1160,12 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         struct semaphore *semaphore = obj->shm;
                         int current;
 
-                        /* It would be a little clearer (and less error-prone)
-                         * to use a dedicated interlocked_dec_if_nonzero()
-                         * helper, but nesting loops like that is probably not
-                         * great for performance... */
-                        for (spin = 0; spin <= spincount || current; ++spin)
+                        if ((current = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST ))
+                                && __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) == current)
                         {
-                            if ((current = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST ))
-                                    && __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) == current)
-                            {
-                                TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                status = i;
-                                goto done;
-                            }
-                            small_pause();
+                            TRACE("Woken up by handle %p [%d].\n", handles[i], i);
+                            return i;
                         }
-
-                        block[i].sem = obj->sem;
-                        block[i].shm_idx = obj->shm_idx;
-                        block[i].addr = &semaphore->count;
-                        block[i].val = 0;
                         break;
                     }
                     case MSYNC_MUTEX:
@@ -1115,33 +1177,22 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             mutex->count++;
-                            status = i;
-                            goto done;
+                            return i;
                         }
 
-                        for (spin = 0; spin <= spincount; ++spin)
+                        if (!(tid = __sync_val_compare_and_swap( &mutex->tid, 0, GetCurrentThreadId() )))
                         {
-                            if (!(tid = __sync_val_compare_and_swap( &mutex->tid, 0, GetCurrentThreadId() )))
-                            {
-                                TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                mutex->count = 1;
-                                status = i;
-                                goto done;
-                            }
-                            else if (tid == ~0 && (tid = __sync_val_compare_and_swap( &mutex->tid, ~0, GetCurrentThreadId() )) == ~0)
-                            {
-                                TRACE("Woken up by abandoned mutex %p [%d].\n", handles[i], i);
-                                mutex->count = 1;
-                                status = STATUS_ABANDONED_WAIT_0 + i;
-                                goto done;
-                            }
-                            small_pause();
+                            TRACE("Woken up by handle %p [%d].\n", handles[i], i);
+                            mutex->count = 1;
+                            return i;
+                        }
+                        else if (tid == ~0 && (tid = __sync_val_compare_and_swap( &mutex->tid, ~0, GetCurrentThreadId() )) == ~0)
+                        {
+                            TRACE("Woken up by abandoned mutex %p [%d].\n", handles[i], i);
+                            mutex->count = 1;
+                            return STATUS_ABANDONED_WAIT_0 + i;
                         }
 
-                        block[i].sem = obj->sem;
-                        block[i].shm_idx = obj->shm_idx;
-                        block[i].addr = &mutex->tid;
-                        block[i].val = tid;
                         break;
                     }
                     case MSYNC_AUTO_EVENT:
@@ -1149,21 +1200,12 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         struct event *event = obj->shm;
 
-                        for (spin = 0; spin <= spincount; ++spin)
+                        if (__sync_val_compare_and_swap( &event->signaled, 1, 0 ))
                         {
-                            if (__sync_val_compare_and_swap( &event->signaled, 1, 0 ))
-                            {
-                                TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                status = i;
-                                goto done;
-                            }
-                            small_pause();
+                            TRACE("Woken up by handle %p [%d].\n", handles[i], i);
+                            return i;
                         }
 
-                        block[i].sem = obj->sem;
-                        block[i].shm_idx = obj->shm_idx;
-                        block[i].addr = &event->signaled;
-                        block[i].val = 0;
                         break;
                     }
                     case MSYNC_MANUAL_EVENT:
@@ -1172,21 +1214,11 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         struct event *event = obj->shm;
 
-                        for (spin = 0; spin <= spincount; ++spin)
+                        if (__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
                         {
-                            if (__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
-                            {
-                                TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                                status = i;
-                                goto done;
-                            }
-                            small_pause();
+                            TRACE("Woken up by handle %p [%d].\n", handles[i], i);
+                            return i;
                         }
-
-                        block[i].sem = obj->sem;
-                        block[i].shm_idx = obj->shm_idx;
-                        block[i].addr = &event->signaled;
-                        block[i].val = 0;
                         break;
                     }
                     default:
@@ -1194,16 +1226,14 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         assert(0);
                     }
                 }
-                else block[i].addr = NULL;
             }
 
             if (alertable)
             {
                 /* We already checked if it was signaled; don't bother doing it again. */
-                block[i].sem = ntdll_get_thread_data()->msync_apc_semaphore;
-                block[i].shm_idx = ntdll_get_thread_data()->msync_apc_idx;
-                block[i].addr = ntdll_get_thread_data()->msync_apc_addr;
-                block[i].val = 0;
+                apc_obj.shm = (void *)ntdll_get_thread_data()->msync_apc_addr;
+                apc_obj.shm_idx = ntdll_get_thread_data()->msync_apc_idx;
+                objs[i] = &apc_obj;
                 i++;
             }
             waitcount = i;
@@ -1215,17 +1245,15 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                 /* Unlike esync, we already know that we've timed out, so we
                  * can avoid a syscall. */
                 TRACE("Wait timed out.\n");
-                status = STATUS_TIMEOUT;
-                goto done;
+                return STATUS_TIMEOUT;
             }
             
-            ret = msync_wait_multiple( block, waitcount, timeout ? &end : NULL );
+            ret = msync_wait_multiple( objs, waitcount, timeout ? &end : NULL );
 
             if (ret == STATUS_TIMEOUT)
             {
                 TRACE("Wait timed out.\n");
-                status = STATUS_TIMEOUT;
-                goto done;
+                return STATUS_TIMEOUT;
             }
         } /* while (1) */
     }
@@ -1252,8 +1280,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
          * signaled. In either case anyone who tries to wait on A or B will be
          * waiting for an instant while we put things back. */
 
-        status = STATUS_SUCCESS;
-        int current;
+        NTSTATUS status = STATUS_SUCCESS;
 
         while (1)
         {
@@ -1275,9 +1302,9 @@ tryagain:
                     if (mutex->tid == GetCurrentThreadId())
                         continue;
 
-                    while ((current = __atomic_load_n( &mutex->tid, __ATOMIC_SEQ_CST )))
+                    while (__atomic_load_n( &mutex->tid, __ATOMIC_SEQ_CST ))
                     {
-                        status = do_single_wait( obj->sem, obj->shm_idx, &mutex->tid, current, timeout ? &end : NULL, alertable );
+                        status = do_single_wait( obj, timeout ? &end : NULL, alertable );
                         if (status != STATUS_PENDING)
                             break;
                     }
@@ -1289,7 +1316,7 @@ tryagain:
 
                     while (!__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
                     {
-                        status = do_single_wait( obj->sem, obj->shm_idx, &event->signaled, 0, timeout ? &end : NULL, alertable );
+                        status = do_single_wait( obj, timeout ? &end : NULL, alertable );
                         if (status != STATUS_PENDING)
                             break;
                     }
@@ -1298,7 +1325,7 @@ tryagain:
                 if (status == STATUS_TIMEOUT)
                 {
                     TRACE("Wait timed out.\n");
-                    goto done;
+                    return STATUS_TIMEOUT;
                 }
                 else if (status == STATUS_USER_APC)
                     goto userapc;
@@ -1331,6 +1358,7 @@ tryagain:
             for (i = 0; i < count; i++)
             {
                 struct msync *obj = objs[i];
+                if (!obj) continue;
                 switch (obj->type)
                 {
                 case MSYNC_MUTEX:
@@ -1350,7 +1378,10 @@ tryagain:
                 case MSYNC_SEMAPHORE:
                 {
                     struct semaphore *semaphore = obj->shm;
-                    if (__sync_fetch_and_sub( &semaphore->count, 1 ) <= 0)
+                    int current;
+
+                    if (!(current = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST ))
+                            || __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) != current)
                         goto tooslow;
                     break;
                 }
@@ -1383,17 +1414,16 @@ tryagain:
             if (abandoned)
             {
                 TRACE("Wait successful, but some object(s) were abandoned.\n");
-                status = STATUS_ABANDONED;
-                goto done;
+                return STATUS_ABANDONED;
             }
             TRACE("Wait successful.\n");
-            status = STATUS_SUCCESS;
-            goto done;
+            return STATUS_SUCCESS;
 
 tooslow:
             for (--i; i >= 0; i--)
             {
                 struct msync *obj = objs[i];
+                if (!obj) continue;
                 switch (obj->type)
                 {
                 case MSYNC_MUTEX:
@@ -1439,15 +1469,7 @@ userapc:
      * before we got SIGUSR1. poll() doesn't return EINTR in that case. The
      * right thing to do seems to be to return STATUS_USER_APC anyway. */
     if (ret == STATUS_TIMEOUT) ret = STATUS_USER_APC;
-    status = ret;
-
-done:
-    for (i = 0; i < count; i++)
-    {
-        if (objs[i])
-            release_object( objs[i] );
-    }
-    return status;
+    return ret;
 }
 
 /* Like esync, we need to let the server know when we are doing a message wait,
