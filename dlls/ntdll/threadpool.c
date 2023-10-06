@@ -521,7 +521,7 @@ NTSTATUS WINAPI RtlSetIoCompletionCallback(HANDLE FileHandle, PRTL_OVERLAPPED_CO
     {
         NTSTATUS res = STATUS_SUCCESS;
 
-        RtlEnterCriticalSection(&old_threadpool.threadpool_compl_cs);
+        enter_critical_section(&old_threadpool.threadpool_compl_cs);
         if (!old_threadpool.compl_port)
         {
             HANDLE cport;
@@ -537,7 +537,7 @@ NTSTATUS WINAPI RtlSetIoCompletionCallback(HANDLE FileHandle, PRTL_OVERLAPPED_CO
                     NtClose( cport );
             }
         }
-        RtlLeaveCriticalSection(&old_threadpool.threadpool_compl_cs);
+        leave_critical_section(&old_threadpool.threadpool_compl_cs);
         if (res) return res;
     }
 
@@ -579,7 +579,7 @@ static void queue_remove_timer(struct queue_timer *t)
 static void timer_cleanup_callback(struct queue_timer *t)
 {
     struct timer_queue *q = t->q;
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
 
     assert(0 < t->runcount);
     --t->runcount;
@@ -587,7 +587,7 @@ static void timer_cleanup_callback(struct queue_timer *t)
     if (t->destroy && t->runcount == 0)
         queue_remove_timer(t);
 
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 }
 
 static DWORD WINAPI timer_callback_wrapper(LPVOID p)
@@ -643,7 +643,7 @@ static void queue_timer_expire(struct timer_queue *q)
 {
     struct queue_timer *t = NULL;
 
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     if (list_head(&q->timers))
     {
         ULONGLONG now, next;
@@ -665,7 +665,7 @@ static void queue_timer_expire(struct timer_queue *q)
         else
             t = NULL;
     }
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     if (t)
     {
@@ -689,7 +689,7 @@ static ULONG queue_get_timeout(struct timer_queue *q)
     struct queue_timer *t;
     ULONG timeout = INFINITE;
 
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     if (list_head(&q->timers))
     {
         t = LIST_ENTRY(list_head(&q->timers), struct queue_timer, entry);
@@ -701,7 +701,7 @@ static ULONG queue_get_timeout(struct timer_queue *q)
             timeout = t->expire < time ? 0 : t->expire - time;
         }
     }
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     return timeout;
 }
@@ -728,10 +728,10 @@ static void WINAPI timer_queue_thread_proc(LPVOID p)
                we are quitting and the last timer got removed, or a new
                timer got put at the head of the list so we need to adjust
                our timeout.  */
-            RtlEnterCriticalSection(&q->cs);
+            enter_critical_section(&q->cs);
             if (q->quit && list_empty(&q->timers))
                 done = TRUE;
-            RtlLeaveCriticalSection(&q->cs);
+            leave_critical_section(&q->cs);
         }
         else if (status == STATUS_TIMEOUT)
             queue_timer_expire(q);
@@ -834,7 +834,7 @@ NTSTATUS WINAPI RtlDeleteTimerQueueEx(HANDLE TimerQueue, HANDLE CompletionEvent)
 
     thread = q->thread;
 
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     q->quit = TRUE;
     if (list_head(&q->timers))
         /* When the last timer is removed, it will signal the timer thread to
@@ -844,7 +844,7 @@ NTSTATUS WINAPI RtlDeleteTimerQueueEx(HANDLE TimerQueue, HANDLE CompletionEvent)
     else
         /* However if we have none, we must do it ourselves.  */
         NtSetEvent(q->event, NULL);
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     if (CompletionEvent == INVALID_HANDLE_VALUE)
     {
@@ -941,12 +941,12 @@ NTSTATUS WINAPI RtlCreateTimer(HANDLE TimerQueue, HANDLE *NewTimer,
     t->event = NULL;
 
     status = STATUS_SUCCESS;
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     if (q->quit)
         status = STATUS_INVALID_HANDLE;
     else
         queue_add_timer(t, queue_current_time() + DueTime, TRUE);
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     if (status == STATUS_SUCCESS)
         *NewTimer = t;
@@ -980,14 +980,14 @@ NTSTATUS WINAPI RtlUpdateTimer(HANDLE TimerQueue, HANDLE Timer,
     struct queue_timer *t = Timer;
     struct timer_queue *q = t->q;
 
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     /* Can't change a timer if it was once-only or destroyed.  */
     if (t->expire != EXPIRE_NEVER)
     {
         t->period = Period;
         queue_move_timer(t, queue_current_time() + DueTime, TRUE);
     }
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     return STATUS_SUCCESS;
 }
@@ -1030,12 +1030,12 @@ NTSTATUS WINAPI RtlDeleteTimer(HANDLE TimerQueue, HANDLE Timer,
     else if (CompletionEvent)
         event = CompletionEvent;
 
-    RtlEnterCriticalSection(&q->cs);
+    enter_critical_section(&q->cs);
     t->event = event;
     if (t->runcount == 0 && event)
         status = STATUS_SUCCESS;
     queue_destroy_timer(t);
-    RtlLeaveCriticalSection(&q->cs);
+    leave_critical_section(&q->cs);
 
     if (CompletionEvent == INVALID_HANDLE_VALUE && event)
     {
@@ -1063,7 +1063,7 @@ static void CALLBACK timerqueue_thread_proc( void *param )
     TRACE( "starting timer queue thread\n" );
     set_thread_name(L"wine_threadpool_timerqueue");
 
-    RtlEnterCriticalSection( &timerqueue.cs );
+    enter_critical_section( &timerqueue.cs );
     for (;;)
     {
         NtQuerySystemTime( &now );
@@ -1136,7 +1136,7 @@ static void CALLBACK timerqueue_thread_proc( void *param )
     }
 
     timerqueue.thread_running = FALSE;
-    RtlLeaveCriticalSection( &timerqueue.cs );
+    leave_critical_section( &timerqueue.cs );
 
     TRACE( "terminating timer queue thread\n" );
     RtlExitUserThread( 0 );
@@ -1182,7 +1182,7 @@ static NTSTATUS tp_timerqueue_lock( struct threadpool_object *timer )
     timer->u.timer.period               = 0;
     timer->u.timer.window_length        = 0;
 
-    RtlEnterCriticalSection( &timerqueue.cs );
+    enter_critical_section( &timerqueue.cs );
 
     /* Make sure that the timerqueue thread is running. */
     if (!timerqueue.thread_running)
@@ -1203,7 +1203,7 @@ static NTSTATUS tp_timerqueue_lock( struct threadpool_object *timer )
         timerqueue.objcount++;
     }
 
-    RtlLeaveCriticalSection( &timerqueue.cs );
+    leave_critical_section( &timerqueue.cs );
     return status;
 }
 
@@ -1216,7 +1216,7 @@ static void tp_timerqueue_unlock( struct threadpool_object *timer )
 {
     assert( timer->type == TP_OBJECT_TYPE_TIMER );
 
-    RtlEnterCriticalSection( &timerqueue.cs );
+    enter_critical_section( &timerqueue.cs );
     if (timer->u.timer.timer_initialized)
     {
         /* If timer was pending, remove it. */
@@ -1235,7 +1235,7 @@ static void tp_timerqueue_unlock( struct threadpool_object *timer )
 
         timer->u.timer.timer_initialized = FALSE;
     }
-    RtlLeaveCriticalSection( &timerqueue.cs );
+    leave_critical_section( &timerqueue.cs );
 }
 
 /***********************************************************************
@@ -1255,7 +1255,7 @@ static void CALLBACK waitqueue_thread_proc( void *param )
     TRACE( "starting wait queue thread\n" );
     set_thread_name(L"wine_threadpool_waitqueue");
 
-    RtlEnterCriticalSection( &waitqueue.cs );
+    enter_critical_section( &waitqueue.cs );
 
     for (;;)
     {
@@ -1281,9 +1281,9 @@ static void CALLBACK waitqueue_thread_proc( void *param )
                 {
                     InterlockedIncrement( &wait->refcount );
                     wait->num_pending_callbacks++;
-                    RtlEnterCriticalSection( &wait->pool->cs );
+                    enter_critical_section( &wait->pool->cs );
                     tp_object_execute( wait, TRUE );
-                    RtlLeaveCriticalSection( &wait->pool->cs );
+                    leave_critical_section( &wait->pool->cs );
                     tp_object_release( wait );
                 }
                 else tp_object_submit( wait, FALSE );
@@ -1307,10 +1307,10 @@ static void CALLBACK waitqueue_thread_proc( void *param )
             /* All wait objects have been destroyed, if no new wait objects are created
              * within some amount of time, then we can shutdown this thread. */
             assert( num_handles == 0 );
-            RtlLeaveCriticalSection( &waitqueue.cs );
+            leave_critical_section( &waitqueue.cs );
             timeout.QuadPart = (ULONGLONG)THREADPOOL_WORKER_TIMEOUT * -10000;
             status = NtWaitForMultipleObjects( 1, &bucket->update_event, TRUE, bucket->alertable, &timeout );
-            RtlEnterCriticalSection( &waitqueue.cs );
+            enter_critical_section( &waitqueue.cs );
 
             if (status == STATUS_TIMEOUT && !bucket->objcount)
                 break;
@@ -1318,9 +1318,9 @@ static void CALLBACK waitqueue_thread_proc( void *param )
         else
         {
             handles[num_handles] = bucket->update_event;
-            RtlLeaveCriticalSection( &waitqueue.cs );
+            leave_critical_section( &waitqueue.cs );
             status = NtWaitForMultipleObjects( num_handles + 1, handles, TRUE, bucket->alertable, &timeout );
-            RtlEnterCriticalSection( &waitqueue.cs );
+            enter_critical_section( &waitqueue.cs );
 
             if (status >= STATUS_WAIT_0 && status < STATUS_WAIT_0 + num_handles)
             {
@@ -1340,9 +1340,9 @@ static void CALLBACK waitqueue_thread_proc( void *param )
                     {
                         wait->u.wait.signaled++;
                         wait->num_pending_callbacks++;
-                        RtlEnterCriticalSection( &wait->pool->cs );
+                        enter_critical_section( &wait->pool->cs );
                         tp_object_execute( wait, TRUE );
-                        RtlLeaveCriticalSection( &wait->pool->cs );
+                        leave_critical_section( &wait->pool->cs );
                     }
                     else tp_object_submit( wait, TRUE );
                 }
@@ -1408,7 +1408,7 @@ static void CALLBACK waitqueue_thread_proc( void *param )
     if (!--waitqueue.num_buckets)
         assert( list_empty( &waitqueue.buckets ) );
 
-    RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &waitqueue.cs );
 
     TRACE( "terminating wait queue thread\n" );
 
@@ -1438,7 +1438,7 @@ static NTSTATUS tp_waitqueue_lock( struct threadpool_object *wait )
     wait->u.wait.timeout        = 0;
     wait->u.wait.handle         = INVALID_HANDLE_VALUE;
 
-    RtlEnterCriticalSection( &waitqueue.cs );
+    enter_critical_section( &waitqueue.cs );
 
     /* Try to assign to existing bucket if possible. */
     LIST_FOR_EACH_ENTRY( bucket, &waitqueue.buckets, struct waitqueue_bucket, bucket_entry )
@@ -1495,7 +1495,7 @@ static NTSTATUS tp_waitqueue_lock( struct threadpool_object *wait )
     }
 
 out:
-    RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &waitqueue.cs );
     return status;
 }
 
@@ -1506,7 +1506,7 @@ static void tp_waitqueue_unlock( struct threadpool_object *wait )
 {
     assert( wait->type == TP_OBJECT_TYPE_WAIT );
 
-    RtlEnterCriticalSection( &waitqueue.cs );
+    enter_critical_section( &waitqueue.cs );
     if (wait->u.wait.bucket)
     {
         struct waitqueue_bucket *bucket = wait->u.wait.bucket;
@@ -1518,7 +1518,7 @@ static void tp_waitqueue_unlock( struct threadpool_object *wait )
 
         NtSetEvent( bucket->update_event, NULL );
     }
-    RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &waitqueue.cs );
 }
 
 static void CALLBACK ioqueue_thread_proc( void *param )
@@ -1533,14 +1533,14 @@ static void CALLBACK ioqueue_thread_proc( void *param )
     TRACE( "starting I/O completion thread\n" );
     set_thread_name(L"wine_threadpool_ioqueue");
 
-    RtlEnterCriticalSection( &ioqueue.cs );
+    enter_critical_section( &ioqueue.cs );
 
     for (;;)
     {
-        RtlLeaveCriticalSection( &ioqueue.cs );
+        leave_critical_section( &ioqueue.cs );
         if ((status = NtRemoveIoCompletion( ioqueue.port, &key, &value, &iosb, NULL )))
             ERR("NtRemoveIoCompletion failed, status %#lx.\n", status);
-        RtlEnterCriticalSection( &ioqueue.cs );
+        enter_critical_section( &ioqueue.cs );
 
         destroy = skip = FALSE;
         io = (struct threadpool_object *)key;
@@ -1549,7 +1549,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
 
         if (io && (io->shutdown || io->u.io.shutting_down))
         {
-            RtlEnterCriticalSection( &io->pool->cs );
+            enter_critical_section( &io->pool->cs );
             if (!io->u.io.pending_count)
             {
                 if (io->u.io.skipped_count)
@@ -1560,7 +1560,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
                 else
                     destroy = TRUE;
             }
-            RtlLeaveCriticalSection( &io->pool->cs );
+            leave_critical_section( &io->pool->cs );
             if (skip) continue;
         }
 
@@ -1573,7 +1573,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
         }
         else if (io)
         {
-            RtlEnterCriticalSection( &io->pool->cs );
+            enter_critical_section( &io->pool->cs );
 
             TRACE( "pending_count %u.\n", io->u.io.pending_count );
 
@@ -1584,7 +1584,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
                         io->u.io.completion_count + 1, sizeof(*io->u.io.completions)))
                 {
                     ERR( "Failed to allocate memory.\n" );
-                    RtlLeaveCriticalSection( &io->pool->cs );
+                    leave_critical_section( &io->pool->cs );
                     continue;
                 }
 
@@ -1594,7 +1594,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
 
                 tp_object_submit( io, FALSE );
             }
-            RtlLeaveCriticalSection( &io->pool->cs );
+            leave_critical_section( &io->pool->cs );
         }
 
         if (!ioqueue.objcount)
@@ -1610,7 +1610,7 @@ static void CALLBACK ioqueue_thread_proc( void *param )
     }
 
     ioqueue.thread_running = FALSE;
-    RtlLeaveCriticalSection( &ioqueue.cs );
+    leave_critical_section( &ioqueue.cs );
 
     TRACE( "terminating I/O completion thread\n" );
 
@@ -1623,12 +1623,12 @@ static NTSTATUS tp_ioqueue_lock( struct threadpool_object *io, HANDLE file )
 
     assert( io->type == TP_OBJECT_TYPE_IO );
 
-    RtlEnterCriticalSection( &ioqueue.cs );
+    enter_critical_section( &ioqueue.cs );
 
     if (!ioqueue.port && (status = NtCreateIoCompletion( &ioqueue.port,
             IO_COMPLETION_ALL_ACCESS, NULL, 0 )))
     {
-        RtlLeaveCriticalSection( &ioqueue.cs );
+        leave_critical_section( &ioqueue.cs );
         return status;
     }
 
@@ -1661,7 +1661,7 @@ static NTSTATUS tp_ioqueue_lock( struct threadpool_object *io, HANDLE file )
             RtlWakeConditionVariable( &ioqueue.update_event );
     }
 
-    RtlLeaveCriticalSection( &ioqueue.cs );
+    leave_critical_section( &ioqueue.cs );
     return status;
 }
 
@@ -1796,7 +1796,7 @@ static NTSTATUS tp_threadpool_lock( struct threadpool **out, TP_CALLBACK_ENVIRON
         pool = default_threadpool;
     }
 
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
 
     /* Make sure that the threadpool has at least one thread. */
     if (!pool->num_workers)
@@ -1810,7 +1810,7 @@ static NTSTATUS tp_threadpool_lock( struct threadpool **out, TP_CALLBACK_ENVIRON
         pool->objcount++;
     }
 
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
 
     if (status != STATUS_SUCCESS)
         return status;
@@ -1826,9 +1826,9 @@ static NTSTATUS tp_threadpool_lock( struct threadpool **out, TP_CALLBACK_ENVIRON
  */
 static void tp_threadpool_unlock( struct threadpool *pool )
 {
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
     pool->objcount--;
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
     tp_threadpool_release( pool );
 }
 
@@ -1967,10 +1967,10 @@ static void tp_object_initialize( struct threadpool_object *object, struct threa
         struct threadpool_group *group = object->group;
         InterlockedIncrement( &group->refcount );
 
-        RtlEnterCriticalSection( &group->cs );
+        enter_critical_section( &group->cs );
         list_add_tail( &group->members, &object->group_entry );
         object->is_group_member = TRUE;
-        RtlLeaveCriticalSection( &group->cs );
+        leave_critical_section( &group->cs );
     }
 
     if (is_simple_callback)
@@ -1997,7 +1997,7 @@ static void tp_object_submit( struct threadpool_object *object, BOOL signaled )
     assert( !object->shutdown );
     assert( !pool->shutdown );
 
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
 
     /* Start new worker threads if required. */
     if (pool->num_busy_workers >= pool->num_workers &&
@@ -2020,7 +2020,7 @@ static void tp_object_submit( struct threadpool_object *object, BOOL signaled )
         RtlWakeConditionVariable( &pool->update_event );
     }
 
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
 }
 
 /***********************************************************************
@@ -2033,7 +2033,7 @@ static void tp_object_cancel( struct threadpool_object *object )
     struct threadpool *pool = object->pool;
     LONG pending_callbacks = 0;
 
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
     if (object->num_pending_callbacks)
     {
         pending_callbacks = object->num_pending_callbacks;
@@ -2048,7 +2048,7 @@ static void tp_object_cancel( struct threadpool_object *object )
         object->u.io.skipped_count += object->u.io.pending_count;
         object->u.io.pending_count = 0;
     }
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
 
     while (pending_callbacks--)
         tp_object_release( object );
@@ -2077,7 +2077,7 @@ static void tp_object_wait( struct threadpool_object *object, BOOL group_wait )
 {
     struct threadpool *pool = object->pool;
 
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
     while (!object_is_finished( object, group_wait ))
     {
         if (group_wait)
@@ -2085,21 +2085,21 @@ static void tp_object_wait( struct threadpool_object *object, BOOL group_wait )
         else
             RtlSleepConditionVariableCS( &object->finished_event, &pool->cs, NULL );
     }
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
 }
 
 static void tp_ioqueue_unlock( struct threadpool_object *io )
 {
     assert( io->type == TP_OBJECT_TYPE_IO );
 
-    RtlEnterCriticalSection( &ioqueue.cs );
+    enter_critical_section( &ioqueue.cs );
 
     assert(ioqueue.objcount);
 
     if (!io->shutdown && !--ioqueue.objcount)
         NtSetIoCompletion( ioqueue.port, 0, 0, STATUS_SUCCESS, 0 );
 
-    RtlLeaveCriticalSection( &ioqueue.cs );
+    leave_critical_section( &ioqueue.cs );
 }
 
 /***********************************************************************
@@ -2139,13 +2139,13 @@ static BOOL tp_object_release( struct threadpool_object *object )
     {
         struct threadpool_group *group = object->group;
 
-        RtlEnterCriticalSection( &group->cs );
+        enter_critical_section( &group->cs );
         if (object->is_group_member)
         {
             list_remove( &object->group_entry );
             object->is_group_member = FALSE;
         }
-        RtlLeaveCriticalSection( &group->cs );
+        leave_critical_section( &group->cs );
 
         tp_group_release( group );
     }
@@ -2208,8 +2208,8 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     /* Leave critical section and do the actual callback. */
     object->num_associated_callbacks++;
     object->num_running_callbacks++;
-    RtlLeaveCriticalSection( &pool->cs );
-    if (wait_thread) RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &pool->cs );
+    if (wait_thread) leave_critical_section( &waitqueue.cs );
 
     /* Initialize threadpool instance struct. */
     callback_instance = (TP_CALLBACK_INSTANCE *)&instance;
@@ -2290,7 +2290,7 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     /* Execute cleanup tasks. */
     if (instance.cleanup.critical_section)
     {
-        RtlLeaveCriticalSection( instance.cleanup.critical_section );
+        leave_critical_section( instance.cleanup.critical_section );
     }
     if (instance.cleanup.mutex)
     {
@@ -2313,8 +2313,8 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     }
 
 skip_cleanup:
-    if (wait_thread) RtlEnterCriticalSection( &waitqueue.cs );
-    RtlEnterCriticalSection( &pool->cs );
+    if (wait_thread) enter_critical_section( &waitqueue.cs );
+    enter_critical_section( &pool->cs );
 
     /* Simple callbacks are automatically shutdown after execution. */
     if (object->type == TP_OBJECT_TYPE_SIMPLE)
@@ -2347,7 +2347,7 @@ static void CALLBACK threadpool_worker_proc( void *param )
     TRACE( "starting worker thread for pool %p\n", pool );
     set_thread_name(L"wine_threadpool_worker");
 
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
     for (;;)
     {
         while ((ptr = threadpool_get_next_item( pool )))
@@ -2387,7 +2387,7 @@ static void CALLBACK threadpool_worker_proc( void *param )
         }
     }
     pool->num_workers--;
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
 
     TRACE( "terminating worker thread for pool %p\n", pool );
     tp_threadpool_release( pool );
@@ -2587,7 +2587,7 @@ void WINAPI TpCancelAsyncIoOperation( TP_IO *io )
 
     TRACE( "%p\n", io );
 
-    RtlEnterCriticalSection( &this->pool->cs );
+    enter_critical_section( &this->pool->cs );
 
     TRACE("pending_count %u.\n", this->u.io.pending_count);
 
@@ -2597,7 +2597,7 @@ void WINAPI TpCancelAsyncIoOperation( TP_IO *io )
     if (object_is_finished( this, FALSE ))
         RtlWakeAllConditionVariable( &this->finished_event );
 
-    RtlLeaveCriticalSection( &this->pool->cs );
+    leave_critical_section( &this->pool->cs );
 }
 
 /***********************************************************************
@@ -2635,7 +2635,7 @@ NTSTATUS WINAPI TpCallbackMayRunLong( TP_CALLBACK_INSTANCE *instance )
         return STATUS_SUCCESS;
 
     pool = object->pool;
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
 
     /* Start new worker threads if required. */
     if (pool->num_busy_workers >= pool->num_workers)
@@ -2650,7 +2650,7 @@ NTSTATUS WINAPI TpCallbackMayRunLong( TP_CALLBACK_INSTANCE *instance )
         }
     }
 
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
     this->may_run_long = TRUE;
     return status;
 }
@@ -2731,13 +2731,13 @@ VOID WINAPI TpDisassociateCallback( TP_CALLBACK_INSTANCE *instance )
         return;
 
     pool = object->pool;
-    RtlEnterCriticalSection( &pool->cs );
+    enter_critical_section( &pool->cs );
 
     object->num_associated_callbacks--;
     if (object_is_finished( object, FALSE ))
         RtlWakeAllConditionVariable( &object->finished_event );
 
-    RtlLeaveCriticalSection( &pool->cs );
+    leave_critical_section( &pool->cs );
     this->associated = FALSE;
 }
 
@@ -2789,7 +2789,7 @@ VOID WINAPI TpReleaseCleanupGroupMembers( TP_CLEANUP_GROUP *group, BOOL cancel_p
 
     TRACE( "%p %u %p\n", group, cancel_pending, userdata );
 
-    RtlEnterCriticalSection( &this->cs );
+    enter_critical_section( &this->cs );
 
     /* Unset group, increase references, and mark objects for shutdown */
     LIST_FOR_EACH_ENTRY_SAFE( object, next, &this->members, struct threadpool_object, group_entry )
@@ -2815,7 +2815,7 @@ VOID WINAPI TpReleaseCleanupGroupMembers( TP_CLEANUP_GROUP *group, BOOL cancel_p
     list_init( &members );
     list_move_tail( &members, &this->members );
 
-    RtlLeaveCriticalSection( &this->cs );
+    leave_critical_section( &this->cs );
 
     /* Cancel pending callbacks if requested */
     if (cancel_pending)
@@ -2861,10 +2861,10 @@ void WINAPI TpReleaseIoCompletion( TP_IO *io )
 
     TRACE( "%p\n", io );
 
-    RtlEnterCriticalSection( &this->pool->cs );
+    enter_critical_section( &this->pool->cs );
     this->u.io.shutting_down = TRUE;
     can_destroy = !this->u.io.pending_count && !this->u.io.skipped_count;
-    RtlLeaveCriticalSection( &this->pool->cs );
+    leave_critical_section( &this->pool->cs );
 
     if (can_destroy)
     {
@@ -2938,10 +2938,10 @@ VOID WINAPI TpSetPoolMaxThreads( TP_POOL *pool, DWORD maximum )
 
     TRACE( "%p %lu\n", pool, maximum );
 
-    RtlEnterCriticalSection( &this->cs );
+    enter_critical_section( &this->cs );
     this->max_workers = max( maximum, 1 );
     this->min_workers = min( this->min_workers, this->max_workers );
-    RtlLeaveCriticalSection( &this->cs );
+    leave_critical_section( &this->cs );
 }
 
 /***********************************************************************
@@ -2954,7 +2954,7 @@ BOOL WINAPI TpSetPoolMinThreads( TP_POOL *pool, DWORD minimum )
 
     TRACE( "%p %lu\n", pool, minimum );
 
-    RtlEnterCriticalSection( &this->cs );
+    enter_critical_section( &this->cs );
 
     while (this->num_workers < minimum)
     {
@@ -2969,7 +2969,7 @@ BOOL WINAPI TpSetPoolMinThreads( TP_POOL *pool, DWORD minimum )
         this->max_workers = max( this->min_workers, this->max_workers );
     }
 
-    RtlLeaveCriticalSection( &this->cs );
+    leave_critical_section( &this->cs );
     return !status;
 }
 
@@ -2985,7 +2985,7 @@ VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LO
 
     TRACE( "%p %p %lu %lu\n", timer, timeout, period, window_length );
 
-    RtlEnterCriticalSection( &timerqueue.cs );
+    enter_critical_section( &timerqueue.cs );
 
     assert( this->u.timer.timer_initialized );
     this->u.timer.timer_set = timeout != NULL;
@@ -3045,7 +3045,7 @@ VOID WINAPI TpSetTimer( TP_TIMER *timer, LARGE_INTEGER *timeout, LONG period, LO
         this->u.timer.timer_pending = TRUE;
     }
 
-    RtlLeaveCriticalSection( &timerqueue.cs );
+    leave_critical_section( &timerqueue.cs );
 
     if (submit_timer)
        tp_object_submit( this, FALSE );
@@ -3062,7 +3062,7 @@ VOID WINAPI TpSetWait( TP_WAIT *wait, HANDLE handle, LARGE_INTEGER *timeout )
 
     TRACE( "%p %p %p\n", wait, handle, timeout );
 
-    RtlEnterCriticalSection( &waitqueue.cs );
+    enter_critical_section( &waitqueue.cs );
 
     assert( this->u.wait.bucket );
 
@@ -3105,7 +3105,7 @@ VOID WINAPI TpSetWait( TP_WAIT *wait, HANDLE handle, LARGE_INTEGER *timeout )
         NtSetEvent( bucket->update_event, NULL );
     }
 
-    RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &waitqueue.cs );
 }
 
 /***********************************************************************
@@ -3147,11 +3147,11 @@ void WINAPI TpStartAsyncIoOperation( TP_IO *io )
 
     TRACE( "%p\n", io );
 
-    RtlEnterCriticalSection( &this->pool->cs );
+    enter_critical_section( &this->pool->cs );
 
     this->u.io.pending_count++;
 
-    RtlLeaveCriticalSection( &this->pool->cs );
+    leave_critical_section( &this->pool->cs );
 }
 
 /***********************************************************************
@@ -3222,9 +3222,9 @@ NTSTATUS WINAPI TpSetPoolStackInformation( TP_POOL *pool, TP_POOL_STACK_INFORMAT
     if (!stack_info)
         return STATUS_INVALID_PARAMETER;
 
-    RtlEnterCriticalSection( &this->cs );
+    enter_critical_section( &this->cs );
     this->stack_info = *stack_info;
-    RtlLeaveCriticalSection( &this->cs );
+    leave_critical_section( &this->cs );
 
     return STATUS_SUCCESS;
 }
@@ -3241,9 +3241,9 @@ NTSTATUS WINAPI TpQueryPoolStackInformation( TP_POOL *pool, TP_POOL_STACK_INFORM
     if (!stack_info)
         return STATUS_INVALID_PARAMETER;
 
-    RtlEnterCriticalSection( &this->cs );
+    enter_critical_section( &this->cs );
     *stack_info = this->stack_info;
-    RtlLeaveCriticalSection( &this->cs );
+    leave_critical_section( &this->cs );
 
     return STATUS_SUCCESS;
 }
@@ -3303,11 +3303,11 @@ NTSTATUS WINAPI RtlRegisterWait( HANDLE *out, HANDLE handle, RTL_WAITORTIMERCALL
     object = impl_from_TP_WAIT(wait);
     object->u.wait.rtl_callback = callback;
 
-    RtlEnterCriticalSection( &waitqueue.cs );
+    enter_critical_section( &waitqueue.cs );
     TpSetWait( (TP_WAIT *)object, handle, get_nt_timeout( &timeout, milliseconds ) );
 
     *out = object;
-    RtlLeaveCriticalSection( &waitqueue.cs );
+    leave_critical_section( &waitqueue.cs );
 
     return STATUS_SUCCESS;
 }
@@ -3343,11 +3343,11 @@ NTSTATUS WINAPI RtlDeregisterWaitEx( HANDLE handle, HANDLE event )
         object->completed_event = event;
     }
 
-    RtlEnterCriticalSection( &object->pool->cs );
+    enter_critical_section( &object->pool->cs );
     if (object->num_pending_callbacks + object->num_running_callbacks
         + object->num_associated_callbacks) status = STATUS_PENDING;
     else status = STATUS_SUCCESS;
-    RtlLeaveCriticalSection( &object->pool->cs );
+    leave_critical_section( &object->pool->cs );
 
     TpReleaseWait( (TP_WAIT *)object );
     return status;
