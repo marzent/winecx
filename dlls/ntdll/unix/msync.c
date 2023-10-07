@@ -48,6 +48,7 @@
 # include <mach/semaphore.h>
 # include <mach/error.h>
 # include <servers/bootstrap.h>
+# include <os/lock.h>
 #endif
 #include <sched.h>
 #include <unistd.h>
@@ -84,6 +85,11 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
     ret.tv_nsec = (win32_time % TICKSPERSEC) * 100;
     return ret;
 }
+
+/*
+ * Faster to directly do the syscall and inline everything, taken and slightly adapted
+ * from xnu/libsyscall/mach/mach_msg.c
+ */
 
 #define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
 #define MACH64_SEND_MQ_CALL 0x0000000400000000ull
@@ -154,7 +160,7 @@ struct semaphore_memory_pool
     semaphore_t *free_semaphores[MAX_POOL_SEMAPHORES];
     unsigned int count;
     unsigned int total;
-    pthread_mutex_t mutex;
+    os_unfair_lock lock;
 };
 
 static struct semaphore_memory_pool *pool;
@@ -165,7 +171,7 @@ static void semaphore_pool_init(void)
 
     pool = malloc( sizeof(struct semaphore_memory_pool) );
 
-    pthread_mutex_init(&pool->mutex, NULL);
+    pool->lock = OS_UNFAIR_LOCK_INIT;
 
     for (i = 0; i < MAX_POOL_SEMAPHORES; i++)
     {
@@ -181,13 +187,13 @@ static inline semaphore_t *semaphore_pool_alloc(void)
     semaphore_t *new_semaphore;
     kern_return_t kr;
 
-    pthread_mutex_lock(&pool->mutex);
+    os_unfair_lock_lock(&pool->lock);
 
     if (pool->count == 0)
     {
         if (pool->total < MAX_POOL_SEMAPHORES)
         {
-            WARN("Dynamically growing semaphore pool\n");
+            TRACE("Dynamically growing semaphore pool\n");
             kr = semaphore_create(mach_task_self(), &pool->semaphores[pool->total], SYNC_POLICY_FIFO, 0);
             if (kr != KERN_SUCCESS)
                 ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
@@ -195,19 +201,19 @@ static inline semaphore_t *semaphore_pool_alloc(void)
             new_semaphore = &pool->semaphores[pool->total];
             pool->total++;
 
-            pthread_mutex_unlock(&pool->mutex);
+            os_unfair_lock_unlock(&pool->lock);
 
             return new_semaphore;
         }
         else
         {
+            os_unfair_lock_unlock(&pool->lock);
+            
             WARN("Semaphore pool exhausted, consider increasing MAX_POOL_SEMAPHORES\n");
             new_semaphore = malloc(sizeof(semaphore_t));
             kr = semaphore_create(mach_task_self(), new_semaphore, SYNC_POLICY_FIFO, 0);
             if (kr != KERN_SUCCESS)
                 ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
-
-            pthread_mutex_unlock(&pool->mutex);
 
             return new_semaphore;
         }
@@ -216,7 +222,7 @@ static inline semaphore_t *semaphore_pool_alloc(void)
     new_semaphore = pool->free_semaphores[pool->count - 1];
     pool->count--;
 
-    pthread_mutex_unlock(&pool->mutex);
+    os_unfair_lock_unlock(&pool->lock);
 
     return new_semaphore;
 }
@@ -225,20 +231,21 @@ static inline void semaphore_pool_free(semaphore_t *sem)
 {
     int i;
     
-    pthread_mutex_lock(&pool->mutex);
+    os_unfair_lock_lock(&pool->lock);
 
     if (sem < pool->semaphores || sem >= pool->semaphores + MAX_POOL_SEMAPHORES)
     {
+        os_unfair_lock_unlock(&pool->lock);
+        
         semaphore_destroy(mach_task_self(), *sem);
         free(sem);
-
-        pthread_mutex_unlock(&pool->mutex);
 
         return;
     }
     
     if (pool->count >= POOL_SHRINK_THRESHOLD)
     {
+        TRACE("Dynamically shrinking semaphore pool\n");
         for (i = 0; i < POOL_SHRINK_COUNT; i++)
         {
             semaphore_destroy(mach_task_self(), *sem);
@@ -251,7 +258,7 @@ static inline void semaphore_pool_free(semaphore_t *sem)
         pool->count++;
     }
 
-    pthread_mutex_unlock(&pool->mutex);
+    os_unfair_lock_unlock(&pool->lock);
 }
 
 struct msync
@@ -477,7 +484,7 @@ static void **shm_addrs;
 static int shm_addrs_size;  /* length of the allocated shm_addrs array */
 static long pagesize;
 
-static pthread_mutex_t shm_addrs_mutex = PTHREAD_MUTEX_INITIALIZER;
+static os_unfair_lock shm_addrs_lock = OS_UNFAIR_LOCK_INIT;
 
 static void *get_shm( unsigned int idx )
 {
@@ -485,7 +492,7 @@ static void *get_shm( unsigned int idx )
     int offset = (idx * 8) % pagesize;
     void *ret;
 
-    pthread_mutex_lock( &shm_addrs_mutex );
+    os_unfair_lock_lock( &shm_addrs_lock );
 
     if (entry >= shm_addrs_size)
     {
@@ -511,7 +518,7 @@ static void *get_shm( unsigned int idx )
 
     ret = (void *)((unsigned long)shm_addrs[entry] + offset);
 
-    pthread_mutex_unlock( &shm_addrs_mutex );
+    os_unfair_lock_unlock( &shm_addrs_lock );
 
     return ret;
 }
