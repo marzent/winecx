@@ -86,68 +86,9 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
     return ret;
 }
 
-/*
- * Faster to directly do the syscall and inline everything, taken and slightly adapted
- * from xnu/libsyscall/mach/mach_msg.c
- */
-
-#define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
-#define MACH64_SEND_MQ_CALL 0x0000000400000000ull
-
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout);
-
-static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout)
-{
-    mach_msg_return_t mr;
-
-    mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
-             msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-             rcv_size_and_priority, timeout );
-
-    if (mr == MACH_MSG_SUCCESS)
-        return MACH_MSG_SUCCESS;
-
-    while (mr == MACH_SEND_INTERRUPTED)
-        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
-                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-                 rcv_size_and_priority, timeout );
-
-    while (mr == MACH_RCV_INTERRUPTED)
-        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size & 0xffffffffull,
-                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-                 rcv_size_and_priority, timeout);
-
-    return mr;
-}
-
-static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
-    mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
-    uint32_t priority)
-{
-    mach_msg_base_t *base;
-    mach_msg_size_t descriptors;
-
-    base = (mach_msg_base_t *)data;
-
-    if ((option64 & MACH_SEND_MSG) &&
-        (base->header.msgh_bits & MACH_MSGH_BITS_COMPLEX))
-        descriptors = base->body.msgh_descriptor_count;
-    else
-        descriptors = 0;
-
-#define MACH_MSG2_SHIFT_ARGS(lo, hi) ((uint64_t)hi << 32 | (uint32_t)lo)
-    return mach_msg2_internal(data, option64 | MACH64_SEND_MQ_CALL,
-               MACH_MSG2_SHIFT_ARGS(data->msgh_bits, send_size),
-               MACH_MSG2_SHIFT_ARGS(data->msgh_remote_port, data->msgh_local_port),
-               MACH_MSG2_SHIFT_ARGS(data->msgh_voucher_port, data->msgh_id),
-               MACH_MSG2_SHIFT_ARGS(descriptors, rcv_name),
-               MACH_MSG2_SHIFT_ARGS(rcv_size, priority), timeout);
-#undef MACH_MSG2_SHIFT_ARGS
-}
+extern mach_msg_return_t mach_msg_overwrite_trap( mach_msg_header_t *msg, mach_msg_option_t option,
+        mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_name_t rcv_name, mach_msg_timeout_t timeout,
+        mach_msg_priority_t priority, mach_msg_header_t *rcv_msg, mach_msg_size_t rcv_limit);
 
 /* this is a lot, but running out cripples performance */
 #define MAX_POOL_SEMAPHORES 1024
@@ -337,8 +278,8 @@ static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
     message.prolog.header.msgh_size = sizeof(mach_register_message_prolog_t) +
                                       count * sizeof(unsigned int);
 
-    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.prolog.header.msgh_size,
-                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+    mr = mach_msg_overwrite_trap( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.prolog.header.msgh_size,
+                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
     
     if (mr != MACH_MSG_SUCCESS)
         ERR("Failed to send server register wait: %#x\n", mr);
@@ -361,8 +302,8 @@ static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
     message.header.msgh_size = sizeof(mach_msg_header_t) +
                                count * sizeof(unsigned int);
 
-    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.header.msgh_size,
-                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+    mr = mach_msg_overwrite_trap( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.header.msgh_size,
+                     0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
     
     if (mr != MACH_MSG_SUCCESS)
         ERR("Failed to send server remove wait: %#x\n", mr);
@@ -793,8 +734,8 @@ static inline void signal_all( struct msync *obj )
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = server_port;
     
-    mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size, 0,
-              MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+    mach_msg_overwrite_trap( &send_header, MACH_SEND_MSG, send_header.msgh_size, 0,
+              MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
 }
 
 NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
