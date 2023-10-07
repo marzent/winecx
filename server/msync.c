@@ -69,68 +69,9 @@
 /* Private API to register a mach port with the bootstrap server */
 extern kern_return_t bootstrap_register2( mach_port_t bp, name_t service_name, mach_port_t sp, int flags );
 
-/*
- * Faster to directly do the syscall and inline everything, taken and slightly adapted
- * from xnu/libsyscall/mach/mach_msg.c
- */
-
-#define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
-#define MACH64_SEND_MQ_CALL 0x0000000400000000ull
-
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout);
-
-static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout)
-{
-    mach_msg_return_t mr;
-
-    mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
-             msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-             rcv_size_and_priority, timeout );
-
-    if (mr == MACH_MSG_SUCCESS)
-        return MACH_MSG_SUCCESS;
-
-    while (mr == MACH_SEND_INTERRUPTED)
-        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size,
-                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-                 rcv_size_and_priority, timeout );
-
-    while (mr == MACH_RCV_INTERRUPTED)
-        mr = mach_msg2_trap( data, option64 & ~LIBMACH_OPTIONS64, msgh_bits_and_send_size & 0xffffffffull,
-                 msgh_remote_and_local_port, msgh_voucher_and_id, desc_count_and_rcv_name,
-                 rcv_size_and_priority, timeout);
-
-    return mr;
-}
-
-static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
-    mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
-    uint32_t priority)
-{
-    mach_msg_base_t *base;
-    mach_msg_size_t descriptors;
-
-    base = (mach_msg_base_t *)data;
-
-    if ((option64 & MACH_SEND_MSG) &&
-        (base->header.msgh_bits & MACH_MSGH_BITS_COMPLEX))
-        descriptors = base->body.msgh_descriptor_count;
-    else
-        descriptors = 0;
-
-#define MACH_MSG2_SHIFT_ARGS(lo, hi) ((uint64_t)hi << 32 | (uint32_t)lo)
-    return mach_msg2_internal(data, option64 | MACH64_SEND_MQ_CALL,
-               MACH_MSG2_SHIFT_ARGS(data->msgh_bits, send_size),
-               MACH_MSG2_SHIFT_ARGS(data->msgh_remote_port, data->msgh_local_port),
-               MACH_MSG2_SHIFT_ARGS(data->msgh_voucher_port, data->msgh_id),
-               MACH_MSG2_SHIFT_ARGS(descriptors, rcv_name),
-               MACH_MSG2_SHIFT_ARGS(rcv_size, priority), timeout);
-#undef MACH_MSG2_SHIFT_ARGS
-}
+extern mach_msg_return_t mach_msg_overwrite_trap( mach_msg_header_t *msg, mach_msg_option_t option,
+        mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_name_t rcv_name, mach_msg_timeout_t timeout,
+        mach_msg_priority_t priority, mach_msg_header_t *rcv_msg, mach_msg_size_t rcv_limit);
 
 static mach_port_name_t receive_port;
 
@@ -300,8 +241,8 @@ static inline mach_msg_return_t signal_all( unsigned int shm_idx )
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = receive_port;
     
-    return mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size,
-                0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0);
+    return mach_msg_overwrite_trap( &send_header, MACH_SEND_MSG, send_header.msgh_size,
+                0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
 }
 
 static inline void add_sem_to_map( unsigned int index, semaphore_t sem, int tid )
@@ -332,8 +273,8 @@ typedef struct
 
 static inline mach_msg_return_t receive_mach_msg( mach_register_message_t *buffer )
 {
-    return mach_msg2( (mach_msg_header_t *)buffer, MACH_RCV_MSG, 0,
-            sizeof(*buffer), receive_port, MACH_MSG_TIMEOUT_NONE, 0 );
+    return mach_msg_overwrite_trap( (mach_msg_header_t *)buffer, MACH_RCV_MSG, 0,
+            sizeof(*buffer), receive_port, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
 }
 
 static void *get_shm( unsigned int idx );
