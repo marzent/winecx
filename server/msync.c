@@ -37,6 +37,7 @@
 # include <mach/port.h>
 # include <mach/task.h>
 # include <mach/semaphore.h>
+# include <mach/error.h>
 # include <servers/bootstrap.h>
 #endif
 #include <sched.h>
