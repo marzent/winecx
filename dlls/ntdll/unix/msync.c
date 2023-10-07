@@ -46,6 +46,7 @@
 # include <mach/port.h>
 # include <mach/task.h>
 # include <mach/semaphore.h>
+# include <mach/error.h>
 # include <servers/bootstrap.h>
 #endif
 #include <sched.h>
@@ -161,7 +162,6 @@ static struct semaphore_memory_pool *pool;
 static void semaphore_pool_init(void)
 {
     unsigned int i;
-    kern_return_t kr;
 
     pool = malloc( sizeof(struct semaphore_memory_pool) );
 
@@ -340,7 +340,7 @@ static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
 static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
                                         struct msync **wait_objs, const int count )
 {
-    int i, pack_size;
+    int i;
     mach_msg_return_t mr;
     __thread static mach_unregister_message_t message;
     
