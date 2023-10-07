@@ -464,7 +464,6 @@ void msync_init(void)
     mach_port_t bootstrap_port;
     pthread_attr_t attr;
     mach_port_limits_t limits;
-    struct sched_param param;
 
     if (fstat( config_dir_fd, &st ) == -1)
         fatal_error( "cannot stat config dir\n" );
