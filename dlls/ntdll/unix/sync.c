@@ -49,10 +49,10 @@
 #include <stdlib.h>
 #include <time.h>
 #ifdef __APPLE__
-# include <mach/mach.h>
-# include <mach/task.h>
-# include <mach/semaphore.h>
 # include <mach/mach_time.h>
+#endif
+#ifdef HAVE_KQUEUE
+# include <sys/event.h>
 #endif
 
 #include "ntstatus.h"
@@ -2432,8 +2432,8 @@ NTSTATUS WINAPI NtQueryInformationAtom( RTL_ATOM atom, ATOM_INFORMATION_CLASS cl
 
 union tid_alert_entry
 {
-#ifdef __APPLE__
-    semaphore_t sem;
+#ifdef HAVE_KQUEUE
+    int kq;
 #else
     HANDLE event;
 #ifdef __linux__
@@ -2474,15 +2474,35 @@ static union tid_alert_entry *get_tid_alert_entry( HANDLE tid )
 
     entry = &tid_alert_blocks[block_idx][idx % TID_ALERT_BLOCK_SIZE];
 
-#ifdef __APPLE__
-    if (!entry->sem)
+#ifdef HAVE_KQUEUE
+    if (!entry->kq)
     {
-        semaphore_t sem;
+        int temp_kq = kqueue();
+        static const struct kevent init_event =
+        {
+            .ident = 1,
+            .filter = EVFILT_USER,
+            .flags = EV_ADD | EV_CLEAR,
+            .fflags = 0,
+            .data = 0,
+            .udata = NULL
+        };
 
-        if (semaphore_create( mach_task_self(), &sem, SYNC_POLICY_FIFO, 0 ))
+        if (temp_kq == -1)
+        {
+            ERR("kqueue failed with error: %d (%s)\n", errno, strerror(errno));
             return NULL;
-        if (InterlockedCompareExchange( (LONG *)&entry->sem, sem, 0 ))
-            semaphore_destroy( mach_task_self(), sem );
+        }
+
+        if (kevent( temp_kq, &init_event, 1, NULL, 0, NULL) == -1)
+        {
+            ERR("kevent creation failed with error: %d (%s)\n", errno, strerror(errno));
+            close( temp_kq );
+            return NULL;
+        }
+
+        if (InterlockedCompareExchange( (LONG*)&entry->kq, temp_kq, 0 ))
+            close( temp_kq );
     }
 #else
 #ifdef __linux__
@@ -2516,8 +2536,18 @@ NTSTATUS WINAPI NtAlertThreadByThreadId( HANDLE tid )
 
     if (!entry) return STATUS_INVALID_CID;
 
-#ifdef __APPLE__
-    semaphore_signal( entry->sem );
+#ifdef HAVE_KQUEUE
+    static const struct kevent signal_event =
+    {
+        .ident = 1,
+        .filter = EVFILT_USER,
+        .flags = 0,
+        .fflags = NOTE_TRIGGER,
+        .data = 0,
+        .udata = NULL
+    };
+
+    kevent( entry->kq, &signal_event, 1, NULL, 0, NULL );
     return STATUS_SUCCESS;
 #else
 #ifdef __linux__
@@ -2535,7 +2565,7 @@ NTSTATUS WINAPI NtAlertThreadByThreadId( HANDLE tid )
 }
 
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined __linux__ || HAVE_KQUEUE
 static LONGLONG get_absolute_timeout( const LARGE_INTEGER *timeout )
 {
     LARGE_INTEGER now;
@@ -2558,22 +2588,22 @@ static LONGLONG update_timeout( ULONGLONG end )
 #endif
 
 
-#ifdef __APPLE__
+#ifdef HAVE_KQUEUE
 
 /***********************************************************************
  *             NtWaitForAlertByThreadId (NTDLL.@)
  */
 NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEGER *timeout )
 {
-    union tid_alert_entry *entry = get_tid_alert_entry( NtCurrentTeb()->ClientId.UniqueThread );
-    semaphore_t sem;
+    int ret;
     ULONGLONG end;
-    kern_return_t ret;
+    struct timespec timespec;
+    struct kevent wait_event;
+    union tid_alert_entry *entry = get_tid_alert_entry( NtCurrentTeb()->ClientId.UniqueThread );
 
     TRACE( "%p %s\n", address, debugstr_timeout( timeout ) );
 
     if (!entry) return STATUS_INVALID_CID;
-    sem = entry->sem;
 
     if (timeout)
     {
@@ -2583,27 +2613,31 @@ NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEG
             end = get_absolute_timeout( timeout );
     }
 
-    for (;;)
+    do
     {
         if (timeout)
         {
             LONGLONG timeleft = update_timeout( end );
-            mach_timespec_t timespec;
 
             timespec.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
             timespec.tv_nsec = (timeleft % TICKSPERSEC) * 100;
-            ret = semaphore_timedwait( sem, timespec );
+            if (timespec.tv_sec > 0x7FFFFFFF) timeout = NULL;
         }
-        else
-            ret = semaphore_wait( sem );
+        
+        ret = kevent( entry->kq, NULL, 0, &wait_event, 1, timeout ? &timespec : NULL );
 
-        switch (ret)
-        {
-        case KERN_SUCCESS: return STATUS_ALERTED;
-        case KERN_ABORTED: continue;
-        case KERN_OPERATION_TIMED_OUT: return STATUS_TIMEOUT;
-        default: return STATUS_INVALID_HANDLE;
-        }
+    } while (ret == -1 && errno == EINTR);
+
+    switch (ret)
+    {
+    case 1:
+        return STATUS_ALERTED;
+    case 0:
+        return STATUS_TIMEOUT;
+    default:
+        assert( ret == -1 );
+        ERR("kevent failed with error: %d (%s)\n", errno, strerror(errno));
+        return STATUS_INVALID_HANDLE;
     }
 }
 
