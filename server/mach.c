@@ -276,7 +276,7 @@ void get_thread_context( struct thread *thread, context_t *context, unsigned int
     else if (is_apple_silicon())
     {
         /* CX HACK 21217: Fake debug registers on Apple Silicon */
-        fprintf( stderr, "%04x: thread_get_state failed on Apple Silicon - faking zero debug registers\n", thread->id );
+        /* fprintf( stderr, "%04x: thread_get_state failed on Apple Silicon - faking zero debug registers\n", thread->id ); */
         memset( &context->debug, 0, sizeof(context->debug) );
         context->flags |= SERVER_CTX_DEBUG_REGISTERS;
     }

@@ -300,7 +300,7 @@ static void *mach_message_pump( void *args )
          */
         if (receive_message.header.msgh_size == sizeof(mach_msg_header_t))
         {
-            if (check_bit_20( &receive_message.header.msgh_id ))
+            if (check_bit_20( (unsigned int *)&receive_message.header.msgh_id ))
                 destroy_all_internal( receive_message.header.msgh_id );
             else
                 signal_all_internal( receive_message.header.msgh_id );
