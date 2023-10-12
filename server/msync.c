@@ -37,10 +37,12 @@
 # include <mach/port.h>
 # include <mach/task.h>
 # include <mach/semaphore.h>
-# include <mach/error.h>
+# include <mach/mach_error.h>
+# include <mach/thread_act.h>
 # include <servers/bootstrap.h>
 #endif
 #include <sched.h>
+#include <signal.h>
 #include <pthread.h>
 #include <unistd.h>
 
