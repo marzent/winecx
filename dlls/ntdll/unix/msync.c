@@ -46,7 +46,7 @@
 # include <mach/port.h>
 # include <mach/task.h>
 # include <mach/semaphore.h>
-# include <mach/error.h>
+# include <mach/mach_error.h>
 # include <servers/bootstrap.h>
 # include <os/lock.h>
 #endif
