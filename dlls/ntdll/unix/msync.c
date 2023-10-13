@@ -50,6 +50,7 @@
 # include <servers/bootstrap.h>
 # include <os/lock.h>
 #endif
+#include <dlfcn.h>
 #include <sched.h>
 #include <unistd.h>
 
@@ -94,9 +95,12 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
 #define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
 #define MACH64_SEND_MQ_CALL 0x0000000400000000ull
 
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout);
+typedef mach_msg_return_t (*mach_msg2_trap_ptr_t)( void *data, uint64_t options,
+    uint64_t msgh_bits_and_send_size, uint64_t msgh_remote_and_local_port,
+    uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout );
+
+static mach_msg2_trap_ptr_t mach_msg2_trap;
 
 static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
     uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
@@ -124,12 +128,21 @@ static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option6
     return mr;
 }
 
+/* For older versions of macOS we need to provide fallback in case there is no mach_msg2... */
+extern mach_msg_return_t mach_msg_trap( mach_msg_header_t *msg, mach_msg_option_t option,
+        mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_name_t rcv_name, mach_msg_timeout_t timeout,
+        mach_port_name_t notify );
+
 static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
     mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
     uint32_t priority)
 {
     mach_msg_base_t *base;
     mach_msg_size_t descriptors;
+
+    if (!mach_msg2_trap)
+        return mach_msg_trap( data, (mach_msg_option_t)option64, send_size,
+                              rcv_size, rcv_name, timeout, priority );
 
     base = (mach_msg_base_t *)data;
 
@@ -710,6 +723,7 @@ void msync_init(void)
 {
     struct stat st;
     mach_port_t bootstrap_port;
+    void *dlhandle = dlopen( NULL, RTLD_NOW );
 
     if (!do_msync())
     {
@@ -724,6 +738,7 @@ void msync_init(void)
             exit(1);
         }
 
+        dlclose( dlhandle );
         return;
     }
 
@@ -753,7 +768,12 @@ void msync_init(void)
     semaphore_pool_init();
     
     /* Bootstrap mach wineserver communication */
-    
+
+    mach_msg2_trap = (mach_msg2_trap_ptr_t)dlsym( dlhandle, "mach_msg2_trap" );
+    if (!mach_msg2_trap)
+        WARN("Using mach_msg_overwrite instead of mach_msg2\n");
+    dlclose( dlhandle );
+
     if (task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port) != KERN_SUCCESS)
     {
         ERR("Failed task_get_special_port\n");

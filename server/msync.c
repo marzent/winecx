@@ -42,6 +42,7 @@
 # include <servers/bootstrap.h>
 #endif
 #include <sched.h>
+#include <dlfcn.h>
 #include <signal.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -79,9 +80,12 @@ extern kern_return_t bootstrap_register2( mach_port_t bp, name_t service_name, m
 #define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
 #define MACH64_SEND_MQ_CALL 0x0000000400000000ull
 
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options, uint64_t msgh_bits_and_send_size,
-    uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout);
+typedef mach_msg_return_t (*mach_msg2_trap_ptr_t)( void *data, uint64_t options,
+    uint64_t msgh_bits_and_send_size, uint64_t msgh_remote_and_local_port,
+    uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
+    uint64_t rcv_size_and_priority, uint64_t timeout );
+
+static mach_msg2_trap_ptr_t mach_msg2_trap;
 
 static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
     uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
@@ -109,12 +113,21 @@ static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option6
     return mr;
 }
 
+/* For older versions of macOS we need to provide fallback in case there is no mach_msg2... */
+extern mach_msg_return_t mach_msg_trap( mach_msg_header_t *msg, mach_msg_option_t option,
+        mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_name_t rcv_name, mach_msg_timeout_t timeout,
+        mach_port_name_t notify );
+
 static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t option64,
     mach_msg_size_t send_size, mach_msg_size_t rcv_size, mach_port_t rcv_name, uint64_t timeout,
     uint32_t priority)
 {
     mach_msg_base_t *base;
     mach_msg_size_t descriptors;
+
+    if (!mach_msg2_trap)
+        return mach_msg_trap( data, (mach_msg_option_t)option64, send_size,
+                              rcv_size, rcv_name, timeout, priority );
 
     base = (mach_msg_base_t *)data;
 
@@ -289,8 +302,8 @@ static inline mach_msg_return_t signal_all( unsigned int shm_idx )
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = receive_port;
     
-    return mach_msg_overwrite_trap( &send_header, MACH_SEND_MSG, send_header.msgh_size,
-                0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL, NULL, 0 );
+    return mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size,
+                0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
 }
 
 typedef struct
@@ -482,6 +495,7 @@ void msync_init(void)
     struct stat st;
     mach_port_t bootstrap_port;
     mach_port_limits_t limits;
+    void *dlhandle = dlopen( NULL, RTLD_NOW );
 
     if (fstat( config_dir_fd, &st ) == -1)
         fatal_error( "cannot stat config dir\n" );
@@ -511,7 +525,12 @@ void msync_init(void)
     }
     
     /* Bootstrap mach server message pump */
-    
+
+    mach_msg2_trap = (mach_msg2_trap_ptr_t)dlsym( dlhandle, "mach_msg2_trap" );
+    if (!mach_msg2_trap)
+        fprintf( stderr, "msync: warning: using mach_msg_overwrite instead of mach_msg2\n");
+    dlclose( dlhandle );
+
     MACH_CHECK_ERROR(mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &receive_port), "mach_port_allocate");
 
     MACH_CHECK_ERROR(mach_port_insert_right(mach_task_self(), receive_port, receive_port, MACH_MSG_TYPE_MAKE_SEND), "mach_port_insert_right");
