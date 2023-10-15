@@ -209,21 +209,20 @@ struct msync
     unsigned int shm_idx;
 };
 
-static inline void resize_wait_objs( struct msync **wait_objs, int *count )
+static inline int resize_wait_objs( struct msync **wait_objs, struct msync **objs, int count )
 {
-    int read_index = 0;
-    int write_index = 0;
+    int read_index, write_index = 0;
 
-    for (; read_index < *count; read_index++)
+    for (read_index = 0; read_index < count; read_index++)
     {
-        if (wait_objs[read_index] != NULL)
+        if (wait_objs[read_index])
         {
-            if (read_index != write_index)
-                wait_objs[write_index] = wait_objs[read_index];
+            objs[write_index] = wait_objs[read_index];
             write_index++;
         }
     }
-    *count = write_index;
+
+    return write_index;
 }
 
 typedef struct
@@ -253,7 +252,7 @@ static const mach_msg_bits_t msgh_bits_complex_send = MACH_MSGH_BITS_SET(
 static const mach_msg_bits_t msgh_bits_send = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
 
 static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
-                                        struct msync **wait_objs, const int count )
+                                         struct msync **wait_objs, const int count )
 {
     int i, is_mutex;
     mach_msg_return_t mr;
@@ -286,7 +285,7 @@ static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
 }
 
 static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
-                                        struct msync **wait_objs, const int count )
+                                       struct msync **wait_objs, const int count )
 {
     int i;
     mach_msg_return_t mr;
@@ -309,47 +308,51 @@ static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
         ERR("Failed to send server remove wait: %#x\n", mr);
 }
 
-static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
-                                     int count, ULONGLONG *end )
+static inline int check_shm_contention( struct msync **wait_objs,
+                                        int count, int tid )
 {
-    int i, val, tid;
-    semaphore_t *sem;
-    kern_return_t kr;
-    LONGLONG timeleft;
-    unsigned int msgh_id;
-
-    resize_wait_objs( wait_objs, &count );
-
-    tid = GetCurrentThreadId();
+    int i, val;
+    
     for (i = 0; i < count; i++)
     {
         val = __atomic_load_n((int *)wait_objs[i]->shm, __ATOMIC_SEQ_CST);
         if (wait_objs[i]->type == MSYNC_MUTEX)
         {
-            if (val == 0 || val == ~0 || val == tid) return STATUS_PENDING;
+            if (val == 0 || val == ~0 || val == tid) return 1;
         }
         else
         {
-            if (val != 0)  return STATUS_PENDING;
+            if (val != 0)  return 1;
         }
     }
+    return 0;
+}
+
+static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
+                                     int count, ULONGLONG *end )
+{
+    int tid;
+    semaphore_t *sem;
+    kern_return_t kr;
+    unsigned int msgh_id;
+    __thread static struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
+
+    count = resize_wait_objs( wait_objs, objs, count );
+
+    tid = GetCurrentThreadId();
+
+    if (check_shm_contention( objs, count, tid ))
+        return STATUS_PENDING;
 
     sem = semaphore_pool_alloc();
     msgh_id = (tid << 8) | count;
-    server_register_wait( *sem, msgh_id, wait_objs, count );
+    server_register_wait( *sem, msgh_id, objs, count );
 
     do
     {
         if (end)
-        {
-            timeleft = update_timeout( *end );
-            if (!timeleft)
-            {
-                kr = KERN_OPERATION_TIMED_OUT;
-                break;
-            }
-            kr = semaphore_timedwait( *sem, convert_to_mach_time( timeleft ) );
-        }
+            kr = semaphore_timedwait( *sem,
+                        convert_to_mach_time( update_timeout( *end ) ) );
         else
             kr = semaphore_wait( *sem );
     } while (kr == KERN_ABORTED);
@@ -359,24 +362,25 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
     switch (kr) {
         case KERN_SUCCESS:
             if (count > 1)
-                server_remove_wait( *sem, msgh_id, wait_objs, count );
+                server_remove_wait( *sem, msgh_id, objs, count );
             return STATUS_SUCCESS;
         case KERN_OPERATION_TIMED_OUT:
-            server_remove_wait( *sem, msgh_id, wait_objs, count );
+            server_remove_wait( *sem, msgh_id, objs, count );
+            if (check_shm_contention( objs, count, tid ))
+                return STATUS_PENDING;
             return STATUS_TIMEOUT;
         case KERN_TERMINATED:
-            server_remove_wait( *sem, msgh_id, wait_objs, count );
+            server_remove_wait( *sem, msgh_id, objs, count );
             if (end)
             {
-                timeleft = update_timeout( *end );
-                usleep(timeleft / 10);
+                usleep( update_timeout( *end ) / 10 );
                 return STATUS_TIMEOUT;
             }
             pause();
             return STATUS_PENDING;
         default:
-            server_remove_wait( *sem, msgh_id, wait_objs, count );
-            ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string(kr));
+            server_remove_wait( *sem, msgh_id, objs, count );
+            ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string( kr ));
             return STATUS_PENDING;
     }
 }
@@ -993,7 +997,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
 {
     static const LARGE_INTEGER zero = {0};
     
-    struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
+    __thread static struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
     struct msync apc_obj;
     int has_msync = 0, has_server = 0;
     BOOL msgwait = FALSE;
