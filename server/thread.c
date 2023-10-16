@@ -242,6 +242,7 @@ static inline void init_thread_structure( struct thread *thread )
     thread->esync_fd        = NULL;
     thread->esync_apc_fd    = NULL;
     thread->msync_idx       = 0;
+    thread->msync_apc_idx   = 0;
     thread->system_regs     = 0;
     thread->queue           = NULL;
     thread->wait            = NULL;
@@ -1261,7 +1262,7 @@ static struct thread_apc *thread_dequeue_apc( struct thread *thread, int system 
     }
 
     if (do_msync() && list_empty( &thread->system_apc ) && list_empty( &thread->user_apc ))
-        msync_clear( &thread->obj );
+        msync_clear_shm( thread->msync_apc_idx );
 
     if (do_esync() && list_empty( &thread->system_apc ) && list_empty( &thread->user_apc ))
         esync_clear( thread->esync_apc_fd );
