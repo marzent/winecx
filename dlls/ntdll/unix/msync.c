@@ -1191,8 +1191,8 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         struct semaphore *semaphore = obj->shm;
                         int current;
 
-                        if ((current = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST ))
-                                && __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) == current)
+                        current = __atomic_load_n(&semaphore->count, __ATOMIC_ACQUIRE);
+                        if (current && __atomic_compare_exchange_n(&semaphore->count, &current, current - 1, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;
@@ -1211,13 +1211,14 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                             return i;
                         }
 
-                        if (!(tid = __sync_val_compare_and_swap( &mutex->tid, 0, GetCurrentThreadId() )))
+                        tid = 0;
+                        if (__atomic_compare_exchange_n(&mutex->tid, &tid, GetCurrentThreadId(), 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             mutex->count = 1;
                             return i;
                         }
-                        else if (tid == ~0 && (tid = __sync_val_compare_and_swap( &mutex->tid, ~0, GetCurrentThreadId() )) == ~0)
+                        else if (tid == ~0 && __atomic_compare_exchange_n(&mutex->tid, &tid, GetCurrentThreadId(), 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
                         {
                             TRACE("Woken up by abandoned mutex %p [%d].\n", handles[i], i);
                             mutex->count = 1;
@@ -1230,8 +1231,9 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     case MSYNC_AUTO_SERVER:
                     {
                         struct event *event = obj->shm;
+                        int signaled = 1;
 
-                        if (__sync_val_compare_and_swap( &event->signaled, 1, 0 ))
+                        if (__atomic_compare_exchange_n(&event->signaled, &signaled, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;
@@ -1245,7 +1247,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         struct event *event = obj->shm;
 
-                        if (__atomic_load_n( &event->signaled, __ATOMIC_SEQ_CST ))
+                        if (__atomic_load_n(&event->signaled, __ATOMIC_ACQUIRE))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;
