@@ -150,6 +150,14 @@ static inline int use_futexes(void)
 
 #endif
 
+#ifdef __APPLE__
+
+#define UL_COMPARE_AND_WAIT 1
+extern int __ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_t timeout );
+extern int __ulock_wake( uint32_t operation, void *addr, uint64_t wake_value );
+
+#endif
+
 
 /* create a struct security_descriptor and contained information in one contiguous piece of memory */
 NTSTATUS alloc_object_attributes( const OBJECT_ATTRIBUTES *attr, struct object_attributes **ret,
@@ -2426,13 +2434,16 @@ NTSTATUS WINAPI NtQueryInformationAtom( RTL_ATOM atom, ATOM_INFORMATION_CLASS cl
 
 union tid_alert_entry
 {
-#ifdef HAVE_KQUEUE
+#ifdef __APPLE__
+    LONG ulock;
+#elif defined(HAVE_KQUEUE)
     int kq;
 #else
     HANDLE event;
+#endif
+
 #ifdef __linux__
     int futex;
-#endif
 #endif
 };
 
@@ -2467,8 +2478,9 @@ static union tid_alert_entry *get_tid_alert_entry( HANDLE tid )
     }
 
     entry = &tid_alert_blocks[block_idx][idx % TID_ALERT_BLOCK_SIZE];
-
-#ifdef HAVE_KQUEUE
+#if defined(__APPLE__)
+    return entry;
+#elif defined(HAVE_KQUEUE)
     if (!entry->kq)
     {
         int kq = kqueue();
@@ -2530,7 +2542,12 @@ NTSTATUS WINAPI NtAlertThreadByThreadId( HANDLE tid )
 
     if (!entry) return STATUS_INVALID_CID;
 
-#ifdef HAVE_KQUEUE
+#ifdef __APPLE__
+    LONG *ulock = &entry->ulock;
+    if (!InterlockedExchange( ulock, 1 ))
+        __ulock_wake( UL_COMPARE_AND_WAIT, (void*)ulock, 0 );
+    return STATUS_SUCCESS;
+#elif defined(HAVE_KQUEUE)
     static const struct kevent signal_event =
     {
         .ident = 1,
@@ -2581,8 +2598,48 @@ static LONGLONG update_timeout( ULONGLONG end )
 }
 #endif
 
+#ifdef __APPLE__
 
-#ifdef HAVE_KQUEUE
+/***********************************************************************
+ *             NtWaitForAlertByThreadId (NTDLL.@)
+ */
+NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEGER *timeout )
+{
+    union tid_alert_entry *entry = get_tid_alert_entry( NtCurrentTeb()->ClientId.UniqueThread );
+    NTSTATUS status;
+    LONG *ulock = &entry->ulock;
+    ULONGLONG end;
+    int ret;
+
+    TRACE( "%p %s\n", address, debugstr_timeout( timeout ) );
+
+    if (!entry) return STATUS_INVALID_CID;
+
+    if (timeout)
+    {
+        if (timeout->QuadPart == TIMEOUT_INFINITE)
+            timeout = NULL;
+        else
+            end = get_absolute_timeout( timeout );
+    }
+
+    while (!InterlockedExchange( ulock, 0 ))
+    {
+        if (timeout)
+        {
+            LONGLONG us_timeleft = update_timeout( end ) / 10;
+            if (!us_timeleft) return STATUS_TIMEOUT;
+            ret = __ulock_wait( UL_COMPARE_AND_WAIT, (void*)ulock, 0, us_timeleft );
+        }
+        else
+            ret = __ulock_wait( UL_COMPARE_AND_WAIT, (void*)ulock, 0, 0);
+
+        if (ret == -1 && errno == ETIMEDOUT) return STATUS_TIMEOUT;
+    }
+    return STATUS_ALERTED;
+}
+
+#elif defined(HAVE_KQUEUE)
 
 /***********************************************************************
  *             NtWaitForAlertByThreadId (NTDLL.@)
