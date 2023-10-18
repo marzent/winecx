@@ -87,6 +87,15 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
     return ret;
 }
 
+#define UL_COMPARE_AND_WAIT_SHARED  0x3
+#define ULF_WAKE_ALL                0x00000100
+#define ULF_NO_ERRNO                0x01000000
+extern int __ulock_wake( uint32_t operation, void *addr, uint64_t wake_value );
+
+typedef int (*__ulock_wait2_ptr_t)( uint32_t operation, void *addr, uint64_t value,
+                                    uint64_t timeout_ns, uint64_t value2 );
+static __ulock_wait2_ptr_t __ulock_wait2;
+
 /*
  * Faster to directly do the syscall and inline everything, taken and slightly adapted
  * from xnu/libsyscall/mach/mach_msg.c
@@ -281,22 +290,6 @@ struct msync
     unsigned int shm_idx;
 };
 
-static inline int resize_wait_objs( struct msync **wait_objs, struct msync **objs, int count )
-{
-    int read_index, write_index = 0;
-
-    for (read_index = 0; read_index < count; read_index++)
-    {
-        if (wait_objs[read_index])
-        {
-            objs[write_index] = wait_objs[read_index];
-            write_index++;
-        }
-    }
-
-    return write_index;
-}
-
 typedef struct
 {
     mach_msg_header_t header;
@@ -343,7 +336,8 @@ static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
     for (i = 0; i < count; i++)
     {
         is_mutex = wait_objs[i]->type == MSYNC_MUTEX ? 1 : 0;
-        message.shm_idx[i] = wait_objs[i]->shm_idx | (is_mutex << 19);
+        message.shm_idx[i] = wait_objs[i]->shm_idx | (is_mutex << 28);
+        __atomic_add_fetch( (int *)(wait_objs[i]->shm) + 3, 1, __ATOMIC_SEQ_CST);
     }
 
     message.prolog.header.msgh_size = sizeof(mach_register_message_prolog_t) +
@@ -362,14 +356,25 @@ static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
     int i;
     mach_msg_return_t mr;
     __thread static mach_unregister_message_t message;
-    
+
     message.header.msgh_remote_port = server_port;
     message.header.msgh_bits = msgh_bits_send;
     message.header.msgh_id = msgh_id;
-    
+
     for (i = 0; i < count; i++)
+    {
+        int old_val, new_val;
+        do
+        {
+            old_val = __atomic_load_n( (int *)(wait_objs[i]->shm) + 3, __ATOMIC_SEQ_CST );
+            if (old_val <= 0) break;
+            new_val = old_val - 1;
+        } while (!__atomic_compare_exchange_n( (int *)(wait_objs[i]->shm) + 3, &old_val,
+                                               new_val, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST ));
+
         message.shm_idx[i] = wait_objs[i]->shm_idx;
-    
+    }
+
     message.header.msgh_size = sizeof(mach_msg_header_t) +
                                count * sizeof(unsigned int);
 
@@ -378,6 +383,80 @@ static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
     
     if (mr != MACH_MSG_SUCCESS)
         ERR("Failed to send server remove wait: %#x\n", mr);
+}
+
+static inline NTSTATUS destroyed_wait( ULONGLONG *end )
+{
+    if (end)
+    {
+        usleep( update_timeout( *end ) / 10 );
+        return STATUS_TIMEOUT;
+    }
+    pause();
+    return STATUS_PENDING;
+}
+
+static inline int is_destroyed( struct msync **objs, int count)
+{
+    int i;
+    
+    for (i = 0; i < count; i++)
+        if (__atomic_load_n( (int *)objs[i]->shm + 2, __ATOMIC_RELAXED ))
+            return 0;
+
+    return 1;
+}
+
+static inline NTSTATUS msync_wait_single( struct msync *wait_obj,
+                                          ULONGLONG *end )
+{
+    int ret, val = 0;
+    void *addr = wait_obj->shm;
+    ULONGLONG ns_timeleft = 0;
+
+    if (wait_obj->type == MSYNC_MUTEX)
+    {
+        val = __atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE );
+        if (!val)
+            val = GetCurrentThreadId();
+        else if (val == ~0)
+            val = GetCurrentThreadId();
+    }
+
+    if (__atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE ) != val)
+        return STATUS_PENDING;
+
+    if (end)
+    {
+        ns_timeleft = update_timeout( *end ) * 100;
+        if (!ns_timeleft) return STATUS_TIMEOUT;
+    }
+    ret = __ulock_wait2( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, val, ns_timeleft, 0 );
+
+    if (ret == -ETIMEDOUT)
+        return STATUS_TIMEOUT;
+
+    if (is_destroyed( &wait_obj, 1 ))
+        return destroyed_wait( end );
+
+    return STATUS_SUCCESS;
+}
+
+static inline int resize_wait_objs( struct msync **wait_objs, struct msync **objs, int count )
+{
+    int read_index, write_index = 0;
+
+    for (read_index = 0; read_index < count; read_index++)
+    {
+        if (wait_objs[read_index] &&
+            __atomic_load_n( (int *)wait_objs[read_index]->shm + 2, __ATOMIC_RELAXED ))
+        {
+            objs[write_index] = wait_objs[read_index];
+            write_index++;
+        }
+    }
+
+    return write_index;
 }
 
 static inline int check_shm_contention( struct msync **wait_objs,
@@ -411,6 +490,9 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
 
     count = resize_wait_objs( wait_objs, objs, count );
 
+    if (count == 1 && __ulock_wait2) return msync_wait_single( objs[0], end );
+    if (!count) return destroyed_wait( end );
+
     tid = GetCurrentThreadId();
 
     if (check_shm_contention( objs, count, tid ))
@@ -428,30 +510,24 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
         else
             kr = semaphore_wait( *sem );
     } while (kr == KERN_ABORTED);
-    
+
     semaphore_pool_free( sem );
+    
+    if (is_destroyed( objs, count ))
+        return destroyed_wait( end );
+    
+    server_remove_wait( *sem, msgh_id, objs, count );
 
     switch (kr) {
         case KERN_SUCCESS:
-            if (count > 1)
-                server_remove_wait( *sem, msgh_id, objs, count );
             return STATUS_SUCCESS;
         case KERN_OPERATION_TIMED_OUT:
-            server_remove_wait( *sem, msgh_id, objs, count );
             if (check_shm_contention( objs, count, tid ))
                 return STATUS_PENDING;
             return STATUS_TIMEOUT;
         case KERN_TERMINATED:
-            server_remove_wait( *sem, msgh_id, objs, count );
-            if (end)
-            {
-                usleep( update_timeout( *end ) / 10 );
-                return STATUS_TIMEOUT;
-            }
-            pause();
-            return STATUS_PENDING;
+            return destroyed_wait( end );
         default:
-            server_remove_wait( *sem, msgh_id, objs, count );
             ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string( kr ));
             return STATUS_PENDING;
     }
@@ -505,8 +581,8 @@ static os_unfair_lock shm_addrs_lock = OS_UNFAIR_LOCK_INIT;
 
 static void *get_shm( unsigned int idx )
 {
-    int entry  = (idx * 8) / pagesize;
-    int offset = (idx * 8) % pagesize;
+    int entry  = (idx * 16) / pagesize;
+    int offset = (idx * 16) % pagesize;
     void *ret;
 
     os_unfair_lock_lock( &shm_addrs_lock );
@@ -770,7 +846,11 @@ void msync_init(void)
     shm_addrs_size = 128;
     
     semaphore_pool_init();
-    
+
+    __ulock_wait2 = (__ulock_wait2_ptr_t)dlsym( dlhandle, "__ulock_wait2" );
+    if (!__ulock_wait2)
+        WARN("__ulock_wait2 not available, performance will be lower\n");
+
     /* Bootstrap mach wineserver communication */
 
     mach_msg2_trap = (mach_msg2_trap_ptr_t)dlsym( dlhandle, "mach_msg2_trap" );
@@ -812,13 +892,18 @@ static inline void signal_all( struct msync *obj )
 {
     __thread static mach_msg_header_t send_header;
 
+    __ulock_wake( UL_COMPARE_AND_WAIT_SHARED | ULF_WAKE_ALL, obj->shm, 0 );
+
+    if (!__atomic_load_n( (int *)obj->shm + 3, __ATOMIC_ACQUIRE ))
+        return;
+
     send_header.msgh_bits = msgh_bits_send;
     send_header.msgh_id = obj->shm_idx;
     send_header.msgh_size = sizeof(send_header);
     send_header.msgh_remote_port = server_port;
     
     mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size, 0,
-              MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
+               MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
 }
 
 NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev )
