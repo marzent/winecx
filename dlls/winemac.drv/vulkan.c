@@ -27,6 +27,11 @@
 #include <stdio.h>
 #include <dlfcn.h>
 
+#define BOOL OBJC_BOOL
+#include <objc/runtime.h>
+#include <objc/message.h>
+#undef BOOL
+
 #include "macdrv.h"
 #include "wine/debug.h"
 #include "wine/heap.h"
@@ -109,6 +114,36 @@ static void *vulkan_handle;
 
 static BOOL WINAPI wine_vk_init(INIT_ONCE *once, void *param, void **context)
 {
+    void* metal_handle;
+    id (*MTLCopyAllDevices)(void);
+    id metal_all_devices;
+
+    /*
+     * Make sure Metal is fully initialized before initializing MVK to avoid races
+     * with the Metal DeviceDispatch...
+     */
+
+    if (!(metal_handle = dlopen("/System/Library/Frameworks/Metal.framework/Metal", RTLD_LAZY)))
+    {
+        ERR("Failed to load Metal.framework\n");
+        return TRUE;
+    }
+
+    if (!(MTLCopyAllDevices = dlsym(metal_handle, "MTLCopyAllDevices")))
+    {
+        ERR("Failed to find MTLCopyAllDevices function\n");
+        return TRUE;
+    }
+
+    if (!(metal_all_devices = MTLCopyAllDevices()))
+    {
+        ERR("Failed to get the all Metal devices\n");
+        return TRUE;
+    }
+
+    ((void (*)(id, SEL))objc_msgSend)(metal_all_devices, sel_getUid("release"));
+    dlclose(metal_handle);
+
     if (!(vulkan_handle = dlopen(SONAME_LIBMOLTENVK, RTLD_NOW)))
     {
         ERR("Failed to load %s\n", SONAME_LIBMOLTENVK);
