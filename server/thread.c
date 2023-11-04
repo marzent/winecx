@@ -781,7 +781,7 @@ static void apply_thread_priority( struct thread *thread, int priority_class, in
 #endif
 }
 
-int set_thread_priority( struct thread *thread, int priority_class, int priority )
+int set_thread_priority( struct thread *thread, int priority_class, int priority, int always_set )
 {
     int max = THREAD_PRIORITY_HIGHEST;
     int min = THREAD_PRIORITY_LOWEST;
@@ -799,7 +799,7 @@ int set_thread_priority( struct thread *thread, int priority_class, int priority
     }
 
     if (thread->process->priority == priority_class &&
-        thread->priority == priority)
+        thread->priority == priority && !always_set)
         return 0;
     thread->priority = priority;
 
@@ -813,7 +813,7 @@ static void set_thread_info( struct thread *thread,
 {
     if (req->mask & SET_THREAD_INFO_PRIORITY)
     {
-        if (set_thread_priority( thread, thread->process->priority, req->priority ))
+        if (set_thread_priority( thread, thread->process->priority, req->priority, 0 ))
             file_set_error();
     }
     if (req->mask & SET_THREAD_INFO_AFFINITY)
@@ -1625,13 +1625,12 @@ DECL_HANDLER(init_first_thread)
     current->unix_pid = process->unix_pid = req->unix_pid;
     current->unix_tid = req->unix_tid;
 
+    set_thread_priority( current, current->process->priority, current->priority, 1 );
+
     if (!process->parent_id)
         process->affinity = current->affinity = get_thread_affinity( current );
     else
-    {
-        set_thread_priority( current, current->process->priority, current->priority );
         set_thread_affinity( current, current->affinity );
-    }
 
     debug_level = max( debug_level, req->debug_level );
 
@@ -1663,7 +1662,7 @@ DECL_HANDLER(init_thread)
 
     init_thread_context( current );
     generate_debug_event( current, DbgCreateThreadStateChange, &req->entry );
-    set_thread_priority( current, current->process->priority, current->priority );
+    set_thread_priority( current, current->process->priority, current->priority, 1 );
     set_thread_affinity( current, current->affinity );
 
     reply->suspend = (current->suspend || current->process->suspend || current->context != NULL);
