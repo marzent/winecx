@@ -242,8 +242,8 @@ void init_threading(void)
         else if (rlimit.rlim_max == -1) nice_limit = -20;
         if (nice_limit >= 0) fprintf(stderr, "wine: RLIMIT_NICE is <= 20, unable to use setpriority safely\n");
     }
-#endif
     if (nice_limit < 0) fprintf(stderr, "wine: Using setpriority to control niceness in the [%d,%d] range\n", nice_limit, -nice_limit );
+#endif
 }
 
 /* initialize the structure for a newly allocated thread */
@@ -709,7 +709,9 @@ static void delayed_set_thread_priority( void *private )
 
 static void apply_thread_priority( struct thread *thread, int priority_class, int priority, int delayed )
 {
+#ifdef __linux__
     int niceness, limit = min( nice_limit, thread->process->nice_limit );
+#endif
 
     if (!delayed && thread->delay_priority) remove_timeout_user( thread->delay_priority );
     thread->delay_priority = NULL;
@@ -720,11 +722,10 @@ static void apply_thread_priority( struct thread *thread, int priority_class, in
         return;
     }
 
-    /* FIXME: handle REALTIME class using SCHED_RR if possible, for now map it to HIGH */
-    if (priority_class == PROCESS_PRIOCLASS_REALTIME) priority_class = PROCESS_PRIOCLASS_HIGH;
-
 #ifdef __linux__
 #ifdef HAVE_SETPRIORITY
+    /* FIXME: handle REALTIME class using SCHED_RR if possible, for now map it to HIGH */
+    if (priority_class == PROCESS_PRIOCLASS_REALTIME) priority_class = PROCESS_PRIOCLASS_HIGH;
     if (limit < 0)
     {
         niceness = get_unix_niceness( get_base_priority( priority_class, priority ), limit );
