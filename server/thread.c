@@ -37,6 +37,11 @@
 #define _WITH_CPU_SET_T
 #include <sched.h>
 #endif
+#ifdef __APPLE__
+#include <mach/mach_init.h>
+#include <mach/mach_port.h>
+#include <mach/thread_act.h>
+#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -689,11 +694,19 @@ static int get_base_priority( int priority_class, int priority )
     else return class_offsets[priority_class - 1] + priority;
 }
 
+#ifdef __linux__
 static int get_unix_niceness( int base_priority, int limit )
 {
     int min = -limit, max = limit, range = max - min;
     return min + (base_priority - 1) * range / 14;
 }
+#elif defined(__APPLE__)
+static int get_mach_importance( int base_priority )
+{
+    int min = -31, max = 32, range = max - min;
+    return min + (base_priority - 1) * range / 14;
+}
+#endif
 
 #define THREAD_PRIORITY_REALTIME_HIGHEST 6
 #define THREAD_PRIORITY_REALTIME_LOWEST -7
@@ -709,14 +722,23 @@ static void delayed_set_thread_priority( void *private )
 
 static void apply_thread_priority( struct thread *thread, int priority_class, int priority, int delayed )
 {
+    int base_priority = get_base_priority( priority_class, priority );
 #ifdef __linux__
     int niceness, limit = min( nice_limit, thread->process->nice_limit );
+    int ready = thread->unix_tid != -1;
+#elif defined(__APPLE__)
+    kern_return_t kr;
+    mach_msg_type_name_t type;
+    struct thread_extended_policy thread_extended_policy;
+    struct thread_precedence_policy thread_precedence_policy;
+    mach_port_t thread_port, process_port = thread->process->trace_data;
+    int ready = thread->unix_tid != -1 && process_port;
 #endif
 
     if (!delayed && thread->delay_priority) remove_timeout_user( thread->delay_priority );
     thread->delay_priority = NULL;
 
-    if (thread->unix_tid == -1)
+    if (!ready)
     {
         thread->delay_priority = add_timeout_user( -TICKS_PER_SEC, delayed_set_thread_priority, thread );
         return;
@@ -725,15 +747,37 @@ static void apply_thread_priority( struct thread *thread, int priority_class, in
 #ifdef __linux__
 #ifdef HAVE_SETPRIORITY
     /* FIXME: handle REALTIME class using SCHED_RR if possible, for now map it to HIGH */
-    if (priority_class == PROCESS_PRIOCLASS_REALTIME) priority_class = PROCESS_PRIOCLASS_HIGH;
+    if (base_priority > 15) base_priority = 15;
     if (limit < 0)
     {
-        niceness = get_unix_niceness( get_base_priority( priority_class, priority ), limit );
+        niceness = get_unix_niceness( base_priority, limit );
         if (setpriority( PRIO_PROCESS, thread->unix_tid, niceness ) != 0)
             fprintf( stderr, "wine: setpriority %d for pid %d failed: %d\n", niceness, thread->unix_tid, errno );
         return;
     }
 #endif
+#elif defined(__APPLE__)
+    kr = mach_port_extract_right( process_port, thread->unix_tid,
+                                  MACH_MSG_TYPE_COPY_SEND, &thread_port, &type );
+    if (kr != KERN_SUCCESS)
+    {
+        fprintf( stderr, "wine: mach_port_extract_right for task %d and thread %d failed: %d\n",
+                 process_port, thread->unix_tid, kr );
+        return;
+    }
+    thread_extended_policy.timeshare = base_priority > 15 ? 0 : 1;
+    thread_precedence_policy.importance = get_mach_importance( base_priority );
+    kr = thread_policy_set( thread_port, THREAD_EXTENDED_POLICY, (thread_policy_t)&thread_extended_policy,
+                            THREAD_EXTENDED_POLICY_COUNT );
+    if (kr != KERN_SUCCESS)
+        fprintf( stderr, "wine: failed to set THREAD_EXTENDED_POLICY for %d: %d\n",
+                 thread->unix_tid, kr );
+    kr = thread_policy_set( thread_port, THREAD_PRECEDENCE_POLICY, (thread_policy_t)&thread_precedence_policy,
+                            THREAD_PRECEDENCE_POLICY_COUNT );
+    if (kr != KERN_SUCCESS)
+        fprintf( stderr, "wine: failed to set THREAD_PRECEDENCE_POLICY for %d: %d\n",
+                 thread->unix_tid, kr );
+    mach_port_deallocate( mach_task_self(), thread_port );
 #endif
 }
 
