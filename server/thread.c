@@ -911,7 +911,7 @@ static void set_thread_info( struct thread *thread,
 {
     if (req->mask & SET_THREAD_INFO_PRIORITY)
     {
-        if (set_thread_priority( thread, thread->process->priority, req->priority, 0 ))
+        if (set_thread_priority( thread, thread->process->priority, req->priority, FALSE ))
             file_set_error();
     }
     if (req->mask & SET_THREAD_INFO_AFFINITY)
@@ -1723,7 +1723,7 @@ DECL_HANDLER(init_first_thread)
     current->unix_pid = process->unix_pid = req->unix_pid;
     current->unix_tid = req->unix_tid;
 
-    set_thread_priority( current, current->process->priority, current->priority, 1 );
+    set_thread_priority( current, current->process->priority, current->priority, TRUE );
 
     if (!process->parent_id)
         process->affinity = current->affinity = get_thread_affinity( current );
@@ -1760,7 +1760,7 @@ DECL_HANDLER(init_thread)
 
     init_thread_context( current );
     generate_debug_event( current, DbgCreateThreadStateChange, &req->entry );
-    set_thread_priority( current, current->process->priority, current->priority, 1 );
+    set_thread_priority( current, current->process->priority, current->priority, TRUE );
     set_thread_affinity( current, current->affinity );
 
     reply->suspend = (current->suspend || current->process->suspend || current->context != NULL);
