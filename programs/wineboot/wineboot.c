@@ -241,10 +241,72 @@ static void initialize_xstate_features(struct _KUSER_SHARED_DATA *data)
     TRACE("XSAVE feature 2 %#x, %#x, %#x, %#x.\n", regs[0], regs[1], regs[2], regs[3]);
 }
 
+static UINT64 read_tsc_frequency(void)
+{
+    UINT64 freq = 0;
+    LONGLONG time0, time1, tsc0, tsc1, tsc2, tsc3, freq0, freq1, error;
+    unsigned int aux;
+    UINT retries = 50;
+    int regs[4];
+    BOOL has_rdtscp = FALSE;
+
+    __cpuid( regs, 0x80000001 );
+    if ((regs[3] & (1 << 27))) has_rdtscp = TRUE;
+
+    do
+    {
+        if (has_rdtscp)
+        {
+            tsc0 = __rdtscp( &aux );
+            time0 = RtlGetSystemTimePrecise();
+            tsc1 = __rdtscp( &aux );
+            Sleep( 1 );
+            tsc2 = __rdtscp( &aux );
+            time1 = RtlGetSystemTimePrecise();
+            tsc3 = __rdtscp( &aux );
+        }
+        else
+        {
+            tsc0 = __rdtsc(); __cpuid( regs, 0 );
+            time0 = RtlGetSystemTimePrecise();
+            tsc1 = __rdtsc(); __cpuid( regs, 0 );
+            Sleep(1);
+            tsc2 = __rdtsc(); __cpuid( regs, 0 );
+            time1 = RtlGetSystemTimePrecise();
+            tsc3 = __rdtsc(); __cpuid( regs, 0 );
+        }
+
+        freq0 = (tsc2 - tsc0) * 10000000 / (time1 - time0);
+        freq1 = (tsc3 - tsc1) * 10000000 / (time1 - time0);
+        error = llabs( (freq1 - freq0) * 1000000 / min( freq1, freq0 ) );
+    }
+    while (error > 500 && --retries);
+
+    if (!retries)
+    {
+        FIXME( "TSC frequency calibration failed, unstable TSC?");
+        FIXME( "time0 %I64u ns, time1 %I64u ns\n", time0 * 100, time1 * 100 );
+        FIXME( "tsc2 - tsc0 %I64u, tsc3 - tsc1 %I64u\n", tsc2 - tsc0, tsc3 - tsc1 );
+        FIXME( "freq0 %I64u Hz, freq2 %I64u Hz, error %I64u ppm\n", freq0, freq1, error );
+    }
+    else
+    {
+        freq = (freq0 + freq1) / 2;
+        TRACE( "TSC frequency calibration complete, found %I64u Hz\n", freq );
+    }
+
+    return freq;
+}
+
 #else
 
 static void initialize_xstate_features(struct _KUSER_SHARED_DATA *data)
 {
+}
+
+static UINT64 read_tsc_frequency(void)
+{
+    return 0;
 }
 
 #endif
@@ -647,7 +709,7 @@ done:
 }
 
 /* create the volatile hardware registry keys */
-static void create_hardware_registry_keys(void)
+static void create_hardware_registry_keys( UINT64 tsc_frequency )
 {
     unsigned int i;
     HKEY hkey, system_key, cpu_key, fpu_key;
@@ -722,12 +784,14 @@ static void create_hardware_registry_keys(void)
         if (!RegCreateKeyExW( cpu_key, numW, 0, NULL, REG_OPTION_VOLATILE,
                               KEY_ALL_ACCESS, NULL, &hkey, NULL ))
         {
+            DWORD tsc_freq_mhz = (DWORD)(tsc_frequency / 1000000ull);
+
             RegSetValueExW( hkey, L"FeatureSet", 0, REG_DWORD, (BYTE *)&sci.ProcessorFeatureBits, sizeof(DWORD) );
             set_reg_value( hkey, L"Identifier", id );
             /* TODO: report ARM properly */
             set_reg_value( hkey, L"ProcessorNameString", namestr );
             set_reg_value( hkey, L"VendorIdentifier", vendorid );
-            RegSetValueExW( hkey, L"~MHz", 0, REG_DWORD, (BYTE *)&power_info[i].MaxMhz, sizeof(DWORD) );
+            RegSetValueExW( hkey, L"~MHz", 0, REG_DWORD, (BYTE *)&tsc_freq_mhz, sizeof(DWORD) );
             RegCloseKey( hkey );
         }
         if (sci.ProcessorArchitecture != PROCESSOR_ARCHITECTURE_ARM &&
@@ -1696,8 +1760,11 @@ int __cdecl main( int argc, char *argv[] )
     BOOL end_session, force, init, kill, restart, shutdown, update;
     HANDLE event;
     OBJECT_ATTRIBUTES attr;
+    UINT64 tsc_frequency;
     UNICODE_STRING nameW;
     BOOL is_wow64;
+
+    tsc_frequency = read_tsc_frequency();
 
     end_session = force = init = kill = restart = shutdown = update = FALSE;
     GetWindowsDirectoryW( windowsdir, MAX_PATH );
@@ -1783,7 +1850,7 @@ int __cdecl main( int argc, char *argv[] )
     ResetEvent( event );  /* in case this is a restart */
 
     create_user_shared_data();
-    create_hardware_registry_keys();
+    create_hardware_registry_keys( tsc_frequency );
     create_dynamic_registry_keys();
     create_environment_registry_keys();
     create_computer_name_keys();
