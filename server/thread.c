@@ -39,6 +39,7 @@
 #endif
 #ifdef __APPLE__
 #include <mach/mach_init.h>
+#include <mach/mach_time.h>
 #include <mach/mach_port.h>
 #include <mach/thread_act.h>
 #endif
@@ -233,10 +234,16 @@ static const struct fd_ops thread_fd_ops =
 };
 
 static struct list thread_list = LIST_INIT(thread_list);
+#ifdef __linux__
 static int nice_limit;
+#endif
+#ifdef __APPLE__
+static unsigned int mach_ticks_per_second;
+#endif
 
 void init_threading(void)
 {
+#ifdef __linux__
 #ifdef RLIMIT_NICE
     struct rlimit rlimit;
     if (!getrlimit( RLIMIT_NICE, &rlimit ))
@@ -248,6 +255,20 @@ void init_threading(void)
         if (nice_limit >= 0) fprintf(stderr, "wine: RLIMIT_NICE is <= 20, unable to use setpriority safely\n");
     }
     if (nice_limit < 0) fprintf(stderr, "wine: Using setpriority to control niceness in the [%d,%d] range\n", nice_limit, -nice_limit );
+#endif
+#endif
+#ifdef __APPLE__
+    struct mach_timebase_info tb_info;
+    if (mach_timebase_info( &tb_info ) == KERN_SUCCESS)
+    {
+        mach_ticks_per_second = (tb_info.denom * 1e9) / tb_info.numer;
+    }
+    else
+    {
+        const unsigned int best_guess = 24000000;
+        fprintf(stderr, "wine: mach_timebase_info failed, guessing %d mach ticks per second\n", best_guess);
+        mach_ticks_per_second = best_guess;
+    }
 #endif
 }
 
@@ -822,6 +843,38 @@ static void apply_thread_priority( struct thread *thread, int priority_class, in
     if (kr != KERN_SUCCESS)
         fprintf( stderr, "wine: failed to set THREAD_PRECEDENCE_POLICY for %d: %d\n",
                  thread->unix_tid, kr );
+    if (priority_class == PROCESS_PRIOCLASS_REALTIME)
+    {
+        /* For realtime threads we are requesting from the scheduler to be moved 
+         * into the Mach realtime band (96-127) above the kernel.
+         * The scheduler will bump us back into the application band though if we
+         * lie too much about our computation constraints...
+         * The maximum available amount of resources granted in that band is using
+         * half of the available bus cycles, and computation (nominally 1/10 of
+         * the time constraint) is a hint to the scheduler where to place our 
+         * realtime threads relative to each other.
+         * If someone is violating the time contraint policy, they will be moved
+         * back where they were (non-timeshare application band with very high 
+         * importance), which is on XNU equivalent to setting SCHED_RR with the 
+         * pthread API. */
+        struct thread_time_constraint_policy thread_time_constraint_policy;
+        int realtime_priority = base_priority - 15;
+        unsigned int max_constraint = mach_ticks_per_second / 2;
+        unsigned int max_computation = max_constraint / 10;
+        /* unfortunately we can't give a hint for the periodicity of calculations */
+        thread_time_constraint_policy.period = 0;
+        thread_time_constraint_policy.constraint = max_constraint;
+        thread_time_constraint_policy.computation = realtime_priority * max_computation / 16;
+        /* although it is not possible to disable preemption in NT, this is probably 
+         * nice to have for the maximum possible effective thread priority */
+        thread_time_constraint_policy.preemptible = priority == THREAD_PRIORITY_TIME_CRITICAL ? 0 : 1;
+        kr = thread_policy_set( thread_port, THREAD_TIME_CONSTRAINT_POLICY, 
+                                (thread_policy_t)&thread_time_constraint_policy,
+                                THREAD_TIME_CONSTRAINT_POLICY_COUNT );
+        if (kr != KERN_SUCCESS)
+            fprintf( stderr, "wine: failed to set THREAD_TIME_CONSTRAINT_POLICY for %d: %d\n",
+                    thread->unix_tid, kr );
+    }
     mach_port_deallocate( mach_task_self(), thread_port );
 #endif
 }
