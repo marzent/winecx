@@ -384,7 +384,7 @@ static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
         ERR("Failed to send server remove wait: %#x\n", mr);
 }
 
-static inline NTSTATUS destroyed_wait( ULONGLONG *end )
+static NTSTATUS destroyed_wait( ULONGLONG *end )
 {
     if (end)
     {
@@ -413,24 +413,25 @@ static inline NTSTATUS msync_wait_single( struct msync *wait_obj,
     void *addr = wait_obj->shm;
     ULONGLONG ns_timeleft = 0;
 
-    if (wait_obj->type == MSYNC_MUTEX)
+    do 
     {
-        val = __atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE );
-        if (!val)
-            val = GetCurrentThreadId();
-        else if (val == ~0)
-            val = GetCurrentThreadId();
-    }
+        if (wait_obj->type == MSYNC_MUTEX)
+        {
+            val = __atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE );
+            if (!val || val == ~0)
+                val = GetCurrentThreadId();
+        }
 
-    if (__atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE ) != val)
-        return STATUS_PENDING;
+        if (__atomic_load_n( (int *)addr, __ATOMIC_ACQUIRE ) != val)
+            return STATUS_PENDING;
 
-    if (end)
-    {
-        ns_timeleft = update_timeout( *end ) * 100;
-        if (!ns_timeleft) return STATUS_TIMEOUT;
-    }
-    ret = __ulock_wait2( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, val, ns_timeleft, 0 );
+        if (end)
+        {
+            ns_timeleft = update_timeout( *end ) * 100;
+            if (!ns_timeleft) return STATUS_TIMEOUT;
+        }
+        ret = __ulock_wait2( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, val, ns_timeleft, 0 );
+    } while (ret == -EINTR);
 
     if (ret == -ETIMEDOUT)
         return STATUS_TIMEOUT;
