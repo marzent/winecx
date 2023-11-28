@@ -86,11 +86,12 @@ extern kern_return_t bootstrap_register2( mach_port_t bp, name_t service_name, m
 #define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
 #define MACH64_SEND_MQ_CALL 0x0000000400000000ull
 
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options,
+typedef mach_msg_return_t (*mach_msg2_trap_ptr_t)( void *data, uint64_t options,
     uint64_t msgh_bits_and_send_size, uint64_t msgh_remote_and_local_port,
     uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout )
-    __attribute__((weak_import));
+    uint64_t rcv_size_and_priority, uint64_t timeout );
+
+static mach_msg2_trap_ptr_t mach_msg2_trap;
 
 static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
     uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
@@ -470,18 +471,17 @@ static void set_thread_policy_qos( mach_port_t mach_thread_id )
 {
     thread_extended_policy_data_t extended_policy;
     thread_precedence_policy_data_t precedence_policy;
-    thread_time_constraint_policy_data_t time_constraint_policy;
     int throughput_qos, latency_qos;
     kern_return_t kr;
 
-    latency_qos = LATENCY_QOS_TIER_0;
+    latency_qos = LATENCY_QOS_TIER_5;
     kr = thread_policy_set( mach_thread_id, THREAD_LATENCY_QOS_POLICY,
                             (thread_policy_t)&latency_qos,
                             THREAD_LATENCY_QOS_POLICY_COUNT);
     if (kr != KERN_SUCCESS)
         fprintf(stderr, "msync: error setting thread latency QoS.");
 
-    throughput_qos = THROUGHPUT_QOS_TIER_0;
+    throughput_qos = THROUGHPUT_QOS_TIER_5;
     kr = thread_policy_set( mach_thread_id, THREAD_THROUGHPUT_QOS_POLICY,
                             (thread_policy_t)&throughput_qos,
                             THREAD_THROUGHPUT_QOS_POLICY_COUNT);
@@ -509,6 +509,7 @@ void msync_init(void)
     struct stat st;
     mach_port_t bootstrap_port;
     mach_port_limits_t limits;
+    void *dlhandle = dlopen( NULL, RTLD_NOW );
     int *shm;
 
     if (fstat( config_dir_fd, &st ) == -1)
@@ -542,8 +543,10 @@ void msync_init(void)
     
     /* Bootstrap mach server message pump */
 
+    mach_msg2_trap = (mach_msg2_trap_ptr_t)dlsym( dlhandle, "mach_msg2_trap" );
     if (!mach_msg2_trap)
-        fprintf( stderr, "msync: warning: using mach_msg instead of mach_msg2\n");
+        fprintf( stderr, "msync: warning: using mach_msg_overwrite instead of mach_msg2\n");
+    dlclose( dlhandle );
 
     MACH_CHECK_ERROR(mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &receive_port), "mach_port_allocate");
 

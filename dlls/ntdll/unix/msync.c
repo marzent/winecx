@@ -92,9 +92,9 @@ static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
 #define ULF_NO_ERRNO                0x01000000
 extern int __ulock_wake( uint32_t operation, void *addr, uint64_t wake_value );
 
-extern int __ulock_wait2( uint32_t operation, void *addr, uint64_t value,
-                          uint64_t timeout_ns, uint64_t value2 )
-                          __attribute__((weak_import));
+typedef int (*__ulock_wait2_ptr_t)( uint32_t operation, void *addr, uint64_t value,
+                                    uint64_t timeout_ns, uint64_t value2 );
+static __ulock_wait2_ptr_t __ulock_wait2;
 
 /*
  * Faster to directly do the syscall and inline everything, taken and slightly adapted
@@ -104,11 +104,12 @@ extern int __ulock_wait2( uint32_t operation, void *addr, uint64_t value,
 #define LIBMACH_OPTIONS64 (MACH_SEND_INTERRUPT|MACH_RCV_INTERRUPT)
 #define MACH64_SEND_MQ_CALL 0x0000000400000000ull
 
-extern mach_msg_return_t mach_msg2_trap( void *data, uint64_t options,
+typedef mach_msg_return_t (*mach_msg2_trap_ptr_t)( void *data, uint64_t options,
     uint64_t msgh_bits_and_send_size, uint64_t msgh_remote_and_local_port,
     uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
-    uint64_t rcv_size_and_priority, uint64_t timeout )
-     __attribute__((weak_import));
+    uint64_t rcv_size_and_priority, uint64_t timeout );
+
+static mach_msg2_trap_ptr_t mach_msg2_trap;
 
 static inline mach_msg_return_t mach_msg2_internal( void *data, uint64_t option64, uint64_t msgh_bits_and_send_size,
     uint64_t msgh_remote_and_local_port, uint64_t msgh_voucher_and_id, uint64_t desc_count_and_rcv_name,
@@ -803,6 +804,7 @@ void msync_init(void)
 {
     struct stat st;
     mach_port_t bootstrap_port;
+    void *dlhandle = dlopen( NULL, RTLD_NOW );
 
     if (!do_msync())
     {
@@ -816,6 +818,8 @@ void msync_init(void)
             ERR("Server is running with WINEMSYNC but this process is not, please enable WINEMSYNC or restart wineserver.\n");
             exit(1);
         }
+
+        dlclose( dlhandle );
         return;
     }
 
@@ -844,10 +848,16 @@ void msync_init(void)
     
     semaphore_pool_init();
 
+    __ulock_wait2 = (__ulock_wait2_ptr_t)dlsym( dlhandle, "__ulock_wait2" );
     if (!__ulock_wait2)
         WARN("__ulock_wait2 not available, performance will be lower\n");
 
     /* Bootstrap mach wineserver communication */
+
+    mach_msg2_trap = (mach_msg2_trap_ptr_t)dlsym( dlhandle, "mach_msg2_trap" );
+    if (!mach_msg2_trap)
+        WARN("Using mach_msg_overwrite instead of mach_msg2\n");
+    dlclose( dlhandle );
 
     if (task_get_special_port(mach_task_self(), TASK_BOOTSTRAP_PORT, &bootstrap_port) != KERN_SUCCESS)
     {
