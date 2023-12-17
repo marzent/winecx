@@ -1723,7 +1723,7 @@ DECL_HANDLER(init_first_thread)
     current->unix_pid = process->unix_pid = req->unix_pid;
     current->unix_tid = req->unix_tid;
 
-    set_thread_priority( current, current->process->priority, current->priority, TRUE );
+    set_thread_priority( current, current->process->priority, THREAD_PRIORITY_HIGHEST, TRUE );
 
     if (!process->parent_id)
         process->affinity = current->affinity = get_thread_affinity( current );
