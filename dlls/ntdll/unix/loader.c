@@ -2177,6 +2177,7 @@ static void hook(void *to_hook, const void *replace)
 static void start_main_thread(void)
 {
     TEB *teb = virtual_alloc_first_teb();
+    DWORD prio = THREAD_PRIORITY_HIGHEST;
 
     signal_init_threading();
     signal_alloc_thread( teb );
@@ -2204,6 +2205,7 @@ static void start_main_thread(void)
 #endif
 
     server_init_process_done();
+    NtSetInformationThread( GetCurrentThread(), ThreadBasePriority, &prio, sizeof(prio) );
 }
 
 #ifdef __ANDROID__
