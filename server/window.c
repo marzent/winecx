@@ -38,6 +38,26 @@
 #include "file.h"
 #include "unicode.h"
 
+#if defined(__i386__) || defined(__x86_64__)
+#define __SHARED_INCREMENT_SEQ( x ) ++(x)
+#else
+#define __SHARED_INCREMENT_SEQ( x ) __atomic_add_fetch( &(x), 1, __ATOMIC_RELEASE )
+#endif
+
+#define SHARED_WRITE_BEGIN( object, type )                           \
+    do {                                                             \
+        const type *__shared = (object)->shared;                     \
+        type *shared = (type *)__shared;                             \
+        unsigned int __seq = __SHARED_INCREMENT_SEQ( shared->seq );  \
+        assert( (__seq & 1) != 0 );                                  \
+        do
+
+#define SHARED_WRITE_END                                             \
+        while(0);                                                    \
+        __seq = __SHARED_INCREMENT_SEQ( shared->seq ) - __seq;       \
+        assert( __seq == 1 );                                        \
+    } while(0);
+
 /* a window property */
 struct property
 {
@@ -1857,7 +1877,14 @@ static void set_window_pos( struct window *win, struct window *previous,
     }
 
     /* reset cursor clip rectangle when the desktop changes size */
-    if (win == win->desktop->top_window) win->desktop->cursor.clip = *window_rect;
+    if (win == win->desktop->top_window) 
+    {
+        SHARED_WRITE_BEGIN( win->desktop, desktop_shm_t )
+        {
+            shared->cursor.clip = *window_rect;
+        }
+        SHARED_WRITE_END
+    }
 
     /* if the window is not visible, everything is easy */
     if (!visible) return;
