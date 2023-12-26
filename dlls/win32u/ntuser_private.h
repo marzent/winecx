@@ -24,6 +24,7 @@
 
 #include "ntuser.h"
 #include "wine/list.h"
+#include "wine/server_protocol.h"
 
 struct dce;
 struct tagWND;
@@ -164,6 +165,7 @@ struct user_thread_info
     DWORD                         kbd_layout_id;          /* Current keyboard layout ID */
     struct rawinput_thread_data  *rawinput;               /* RawInput thread local data / buffer */
     UINT                          spy_indent;             /* Current spy indent */
+    const desktop_shm_t          *desktop_shm;            /* Ptr to server's desktop shared memory */
 };
 
 C_ASSERT( sizeof(struct user_thread_info) <= sizeof(((TEB *)0)->Win32ClientInfo) );
@@ -323,6 +325,9 @@ void *get_user_handle_ptr( HANDLE handle, unsigned int type ) DECLSPEC_HIDDEN;
 void release_user_handle_ptr( void *ptr ) DECLSPEC_HIDDEN;
 UINT win_set_flags( HWND hwnd, UINT set_mask, UINT clear_mask ) DECLSPEC_HIDDEN;
 
+/* winstation.c */
+extern const desktop_shm_t *get_desktop_shared_memory(void);
+
 static inline UINT win_get_flags( HWND hwnd )
 {
     return win_set_flags( hwnd, 0, 0 );
@@ -331,5 +336,28 @@ static inline UINT win_get_flags( HWND hwnd )
 WND *get_win_ptr( HWND hwnd ) DECLSPEC_HIDDEN;
 BOOL is_child( HWND parent, HWND child );
 BOOL is_window( HWND hwnd ) DECLSPEC_HIDDEN;
+
+#if defined(__i386__) || defined(__x86_64__)
+#define __SHARED_READ_SEQ( x )  (x)
+#define __SHARED_READ_FENCE     do {} while(0)
+#else
+#define __SHARED_READ_SEQ( x )  __atomic_load_n( &(x), __ATOMIC_RELAXED )
+#define __SHARED_READ_FENCE     __atomic_thread_fence( __ATOMIC_ACQUIRE )
+#endif
+
+#define SHARED_READ_BEGIN( ptr, type )                                  \
+    do {                                                                \
+        const type *__shared = (ptr);                                   \
+        unsigned int __seq;                                             \
+        do {                                                            \
+            while ((__seq = __SHARED_READ_SEQ( __shared->seq )) & 1) YieldProcessor(); \
+            __SHARED_READ_FENCE; \
+            do
+
+#define SHARED_READ_END                            \
+            while (0);                             \
+            __SHARED_READ_FENCE;                   \
+        } while (__SHARED_READ_SEQ( __shared->seq ) != __seq); \
+    } while(0);
 
 #endif /* __WINE_NTUSER_PRIVATE_H */

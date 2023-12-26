@@ -4671,6 +4671,12 @@ static void thread_detach(void)
     destroy_thread_windows();
     NtClose( thread_info->server_queue );
 
+    if (thread_info->desktop_shm)
+    {
+        NtUnmapViewOfSection( GetCurrentProcess(), (void *)thread_info->desktop_shm );
+        thread_info->desktop_shm = NULL;
+    }
+
     exiting_thread_id = 0;
 }
 
