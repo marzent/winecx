@@ -35,7 +35,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
 #define NOTE_GNU_BUILD_ID  3
 
-const WCHAR S_ElfW[] = L"<elf>";
 const WCHAR S_WineLoaderW[] = L"<wine-loader>";
 static const WCHAR * const ext[] = {L".acm", L".dll", L".drv", L".exe", L".ocx", L".vxd", NULL};
 
@@ -101,7 +100,7 @@ static BOOL is_wine_loader(const WCHAR *module)
 static void module_fill_module(const WCHAR* in, WCHAR* out, size_t size)
 {
     const WCHAR *ptr, *endptr;
-    size_t      len, l;
+    size_t      len;
 
     endptr = in + lstrlenW(in);
     endptr -= match_ext(in, endptr - in);
@@ -111,12 +110,6 @@ static void module_fill_module(const WCHAR* in, WCHAR* out, size_t size)
     out[len] = '\0';
     if (is_wine_loader(out))
         lstrcpynW(out, S_WineLoaderW, size);
-    else
-    {
-        if (len > 3 && !wcsicmp(&out[len - 3], L".so") &&
-            (l = match_ext(out, len - 3)))
-            lstrcpyW(&out[len - l - 3], L"<elf>");
-    }
     while ((*out = towlower(*out))) out++;
 }
 
@@ -124,6 +117,12 @@ void module_set_module(struct module* module, const WCHAR* name)
 {
     module_fill_module(name, module->module.ModuleName, ARRAY_SIZE(module->module.ModuleName));
     module_fill_module(name, module->modulename, ARRAY_SIZE(module->modulename));
+}
+
+void module_decorate_modulename(struct module* module, const WCHAR* deco)
+{
+    if (wcslen(module->modulename) + wcslen(deco) < ARRAY_SIZE(module->modulename))
+        wcscat(module->modulename, deco);
 }
 
 /* Returned string must be freed by caller */
@@ -164,6 +163,7 @@ static const char*      get_module_type(enum module_type type, BOOL virtual)
     case DMT_ELF: return virtual ? "Virtual ELF" : "ELF";
     case DMT_PE: return virtual ? "Virtual PE" : "PE";
     case DMT_MACHO: return virtual ? "Virtual Mach-O" : "Mach-O";
+    case DMT_HOLLOW: return virtual ? "Virtual hollow" : "Hollow";
     default: return "---";
     }
 }
@@ -179,7 +179,7 @@ struct module* module_new(struct process* pcs, const WCHAR* name,
     struct module*      module;
     unsigned            i;
 
-    assert(type == DMT_ELF || type == DMT_PE || type == DMT_MACHO);
+    assert(type == DMT_ELF || type == DMT_PE || type == DMT_MACHO || type == DMT_HOLLOW);
     if (!(module = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*module))))
 	return NULL;
 
@@ -224,6 +224,9 @@ struct module* module_new(struct process* pcs, const WCHAR* name,
     module->reloc_delta       = 0;
     module->type              = type;
     module->is_virtual        = virtual;
+    module->mark_and_sweep    = 1;
+    module->is_wine_loader    = 0;
+
     for (i = 0; i < DFI_LAST; i++) module->format_info[i] = NULL;
     module->sortlist_valid    = FALSE;
     module->sorttab_size      = 0;
@@ -420,7 +423,8 @@ struct module* module_find_by_addr(const struct process* pcs, DWORD64 addr,
     {
         if ((module = module_find_by_addr(pcs, addr, DMT_PE)) ||
             (module = module_find_by_addr(pcs, addr, DMT_ELF)) ||
-            (module = module_find_by_addr(pcs, addr, DMT_MACHO)))
+            (module = module_find_by_addr(pcs, addr, DMT_MACHO)) ||
+            (module = module_find_by_addr(pcs, addr, DMT_HOLLOW)))
             return module;
     }
     else
@@ -1147,7 +1151,7 @@ BOOL  WINAPI SymEnumerateModulesW64(HANDLE hProcess,
     for (module = pcs->lmodules; module; module = module->next)
     {
         if (!dbghelp_opt_native &&
-            (module->type == DMT_ELF || module->type == DMT_MACHO))
+            (module->type == DMT_ELF || module->type == DMT_MACHO || module->type == DMT_HOLLOW))
             continue;
         if (!EnumModulesCallback(module->modulename,
                                  module->module.BaseOfImage, UserContext))

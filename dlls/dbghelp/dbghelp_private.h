@@ -392,6 +392,7 @@ enum module_type
     DMT_ELF,            /* a real ELF shared module */
     DMT_PE,             /* a native or builtin PE module */
     DMT_MACHO,          /* a real Mach-O shared module */
+    DMT_HOLLOW,         /* a hollow module, to track when image cannot be found */
     DMT_PDB,            /* .PDB file */
     DMT_DBG,            /* .DBG file */
 };
@@ -438,8 +439,10 @@ struct module
     IMAGEHLP_MODULEW64          module;
     WCHAR                       modulename[64]; /* used for enumeration */
     struct module*              next;
-    enum module_type		type : 16;
-    unsigned short              is_virtual : 1;
+    enum module_type            type : 16;
+    unsigned short              is_virtual : 1,
+                                mark_and_sweep : 1,
+                                is_wine_loader : 1;
     struct cpu*                 cpu;
     DWORD64                     reloc_delta;
     WCHAR*                      real_path;
@@ -703,7 +706,6 @@ extern BOOL         macho_read_wine_loader_dbg_info(struct process* pcs, ULONG_P
 void minidump_add_memory_block(struct dump_context* dc, ULONG64 base, ULONG size, ULONG rva) DECLSPEC_HIDDEN;
 
 /* module.c */
-extern const WCHAR      S_ElfW[] DECLSPEC_HIDDEN;
 extern const WCHAR      S_WineLoaderW[] DECLSPEC_HIDDEN;
 extern const struct loader_ops no_loader_ops DECLSPEC_HIDDEN;
 
@@ -733,6 +735,7 @@ extern struct module*
 extern void         module_reset_debug_info(struct module* module) DECLSPEC_HIDDEN;
 extern BOOL         module_remove(struct process* pcs,
                                   struct module* module) DECLSPEC_HIDDEN;
+extern void         module_decorate_modulename(struct module* module, const WCHAR* deco) DECLSPEC_HIDDEN;
 extern void         module_set_module(struct module* module, const WCHAR* name) DECLSPEC_HIDDEN;
 extern WCHAR*       get_wine_loader_name(struct process *pcs) DECLSPEC_HIDDEN;
 

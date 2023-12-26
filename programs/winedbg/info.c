@@ -157,8 +157,9 @@ static const char* get_symtype_str(const IMAGEHLP_MODULE64* mi)
 
 struct info_module
 {
-    IMAGEHLP_MODULE64 mi;
-    char              name[64];
+    IMAGEHLP_MODULE64   mi;
+    char                name[64];
+    int                 system_offset; /* >= 0 if system shared lib, offset in name */
 };
 
 struct info_modules
@@ -195,21 +196,49 @@ static inline BOOL module_is_container(const struct info_module *wmod_cntnr,
         wmod_child->mi.BaseOfImage + wmod_child->mi.ImageSize;
 }
 
+static inline const char* module_get_type_name(const struct info_module* mod)
+{
+    if (mod->system_offset >= 0 && mod->system_offset < sizeof(mod->name))
+    {
+        const char* sys = &mod->name[mod->system_offset];
+        if (!strcmp(sys, "elf")) return "ELF";
+        if (!strcmp(sys, "mco")) return "Mach-O";
+        return sys;
+    }
+    return "PE";
+}
+
 static BOOL CALLBACK info_mod_cb(PCSTR mod_name, DWORD64 base, PVOID ctx)
 {
     struct info_modules *im = ctx;
+    struct info_module* mod;
 
     if (im->num_used + 1 > im->num_alloc)
     {
         im->num_alloc += 16;
         im->modules = dbg_heap_realloc(im->modules, im->num_alloc * sizeof(*im->modules));
     }
-    im->modules[im->num_used].mi.SizeOfStruct = sizeof(im->modules[im->num_used].mi);
-    if (SymGetModuleInfo64(dbg_curr_process->handle, base, &im->modules[im->num_used].mi))
+    mod = &im->modules[im->num_used];
+    mod->mi.SizeOfStruct = sizeof(mod->mi);
+    if (SymGetModuleInfo64(dbg_curr_process->handle, base, &mod->mi))
     {
-        const int dst_len = sizeof(im->modules[im->num_used].name);
-        lstrcpynA(im->modules[im->num_used].name, mod_name, dst_len - 1);
-        im->modules[im->num_used].name[dst_len - 1] = 0;
+        static const size_t dst_len = sizeof(mod->name) - 1;
+        const size_t mod_len = strlen(mod_name);
+        char* ptr;
+
+        lstrcpynA(mod->name, mod_name, dst_len);
+        mod->name[dst_len] = 0;
+        ptr = mod->name + strlen(mod->name) - 1;
+        if (mod_len && mod->name[mod_len - 1] == '>' && (ptr = strrchr(mod->name, '<')))
+        {
+            *ptr = '\0';
+            mod->system_offset = ++ptr - mod->name;
+            ptr[strlen(ptr) - 1] = '\0';
+        }
+        else
+        {
+            mod->system_offset = -1;
+        }
         im->num_used++;
     }
     return TRUE;
@@ -252,14 +281,14 @@ void info_win32_module(DWORD64 base)
         if (base && 
             (base < im.modules[i].mi.BaseOfImage || base >= im.modules[i].mi.BaseOfImage + im.modules[i].mi.ImageSize))
             continue;
-        if (strstr(im.modules[i].name, "<elf>"))
+        if (im.modules[i].system_offset >= 0)
         {
-            dbg_printf("ELF\t");
+            dbg_printf("%s\t", module_get_type_name(&im.modules[i]));
             module_print_info(&im.modules[i], FALSE);
             /* print all modules embedded in this one */
             for (j = 0; j < im.num_used; j++)
             {
-                if (!strstr(im.modules[j].name, "<elf>") && module_is_container(&im.modules[i], &im.modules[j]))
+                if (im.modules[j].system_offset < 0 && module_is_container(&im.modules[i], &im.modules[j]))
                 {
                     dbg_printf("  \\-PE\t");
                     module_print_info(&im.modules[j], TRUE);
@@ -269,16 +298,13 @@ void info_win32_module(DWORD64 base)
         else
         {
             /* check module is not embedded in another module */
-            for (j = 0; j < im.num_used; j++) 
+            for (j = 0; j < im.num_used; j++)
             {
-                if (strstr(im.modules[j].name, "<elf>") && module_is_container(&im.modules[j], &im.modules[i]))
+                if (im.modules[j].system_offset >= 0 && module_is_container(&im.modules[j], &im.modules[i]))
                     break;
             }
             if (j < im.num_used) continue;
-            if (strstr(im.modules[i].name, ".so") || strchr(im.modules[i].name, '<'))
-                dbg_printf("ELF\t");
-            else
-                dbg_printf("PE\t");
+            dbg_printf("%s\t", module_get_type_name(&im.modules[i]));
             module_print_info(&im.modules[i], FALSE);
         }
         num_printed++;

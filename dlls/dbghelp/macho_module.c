@@ -171,13 +171,12 @@ WINE_DEFAULT_DEBUG_CHANNEL(dbghelp_macho);
 
 #define UUID_STRING_LEN 37 /* 16 bytes at 2 hex digits apiece, 4 dashes, and the null terminator */
 
+static const WCHAR S_MachoW[] = L"<mco>";
 
 struct macho_module_info
 {
-    struct image_file_map       file_map;
+    struct image_file_map        file_map;
     ULONG_PTR                   load_addr;
-    unsigned short              in_use : 1,
-                                is_loader : 1;
 };
 
 struct section_info
@@ -204,6 +203,18 @@ static char* format_uuid(const UINT8 uuid[16], char out[UUID_STRING_LEN])
             uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
             uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
     return out;
+}
+
+static USHORT macho_cpu_to_machine(unsigned cpu)
+{
+    switch (cpu)
+    {
+    case MACHO_CPU_TYPE_X86:    return IMAGE_FILE_MACHINE_I386;
+    case MACHO_CPU_TYPE_X86_64: return IMAGE_FILE_MACHINE_AMD64;
+    default:
+        FIXME("Untranslated Mach-O CPU %x\n", cpu);
+        return IMAGE_FILE_MACHINE_UNKNOWN;
+    }
 }
 
 /******************************************************************
@@ -1354,6 +1365,38 @@ static BOOL image_uses_split_segs(struct process* process, ULONG_PTR load_addr)
 }
 
 /******************************************************************
+ *              image_get_machine
+ *
+ * For a module identified by its load address, return the machine field
+ * of the (loaded) Macho header.
+ */
+static USHORT image_get_machine(struct process *process, ULONG_PTR load_addr)
+{
+    if (load_addr)
+    {
+        struct macho_header header;
+        UINT32 target_magic = (process->is_64bit) ? MACHO_MH_MAGIC_64 : MACHO_MH_MAGIC_32;
+
+        if (read_process_memory(process, load_addr, &header, FIELD_OFFSET(struct macho_header, reserved)) &&
+            header.magic == target_magic)
+            return macho_cpu_to_machine(header.cputype);
+    }
+    return IMAGE_FILE_MACHINE_UNKNOWN;
+}
+
+/******************************************************************
+ *              image_get_loaded_size
+ *
+ *
+ * Get the highest address of all mapped segments/sections? in loaded module.
+ */
+static DWORD image_get_loaded_size(struct process *pcs, ULONG_PTR load_addr)
+{
+    /* FIXME */
+    return 1024;
+}
+
+/******************************************************************
  *              macho_load_debug_info
  *
  * Loads Mach-O debugging information from the module image file.
@@ -1478,12 +1521,13 @@ static BOOL macho_load_file(struct process* pcs, const WCHAR* filename,
             load_addr = fmap.u.macho.segs_start;
         macho_info->module = module_new(pcs, filename, DMT_MACHO, FALSE, load_addr,
                                         fmap.u.macho.segs_size, 0, calc_crc32(fmap.u.macho.handle),
-                                        IMAGE_FILE_MACHINE_UNKNOWN);
+                                        image_get_machine(pcs, load_addr));
         if (!macho_info->module)
         {
             HeapFree(GetProcessHeap(), 0, modfmt);
             goto leave;
         }
+        module_decorate_modulename(macho_info->module, S_MachoW);
         macho_info->module->reloc_delta = macho_info->module->module.BaseOfImage - fmap.u.macho.segs_start;
         macho_module_info = (void*)(modfmt + 1);
         macho_info->module->format_info[DFI_MACHO] = modfmt;
@@ -1498,8 +1542,6 @@ static BOOL macho_load_file(struct process* pcs, const WCHAR* filename,
         macho_module_info->file_map = fmap;
         reset_file_map(&fmap);
 
-        macho_info->module->format_info[DFI_MACHO]->u.macho_info->in_use = 1;
-        macho_info->module->format_info[DFI_MACHO]->u.macho_info->is_loader = 0;
         TRACE("module = %p\n", macho_info->module);
     }
 
@@ -1556,7 +1598,7 @@ static BOOL macho_search_and_load_file(struct process* pcs, const WCHAR* filenam
     if ((module = module_is_already_loaded(pcs, filename)))
     {
         macho_info->module = module;
-        module->format_info[DFI_MACHO]->u.macho_info->in_use = 1;
+        module->mark_and_sweep = 1;
         return module->module.SymType;
     }
 
@@ -1583,6 +1625,38 @@ static BOOL macho_search_and_load_file(struct process* pcs, const WCHAR* filenam
     }
     if (!ret && p == filename)
         ret = search_dll_path(pcs, filename, macho_load_file_cb, &load_params);
+
+    if (!ret && load_addr)
+    {
+        /* Starting at macos 11.0, the system libraries are no longer present on the file system.
+         * So, if we cannot find a module by its filename, just declare the module without
+         * any debug information.
+         * This avoids when walking the internal module lists to search each time
+         * for the module filename.
+         */
+        if (macho_info->flags & MACHO_INFO_MODULE)
+        {
+            macho_info->module = module_new(pcs, filename, DMT_HOLLOW, FALSE, load_addr,
+                                            image_get_loaded_size(pcs, load_addr), 0, 0,
+                                            image_get_machine(pcs, load_addr));
+            if (macho_info->module)
+            {
+                module_decorate_modulename(macho_info->module, S_MachoW);
+                ret = TRUE;
+            }
+        }
+        if (macho_info->flags & MACHO_INFO_NAME)
+        {
+            WCHAR*  ptr;
+            ptr = HeapAlloc(GetProcessHeap(), 0, (lstrlenW(filename) + 1) * sizeof(WCHAR));
+            if (ptr)
+            {
+                lstrcpyW(ptr, filename);
+                macho_info->module_name = ptr;
+                ret = TRUE;
+            }
+        }
+    }
 
     return ret;
 }
@@ -1696,8 +1770,8 @@ static BOOL macho_synchronize_module_list(struct process* pcs)
     if (!dbghelp_opt_native) return TRUE;
     for (module = pcs->lmodules; module; module = module->next)
     {
-        if (module->type == DMT_MACHO && !module->is_virtual)
-            module->format_info[DFI_MACHO]->u.macho_info->in_use = 0;
+        if ((module->type == DMT_MACHO || module->type == DMT_HOLLOW) && !module->is_virtual)
+            module->mark_and_sweep = 0;
     }
 
     ms.pcs = pcs;
@@ -1708,9 +1782,8 @@ static BOOL macho_synchronize_module_list(struct process* pcs)
     module = pcs->lmodules;
     while (module)
     {
-        if (module->type == DMT_MACHO && !module->is_virtual &&
-            !module->format_info[DFI_MACHO]->u.macho_info->in_use &&
-            !module->format_info[DFI_MACHO]->u.macho_info->is_loader)
+        if ((module->type == DMT_MACHO || module->type == DMT_HOLLOW) && !module->is_virtual &&
+            !module->mark_and_sweep && !module->is_wine_loader)
         {
             module_remove(pcs, module);
             /* restart all over */
@@ -1914,8 +1987,9 @@ BOOL macho_read_wine_loader_dbg_info(struct process* pcs, ULONG_PTR addr)
     pcs->dbg_hdr_addr = addr;
     macho_info.flags = MACHO_INFO_MODULE;
     if (!macho_search_loader(pcs, &macho_info)) return FALSE;
-    macho_info.module->format_info[DFI_MACHO]->u.macho_info->is_loader = 1;
-    module_set_module(macho_info.module, S_WineLoaderW);
+    macho_info.module->is_wine_loader = 1;
+    module_set_module(macho_info.module, L"<wine-preloader>");
+    module_decorate_modulename(macho_info.module, S_MachoW);
     pcs->loader = &macho_loader_ops;
     TRACE("Found macho debug header %#Ix\n", pcs->dbg_hdr_addr);
     return TRUE;

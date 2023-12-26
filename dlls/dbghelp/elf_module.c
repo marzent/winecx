@@ -34,6 +34,8 @@
 #define ELF_INFO_MODULE         0x0002
 #define ELF_INFO_NAME           0x0004
 
+static const WCHAR S_ElfW[] = L"<elf>";
+
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
 struct elf_info
@@ -83,9 +85,7 @@ struct elf_thunk_area
 struct elf_module_info
 {
     ULONG_PTR                   elf_addr;
-    unsigned short	        elf_mark : 1,
-                                elf_loader : 1;
-    struct image_file_map       file_map;
+    struct image_file_map        file_map;
 };
 
 /* Legal values for sh_type (section type).  */
@@ -1249,6 +1249,7 @@ static BOOL elf_load_file_from_fmap(struct process* pcs, const WCHAR* filename,
             HeapFree(GetProcessHeap(), 0, modfmt);
             return FALSE;
         }
+        module_decorate_modulename(elf_info->module, S_ElfW);
         elf_info->module->reloc_delta = elf_info->module->module.BaseOfImage - fmap->u.elf.elf_start;
         elf_module_info = (void*)(modfmt + 1);
         elf_info->module->format_info[DFI_ELF] = modfmt;
@@ -1258,12 +1259,9 @@ static BOOL elf_load_file_from_fmap(struct process* pcs, const WCHAR* filename,
         modfmt->u.elf_info  = elf_module_info;
 
         elf_module_info->elf_addr = load_offset;
-
         elf_module_info->file_map = *fmap;
         elf_reset_file_map(fmap);
 
-        elf_module_info->elf_mark = 1;
-        elf_module_info->elf_loader = 0;
         ret = TRUE;
     } else ret = TRUE;
 
@@ -1429,7 +1427,7 @@ static BOOL elf_search_and_load_file(struct process* pcs, const WCHAR* filename,
     if ((module = module_is_already_loaded(pcs, filename)))
     {
         elf_info->module = module;
-        elf_info->module->format_info[DFI_ELF]->u.elf_info->elf_mark = 1;
+        elf_info->module->mark_and_sweep = 1;
         return module->module.SymType;
     }
 
@@ -1627,7 +1625,7 @@ static BOOL elf_load_cb(const WCHAR* name, ULONG_PTR load_addr,
         if ((module = module_is_already_loaded(el->pcs, name)))
         {
             el->elf_info.module = module;
-            el->elf_info.module->format_info[DFI_ELF]->u.elf_info->elf_mark = 1;
+            el->elf_info.module->mark_and_sweep = 1;
             return module->module.SymType;
         }
 
@@ -1710,7 +1708,7 @@ static BOOL elf_synchronize_module_list(struct process* pcs)
     for (module = pcs->lmodules; module; module = module->next)
     {
         if (module->type == DMT_ELF && !module->is_virtual)
-            module->format_info[DFI_ELF]->u.elf_info->elf_mark = 0;
+            module->mark_and_sweep = 0;
     }
 
     el.pcs = pcs;
@@ -1726,9 +1724,7 @@ static BOOL elf_synchronize_module_list(struct process* pcs)
     {
         if (module->type == DMT_ELF && !module->is_virtual)
         {
-            struct elf_module_info* elf_info = module->format_info[DFI_ELF]->u.elf_info;
-
-            if (!elf_info->elf_mark && !elf_info->elf_loader)
+            if (!module->mark_and_sweep && !module->is_wine_loader)
             {
                 module_remove(pcs, module);
                 /* restart all over */
@@ -1771,8 +1767,9 @@ BOOL elf_read_wine_loader_dbg_info(struct process* pcs, ULONG_PTR addr)
     if (!ret || !elf_info.dbg_hdr_addr) return FALSE;
 
     TRACE("Found ELF debug header %#Ix\n", elf_info.dbg_hdr_addr);
-    elf_info.module->format_info[DFI_ELF]->u.elf_info->elf_loader = 1;
+    elf_info.module->is_wine_loader = 1;
     module_set_module(elf_info.module, S_WineLoaderW);
+    module_decorate_modulename(elf_info.module, S_ElfW);
     pcs->dbg_hdr_addr = elf_info.dbg_hdr_addr;
     pcs->loader = &elf_loader_ops;
     return TRUE;
