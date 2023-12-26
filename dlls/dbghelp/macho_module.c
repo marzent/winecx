@@ -1693,6 +1693,7 @@ static BOOL macho_synchronize_module_list(struct process* pcs)
 
     TRACE("(%p/%p)\n", pcs, pcs->handle);
 
+    if (!dbghelp_opt_native) return TRUE;
     for (module = pcs->lmodules; module; module = module->next)
     {
         if (module->type == DMT_MACHO && !module->is_virtual)

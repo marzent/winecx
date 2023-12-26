@@ -65,7 +65,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
  *      + C++ management
  */
 
-unsigned   dbghelp_options = SYMOPT_UNDNAME;
+unsigned   dbghelp_options = SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS;
 BOOL       dbghelp_opt_native = FALSE;
 SYSTEM_INFO sysinfo;
 
