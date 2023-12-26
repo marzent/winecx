@@ -1857,7 +1857,9 @@ static int queue_mouse_message( struct desktop *desktop, user_handle_t win, cons
         WM_MOUSEHWHEEL   /* 0x1000 = MOUSEEVENTF_HWHEEL */
     };
 
-    desktop->cursor.last_change = get_tick_count();
+    /* update last desktop cursor change time */
+    update_desktop_cursor_pos( desktop, desktop->cursor.win, desktop->cursor.x, desktop->cursor.y );
+    
     flags = input->mouse.flags;
     time  = input->mouse.time;
     if (!time) time = desktop->cursor.last_change;
