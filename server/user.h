@@ -56,7 +56,6 @@ struct winstation
 struct global_cursor
 {
     rectangle_t          clip;             /* cursor clip rectangle */
-    unsigned int         clip_msg;         /* message to post for cursor clip changes */
     user_handle_t        win;              /* window that contains the cursor */
 };
 
