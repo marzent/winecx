@@ -832,9 +832,16 @@ typedef struct
     lparam_t info;
 } cursor_pos_t;
 
+struct shared_cursor
+{
+    int                  x;
+    int                  y;
+    unsigned int         last_change;
+};
+
 struct desktop_shared_memory
 {
-    int placeholder;
+    struct shared_cursor cursor;
 };
 typedef volatile struct desktop_shared_memory desktop_shm_t;
 
@@ -6562,7 +6569,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 763
+#define SERVER_PROTOCOL_VERSION 764
 
 /* ### protocol_version end ### */
 
