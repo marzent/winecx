@@ -53,11 +53,6 @@ struct winstation
     struct namespace  *desktop_names;      /* namespace for desktops of this winstation */
 };
 
-struct global_cursor
-{
-    user_handle_t        win;              /* window that contains the cursor */
-};
-
 struct desktop
 {
     struct object        obj;              /* object header */
@@ -73,6 +68,7 @@ struct desktop
     unsigned int         users;            /* processes and threads using this desktop */
     struct global_cursor cursor;           /* global cursor information */
     unsigned char        keystate[256];    /* asynchronous key state */
+    user_handle_t        cursor_win;       /* window that contains the cursor */
     struct object       *shared_mapping;   /* desktop shared memory mapping */
     const desktop_shm_t *shared;           /* desktop shared memory */
 };

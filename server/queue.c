@@ -424,8 +424,8 @@ static struct message *alloc_hardware_message( lparam_t info, struct hw_msg_sour
 
 static int update_desktop_cursor_window( struct desktop *desktop, user_handle_t win )
 {
-    int updated = win != desktop->cursor.win;
-    desktop->cursor.win = win;
+    int updated = win != desktop->cursor_win;
+    desktop->cursor_win = win;
     return updated;
 }
 
@@ -1883,7 +1883,7 @@ static int queue_mouse_message( struct desktop *desktop, user_handle_t win, cons
     };
 
     /* update last desktop cursor change time */
-    update_desktop_cursor_pos( desktop, desktop->cursor.win, desktop->shared->cursor.x, desktop->shared->cursor.y );
+    update_desktop_cursor_pos( desktop, desktop->cursor_win, desktop->shared->cursor.x, desktop->shared->cursor.y );
     
     flags = input->mouse.flags;
     time  = input->mouse.time;
