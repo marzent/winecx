@@ -848,6 +848,17 @@ struct desktop_shared_memory
 };
 typedef volatile struct desktop_shared_memory desktop_shm_t;
 
+struct queue_shared_memory
+{
+    unsigned int         seq;
+    int                  created;
+    unsigned int         wake_bits;
+    unsigned int         changed_bits;
+    unsigned int         wake_mask;
+    unsigned int         changed_mask;
+};
+typedef volatile struct queue_shared_memory queue_shm_t;
+
 
 
 
@@ -6587,7 +6598,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 769
+#define SERVER_PROTOCOL_VERSION 770
 
 /* ### protocol_version end ### */
 
