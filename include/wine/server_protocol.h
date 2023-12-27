@@ -865,6 +865,7 @@ struct input_shared_memory
     unsigned int         seq;
     int                  created;
     thread_id_t          tid;
+    user_handle_t        focus;
     user_handle_t        active;
 };
 typedef volatile struct input_shared_memory input_shm_t;
@@ -6608,7 +6609,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 772
+#define SERVER_PROTOCOL_VERSION 773
 
 /* ### protocol_version end ### */
 
