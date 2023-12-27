@@ -871,6 +871,8 @@ struct input_shared_memory
     user_handle_t        active;
     user_handle_t        menu_owner;
     user_handle_t        move_size;
+    user_handle_t        caret;
+    rectangle_t          caret_rect;
 };
 typedef volatile struct input_shared_memory input_shm_t;
 
@@ -6613,7 +6615,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 775
+#define SERVER_PROTOCOL_VERSION 776
 
 /* ### protocol_version end ### */
 
