@@ -875,6 +875,7 @@ struct input_shared_memory
     user_handle_t        cursor;
     rectangle_t          caret_rect;
     int                  cursor_count;
+    unsigned char        keystate[256];
 };
 typedef volatile struct input_shared_memory input_shm_t;
 
@@ -6613,7 +6614,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 779
+#define SERVER_PROTOCOL_VERSION 780
 
 /* ### protocol_version end ### */
 
