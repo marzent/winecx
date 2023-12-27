@@ -845,6 +845,7 @@ struct desktop_shared_memory
     unsigned int         seq;
     struct shared_cursor cursor;
     unsigned char        keystate[256];
+    thread_id_t          foreground_tid;
 };
 typedef volatile struct desktop_shared_memory desktop_shm_t;
 
@@ -6609,7 +6610,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 773
+#define SERVER_PROTOCOL_VERSION 774
 
 /* ### protocol_version end ### */
 
