@@ -4665,9 +4665,6 @@ static void thread_detach(void)
 
     user_driver->pThreadDetach();
 
-    free( thread_info->key_state );
-    thread_info->key_state = 0;
-
     destroy_thread_windows();
     NtClose( thread_info->server_queue );
 

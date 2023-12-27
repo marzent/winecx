@@ -160,7 +160,6 @@ struct user_thread_info
     INPUT_MESSAGE_SOURCE          msg_source;             /* Message source for current message */
     struct received_message_info *receive_info;           /* Message being currently received */
     struct wm_char_mapping_data  *wmchar_data;            /* Data for WM_CHAR mappings */
-    struct user_key_state_info   *key_state;              /* Cache of global key state */
     HKL                           kbd_layout;             /* Current keyboard layout */
     DWORD                         kbd_layout_id;          /* Current keyboard layout ID */
     struct rawinput_thread_data  *rawinput;               /* RawInput thread local data / buffer */
@@ -169,13 +168,6 @@ struct user_thread_info
 };
 
 C_ASSERT( sizeof(struct user_thread_info) <= sizeof(((TEB *)0)->Win32ClientInfo) );
-
-struct user_key_state_info
-{
-    UINT  time;          /* Time of last key state refresh */
-    INT   counter;       /* Counter to invalidate the key state */
-    BYTE  state[256];    /* State for each key */
-};
 
 struct hook_extra_info
 {

@@ -253,8 +253,6 @@ static LRESULT call_hook( struct win_hook_params *info )
         thread_info->hook_call_depth--;
     }
 
-    if (info->id == WH_KEYBOARD_LL || info->id == WH_MOUSE_LL)
-        InterlockedIncrement( &global_key_state_counter ); /* force refreshing the key state cache */
     return ret;
 }
 
