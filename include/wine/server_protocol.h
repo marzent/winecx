@@ -856,8 +856,17 @@ struct queue_shared_memory
     unsigned int         changed_bits;
     unsigned int         wake_mask;
     unsigned int         changed_mask;
+    thread_id_t          input_tid;
 };
 typedef volatile struct queue_shared_memory queue_shm_t;
+
+struct input_shared_memory
+{
+    unsigned int         seq;
+    int                  created;
+    thread_id_t          tid;
+};
+typedef volatile struct input_shared_memory input_shm_t;
 
 
 
@@ -6598,7 +6607,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 770
+#define SERVER_PROTOCOL_VERSION 771
 
 /* ### protocol_version end ### */
 
