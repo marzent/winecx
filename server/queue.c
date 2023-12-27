@@ -3360,7 +3360,7 @@ DECL_HANDLER(get_key_state)
             }
             SHARED_WRITE_END
         }
-        set_reply_data( (void *)desktop->shared->keystate, size );
+        else set_reply_data( (void *)desktop->shared->keystate, size );
         release_object( desktop );
     }
     else if (!current->queue)
@@ -3380,7 +3380,7 @@ DECL_HANDLER(get_key_state)
     {
         unsigned char *keystate = current->queue->input->keystate;
         if (req->key >= 0) reply->state = keystate[req->key & 0xff];
-        set_reply_data( keystate, size );
+        else set_reply_data( keystate, size );
     }
 }
 
