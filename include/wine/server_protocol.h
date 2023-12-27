@@ -3898,12 +3898,10 @@ struct get_thread_input_reply
     user_handle_t  focus;
     user_handle_t  capture;
     user_handle_t  active;
-    user_handle_t  foreground;
     user_handle_t  menu_owner;
     user_handle_t  move_size;
     user_handle_t  caret;
     rectangle_t    rect;
-    char __pad_52[4];
 };
 
 
@@ -6615,7 +6613,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 778
+#define SERVER_PROTOCOL_VERSION 779
 
 /* ### protocol_version end ### */
 
