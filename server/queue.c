@@ -130,6 +130,7 @@ struct msg_queue
     int                    quit_message;    /* is there a pending quit message? */
     int                    exit_code;       /* exit code of pending quit message */
     int                    cursor_count;    /* per-queue cursor show count */
+    int                    destroyed;       /* queue has been cleaned up */
     struct list            msg_list[NB_MSG_KINDS];  /* lists of messages */
     struct list            send_result;     /* stack of sent messages waiting for result */
     struct list            callback_result; /* list of callback messages waiting for result */
@@ -365,15 +366,6 @@ static struct msg_queue *create_msg_queue( struct thread *thread, struct thread_
     }
     if (new_input) release_object( new_input );
     return queue;
-}
-
-/* free the message queue of a thread at thread exit */
-void free_msg_queue( struct thread *thread )
-{
-    remove_thread_hooks( thread );
-    if (!thread->queue) return;
-    release_object( thread->queue );
-    thread->queue = NULL;
 }
 
 /* change the thread input data of a given thread */
@@ -1104,9 +1096,8 @@ static void msg_queue_satisfied( struct object *obj, struct wait_queue_entry *en
     queue->changed_mask = 0;
 }
 
-static void msg_queue_destroy( struct object *obj )
+static void cleanup_msg_queue( struct msg_queue *queue )
 {
-    struct msg_queue *queue = (struct msg_queue *)obj;
     struct list *ptr;
     struct hotkey *hotkey, *hotkey2;
     int i;
@@ -1147,6 +1138,24 @@ static void msg_queue_destroy( struct object *obj )
     
     if (do_msync())
         msync_destroy_semaphore( queue->msync_idx );
+
+    queue->destroyed = 1;
+}
+
+static void msg_queue_destroy( struct object *obj )
+{
+    struct msg_queue *queue = (struct msg_queue *)obj;
+    if (!queue->destroyed) cleanup_msg_queue( queue );
+}
+
+/* free the message queue of a thread at thread exit */
+void free_msg_queue( struct thread *thread )
+{
+    remove_thread_hooks( thread );
+    if (!thread->queue) return;
+    cleanup_msg_queue( thread->queue );
+    release_object( thread->queue );
+    thread->queue = NULL;
 }
 
 static void msg_queue_poll_event( struct fd *fd, int event )
