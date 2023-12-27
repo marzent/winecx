@@ -104,7 +104,6 @@ struct thread_input
     struct desktop        *desktop;       /* desktop that this thread input belongs to */
     user_handle_t          focus;         /* focus window */
     user_handle_t          capture;       /* capture window */
-    user_handle_t          active;        /* active window */
     user_handle_t          menu_owner;    /* current menu owner window */
     user_handle_t          move_size;     /* current moving/resizing window */
     user_handle_t          caret;         /* caret window */
@@ -301,7 +300,6 @@ static struct thread_input *create_thread_input( struct thread *thread )
         input->shared = thread->input_shared;
         input->focus        = 0;
         input->capture      = 0;
-        input->active       = 0;
         input->menu_owner   = 0;
         input->move_size    = 0;
         input->cursor       = 0;
@@ -318,6 +316,7 @@ static struct thread_input *create_thread_input( struct thread *thread )
 
         SHARED_WRITE_BEGIN( input, input_shm_t )
         {
+            shared->active = 0;
             shared->created = TRUE;
         }
         SHARED_WRITE_END
@@ -1240,7 +1239,7 @@ static void thread_input_dump( struct object *obj, int verbose )
 {
     struct thread_input *input = (struct thread_input *)obj;
     fprintf( stderr, "Thread input focus=%08x capture=%08x active=%08x\n",
-             input->focus, input->capture, input->active );
+             input->focus, input->capture, input->shared->active );
 }
 
 static void thread_input_destroy( struct object *obj )
@@ -1263,7 +1262,13 @@ static inline void thread_input_cleanup_window( struct msg_queue *queue, user_ha
 
     if (window == input->focus) input->focus = 0;
     if (window == input->capture) input->capture = 0;
-    if (window == input->active) input->active = 0;
+
+    SHARED_WRITE_BEGIN( input, input_shm_t )
+    {
+        if (window == shared->active) shared->active = 0;
+    }
+    SHARED_WRITE_END
+
     if (window == input->menu_owner) input->menu_owner = 0;
     if (window == input->move_size) input->move_size = 0;
     if (window == input->caret) set_caret_window( input, 0 );
@@ -1299,7 +1304,7 @@ int init_thread_queue( struct thread *thread )
 int attach_thread_input( struct thread *thread_from, struct thread *thread_to )
 {
     struct desktop *desktop;
-    struct thread_input *input;
+    struct thread_input *input, *old_input;
     int ret;
 
     if (!thread_to->queue && !(thread_to->queue = create_msg_queue( thread_to, NULL ))) return 0;
@@ -1316,8 +1321,14 @@ int attach_thread_input( struct thread *thread_from, struct thread *thread_to )
 
     if (thread_from->queue)
     {
-        if (!input->focus) input->focus = thread_from->queue->input->focus;
-        if (!input->active) input->active = thread_from->queue->input->active;
+        old_input = thread_from->queue->input;
+        if (!input->focus) input->focus = old_input->focus;
+
+        SHARED_WRITE_BEGIN( input, input_shm_t )
+        {
+            if (!shared->active) shared->active = old_input->shared->active;
+        }
+        SHARED_WRITE_END
     }
 
     ret = assign_thread_input( thread_from, input );
@@ -1343,12 +1354,21 @@ void detach_thread_input( struct thread *thread_from )
             }
             release_object( thread );
         }
-        if (old_input->active && (thread = get_window_thread( old_input->active )))
+        if (old_input->shared->active && (thread = get_window_thread( old_input->shared->active )))
         {
             if (thread == thread_from)
             {
-                input->active = old_input->active;
-                old_input->active = 0;
+                SHARED_WRITE_BEGIN( input, input_shm_t )
+                {
+                    shared->active = old_input->shared->active;
+                }
+                SHARED_WRITE_END
+
+                SHARED_WRITE_BEGIN( old_input, input_shm_t )
+                {
+                    shared->active = 0;
+                }
+                SHARED_WRITE_END
             }
             release_object( thread );
         }
@@ -1673,7 +1693,7 @@ static user_handle_t find_hardware_message_window( struct desktop *desktop, stru
     {
         if (input && !(win = input->focus))
         {
-            win = input->active;
+            win = input->shared->active;
             if (*msg_code < WM_SYSKEYDOWN) *msg_code += WM_SYSKEYDOWN - WM_KEYDOWN;
         }
     }
@@ -3291,7 +3311,7 @@ DECL_HANDLER(get_thread_input)
     {
         reply->focus      = input->focus;
         reply->capture    = input->capture;
-        reply->active     = input->active;
+        reply->active     = input->shared->active;
         reply->menu_owner = input->menu_owner;
         reply->move_size  = input->move_size;
         reply->caret      = input->caret;
@@ -3301,7 +3321,7 @@ DECL_HANDLER(get_thread_input)
     }
 
     /* foreground window is active window of foreground thread */
-    reply->foreground = desktop->foreground_input ? desktop->foreground_input->active : 0;
+    reply->foreground = desktop->foreground_input ? desktop->foreground_input->shared->active : 0;
     if (thread) release_object( thread );
     release_object( desktop );
 }
@@ -3378,7 +3398,7 @@ DECL_HANDLER(set_foreground_window)
     struct msg_queue *queue = get_current_queue();
 
     if (!(desktop = get_thread_desktop( current, 0 ))) return;
-    reply->previous = desktop->foreground_input ? desktop->foreground_input->active : 0;
+    reply->previous = desktop->foreground_input ? desktop->foreground_input->shared->active : 0;
     reply->send_msg_old = (reply->previous && desktop->foreground_input != queue->input);
     reply->send_msg_new = FALSE;
 
@@ -3420,8 +3440,13 @@ DECL_HANDLER(set_active_window)
     {
         if (!req->handle || make_window_active( req->handle ))
         {
-            reply->previous = queue->input->active;
-            queue->input->active = get_user_full_handle( req->handle );
+            user_handle_t active = get_user_full_handle( req->handle );
+            reply->previous = queue->input->shared->active;
+            SHARED_WRITE_BEGIN( queue->input, input_shm_t )
+            {
+                shared->active = active;
+            }
+            SHARED_WRITE_END
         }
         else set_error( STATUS_INVALID_HANDLE );
     }
