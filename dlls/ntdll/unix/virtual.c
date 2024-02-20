@@ -39,6 +39,9 @@
 #ifdef HAVE_SYS_SYSINFO_H
 # include <sys/sysinfo.h>
 #endif
+#ifdef HAVE_SYS_SYSCALL_H
+# include <sys/syscall.h>
+#endif
 #ifdef HAVE_SYS_SYSCTL_H
 # include <sys/sysctl.h>
 #endif
@@ -6508,6 +6511,36 @@ NTSTATUS WINAPI NtFlushInstructionCache( HANDLE handle, const void *addr, SIZE_T
 }
 
 
+#if defined(__linux__) && defined(__NR_membarrier)
+
+#define MEMBARRIER_CMD_PRIVATE_EXPEDITED            0x08
+#define MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED   0x10
+
+static pthread_once_t membarrier_init_once = PTHREAD_ONCE_INIT;
+
+static int membarrier( int cmd, unsigned int flags, int cpu_id )
+{
+    return syscall( __NR_membarrier, cmd, flags, cpu_id );
+}
+
+static void membarrier_init(void)
+{
+    if (membarrier( MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0, 0 ))
+        FIXME( "membarrier not supported for NtFlushProcessWriteBuffers\n" );
+}
+
+/**********************************************************************
+ *           NtFlushProcessWriteBuffers  (NTDLL.@)
+ */
+NTSTATUS WINAPI NtFlushProcessWriteBuffers(void)
+{
+    pthread_once( &membarrier_init_once, membarrier_init );
+    membarrier( MEMBARRIER_CMD_PRIVATE_EXPEDITED, 0, 0 );
+    return STATUS_SUCCESS;
+}
+
+#else /* __linux__ */
+
 /**********************************************************************
  *           NtFlushProcessWriteBuffers  (NTDLL.@)
  */
@@ -6518,6 +6551,7 @@ NTSTATUS WINAPI NtFlushProcessWriteBuffers(void)
     return STATUS_SUCCESS;
 }
 
+#endif
 
 /**********************************************************************
  *           NtCreatePagingFile  (NTDLL.@)
