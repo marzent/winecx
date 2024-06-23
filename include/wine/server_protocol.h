@@ -909,6 +909,7 @@ typedef volatile struct
 
 typedef volatile struct
 {
+    int                  foreground;
     user_handle_t        active;
     user_handle_t        focus;
     user_handle_t        capture;
@@ -6833,7 +6834,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 1804
+#define SERVER_PROTOCOL_VERSION 1805
 
 /* ### protocol_version end ### */
 
