@@ -112,6 +112,11 @@ static inline TEB64 *NtCurrentTeb64(void) { return NULL; }
 static inline TEB64 *NtCurrentTeb64(void) { return (TEB64 *)NtCurrentTeb()->GdiBatchCount; }
 #endif
 
+/* version */
+extern const char * CDECL wine_get_version(void);
+extern const char * CDECL wine_get_build_id(void);
+extern void CDECL wine_get_host_version( const char **sysname, const char **release );
+
 static inline void *get_rva( HMODULE module, DWORD va )
 {
     return (void *)((char *)module + va);
