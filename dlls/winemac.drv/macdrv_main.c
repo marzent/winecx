@@ -49,10 +49,10 @@ BOOL allow_vsync = TRUE;
 BOOL allow_set_gamma = TRUE;
 /* CrossOver Hack 10912: Mac Edit menu */
 int mac_edit_menu = MAC_EDIT_MENU_BY_KEY;
-int left_option_is_alt = 0;
-int right_option_is_alt = 0;
-int left_command_is_ctrl = 0;
-int right_command_is_ctrl = 0;
+int left_option_is_alt = 1;
+int right_option_is_alt = 1;
+int left_command_is_ctrl = 1;
+int right_command_is_ctrl = 1;
 BOOL allow_software_rendering = FALSE;
 int allow_immovable_windows = TRUE;
 int use_confinement_cursor_clipping = TRUE;
