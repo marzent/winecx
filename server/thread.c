@@ -274,10 +274,11 @@ static int get_mach_importance( int base_priority )
     return min + (base_priority - 1) * range / 14;
 }
 
-static void apply_thread_priority( struct thread *thread, int base_priority )
+static void apply_thread_priority( struct thread *thread, int base_priority, int priority )
 {
     kern_return_t kr;
     mach_msg_type_name_t type;
+    int throughput_qos, latency_qos;
     struct thread_extended_policy thread_extended_policy;
     struct thread_precedence_policy thread_precedence_policy;
     mach_port_t thread_port, process_port = thread->process->trace_data;
@@ -290,8 +291,52 @@ static void apply_thread_priority( struct thread *thread, int base_priority )
                 process_port, thread->unix_tid, kr );
         return;
     }
-    thread_extended_policy.timeshare = base_priority > 15 ? 0 : 1;
+    /* base priority 15 is for time-critical threads, so not compute-bound */
+    thread_extended_policy.timeshare = base_priority > 14 ? 0 : 1;
     thread_precedence_policy.importance = get_mach_importance( base_priority );
+    /* adapted from the QoS table at xnu/osfmk/kern/thread_policy.c */
+    switch (priority)
+    {
+        case THREAD_PRIORITY_IDLE: /* THREAD_QOS_MAINTENANCE */
+        case THREAD_PRIORITY_LOWEST: /* THREAD_QOS_BACKGROUND */
+            throughput_qos = THROUGHPUT_QOS_TIER_5;
+            latency_qos = LATENCY_QOS_TIER_3;
+            break;
+        case THREAD_PRIORITY_BELOW_NORMAL: /* THREAD_QOS_UTILITY */
+            throughput_qos = THROUGHPUT_QOS_TIER_2;
+            latency_qos = LATENCY_QOS_TIER_3;
+            break;
+        case THREAD_PRIORITY_NORMAL: /* THREAD_QOS_LEGACY */
+        case THREAD_PRIORITY_ABOVE_NORMAL: /* THREAD_QOS_USER_INITIATED */
+            throughput_qos = THROUGHPUT_QOS_TIER_1;
+            latency_qos = LATENCY_QOS_TIER_1;
+            break;
+        case THREAD_PRIORITY_HIGHEST: /* THREAD_QOS_USER_INTERACTIVE */
+            throughput_qos = THROUGHPUT_QOS_TIER_0;
+            latency_qos = LATENCY_QOS_TIER_0;
+            break;
+        case THREAD_PRIORITY_TIME_CRITICAL:
+        default: /* THREAD_QOS_UNSPECIFIED */
+            throughput_qos = THROUGHPUT_QOS_TIER_UNSPECIFIED;
+            latency_qos = LATENCY_QOS_TIER_UNSPECIFIED;
+            break;
+    }
+    /* QOS_UNSPECIFIED is assigned the highest tier available, so it does not provide a limit */
+    if (base_priority > THREAD_BASE_PRIORITY_LOWRT)
+    {
+        throughput_qos = THROUGHPUT_QOS_TIER_UNSPECIFIED;
+        latency_qos = LATENCY_QOS_TIER_UNSPECIFIED;
+    }
+    kr = thread_policy_set( thread_port, THREAD_LATENCY_QOS_POLICY, (thread_policy_t)&latency_qos,
+                            THREAD_LATENCY_QOS_POLICY_COUNT);
+    if (kr != KERN_SUCCESS)
+        fprintf(stderr, "wine: failed to set thread latency QoS for %d: %d\n",
+                thread->unix_tid, kr );
+    kr = thread_policy_set( thread_port, THREAD_THROUGHPUT_QOS_POLICY, (thread_policy_t)&throughput_qos,
+                            THREAD_THROUGHPUT_QOS_POLICY_COUNT);
+    if (kr != KERN_SUCCESS)
+        fprintf(stderr, "wine: failed to set thread throughput QoS for %d: %d\n",
+                thread->unix_tid, kr );
     kr = thread_policy_set( thread_port, THREAD_EXTENDED_POLICY, (thread_policy_t)&thread_extended_policy,
                             THREAD_EXTENDED_POLICY_COUNT );
     if (kr != KERN_SUCCESS)
@@ -785,7 +830,7 @@ int set_thread_priority( struct thread *thread, int priority_class, int priority
         return STATUS_SUCCESS;
 
     base_priority = get_base_priority( priority_class, priority );
-    apply_thread_priority( thread, base_priority );
+    apply_thread_priority( thread, base_priority, priority );
     return STATUS_SUCCESS;
 }
 
@@ -1611,6 +1656,8 @@ DECL_HANDLER(init_first_thread)
 
     current->unix_pid = process->unix_pid = req->unix_pid;
     current->unix_tid = req->unix_tid;
+
+    set_thread_priority( current, current->process->priority, current->priority );
 
     if (!process->parent_id)
         process->affinity = current->affinity = get_thread_affinity( current );
