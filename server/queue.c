@@ -4116,11 +4116,13 @@ DECL_HANDLER(set_keyboard_repeat)
 DECL_HANDLER(esync_msgwait)
 {
     struct msg_queue *queue = get_current_queue();
+    const queue_shm_t *queue_shm;
 
     if (!queue) return;
+    queue_shm = queue->shared;
     queue->esync_in_msgwait = req->in_msgwait;
 
-    if (current->process->idle_event && !(queue->wake_mask & QS_SMRESULT))
+    if (current->process->idle_event && !(queue_shm->wake_mask & QS_SMRESULT))
         set_event( current->process->idle_event );
 
     /* and start/stop waiting on the driver */
@@ -4131,11 +4133,13 @@ DECL_HANDLER(esync_msgwait)
 DECL_HANDLER(msync_msgwait)
 {
     struct msg_queue *queue = get_current_queue();
+    const queue_shm_t *queue_shm;
 
     if (!queue) return;
+    queue_shm = queue->shared;
     queue->msync_in_msgwait = req->in_msgwait;
 
-    if (current->process->idle_event && !(queue->wake_mask & QS_SMRESULT))
+    if (current->process->idle_event && !(queue_shm->wake_mask & QS_SMRESULT))
         set_event( current->process->idle_event );
 
     /* and start/stop waiting on the driver */
