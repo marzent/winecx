@@ -1797,12 +1797,12 @@ static void set_process_priority( struct process *process, int priority )
         return;
     }
 
-    process->priority = priority;
-
     LIST_FOR_EACH_ENTRY( thread, &process->thread_list, struct thread, proc_entry )
     {
         set_thread_priority( thread, priority, thread->priority );
     }
+
+    process->priority = priority;
 }
 
 static void set_process_affinity( struct process *process, affinity_t affinity )
