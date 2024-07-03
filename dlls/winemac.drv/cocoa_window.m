@@ -365,6 +365,9 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
 @interface WineContentView : WineBaseView <NSTextInputClient, NSViewLayerContentScaleDelegate>
 {
+    CGRect surfaceRect;
+    CGImageRef colorImage;
+
     NSMutableArray* glContexts;
     NSMutableArray* pendingGlContexts;
     BOOL _everHadGLContext;
@@ -407,9 +410,6 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
 @property (nonatomic) void* hwnd;
 @property (retain, readwrite, nonatomic) WineEventQueue* queue;
-
-@property (nonatomic) void* surface;
-@property (nonatomic) pthread_mutex_t* surface_mutex;
 
 @property (nonatomic) BOOL shapeChangedSinceLastDraw;
 @property (readonly, nonatomic) BOOL needsTransparency;
@@ -490,6 +490,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         self = [super initWithFrame:frame];
         if (self)
         {
+            [self setLayerContentsPlacement:NSViewLayerContentsPlacementTopLeft];
             [self setWantsLayer:YES];
             [self setLayerRetinaProperties:retina_on];
             [self setAutoresizesSubviews:NO];
@@ -502,6 +503,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         [markedText release];
         [glContexts release];
         [pendingGlContexts release];
+        CGImageRelease(colorImage);
         [super dealloc];
     }
 
@@ -518,31 +520,41 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
     - (void) updateLayer
     {
         WineWindow* window = (WineWindow*)[self window];
-        CGImageRef image = NULL;
+        CGImageRef image;
         CGRect imageRect;
         CALayer* layer = [self layer];
 
         if ([window contentView] != self)
             return;
 
-        if (window.closing || !window.surface || !window.surface_mutex)
+        if (window.closing)
             return;
 
-        pthread_mutex_lock(window.surface_mutex);
-        if (get_surface_blit_rects(window.surface, NULL, NULL))
+        imageRect = layer.bounds;
+        imageRect.origin.x *= layer.contentsScale;
+        imageRect.origin.y *= layer.contentsScale;
+        imageRect.size.width *= layer.contentsScale;
+        imageRect.size.height *= layer.contentsScale;
+
+        image = CGImageCreateWithImageInRect(colorImage, imageRect);
+
+        if (window.colorKeyed)
         {
-            imageRect = layer.bounds;
-            imageRect.origin.x *= layer.contentsScale;
-            imageRect.origin.y *= layer.contentsScale;
-            imageRect.size.width *= layer.contentsScale;
-            imageRect.size.height *= layer.contentsScale;
-            image = create_surface_image(window.surface, &imageRect, FALSE, window.colorKeyed,
-                                         window.colorKeyRed, window.colorKeyGreen, window.colorKeyBlue);
+            CGImageRef maskedImage;
+            CGFloat components[] = { window.colorKeyRed   - 0.5, window.colorKeyRed   + 0.5,
+                                     window.colorKeyGreen - 0.5, window.colorKeyGreen + 0.5,
+                                     window.colorKeyBlue  - 0.5, window.colorKeyBlue  + 0.5 };
+            maskedImage = CGImageCreateWithMaskingColors(image, components);
+            if (maskedImage)
+            {
+                CGImageRelease(image);
+                image = maskedImage;
+            }
         }
-        pthread_mutex_unlock(window.surface_mutex);
 
         if (image)
         {
+            layer.position = surfaceRect.origin;
             layer.contents = (id)image;
             CFRelease(image);
             [window windowDidDrawContent];
@@ -558,6 +570,17 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         }
     }
 
+    - (void) setSurfaceRect:(CGRect)rect
+    {
+        surfaceRect = rect;
+    }
+
+    - (void) setColorImage:(CGImageRef)image
+    {
+        CGImageRelease(colorImage);
+        colorImage = CGImageRetain(image);
+    }
+
     - (void) viewWillDraw
     {
         [super viewWillDraw];
@@ -570,6 +593,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
                 clearedGlSurface = TRUE;
             }
             context.needsUpdate = TRUE;
+            macdrv_update_opengl_context((macdrv_opengl_context)context);
         }
         [glContexts addObjectsFromArray:pendingGlContexts];
         [pendingGlContexts removeAllObjects];
@@ -1003,7 +1027,6 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
     @synthesize disabled, noForeground, preventsAppActivation, floating, fullscreen, fakingClose, closing, latentParentWindow, hwnd, queue;
     @synthesize drawnSinceShown;
-    @synthesize surface, surface_mutex;
     @synthesize shapeChangedSinceLastDraw;
     @synthesize colorKeyed, colorKeyRed, colorKeyGreen, colorKeyBlue;
     @synthesize usePerPixelAlpha;
@@ -2343,7 +2366,7 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
                 return;
         }
 
-        const void* windowID = (const void*)(CGWindowID)window.windowNumber;
+        const void* windowID = (const void*)(uintptr_t)(CGWindowID)window.windowNumber;
         CFArrayRef windowIDs = CFArrayCreate(NULL, &windowID, 1, NULL);
         CGImageRef windowImage = CGWindowListCreateImageFromArray(CGRectNull, windowIDs, kCGWindowImageBoundsIgnoreFraming);
         CFRelease(windowIDs);
@@ -3561,36 +3584,29 @@ void macdrv_set_cocoa_parent_window(macdrv_window w, macdrv_window parent)
     });
 }
 
-/***********************************************************************
- *              macdrv_set_window_surface
- */
-void macdrv_set_window_surface(macdrv_window w, void *surface, pthread_mutex_t *mutex)
-{
-@autoreleasepool
-{
-    WineWindow* window = (WineWindow*)w;
-
-    OnMainThread(^{
-        window.surface = surface;
-        window.surface_mutex = mutex;
-    });
-}
-}
 
 /***********************************************************************
- *              macdrv_window_needs_display
+ *              macdrv_window_set_color_image
  *
- * Mark a window as needing display in a specified rect (in non-client
+ * Push a window surface color pixel update in a specified rect (in non-client
  * area coordinates).
  */
-void macdrv_window_needs_display(macdrv_window w, CGRect rect)
+void macdrv_window_set_color_image(macdrv_window w, CGImageRef image, CGRect rect, CGRect dirty)
 {
 @autoreleasepool
 {
     WineWindow* window = (WineWindow*)w;
 
+    CGImageRetain(image);
+
     OnMainThreadAsync(^{
-        [[window contentView] setNeedsDisplayInRect:NSRectFromCGRect(cgrect_mac_from_win(rect))];
+        WineContentView *view = [window contentView];
+
+        [view setColorImage:image];
+        [view setSurfaceRect:cgrect_mac_from_win(rect)];
+        [view setNeedsDisplayInRect:NSRectFromCGRect(cgrect_mac_from_win(dirty))];
+
+        CGImageRelease(image);
     });
 }
 }

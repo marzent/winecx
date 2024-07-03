@@ -338,13 +338,13 @@ static HKEY open_hkcu_key( const char *name )
             return 0;
 
         sid = ((TOKEN_USER *)sid_data)->User.Sid;
-        len = sprintf( buffer, "\\Registry\\User\\S-%u-%u", sid->Revision,
-                       (int)MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
-                                                sid->IdentifierAuthority.Value[4] ),
-                                      MAKEWORD( sid->IdentifierAuthority.Value[3],
-                                                sid->IdentifierAuthority.Value[2] )));
+        len = snprintf( buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", sid->Revision,
+                        (int)MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
+                                                 sid->IdentifierAuthority.Value[4] ),
+                                       MAKEWORD( sid->IdentifierAuthority.Value[3],
+                                                 sid->IdentifierAuthority.Value[2] )));
         for (i = 0; i < sid->SubAuthorityCount; i++)
-            len += sprintf( buffer + len, "-%u", (int)sid->SubAuthority[i] );
+            len += snprintf( buffer + len, sizeof(buffer) - len, "-%u", (int)sid->SubAuthority[i] );
 
         ascii_to_unicode( bufferW, buffer, len );
         hkcu = reg_open_key( NULL, bufferW, len * sizeof(WCHAR) );
@@ -530,9 +530,9 @@ static const GLubyte *wrap_glGetString( TEB *teb, GLenum name )
             /* 4.4 depends on ARB_buffer_storage, which we don't support on wow64. */
             if (major > 4 || (major == 4 && minor >= 4))
             {
-                char *str = malloc( 3 + strlen( rest ) + 1 );
+                char *str = NULL;
 
-                sprintf( str, "4.3%s", rest );
+                asprintf( &str, "4.3%s", rest );
                 if (InterlockedCompareExchangePointer( (void **)&ptr->u.context->version_string, str, NULL ))
                     free( str );
                 return ptr->u.context->version_string;
@@ -575,7 +575,7 @@ static char *build_extension_list( TEB *teb )
         capacity = max( capacity, len + strlen( extension ) + 2 );
         if (!(tmp = realloc( available_extensions, capacity ))) break;
         available_extensions = tmp;
-        len += sprintf( available_extensions + len, "%s ", extension );
+        len += snprintf( available_extensions + len, capacity - len, "%s ", extension );
     }
     if (len) available_extensions[len - 1] = 0;
 
@@ -1193,6 +1193,16 @@ NTSTATUS thread_attach( void *args )
 
 NTSTATUS process_detach( void *args )
 {
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS get_pixel_formats( void *args )
+{
+    struct get_pixel_formats_params *params = args;
+    const struct opengl_funcs *funcs = get_dc_funcs( params->hdc );
+    if (!funcs || !funcs->wgl.p_get_pixel_formats) return STATUS_NOT_IMPLEMENTED;
+    funcs->wgl.p_get_pixel_formats( params->formats, params->max_formats,
+                                    &params->num_formats, &params->num_onscreen_formats );
     return STATUS_SUCCESS;
 }
 
@@ -2106,10 +2116,15 @@ static void unmap_named_buffer( TEB *teb, GLint buffer )
 static NTSTATUS wow64_map_buffer( TEB *teb, GLint buffer, GLenum target, void *ptr, SIZE_T size,
                                   GLbitfield access, PTR32 *ret )
 {
+    static unsigned int once;
+
     if (*ret)  /* wow64 pointer provided, map buffer to it */
     {
         if (!(access & (GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT)))
         {
+            if (!once++)
+                FIXME( "Doing a copy of a mapped buffer (expect performance issues)\n" );
+
             TRACE( "Copying %#zx from buffer at %p to wow64 buffer %p\n", size, ptr, UlongToPtr(*ret) );
             memcpy( UlongToPtr(*ret), ptr, size );
         }
@@ -2619,6 +2634,31 @@ NTSTATUS wow64_process_detach( void *args )
     wow64_strings_count = 0;
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS wow64_get_pixel_formats( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        PTR32 hdc;
+        PTR32 formats;
+        UINT max_formats;
+        UINT num_formats;
+        UINT num_onscreen_formats;
+    } *params32 = args;
+    struct get_pixel_formats_params params =
+    {
+        .teb = get_teb64(params32->teb),
+        .hdc = ULongToPtr(params32->hdc),
+        .formats = ULongToPtr(params32->formats),
+        .max_formats = params32->max_formats,
+    };
+    NTSTATUS status;
+    status = get_pixel_formats( &params );
+    params32->num_formats = params.num_formats;
+    params32->num_onscreen_formats = params.num_onscreen_formats;
+    return status;
 }
 
 #endif

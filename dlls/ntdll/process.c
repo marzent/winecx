@@ -36,8 +36,6 @@
 #include "ntdll_misc.h"
 #include "wine/exception.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(process);
-
 
 /******************************************************************************
  *  RtlGetCurrentPeb  [NTDLL.@]
@@ -96,10 +94,11 @@ NTSTATUS WINAPI RtlWow64EnableFsRedirectionEx( ULONG disable, ULONG *old_value )
  */
 USHORT WINAPI RtlWow64GetCurrentMachine(void)
 {
-    USHORT current, native;
-
-    RtlWow64GetProcessMachines( GetCurrentProcess(), &current, &native );
-    return current ? current : native;
+    USHORT machine = current_machine;
+#ifdef _WIN64
+    if (NtCurrentTeb()->WowTebOffset) RtlWow64GetCurrentCpuArea( &machine, NULL, NULL );
+#endif
+    return machine;
 }
 
 
@@ -250,7 +249,7 @@ NTSTATUS WINAPI RtlWow64GetThreadSelectorEntry( HANDLE handle, THREAD_DESCRIPTOR
     {
         /* hardcoded values */
 #ifdef __arm64ec__
-        context.SegCs = 0x33;
+        context.SegCs = 0x23;
         context.SegSs = 0x2b;
         context.SegFs = 0x53;
 #elif defined(__x86_64__)
@@ -700,27 +699,6 @@ NTSTATUS WINAPI DbgUiConvertStateChangeStructure( DBGUI_WAIT_STATE_CHANGE *state
         return STATUS_UNSUCCESSFUL;
     }
     return STATUS_SUCCESS;
-}
-
-/***********************************************************************
- *      DbgUiRemoteBreakin (NTDLL.@)
- */
-void WINAPI DbgUiRemoteBreakin( void *arg )
-{
-    TRACE( "\n" );
-    if (NtCurrentTeb()->Peb->BeingDebugged)
-    {
-        __TRY
-        {
-            DbgBreakPoint();
-        }
-        __EXCEPT_ALL
-        {
-            /* do nothing */
-        }
-        __ENDTRY
-    }
-    RtlExitUserThread( STATUS_SUCCESS );
 }
 
 /***********************************************************************

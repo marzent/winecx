@@ -210,18 +210,16 @@ static RTL_USER_PROCESS_PARAMETERS *create_process_params( const WCHAR *filename
         params->hStdOutput = startup->hStdOutput;
         params->hStdError  = startup->hStdError;
     }
-    else if (flags & (DETACHED_PROCESS | CREATE_NEW_CONSOLE))
-    {
-        params->hStdInput  = INVALID_HANDLE_VALUE;
-        params->hStdOutput = INVALID_HANDLE_VALUE;
-        params->hStdError  = INVALID_HANDLE_VALUE;
-    }
-    else
+    else if (!(flags & (DETACHED_PROCESS | CREATE_NEW_CONSOLE)))
     {
         params->hStdInput  = NtCurrentTeb()->Peb->ProcessParameters->hStdInput;
         params->hStdOutput = NtCurrentTeb()->Peb->ProcessParameters->hStdOutput;
         params->hStdError  = NtCurrentTeb()->Peb->ProcessParameters->hStdError;
     }
+
+    if (params->hStdInput  == INVALID_HANDLE_VALUE) params->hStdInput  = NULL;
+    if (params->hStdOutput == INVALID_HANDLE_VALUE) params->hStdOutput = NULL;
+    if (params->hStdError  == INVALID_HANDLE_VALUE) params->hStdError  = NULL;
 
     params->dwX             = startup->dwX;
     params->dwY             = startup->dwY;
@@ -664,6 +662,9 @@ static const WCHAR *hack_append_command_line( const WCHAR *cmd, const WCHAR *cmd
     /* CROSSOVER HACK: bug 23061
      * Add `/devicetype DX12` to Anno 1800 to force DX12.
      */
+    /* CROSSOVER HACK: bug 23949
+     * Add --in-process-gpu to HYP.exe.
+     */
 
     static const struct
     {
@@ -688,6 +689,7 @@ static const WCHAR *hack_append_command_line( const WCHAR *cmd, const WCHAR *cmd
         {L"t2gp.exe", L" --no-sandbox --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
         {L"WXWorkWeb.exe", L" --in-process-gpu", NULL, L"--type=crashpad-handler"},
         {L"Anno1800.exe", L" /devicetype DX12", NULL, NULL},
+        {L"HYP.exe", L" --in-process-gpu", NULL, NULL},
     };
     unsigned int i;
 
@@ -1000,15 +1002,6 @@ BOOL WINAPI DECLSPEC_HOTPATCH DuplicateHandle( HANDLE source_process, HANDLE sou
 {
     return set_ntstatus( NtDuplicateObject( source_process, source, dest_process, dest,
                                             access, inherit ? OBJ_INHERIT : 0, options ));
-}
-
-
-/****************************************************************************
- *           FlushInstructionCache   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH FlushInstructionCache( HANDLE process, LPCVOID addr, SIZE_T size )
-{
-    return set_ntstatus( NtFlushInstructionCache( process, addr, size ));
 }
 
 

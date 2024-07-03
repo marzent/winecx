@@ -116,6 +116,8 @@ typedef enum {
     JSCLASS_ARGUMENTS,
     JSCLASS_VBARRAY,
     JSCLASS_JSON,
+    JSCLASS_ARRAYBUFFER,
+    JSCLASS_DATAVIEW,
     JSCLASS_MAP,
     JSCLASS_SET,
     JSCLASS_WEAKMAP,
@@ -128,6 +130,20 @@ typedef HRESULT (*builtin_getter_t)(script_ctx_t*,jsdisp_t*,jsval_t*);
 typedef HRESULT (*builtin_setter_t)(script_ctx_t*,jsdisp_t*,jsval_t);
 
 HRESULT builtin_set_const(script_ctx_t*,jsdisp_t*,jsval_t);
+
+struct thread_data {
+    LONG ref;
+    LONG thread_id;
+
+    BOOL gc_is_unlinking;
+    DWORD gc_last_tick;
+
+    struct list objects;
+    struct rb_tree weak_refs;
+};
+
+struct thread_data *get_thread_data(void);
+void release_thread_data(struct thread_data*);
 
 typedef struct named_item_t {
     jsdisp_t *script_obj;
@@ -198,6 +214,11 @@ struct jsdisp_t {
 static inline IDispatch *to_disp(jsdisp_t *jsdisp)
 {
     return (IDispatch*)&jsdisp->IDispatchEx_iface;
+}
+
+static inline IDispatchEx *to_dispex(jsdisp_t *jsdisp)
+{
+    return &jsdisp->IDispatchEx_iface;
 }
 
 jsdisp_t *as_jsdisp(IDispatch*);
@@ -375,10 +396,9 @@ struct _script_ctx_t {
     SCRIPTSTATE state;
     IActiveScript *active_script;
 
+    struct thread_data *thread_data;
     struct _call_frame_t *call_ctx;
     struct list named_items;
-    struct list objects;
-    struct rb_tree weak_refs;
     IActiveScriptSite *site;
     IInternetHostSecurityManager *secmgr;
     DWORD safeopt;
@@ -390,9 +410,6 @@ struct _script_ctx_t {
     jsexcept_t *ei;
 
     heap_pool_t tmp_heap;
-
-    BOOL gc_is_unlinking;
-    DWORD gc_last_tick;
 
     jsval_t *stack;
     unsigned stack_top;
@@ -425,11 +442,13 @@ struct _script_ctx_t {
             jsdisp_t *regexp_constr;
             jsdisp_t *string_constr;
             jsdisp_t *vbarray_constr;
+            jsdisp_t *arraybuf_constr;
+            jsdisp_t *dataview_constr;
             jsdisp_t *map_prototype;
             jsdisp_t *set_prototype;
             jsdisp_t *weakmap_prototype;
         };
-        jsdisp_t *global_objects[23];
+        jsdisp_t *global_objects[25];
     };
 };
 C_ASSERT(RTL_SIZEOF_THROUGH_FIELD(script_ctx_t, weakmap_prototype) == RTL_SIZEOF_THROUGH_FIELD(script_ctx_t, global_objects));
@@ -454,6 +473,7 @@ HRESULT init_global(script_ctx_t*);
 HRESULT init_function_constr(script_ctx_t*,jsdisp_t*);
 HRESULT create_object_prototype(script_ctx_t*,jsdisp_t**);
 HRESULT init_set_constructor(script_ctx_t*);
+HRESULT init_arraybuf_constructors(script_ctx_t*);
 
 HRESULT create_activex_constr(script_ctx_t*,jsdisp_t**);
 HRESULT create_array_constr(script_ctx_t*,jsdisp_t*,jsdisp_t**);
@@ -511,9 +531,7 @@ static inline HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, jsval_
     return disp_call_value_with_caller(ctx, disp, vthis, flags, argc, argv, r, &ctx->jscaller->IServiceProvider_iface);
 }
 
-#define FACILITY_JSCRIPT 10
-
-#define MAKE_JSERROR(code) MAKE_HRESULT(SEVERITY_ERROR, FACILITY_JSCRIPT, code)
+#define MAKE_JSERROR(code) MAKE_HRESULT(SEVERITY_ERROR, FACILITY_CONTROL, code)
 
 #define JS_E_TO_PRIMITIVE            MAKE_JSERROR(IDS_TO_PRIMITIVE)
 #define JS_E_INVALIDARG              MAKE_JSERROR(IDS_INVALID_CALL_ARG)
@@ -566,14 +584,19 @@ static inline HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, jsval_
 #define JS_E_OBJECT_NONEXTENSIBLE    MAKE_JSERROR(IDS_OBJECT_NONEXTENSIBLE)
 #define JS_E_NONCONFIGURABLE_REDEFINED MAKE_JSERROR(IDS_NONCONFIGURABLE_REDEFINED)
 #define JS_E_NONWRITABLE_MODIFIED    MAKE_JSERROR(IDS_NONWRITABLE_MODIFIED)
+#define JS_E_NOT_DATAVIEW            MAKE_JSERROR(IDS_NOT_DATAVIEW)
+#define JS_E_DATAVIEW_NO_ARGUMENT    MAKE_JSERROR(IDS_DATAVIEW_NO_ARGUMENT)
+#define JS_E_DATAVIEW_INVALID_ACCESS MAKE_JSERROR(IDS_DATAVIEW_INVALID_ACCESS)
+#define JS_E_DATAVIEW_INVALID_OFFSET MAKE_JSERROR(IDS_DATAVIEW_INVALID_OFFSET)
 #define JS_E_WRONG_THIS              MAKE_JSERROR(IDS_WRONG_THIS)
 #define JS_E_KEY_NOT_OBJECT          MAKE_JSERROR(IDS_KEY_NOT_OBJECT)
+#define JS_E_ARRAYBUFFER_EXPECTED    MAKE_JSERROR(IDS_ARRAYBUFFER_EXPECTED)
 #define JS_E_PROP_DESC_MISMATCH      MAKE_JSERROR(IDS_PROP_DESC_MISMATCH)
 #define JS_E_INVALID_WRITABLE_PROP_DESC MAKE_JSERROR(IDS_INVALID_WRITABLE_PROP_DESC)
 
 static inline BOOL is_jscript_error(HRESULT hres)
 {
-    return HRESULT_FACILITY(hres) == FACILITY_JSCRIPT;
+    return HRESULT_FACILITY(hres) == FACILITY_CONTROL;
 }
 
 const char *debugstr_jsval(const jsval_t);

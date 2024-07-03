@@ -25,6 +25,7 @@
 #include "ntuser.h"
 #include "shellapi.h"
 #include "wine/list.h"
+#include "wine/vulkan.h"
 
 
 #define WM_POPUPSYSTEMMENU  0x0313
@@ -33,20 +34,7 @@ enum system_timer_id
 {
     SYSTEM_TIMER_TRACK_MOUSE = 0xfffa,
     SYSTEM_TIMER_CARET = 0xffff,
-
-    /* not compatible with native */
-    SYSTEM_TIMER_KEY_REPEAT = 0xfff0,
 };
-
-struct rawinput_thread_data
-{
-    UINT     hw_id;     /* current rawinput message id */
-    RAWINPUT buffer[1]; /* rawinput message data buffer */
-};
-
-/* on windows the buffer capacity is quite large as well, enough to */
-/* hold up to 10s of 1kHz mouse rawinput events */
-#define RAWINPUT_BUFFER_SIZE (512 * 1024)
 
 struct user_object
 {
@@ -84,9 +72,9 @@ typedef struct tagWND
     HICON              hIconSmall;    /* window's small icon */
     HICON              hIconSmall2;   /* window's secondary small icon, derived from hIcon */
     HIMC               imc;           /* window's input context */
-    UINT               dpi;           /* window DPI */
-    DPI_AWARENESS      dpi_awareness; /* DPI awareness */
+    UINT               dpi_context;   /* window DPI awareness context */
     struct window_surface *surface;   /* Window surface if any */
+    struct list        vulkan_surfaces; /* list of vulkan surfaces created for this window */
     struct tagDIALOGINFO *dlgInfo;    /* Dialog additional info (dialogs only) */
     int                pixel_format;  /* Pixel format set by the graphics driver */
     int                internal_pixel_format; /* Internal pixel format set via WGL_WINE_pixel_format_passthrough */
@@ -126,17 +114,15 @@ struct user_thread_info
     WORD                          hook_call_depth;        /* Number of recursively called hook procs */
     WORD                          hook_unicode;           /* Is current hook unicode? */
     HHOOK                         hook;                   /* Current hook */
-    UINT                          active_hooks;           /* Bitmap of active hooks */
     struct received_message_info *receive_info;           /* Message being currently received */
-    struct user_key_state_info   *key_state;              /* Cache of global key state */
     struct imm_thread_data       *imm_thread_data;        /* IMM thread data */
-    MSG                           key_repeat_msg;         /* Last WM_KEYDOWN message to repeat */
     HKL                           kbd_layout;             /* Current keyboard layout */
     UINT                          kbd_layout_id;          /* Current keyboard layout ID */
-    struct rawinput_thread_data  *rawinput;               /* RawInput thread local data / buffer */
+    struct hardware_msg_data     *rawinput;               /* Current rawinput message data */
     UINT                          spy_indent;             /* Current spy indent */
     BOOL                          clipping_cursor;        /* thread is currently clipping */
     DWORD                         clipping_reset;         /* time when clipping was last reset */
+    struct session_thread_data   *session_data;           /* shared session thread data */
 };
 
 C_ASSERT( sizeof(struct user_thread_info) <= sizeof(((TEB *)0)->Win32ClientInfo) );
@@ -145,13 +131,6 @@ static inline struct user_thread_info *get_user_thread_info(void)
 {
     return CONTAINING_RECORD( NtUserGetThreadInfo(), struct user_thread_info, client_info );
 }
-
-struct user_key_state_info
-{
-    UINT  time;          /* Time of last key state refresh */
-    INT   counter;       /* Counter to invalidate the key state */
-    BYTE  state[256];    /* State for each key */
-};
 
 struct hook_extra_info
 {
@@ -248,10 +227,27 @@ extern void free_dce( struct dce *dce, HWND hwnd );
 extern void invalidate_dce( WND *win, const RECT *extra_rect );
 
 /* message.c */
-extern BOOL set_keyboard_auto_repeat( BOOL enable );
+struct peek_message_filter
+{
+    HWND hwnd;
+    UINT first;
+    UINT last;
+    UINT mask;
+    UINT flags;
+    BOOL internal;
+};
+
+extern int peek_message( MSG *msg, const struct peek_message_filter *filter );
 
 /* systray.c */
 extern LRESULT system_tray_call( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, void *data );
+
+/* vulkan.c */
+extern void *(*p_vkGetDeviceProcAddr)(VkDevice, const char *);
+extern void *(*p_vkGetInstanceProcAddr)(VkInstance, const char *);
+
+extern BOOL vulkan_init(void);
+extern void vulkan_detach_surfaces( struct list *surfaces );
 
 /* window.c */
 HANDLE alloc_user_handle( struct user_object *ptr, unsigned int type );

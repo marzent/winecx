@@ -139,21 +139,15 @@ static const builtin_prop_t Error_props[] = {
 };
 
 static const builtin_info_t Error_info = {
-    JSCLASS_ERROR,
-    Error_value,
-    ARRAY_SIZE(Error_props),
-    Error_props,
-    NULL,
-    NULL
+    .class     = JSCLASS_ERROR,
+    .call      = Error_value,
+    .props_cnt = ARRAY_SIZE(Error_props),
+    .props     = Error_props,
 };
 
 static const builtin_info_t ErrorInst_info = {
-    JSCLASS_ERROR,
-    Error_value,
-    0,
-    NULL,
-    NULL,
-    NULL
+    .class = JSCLASS_ERROR,
+    .call  = Error_value,
 };
 
 static HRESULT alloc_error(script_ctx_t *ctx, jsdisp_t *prototype,
@@ -483,8 +477,11 @@ jsdisp_t *create_builtin_error(script_ctx_t *ctx)
         case JS_E_OBJECT_NONEXTENSIBLE:
         case JS_E_NONCONFIGURABLE_REDEFINED:
         case JS_E_NONWRITABLE_MODIFIED:
+        case JS_E_NOT_DATAVIEW:
+        case JS_E_DATAVIEW_NO_ARGUMENT:
         case JS_E_WRONG_THIS:
         case JS_E_KEY_NOT_OBJECT:
+        case JS_E_ARRAYBUFFER_EXPECTED:
         case JS_E_PROP_DESC_MISMATCH:
         case JS_E_INVALID_WRITABLE_PROP_DESC:
             constr = ctx->type_error_constr;
@@ -494,6 +491,8 @@ jsdisp_t *create_builtin_error(script_ctx_t *ctx)
         case JS_E_FRACTION_DIGITS_OUT_OF_RANGE:
         case JS_E_PRECISION_OUT_OF_RANGE:
         case JS_E_INVALID_LENGTH:
+        case JS_E_DATAVIEW_INVALID_ACCESS:
+        case JS_E_DATAVIEW_INVALID_OFFSET:
             constr = ctx->range_error_constr;
             break;
 

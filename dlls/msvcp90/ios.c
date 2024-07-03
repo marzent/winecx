@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <stdio.h>
 #include <limits.h>
 #include <share.h>
 
@@ -3028,8 +3027,19 @@ void __thiscall basic_filebuf_char__Init(basic_filebuf_char *this, FILE *file, b
 
     basic_streambuf_char__Init_empty(&this->base);
     if(file)
-        basic_streambuf_char__Init(&this->base, &file->_base, &file->_ptr,
-                &file->_cnt, &file->_base, &file->_ptr, &file->_cnt);
+    {
+        char **base, **ptr;
+        int *cnt;
+
+#if _MSVCP_VER >= 140
+        _get_stream_buffer_pointers(file, &base, &ptr, &cnt);
+#else
+        base = &file->_base;
+        ptr = &file->_ptr;
+        cnt = &file->_cnt;
+#endif
+        basic_streambuf_char__Init(&this->base, base, ptr, cnt, base, ptr, cnt);
+    }
 }
 
 /* ?_Initcvt@?$basic_filebuf@DU?$char_traits@D@std@@@std@@IAEXPAV?$codecvt@DDH@2@@Z */
@@ -5115,8 +5125,14 @@ void __thiscall ios_base_Callfns(ios_base *this, IOS_BASE_event event)
 }
 
 /* ?_Tidy@ios_base@std@@AAAXXZ */
+/* ?_Tidy@ios_base@std@@AAEXXZ */
 /* ?_Tidy@ios_base@std@@AEAAXXZ */
+#if _MSVCP_VER >= 80 && _MSVCP_VER <= 90
 void __cdecl ios_base_Tidy(ios_base *this)
+#else
+DEFINE_THISCALL_WRAPPER(ios_base_Tidy, 4)
+void __thiscall ios_base_Tidy(ios_base *this)
+#endif
 {
     IOS_BASE_iosarray *arr_cur, *arr_next;
     IOS_BASE_fnarray *event_cur, *event_next;
@@ -15837,7 +15853,7 @@ void* __thiscall _Winit_op_assign(void *this, void *rhs)
 
 void init_io(void *base)
 {
-#ifdef __x86_64__
+#ifdef RTTI_USE_RVA
     init_iosb_rtti(base);
     init_ios_base_rtti(base);
     init_basic_ios_char_rtti(base);

@@ -184,7 +184,7 @@ static char wglExtensions[4096];
 static int glxVersion[2];
 static int glx_opcode;
 
-struct wgl_pixel_format
+struct glx_pixel_format
 {
     GLXFBConfig fbconfig;
     XVisualInfo *visual;
@@ -199,13 +199,12 @@ struct wgl_context
     BOOL has_been_current;
     BOOL sharing;
     BOOL gl3_context;
-    const struct wgl_pixel_format *fmt;
+    const struct glx_pixel_format *fmt;
     int numAttribs; /* This is needed for delaying wglCreateContextAttribsARB */
     int attribList[16]; /* This is needed for delaying wglCreateContextAttribsARB */
     GLXContext ctx;
     struct gl_drawable *drawables[2];
     struct gl_drawable *new_drawables[2];
-    BOOL refresh_drawables;
     struct list entry;
 };
 
@@ -222,10 +221,12 @@ struct gl_drawable
 {
     LONG                           ref;          /* reference count */
     enum dc_gl_type                type;         /* type of GL surface */
+    HWND                           hwnd;
     GLXDrawable                    drawable;     /* drawable for rendering with GL */
     Window                         window;       /* window if drawable is a GLXWindow */
+    Colormap                       colormap;     /* colormap for the client window */
     Pixmap                         pixmap;       /* base pixmap if drawable is a GLXPixmap */
-    const struct wgl_pixel_format *format;       /* pixel format for the drawable */
+    const struct glx_pixel_format *format;       /* pixel format for the drawable */
     SIZE                           pixmap_size;  /* pixmap size for GLXPixmap drawables */
     int                            swap_interval;
     BOOL                           refresh_swap_interval;
@@ -235,7 +236,7 @@ struct gl_drawable
 struct wgl_pbuffer
 {
     struct gl_drawable *gl;
-    const struct wgl_pixel_format* fmt;
+    const struct glx_pixel_format* fmt;
     int        width;
     int        height;
     int*       attribList;
@@ -267,7 +268,7 @@ static XContext gl_pbuffer_context;
 
 static struct list context_list = LIST_INIT( context_list );
 static struct list pbuffer_list = LIST_INIT( pbuffer_list );
-static struct wgl_pixel_format *pixel_formats;
+static struct glx_pixel_format *pixel_formats;
 static int nb_pixel_formats, nb_onscreen_formats;
 static BOOL use_render_texture_emulation = TRUE;
 
@@ -1001,7 +1002,7 @@ static BOOL check_fbconfig_bitmap_capability(Display *display, GLXFBConfig fbcon
 
 static void init_pixel_formats( Display *display )
 {
-    struct wgl_pixel_format *list;
+    struct glx_pixel_format *list;
     int size = 0, onscreen_size = 0;
     int fmt_id, nCfgs, i, run, bmp_formats;
     GLXFBConfig* cfgs;
@@ -1120,7 +1121,7 @@ static inline BOOL is_onscreen_pixel_format( int format )
     return format > 0 && format <= nb_onscreen_formats;
 }
 
-static inline int pixel_format_index( const struct wgl_pixel_format *format )
+static inline int pixel_format_index( const struct glx_pixel_format *format )
 {
     return format - pixel_formats + 1;
 }
@@ -1130,7 +1131,7 @@ static inline int pixel_format_index( const struct wgl_pixel_format *format )
  * Wine's main visual and offscreen formats (if they are available).
  * This function converts a WGL format to its corresponding GLX one.
  */
-static const struct wgl_pixel_format *get_pixel_format(Display *display, int iPixelFormat, BOOL AllowOffscreen)
+static const struct glx_pixel_format *get_pixel_format(Display *display, int iPixelFormat, BOOL AllowOffscreen)
 {
     /* Check if the pixelformat is valid. Note that it is legal to pass an invalid
      * iPixelFormat in case of probing the number of pixelformats.
@@ -1160,7 +1161,8 @@ static void release_gl_drawable( struct gl_drawable *gl )
     case DC_GL_CHILD_WIN:
         TRACE( "destroying %lx drawable %lx\n", gl->window, gl->drawable );
         pglXDestroyWindow( gdi_display, gl->drawable );
-        XDestroyWindow( gdi_display, gl->window );
+        destroy_client_window( gl->hwnd, gl->window );
+        XFreeColormap( gdi_display, gl->colormap );
         break;
     case DC_GL_PIXMAP_WIN:
         TRACE( "destroying pixmap %lx drawable %lx\n", gl->pixmap, gl->drawable );
@@ -1308,7 +1310,7 @@ static GLXContext create_glxcontext(Display *display, struct wgl_context *contex
 /***********************************************************************
  *              create_gl_drawable
  */
-static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel_format *format, BOOL known_child,
+static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct glx_pixel_format *format, BOOL known_child,
                                                BOOL mutable_pf )
 {
     struct gl_drawable *gl, *prev;
@@ -1316,7 +1318,7 @@ static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel
     RECT rect;
     int width, height;
 
-    NtUserGetClientRect( hwnd, &rect );
+    NtUserGetClientRect( hwnd, &rect, get_win_monitor_dpi( hwnd ) );
     width  = min( max( 1, rect.right ), 65535 );
     height = min( max( 1, rect.bottom ), 65535 );
 
@@ -1329,13 +1331,17 @@ static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel
     gl->refresh_swap_interval = TRUE;
     gl->format = format;
     gl->ref = 1;
+    gl->hwnd = hwnd;
     gl->mutable_pf = mutable_pf;
 
     if (!known_child && !NtUserGetWindowRelative( hwnd, GW_CHILD ) &&
         NtUserGetAncestor( hwnd, GA_PARENT ) == NtUserGetDesktopWindow())  /* childless top-level window */
     {
         gl->type = DC_GL_WINDOW;
-        gl->window = create_client_window( hwnd, visual );
+        gl->colormap = XCreateColormap( gdi_display, get_dummy_parent(), visual->visual,
+                                        (visual->class == PseudoColor || visual->class == GrayScale ||
+                                         visual->class == DirectColor) ? AllocAll : AllocNone );
+        gl->window = create_client_window( hwnd, visual, gl->colormap );
         if (gl->window)
             gl->drawable = pglXCreateWindow( gdi_display, gl->format->fbconfig, gl->window, NULL );
         TRACE( "%p created client %lx drawable %lx\n", hwnd, gl->window, gl->drawable );
@@ -1344,7 +1350,10 @@ static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel
     else if(usexcomposite)
     {
         gl->type = DC_GL_CHILD_WIN;
-        gl->window = create_client_window( hwnd, visual );
+        gl->colormap = XCreateColormap( gdi_display, get_dummy_parent(), visual->visual,
+                                        (visual->class == PseudoColor || visual->class == GrayScale ||
+                                         visual->class == DirectColor) ? AllocAll : AllocNone );
+        gl->window = create_client_window( hwnd, visual, gl->colormap );
         if (gl->window)
         {
             gl->drawable = pglXCreateWindow( gdi_display, gl->format->fbconfig, gl->window, NULL );
@@ -1393,7 +1402,7 @@ static struct gl_drawable *create_gl_drawable( HWND hwnd, const struct wgl_pixel
 /***********************************************************************
  *              set_win_format
  */
-static BOOL set_win_format( HWND hwnd, const struct wgl_pixel_format *format, BOOL internal )
+static BOOL set_win_format( HWND hwnd, const struct glx_pixel_format *format, BOOL internal )
 {
     struct gl_drawable *old, *gl;
 
@@ -1424,7 +1433,7 @@ static BOOL set_win_format( HWND hwnd, const struct wgl_pixel_format *format, BO
 
 static BOOL set_pixel_format( HDC hdc, int format, BOOL internal )
 {
-    const struct wgl_pixel_format *fmt;
+    const struct glx_pixel_format *fmt;
     int value;
     HWND hwnd = NtUserWindowFromDC( hdc );
     int prev;
@@ -1546,155 +1555,210 @@ void destroy_gl_drawable( HWND hwnd )
 
 
 /**
- * glxdrv_DescribePixelFormat
+ * describe_pixel_format
  *
- * Get the pixel-format descriptor associated to the given id
+ * Get the wgl_pixel_format description for the given id
  */
-static int describe_pixel_format( int iPixelFormat, PIXELFORMATDESCRIPTOR *ppfd, BOOL allow_offscreen )
+static int describe_pixel_format( int iPixelFormat, struct wgl_pixel_format *pf )
 {
-  /*XVisualInfo *vis;*/
-  int value;
-  int rb,gb,bb,ab;
-  const struct wgl_pixel_format *fmt;
+    int value, drawable_type = 0, render_type = 0;
+    int rb, gb, bb, ab;
+    const struct glx_pixel_format *fmt;
 
-  if (!has_opengl()) return 0;
+    if (!has_opengl()) return 0;
 
-  /* Look for the iPixelFormat in our list of supported formats. If it is supported we get the index in the FBConfig table and the number of supported formats back */
-  fmt = get_pixel_format(gdi_display, iPixelFormat, allow_offscreen);
-  if (!fmt) {
-      WARN("unexpected format %d\n", iPixelFormat);
-      return 0;
-  }
+    /* Look for the iPixelFormat in our list of supported formats. If it is
+     * supported we get the index in the FBConfig table and the number of
+     * supported formats back */
+    fmt = get_pixel_format( gdi_display, iPixelFormat, TRUE /* Offscreen */);
+    if (!fmt)
+    {
+        WARN( "unexpected format %d\n", iPixelFormat );
+        return 0;
+    }
 
-  memset(ppfd, 0, sizeof(PIXELFORMATDESCRIPTOR));
-  ppfd->nSize = sizeof(PIXELFORMATDESCRIPTOR);
-  ppfd->nVersion = 1;
+    /* If we can't get basic information, there is no point continuing */
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_DRAWABLE_TYPE, &drawable_type )) return 0;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_RENDER_TYPE, &render_type )) return 0;
 
-  /* These flags are always the same... */
-  ppfd->dwFlags = PFD_SUPPORT_OPENGL;
-  /* Now the flags extracted from the Visual */
+    memset( pf, 0, sizeof(*pf) );
+    pf->pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+    pf->pfd.nVersion = 1;
 
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DRAWABLE_TYPE, &value);
-  if(value & GLX_WINDOW_BIT)
-      ppfd->dwFlags |= PFD_DRAW_TO_WINDOW;
+    /* These flags are always the same... */
+    pf->pfd.dwFlags = PFD_SUPPORT_OPENGL;
+    /* Now the flags extracted from the Visual */
 
-  /* On Windows bitmap rendering is only offered using the GDI Software renderer. We reserve some formats (see get_formats for more info)
-   * for bitmap rendering since we require indirect rendering for this. Further pixel format logs of a GeforceFX, Geforce8800GT, Radeon HD3400 and a
-   * Radeon 9000 indicated that all bitmap formats have PFD_SUPPORT_GDI. Except for 2 formats on the Radeon 9000 none of the hw accelerated formats
-   * offered the GDI bit either. */
-  ppfd->dwFlags |= fmt->dwFlags & (PFD_DRAW_TO_BITMAP | PFD_SUPPORT_GDI);
+    if (drawable_type & GLX_WINDOW_BIT) pf->pfd.dwFlags |= PFD_DRAW_TO_WINDOW;
 
-  /* PFD_GENERIC_FORMAT - gdi software rendering
-   * PFD_GENERIC_ACCELERATED - some parts are accelerated by a display driver (MCD e.g. 3dfx minigl)
-   * none set - full hardware accelerated by a ICD
-   *
-   * We only set PFD_GENERIC_FORMAT on bitmap formats (see get_formats) as that's what ATI and Nvidia Windows drivers do  */
-  ppfd->dwFlags |= fmt->dwFlags & (PFD_GENERIC_FORMAT | PFD_GENERIC_ACCELERATED);
+    /* On Windows bitmap rendering is only offered using the GDI Software
+     * renderer. We reserve some formats (see get_formats for more info) for
+     * bitmap rendering since we require indirect rendering for this. Further
+     * pixel format logs of a GeforceFX, Geforce8800GT, Radeon HD3400 and a
+     * Radeon 9000 indicated that all bitmap formats have PFD_SUPPORT_GDI.
+     * Except for 2 formats on the Radeon 9000 none of the hw accelerated
+     * formats offered the GDI bit either. */
+    pf->pfd.dwFlags |= fmt->dwFlags & (PFD_DRAW_TO_BITMAP | PFD_SUPPORT_GDI);
 
-  if (!(ppfd->dwFlags & PFD_GENERIC_FORMAT))
-    ppfd->dwFlags |= PFD_SUPPORT_COMPOSITION;
+    /* PFD_GENERIC_FORMAT - gdi software rendering
+     * PFD_GENERIC_ACCELERATED - some parts are accelerated by a display driver
+     * (MCD e.g. 3dfx minigl) none set - full hardware accelerated by a ICD
+     *
+     * We only set PFD_GENERIC_FORMAT on bitmap formats (see get_formats) as
+     * that's what ATI and Nvidia Windows drivers do  */
+    pf->pfd.dwFlags |= fmt->dwFlags & (PFD_GENERIC_FORMAT | PFD_GENERIC_ACCELERATED);
 
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DOUBLEBUFFER, &value);
-  if (value) {
-      ppfd->dwFlags |= PFD_DOUBLEBUFFER;
-      ppfd->dwFlags &= ~PFD_SUPPORT_GDI;
-  }
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_STEREO, &value); if (value) ppfd->dwFlags |= PFD_STEREO;
+    if (!(pf->pfd.dwFlags & PFD_GENERIC_FORMAT)) pf->pfd.dwFlags |= PFD_SUPPORT_COMPOSITION;
 
-  /* Pixel type */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_RENDER_TYPE, &value);
-  if (value & GLX_RGBA_BIT)
-    ppfd->iPixelType = PFD_TYPE_RGBA;
-  else
-    ppfd->iPixelType = PFD_TYPE_COLORINDEX;
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_DOUBLEBUFFER, &value );
+    if (value)
+    {
+        pf->pfd.dwFlags |= PFD_DOUBLEBUFFER;
+        pf->pfd.dwFlags &= ~PFD_SUPPORT_GDI;
+    }
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_STEREO, &value );
+    if (value) pf->pfd.dwFlags |= PFD_STEREO;
 
-  /* Color bits */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_BUFFER_SIZE, &value);
-  ppfd->cColorBits = value;
+    /* Pixel type */
+    if (render_type & GLX_RGBA_BIT) pf->pfd.iPixelType = PFD_TYPE_RGBA;
+    else pf->pfd.iPixelType = PFD_TYPE_COLORINDEX;
 
-  /* Red, green, blue and alpha bits / shifts */
-  if (ppfd->iPixelType == PFD_TYPE_RGBA) {
-    pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_RED_SIZE, &rb);
-    pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_GREEN_SIZE, &gb);
-    pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_BLUE_SIZE, &bb);
-    pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ALPHA_SIZE, &ab);
+    /* Color bits */
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_BUFFER_SIZE, &value );
+    pf->pfd.cColorBits = value;
 
-    ppfd->cBlueBits = bb;
-    ppfd->cBlueShift = 0;
-    ppfd->cGreenBits = gb;
-    ppfd->cGreenShift = bb;
-    ppfd->cRedBits = rb;
-    ppfd->cRedShift = gb + bb;
-    ppfd->cAlphaBits = ab;
-    if (ab)
-        ppfd->cAlphaShift = rb + gb + bb;
+    /* Red, green, blue and alpha bits / shifts */
+    if (pf->pfd.iPixelType == PFD_TYPE_RGBA)
+    {
+        pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_RED_SIZE, &rb );
+        pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_GREEN_SIZE, &gb );
+        pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_BLUE_SIZE, &bb );
+        pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_ALPHA_SIZE, &ab );
+
+        pf->pfd.cBlueBits = bb;
+        pf->pfd.cBlueShift = 0;
+        pf->pfd.cGreenBits = gb;
+        pf->pfd.cGreenShift = bb;
+        pf->pfd.cRedBits = rb;
+        pf->pfd.cRedShift = gb + bb;
+        pf->pfd.cAlphaBits = ab;
+        if (ab) pf->pfd.cAlphaShift = rb + gb + bb;
+        else pf->pfd.cAlphaShift = 0;
+    }
     else
-        ppfd->cAlphaShift = 0;
-  } else {
-    ppfd->cRedBits = 0;
-    ppfd->cRedShift = 0;
-    ppfd->cBlueBits = 0;
-    ppfd->cBlueShift = 0;
-    ppfd->cGreenBits = 0;
-    ppfd->cGreenShift = 0;
-    ppfd->cAlphaBits = 0;
-    ppfd->cAlphaShift = 0;
-  }
+    {
+        pf->pfd.cRedBits = 0;
+        pf->pfd.cRedShift = 0;
+        pf->pfd.cBlueBits = 0;
+        pf->pfd.cBlueShift = 0;
+        pf->pfd.cGreenBits = 0;
+        pf->pfd.cGreenShift = 0;
+        pf->pfd.cAlphaBits = 0;
+        pf->pfd.cAlphaShift = 0;
+    }
 
-  /* Accum RGBA bits */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_RED_SIZE, &rb);
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_GREEN_SIZE, &gb);
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_BLUE_SIZE, &bb);
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_ALPHA_SIZE, &ab);
+    /* Accum RGBA bits */
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_ACCUM_RED_SIZE, &rb );
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_ACCUM_GREEN_SIZE, &gb );
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_ACCUM_BLUE_SIZE, &bb );
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_ACCUM_ALPHA_SIZE, &ab );
 
-  ppfd->cAccumBits = rb+gb+bb+ab;
-  ppfd->cAccumRedBits = rb;
-  ppfd->cAccumGreenBits = gb;
-  ppfd->cAccumBlueBits = bb;
-  ppfd->cAccumAlphaBits = ab;
+    pf->pfd.cAccumBits = rb + gb + bb + ab;
+    pf->pfd.cAccumRedBits = rb;
+    pf->pfd.cAccumGreenBits = gb;
+    pf->pfd.cAccumBlueBits = bb;
+    pf->pfd.cAccumAlphaBits = ab;
 
-  /* Aux bits */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_AUX_BUFFERS, &value);
-  ppfd->cAuxBuffers = value;
+    /* Aux bits */
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_AUX_BUFFERS, &value );
+    pf->pfd.cAuxBuffers = value;
 
-  /* Depth bits */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DEPTH_SIZE, &value);
-  ppfd->cDepthBits = value;
+    /* Depth bits */
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_DEPTH_SIZE, &value );
+    pf->pfd.cDepthBits = value;
 
-  /* stencil bits */
-  pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_STENCIL_SIZE, &value);
-  ppfd->cStencilBits = value;
+    /* stencil bits */
+    pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_STENCIL_SIZE, &value );
+    pf->pfd.cStencilBits = value;
 
-  ppfd->iLayerType = PFD_MAIN_PLANE;
+    pf->pfd.iLayerType = PFD_MAIN_PLANE;
 
-  if (TRACE_ON(wgl)) {
-    dump_PIXELFORMATDESCRIPTOR(ppfd);
-  }
+    if (!has_swap_method) pf->swap_method = WGL_SWAP_EXCHANGE_ARB;
+    else if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_SWAP_METHOD_OML, &value ))
+    {
+        switch (value) {
+        case GLX_SWAP_EXCHANGE_OML: pf->swap_method = WGL_SWAP_EXCHANGE_ARB; break;
+        case GLX_SWAP_COPY_OML: pf->swap_method = WGL_SWAP_COPY_ARB; break;
+        case GLX_SWAP_UNDEFINED_OML: pf->swap_method = WGL_SWAP_UNDEFINED_ARB; break;
+        default: { ERR( "Unexpected swap method %x.\n", value ); pf->swap_method = -1; break; }
+        }
+    }
+    else pf->swap_method = -1;
 
-  return nb_onscreen_formats;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_TYPE, &value) ) pf->transparent = -1;
+    else pf->transparent = value != GLX_NONE;
+
+    if (render_type & GLX_RGBA_BIT) pf->pixel_type = WGL_TYPE_RGBA_ARB;
+    else if (render_type & GLX_COLOR_INDEX_BIT) pf->pixel_type = WGL_TYPE_COLORINDEX_ARB;
+    else if (render_type & GLX_RGBA_FLOAT_BIT) pf->pixel_type = WGL_TYPE_RGBA_FLOAT_ATI;
+    else if (render_type & GLX_RGBA_FLOAT_ATI_BIT) pf->pixel_type = WGL_TYPE_RGBA_FLOAT_ATI;
+    else if (render_type & GLX_RGBA_UNSIGNED_FLOAT_BIT_EXT) pf->pixel_type = WGL_TYPE_RGBA_UNSIGNED_FLOAT_EXT;
+    else { ERR( "unexpected RenderType(%x)\n", render_type ); pf->pixel_type = -1; }
+
+    pf->draw_to_pbuffer = (drawable_type & GLX_PBUFFER_BIT) ? GL_TRUE : GL_FALSE;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_MAX_PBUFFER_PIXELS, &value )) value = -1;
+    pf->max_pbuffer_pixels = value;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_MAX_PBUFFER_WIDTH, &value )) value = -1;
+    pf->max_pbuffer_width = value;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_MAX_PBUFFER_HEIGHT, &value )) value = -1;
+    pf->max_pbuffer_height = value;
+
+    if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_RED_VALUE, &value ))
+    {
+        pf->transparent_red_value_valid = GL_TRUE;
+        pf->transparent_red_value = value;
+    }
+    if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_GREEN_VALUE, &value ))
+    {
+        pf->transparent_green_value_valid = GL_TRUE;
+        pf->transparent_green_value = value;
+    }
+    if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_BLUE_VALUE, &value ))
+    {
+        pf->transparent_blue_value_valid = GL_TRUE;
+        pf->transparent_blue_value = value;
+    }
+    if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_ALPHA_VALUE, &value ))
+    {
+        pf->transparent_alpha_value_valid = GL_TRUE;
+        pf->transparent_alpha_value = value;
+    }
+    if (!pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_TRANSPARENT_INDEX_VALUE, &value ))
+    {
+        pf->transparent_index_value_valid = GL_TRUE;
+        pf->transparent_index_value = value;
+    }
+
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_SAMPLE_BUFFERS_ARB, &value )) value = -1;
+    pf->sample_buffers = value;
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_SAMPLES_ARB, &value )) value = -1;
+    pf->samples = value;
+
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, &value )) value = -1;
+    pf->framebuffer_srgb_capable = value;
+
+    pf->bind_to_texture_rgb = pf->bind_to_texture_rgba =
+        use_render_texture_emulation && render_type != GLX_COLOR_INDEX_BIT && (render_type & GLX_PBUFFER_BIT);
+    pf->bind_to_texture_rectangle_rgb = pf->bind_to_texture_rectangle_rgba = GL_FALSE;
+
+    if (pglXGetFBConfigAttrib( gdi_display, fmt->fbconfig, GLX_FLOAT_COMPONENTS_NV, &value )) value = -1;
+    pf->float_components = value;
+
+    if (TRACE_ON(wgl)) dump_PIXELFORMATDESCRIPTOR( &pf->pfd );
+
+    return nb_onscreen_formats;
 }
 
-/**
- * glxdrv_DescribePixelFormat
- *
- * Get the pixel-format descriptor associated to the given id
- */
-static int glxdrv_wglDescribePixelFormat( HDC hdc, int iPixelFormat,
-                                          UINT nBytes, PIXELFORMATDESCRIPTOR *ppfd)
-{
-  TRACE("(%p,%d,%d,%p)\n", hdc, iPixelFormat, nBytes, ppfd);
-
-  if (!ppfd) return nb_onscreen_formats;
-
-  if (nBytes < sizeof(PIXELFORMATDESCRIPTOR))
-  {
-    ERR("Wrong structure size !\n");
-    /* Should set error */
-    return 0;
-  }
-
-  return describe_pixel_format(iPixelFormat, ppfd, FALSE);
-}
 
 /***********************************************************************
  *		glxdrv_wglGetPixelFormat
@@ -1872,7 +1936,6 @@ static BOOL glxdrv_wglMakeCurrent(HDC hdc, struct wgl_context *ctx)
             ctx->has_been_current = TRUE;
             ctx->hdc = hdc;
             set_context_drawables( ctx, gl, gl );
-            ctx->refresh_drawables = FALSE;
             pthread_mutex_unlock( &context_mutex );
             goto done;
         }
@@ -1917,7 +1980,6 @@ static BOOL X11DRV_wglMakeContextCurrentARB( HDC draw_hdc, HDC read_hdc, struct 
             ctx->has_been_current = TRUE;
             ctx->hdc = draw_hdc;
             set_context_drawables( ctx, draw_gl, read_gl );
-            ctx->refresh_drawables = FALSE;
             NtCurrentTeb()->glContext = ctx;
             pthread_mutex_unlock( &context_mutex );
             goto done;
@@ -2160,7 +2222,7 @@ static struct wgl_pbuffer *X11DRV_wglCreatePbufferARB( HDC hdc, int iPixelFormat
                                                        const int *piAttribList )
 {
     struct wgl_pbuffer* object;
-    const struct wgl_pixel_format *fmt;
+    const struct glx_pixel_format *fmt;
     int attribs[256];
     int nAttribs = 0;
 
@@ -2536,7 +2598,7 @@ struct choose_pixel_format_arb_format
 {
     int format;
     int original_index;
-    PIXELFORMATDESCRIPTOR pfd;
+    struct wgl_pixel_format pf;
     int depth, stencil;
 };
 
@@ -2553,7 +2615,7 @@ static int compare_formats(const void *a, const void *b)
 
     if (offscreen_a != offscreen_b)
         return offscreen_a - offscreen_b;
-    if (memcmp(&fmt_a->pfd, &fmt_b->pfd, sizeof(fmt_a->pfd)))
+    if (memcmp(&fmt_a->pf.pfd, &fmt_b->pf.pfd, sizeof(fmt_a->pf.pfd)))
         return fmt_a->original_index - fmt_b->original_index;
     if (fmt_a->depth != fmt_b->depth)
         return fmt_a->depth - fmt_b->depth;
@@ -2668,16 +2730,16 @@ static BOOL X11DRV_wglChoosePixelFormatARB( HDC hdc, const int *piAttribIList, c
         format->format = i + 1;
         format->original_index = it;
 
-        memset(&format->pfd, 0, sizeof(format->pfd));
-        if (!describe_pixel_format(format->format, &format->pfd, TRUE))
+        memset(&format->pf, 0, sizeof(format->pf));
+        if (!describe_pixel_format(format->format, &format->pf))
             ERR("describe_pixel_format failed, format %d.\n", format->format);
 
-        format->depth = format->pfd.cDepthBits;
-        format->stencil = format->pfd.cStencilBits;
-        if (!depth_bits && !(format->pfd.dwFlags & PFD_GENERIC_FORMAT))
+        format->depth = format->pf.pfd.cDepthBits;
+        format->stencil = format->pf.pfd.cStencilBits;
+        if (!depth_bits && !(format->pf.pfd.dwFlags & PFD_GENERIC_FORMAT))
         {
-            format->pfd.cDepthBits = 0;
-            format->pfd.cStencilBits = 0;
+            format->pf.pfd.cDepthBits = 0;
+            format->pf.pfd.cStencilBits = 0;
         }
 
         ++format_count;
@@ -2692,305 +2754,6 @@ static BOOL X11DRV_wglChoosePixelFormatARB( HDC hdc, const int *piAttribIList, c
     free( formats );
     XFree(cfgs);
     return GL_TRUE;
-}
-
-/**
- * X11DRV_wglGetPixelFormatAttribivARB
- *
- * WGL_ARB_pixel_format: wglGetPixelFormatAttribivARB
- */
-static BOOL X11DRV_wglGetPixelFormatAttribivARB( HDC hdc, int iPixelFormat, int iLayerPlane,
-                                                 UINT nAttributes, const int *piAttributes, int *piValues )
-{
-    UINT i;
-    const struct wgl_pixel_format *fmt;
-    int hTest;
-    int tmp;
-    int curGLXAttr = 0;
-
-    TRACE("(%p, %d, %d, %d, %p, %p)\n", hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, piValues);
-
-    if (0 < iLayerPlane) {
-        FIXME("unsupported iLayerPlane(%d) > 0, returns FALSE\n", iLayerPlane);
-        return GL_FALSE;
-    }
-
-    /* Convert the WGL pixelformat to a GLX one, if this fails then most likely the iPixelFormat isn't supported.
-    * We don't have to fail yet as a program can specify an invalid iPixelFormat (lets say 0) if it wants to query
-    * the number of supported WGL formats. Whether the iPixelFormat is valid is handled in the for-loop below. */
-    fmt = get_pixel_format(gdi_display, iPixelFormat, TRUE /* Offscreen */);
-    if(!fmt) {
-        WARN("Unable to convert iPixelFormat %d to a GLX one!\n", iPixelFormat);
-    }
-
-    for (i = 0; i < nAttributes; ++i) {
-        const int curWGLAttr = piAttributes[i];
-        TRACE("pAttr[%d] = %x\n", i, curWGLAttr);
-
-        switch (curWGLAttr) {
-            case WGL_NUMBER_PIXEL_FORMATS_ARB:
-                piValues[i] = nb_pixel_formats;
-                continue;
-
-            case WGL_SUPPORT_OPENGL_ARB:
-                piValues[i] = GL_TRUE; 
-                continue;
-
-            case WGL_ACCELERATION_ARB:
-                curGLXAttr = GLX_CONFIG_CAVEAT;
-                if (!fmt) goto pix_error;
-                if(fmt->dwFlags & PFD_GENERIC_FORMAT)
-                    piValues[i] = WGL_NO_ACCELERATION_ARB;
-                else if(fmt->dwFlags & PFD_GENERIC_ACCELERATED)
-                    piValues[i] = WGL_GENERIC_ACCELERATION_ARB;
-                else
-                    piValues[i] = WGL_FULL_ACCELERATION_ARB;
-                continue;
-
-            case WGL_TRANSPARENT_ARB:
-                curGLXAttr = GLX_TRANSPARENT_TYPE;
-                if (!fmt) goto pix_error;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, curGLXAttr, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] = GL_FALSE;
-                if (GLX_NONE != tmp) piValues[i] = GL_TRUE;
-                continue;
-
-            case WGL_PIXEL_TYPE_ARB:
-                curGLXAttr = GLX_RENDER_TYPE;
-                if (!fmt) goto pix_error;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, curGLXAttr, &tmp);
-                if (hTest) goto get_error;
-                TRACE("WGL_PIXEL_TYPE_ARB: GLX_RENDER_TYPE = 0x%x\n", tmp);
-                if      (tmp & GLX_RGBA_BIT)           { piValues[i] = WGL_TYPE_RGBA_ARB; }
-                else if (tmp & GLX_COLOR_INDEX_BIT)    { piValues[i] = WGL_TYPE_COLORINDEX_ARB; }
-                else if (tmp & GLX_RGBA_FLOAT_BIT)     { piValues[i] = WGL_TYPE_RGBA_FLOAT_ATI; }
-                else if (tmp & GLX_RGBA_FLOAT_ATI_BIT) { piValues[i] = WGL_TYPE_RGBA_FLOAT_ATI; }
-                else if (tmp & GLX_RGBA_UNSIGNED_FLOAT_BIT_EXT) { piValues[i] = WGL_TYPE_RGBA_UNSIGNED_FLOAT_EXT; }
-                else {
-                    ERR("unexpected RenderType(%x)\n", tmp);
-                    piValues[i] = WGL_TYPE_RGBA_ARB;
-                }
-                continue;
-
-            case WGL_COLOR_BITS_ARB:
-                curGLXAttr = GLX_BUFFER_SIZE;
-                break;
-
-            case WGL_BIND_TO_TEXTURE_RGB_ARB:
-            case WGL_BIND_TO_TEXTURE_RGBA_ARB:
-                if (!use_render_texture_emulation) {
-                    piValues[i] = GL_FALSE;
-                    continue;	
-                }
-                curGLXAttr = GLX_RENDER_TYPE;
-                if (!fmt) goto pix_error;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, curGLXAttr, &tmp);
-                if (hTest) goto get_error;
-                if (GLX_COLOR_INDEX_BIT == tmp) {
-                    piValues[i] = GL_FALSE;  
-                    continue;
-                }
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DRAWABLE_TYPE, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] = (tmp & GLX_PBUFFER_BIT) ? GL_TRUE : GL_FALSE;
-                continue;
-
-            case WGL_BLUE_BITS_ARB:
-                curGLXAttr = GLX_BLUE_SIZE;
-                break;
-            case WGL_RED_BITS_ARB:
-                curGLXAttr = GLX_RED_SIZE;
-                break;
-            case WGL_GREEN_BITS_ARB:
-                curGLXAttr = GLX_GREEN_SIZE;
-                break;
-            case WGL_ALPHA_BITS_ARB:
-                curGLXAttr = GLX_ALPHA_SIZE;
-                break;
-            case WGL_DEPTH_BITS_ARB:
-                curGLXAttr = GLX_DEPTH_SIZE;
-                break;
-            case WGL_STENCIL_BITS_ARB:
-                curGLXAttr = GLX_STENCIL_SIZE;
-                break;
-            case WGL_DOUBLE_BUFFER_ARB:
-                curGLXAttr = GLX_DOUBLEBUFFER;
-                break;
-            case WGL_STEREO_ARB:
-                curGLXAttr = GLX_STEREO;
-                break;
-            case WGL_AUX_BUFFERS_ARB:
-                curGLXAttr = GLX_AUX_BUFFERS;
-                break;
-
-            case WGL_SUPPORT_GDI_ARB:
-                if (!fmt) goto pix_error;
-                piValues[i] = (fmt->dwFlags & PFD_SUPPORT_GDI) != 0;
-                continue;
-
-            case WGL_DRAW_TO_BITMAP_ARB:
-                if (!fmt) goto pix_error;
-                piValues[i] = (fmt->dwFlags & PFD_DRAW_TO_BITMAP) != 0;
-                continue;
-
-            case WGL_DRAW_TO_WINDOW_ARB:
-            case WGL_DRAW_TO_PBUFFER_ARB:
-                if (!fmt) goto pix_error;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DRAWABLE_TYPE, &tmp);
-                if (hTest) goto get_error;
-                if((curWGLAttr == WGL_DRAW_TO_WINDOW_ARB && (tmp&GLX_WINDOW_BIT)) ||
-                   (curWGLAttr == WGL_DRAW_TO_PBUFFER_ARB && (tmp&GLX_PBUFFER_BIT)))
-                    piValues[i] = GL_TRUE;
-                else
-                    piValues[i] = GL_FALSE;
-                continue;
-
-            case WGL_SWAP_METHOD_ARB:
-                if (has_swap_method)
-                {
-                    hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_SWAP_METHOD_OML, &tmp);
-                    if (hTest) goto get_error;
-                    switch (tmp)
-                    {
-                    case GLX_SWAP_EXCHANGE_OML:
-                        piValues[i] = WGL_SWAP_EXCHANGE_ARB;
-                        break;
-                    case GLX_SWAP_COPY_OML:
-                        piValues[i] = WGL_SWAP_COPY_ARB;
-                        break;
-                    case GLX_SWAP_UNDEFINED_OML:
-                        piValues[i] = WGL_SWAP_UNDEFINED_ARB;
-                        break;
-                    default:
-                        ERR("Unexpected swap method %x.\n", tmp);
-                    }
-                }
-                else
-                {
-                    WARN("GLX_OML_swap_method not supported, returning WGL_SWAP_EXCHANGE_ARB.\n");
-                    piValues[i] = WGL_SWAP_EXCHANGE_ARB;
-                }
-                continue;
-
-            case WGL_PBUFFER_LARGEST_ARB:
-                curGLXAttr = GLX_LARGEST_PBUFFER;
-                break;
-
-            case WGL_SAMPLE_BUFFERS_ARB:
-                curGLXAttr = GLX_SAMPLE_BUFFERS_ARB;
-                break;
-
-            case WGL_SAMPLES_ARB:
-                curGLXAttr = GLX_SAMPLES_ARB;
-                break;
-
-            case WGL_FLOAT_COMPONENTS_NV:
-                curGLXAttr = GLX_FLOAT_COMPONENTS_NV;
-                break;
-
-            case WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT:
-                curGLXAttr = GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT;
-                break;
-
-            case WGL_TYPE_RGBA_UNSIGNED_FLOAT_EXT:
-                curGLXAttr = GLX_RGBA_UNSIGNED_FLOAT_TYPE_EXT;
-                break;
-
-            case WGL_ACCUM_RED_BITS_ARB:
-                curGLXAttr = GLX_ACCUM_RED_SIZE;
-                break;
-            case WGL_ACCUM_GREEN_BITS_ARB:
-                curGLXAttr = GLX_ACCUM_GREEN_SIZE;
-                break;
-            case WGL_ACCUM_BLUE_BITS_ARB:
-                curGLXAttr = GLX_ACCUM_BLUE_SIZE;
-                break;
-            case WGL_ACCUM_ALPHA_BITS_ARB:
-                curGLXAttr = GLX_ACCUM_ALPHA_SIZE;
-                break;
-            case WGL_ACCUM_BITS_ARB:
-                if (!fmt) goto pix_error;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_RED_SIZE, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] = tmp;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_GREEN_SIZE, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] += tmp;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_BLUE_SIZE, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] += tmp;
-                hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_ACCUM_ALPHA_SIZE, &tmp);
-                if (hTest) goto get_error;
-                piValues[i] += tmp;
-                continue;
-
-            default:
-                FIXME("unsupported %x WGL Attribute\n", curWGLAttr);
-        }
-
-        /* Retrieve a GLX FBConfigAttrib when the attribute to query is valid and
-         * iPixelFormat != 0. When iPixelFormat is 0 the only value which makes
-         * sense to query is WGL_NUMBER_PIXEL_FORMATS_ARB.
-         *
-         * TODO: properly test the behavior of wglGetPixelFormatAttrib*v on Windows
-         *       and check which options can work using iPixelFormat=0 and which not.
-         *       A problem would be that this function is an extension. This would
-         *       mean that the behavior could differ between different vendors (ATI, Nvidia, ..).
-         */
-        if (0 != curGLXAttr && iPixelFormat != 0) {
-            if (!fmt) goto pix_error;
-            hTest = pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, curGLXAttr, piValues + i);
-            if (hTest) goto get_error;
-            curGLXAttr = 0;
-        } else { 
-            piValues[i] = GL_FALSE; 
-        }
-    }
-    return GL_TRUE;
-
-get_error:
-    ERR("(%p): unexpected failure on GetFBConfigAttrib(%x) returns FALSE\n", hdc, curGLXAttr);
-    return GL_FALSE;
-
-pix_error:
-    ERR("(%p): unexpected iPixelFormat(%d) vs nFormats(%d), returns FALSE\n", hdc, iPixelFormat, nb_pixel_formats);
-    return GL_FALSE;
-}
-
-/**
- * X11DRV_wglGetPixelFormatAttribfvARB
- *
- * WGL_ARB_pixel_format: wglGetPixelFormatAttribfvARB
- */
-static BOOL X11DRV_wglGetPixelFormatAttribfvARB( HDC hdc, int iPixelFormat, int iLayerPlane,
-                                                 UINT nAttributes, const int *piAttributes, FLOAT *pfValues )
-{
-    int *attr;
-    int ret;
-    UINT i;
-
-    TRACE("(%p, %d, %d, %d, %p, %p)\n", hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, pfValues);
-
-    /* Allocate a temporary array to store integer values */
-    attr = malloc( nAttributes * sizeof(int) );
-    if (!attr) {
-        ERR("couldn't allocate %d array\n", nAttributes);
-        return GL_FALSE;
-    }
-
-    /* Piggy-back on wglGetPixelFormatAttribivARB */
-    ret = X11DRV_wglGetPixelFormatAttribivARB(hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, attr);
-    if (ret) {
-        /* Convert integer values to float. Should also check for attributes
-           that can give decimal values here */
-        for (i=0; i<nAttributes;i++) {
-            pfValues[i] = attr[i];
-        }
-    }
-
-    free( attr );
-    return ret;
 }
 
 /**
@@ -3252,8 +3015,8 @@ static void X11DRV_WineGL_LoadExtensions(void)
 
     register_extension( "WGL_ARB_pixel_format" );
     opengl_funcs.ext.p_wglChoosePixelFormatARB      = X11DRV_wglChoosePixelFormatARB;
-    opengl_funcs.ext.p_wglGetPixelFormatAttribfvARB = X11DRV_wglGetPixelFormatAttribfvARB;
-    opengl_funcs.ext.p_wglGetPixelFormatAttribivARB = X11DRV_wglGetPixelFormatAttribivARB;
+    opengl_funcs.ext.p_wglGetPixelFormatAttribfvARB = (void *)1; /* never called */
+    opengl_funcs.ext.p_wglGetPixelFormatAttribivARB = (void *)1; /* never called */
 
     if (has_extension( glxExtensions, "GLX_ARB_fbconfig_float"))
     {
@@ -3380,7 +3143,7 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
     case DC_GL_PIXMAP_WIN:
         if (ctx) sync_context( ctx );
         escape.gl_drawable = gl->pixmap;
-        if (pglXCopySubBufferMESA) {
+        if (ctx && pglXCopySubBufferMESA) {
             /* (glX)SwapBuffers has an implicit glFlush effect, however
              * GLX_MESA_copy_sub_buffer doesn't. Make sure GL is flushed before
              * copying */
@@ -3389,7 +3152,7 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
                                    gl->pixmap_size.cx, gl->pixmap_size.cy );
             break;
         }
-        if (pglXSwapBuffersMscOML)
+        if (ctx && pglXSwapBuffersMscOML)
         {
             pglFlush();
             target_sbc = pglXSwapBuffersMscOML( gdi_display, gl->drawable, 0, 0, 0 );
@@ -3403,7 +3166,7 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
         if (gl->type == DC_GL_CHILD_WIN) escape.gl_drawable = gl->window;
         /* fall through */
     default:
-        if (escape.gl_drawable && pglXSwapBuffersMscOML)
+        if (ctx && escape.gl_drawable && pglXSwapBuffersMscOML)
         {
             pglFlush();
             target_sbc = pglXSwapBuffersMscOML( gdi_display, gl->drawable, 0, 0, 0 );
@@ -3413,7 +3176,7 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
         break;
     }
 
-    if (escape.gl_drawable)
+    if (ctx && escape.gl_drawable)
     {
         if (pglXWaitForSbcOML)
             pglXWaitForSbcOML( gdi_display, gl->drawable, target_sbc, &ust, &msc, &sbc );
@@ -3424,8 +3187,28 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
     release_gl_drawable( gl );
 
     if (escape.gl_drawable)
-        NtGdiExtEscape( ctx->hdc, NULL, 0, X11DRV_ESCAPE, sizeof(escape), (LPSTR)&escape, 0, NULL );
+        NtGdiExtEscape( ctx ? ctx->hdc : hdc, NULL, 0, X11DRV_ESCAPE, sizeof(escape), (LPSTR)&escape, 0, NULL );
     return TRUE;
+}
+
+static void glxdrv_get_pixel_formats( struct wgl_pixel_format *formats,
+                                      UINT max_formats, UINT *num_formats,
+                                      UINT *num_onscreen_formats )
+{
+    UINT i;
+
+    if (!has_opengl())
+    {
+        *num_formats = *num_onscreen_formats = 0;
+        return;
+    }
+    if (formats)
+    {
+        for (i = 0; i < min( max_formats, nb_pixel_formats ); ++i)
+            describe_pixel_format( i + 1, &formats[i] );
+    }
+    *num_formats = nb_pixel_formats;
+    *num_onscreen_formats = nb_onscreen_formats;
 }
 
 static struct opengl_funcs opengl_funcs =
@@ -3434,13 +3217,13 @@ static struct opengl_funcs opengl_funcs =
         glxdrv_wglCopyContext,              /* p_wglCopyContext */
         glxdrv_wglCreateContext,            /* p_wglCreateContext */
         glxdrv_wglDeleteContext,            /* p_wglDeleteContext */
-        glxdrv_wglDescribePixelFormat,      /* p_wglDescribePixelFormat */
         glxdrv_wglGetPixelFormat,           /* p_wglGetPixelFormat */
         glxdrv_wglGetProcAddress,           /* p_wglGetProcAddress */
         glxdrv_wglMakeCurrent,              /* p_wglMakeCurrent */
         glxdrv_wglSetPixelFormat,           /* p_wglSetPixelFormat */
         glxdrv_wglShareLists,               /* p_wglShareLists */
         glxdrv_wglSwapBuffers,              /* p_wglSwapBuffers */
+        glxdrv_get_pixel_formats,           /* p_get_pixel_formats */
     }
 };
 

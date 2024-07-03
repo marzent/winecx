@@ -69,6 +69,7 @@
 #include "windef.h"
 #include "winternl.h"
 #include "winioctl.h"
+#include "ddk/ntddk.h"
 #include "unix_private.h"
 #include "wine/condrv.h"
 #include "wine/server.h"
@@ -85,7 +86,6 @@ static UINT process_error_mode;
 enum { /* must match definitions in Mac app code (WineLoader.m) */
     REQUEST_LOAD_WINE = 0x52c17355,
     RESPONSE_SUCCESS,
-    REQUEST_LOAD_WINE_64BIT,
 };
 
 static BOOL write_data(int sock, const void *buffer, size_t length)
@@ -216,6 +216,14 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
         WCHAR *exenameW;
         BOOL exists;
 
+        /* CW Hack 23741: Suppress the alt loader for a Rockstar launcher
+         * process with name too generic to put in the registry. */
+        if (strstr(argv[1], "\\Rockstar Games\\Launcher\\Launcher.exe"))
+        {
+            TRACE("alternative loader suppressed for Rockstar Launcher.exe\n");
+            goto failed;
+        }
+
         exename = argv[1];
         if ((p = strrchr(exename, '/'))) exename = p + 1;
         if ((p = strrchr(exename, '\\'))) exename = p + 1;
@@ -280,10 +288,7 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
         goto failed;
     }
 
-    if (pe_info->machine == IMAGE_FILE_MACHINE_AMD64 || pe_info->machine == IMAGE_FILE_MACHINE_ARM64)
-        request_type = REQUEST_LOAD_WINE_64BIT;
-    else
-        request_type = REQUEST_LOAD_WINE;
+    request_type = REQUEST_LOAD_WINE;
     if (!write_data(sock, &request_type, sizeof(request_type)))
     {
         WARN("failed to write request type\n");
@@ -846,7 +851,7 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
             if ((peb->ProcessParameters && params->ProcessGroupId != peb->ProcessParameters->ProcessGroupId) ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC_NO_WINDOW ||
-                (params->hStdInput == INVALID_HANDLE_VALUE && params->hStdOutput == INVALID_HANDLE_VALUE))
+                params->ConsoleHandle == NULL)
             {
                 setsid();
                 set_stdio_fd( -1, -1 );  /* close stdin and stdout */
@@ -1037,7 +1042,7 @@ static NTSTATUS fork_and_exec( OBJECT_ATTRIBUTES *attr, int unixdir,
             if ((peb->ProcessParameters && params->ProcessGroupId != peb->ProcessParameters->ProcessGroupId) ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC_NO_WINDOW ||
-                (params->hStdInput == INVALID_HANDLE_VALUE && params->hStdOutput == INVALID_HANDLE_VALUE))
+                params->ConsoleHandle == NULL)
             {
                 setsid();
                 set_stdio_fd( -1, -1 );  /* close stdin and stdout */
@@ -1215,7 +1220,12 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
         }
         goto done;
     }
-    if (!machine) machine = pe_info.machine;
+    if (!machine)
+    {
+        machine = pe_info.machine;
+        if (is_arm64ec() && pe_info.is_hybrid && machine == IMAGE_FILE_MACHINE_ARM64)
+            machine = main_image_info.Machine;
+    }
     if (!(startup_info = create_startup_info( attr.ObjectName, process_flags, params, &pe_info, &startup_info_size )))
         goto done;
     env_size = get_env_size( params, &winedebug );
@@ -1532,7 +1542,6 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
 
     switch (class)
     {
-    UNIMPLEMENTED_INFO_CLASS(ProcessQuotaLimits);
     UNIMPLEMENTED_INFO_CLASS(ProcessBasePriority);
     UNIMPLEMENTED_INFO_CLASS(ProcessRaisePriority);
     UNIMPLEMENTED_INFO_CLASS(ProcessExceptionPort);
@@ -1988,6 +1997,35 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
         else ret = STATUS_INVALID_PARAMETER;
         break;
 
+    case ProcessQuotaLimits:
+        {
+            QUOTA_LIMITS qlimits;
+
+            FIXME( "ProcessQuotaLimits (%p,%p,0x%08x,%p) stub\n", handle, info, (int)size, ret_len );
+
+            len = sizeof(QUOTA_LIMITS);
+            if (size == len)
+            {
+                if (!handle) ret = STATUS_INVALID_HANDLE;
+                else
+                {
+                    /* FIXME: SetProcessWorkingSetSize can also set the quota values.
+                                Quota Limits should be stored inside the process. */
+                    qlimits.PagedPoolLimit = (SIZE_T)-1;
+                    qlimits.NonPagedPoolLimit = (SIZE_T)-1;
+                    /* Default minimum working set size is 204800 bytes (50 Pages) */
+                    qlimits.MinimumWorkingSetSize = 204800;
+                    /* Default maximum working set size is 1413120 bytes (345 Pages) */
+                    qlimits.MaximumWorkingSetSize = 1413120;
+                    qlimits.PagefileLimit = (SIZE_T)-1;
+                    qlimits.TimeLimit.QuadPart = -1;
+                    memcpy(info, &qlimits, len);
+                }
+            }
+            else ret = STATUS_INFO_LENGTH_MISMATCH;
+            break;
+        }
+
     default:
         FIXME("(%p,info_class=%d,%p,0x%08x,%p) Unknown information class\n",
               handle, class, info, (int)size, ret_len );
@@ -2009,6 +2047,23 @@ NTSTATUS WINAPI NtSetInformationProcess( HANDLE handle, PROCESSINFOCLASS class, 
 
     switch (class)
     {
+    case ProcessAccessToken:
+    {
+        const PROCESS_ACCESS_TOKEN *token = info;
+
+        if (size != sizeof(PROCESS_ACCESS_TOKEN)) return STATUS_INFO_LENGTH_MISMATCH;
+
+        SERVER_START_REQ( set_process_info )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            req->token = wine_server_obj_handle( token->Token );
+            req->mask = SET_PROCESS_INFO_TOKEN;
+            ret = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        break;
+    }
+
     case ProcessDefaultHardErrorMode:
         if (size != sizeof(UINT)) return STATUS_INVALID_PARAMETER;
         process_error_mode = *(UINT *)info;

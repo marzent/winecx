@@ -219,9 +219,6 @@ struct font_enum_entry
 /* flag for NtGdiGetRandomRgn to respect LAYOUT_RTL */
 #define NTGDI_RGN_MIRROR_RTL   0x80000000
 
-/* magic driver version that we use for win16 DCs with DIB surfaces */
-#define NTGDI_WIN16_DIB  0xfafa000
-
 #endif /* __WINESRC__ */
 
 struct font_realization_info
@@ -481,6 +478,7 @@ W32KAPI NTSTATUS WINAPI NtGdiDdDDICreateDCFromMemory( D3DKMT_CREATEDCFROMMEMORY 
 W32KAPI NTSTATUS WINAPI NtGdiDdDDICreateDevice( D3DKMT_CREATEDEVICE *desc );
 W32KAPI NTSTATUS WINAPI NtGdiDdDDIDestroyDCFromMemory( const D3DKMT_DESTROYDCFROMMEMORY *desc );
 W32KAPI NTSTATUS WINAPI NtGdiDdDDIDestroyDevice( const D3DKMT_DESTROYDEVICE *desc );
+W32KAPI NTSTATUS WINAPI NtGdiDdDDIEnumAdapters2( D3DKMT_ENUMADAPTERS2 *desc );
 W32KAPI NTSTATUS WINAPI NtGdiDdDDIEscape( const D3DKMT_ESCAPE *desc );
 W32KAPI NTSTATUS WINAPI NtGdiDdDDIOpenAdapterFromHdc( D3DKMT_OPENADAPTERFROMHDC *desc );
 W32KAPI NTSTATUS WINAPI NtGdiDdDDIOpenAdapterFromDeviceName( D3DKMT_OPENADAPTERFROMDEVICENAME *desc );

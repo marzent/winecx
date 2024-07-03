@@ -38,7 +38,6 @@ WINE_DECLARE_DEBUG_CHANNEL(keyboard);
 static HKL get_locale_kbd_layout(void)
 {
     ULONG_PTR layout;
-    LANGID langid;
 
     /* FIXME:
      *
@@ -52,19 +51,7 @@ static HKL get_locale_kbd_layout(void)
      */
 
     layout = GetUserDefaultLCID();
-
-    /*
-     * Microsoft Office expects this value to be something specific
-     * for Japanese and Korean Windows with an IME the value is 0xe001
-     * We should probably check to see if an IME exists and if so then
-     * set this word properly.
-     */
-    langid = PRIMARYLANGID( LANGIDFROMLCID( layout ) );
-    if (langid == LANG_CHINESE || langid == LANG_JAPANESE || langid == LANG_KOREAN)
-        layout = MAKELONG( layout, 0xe001 ); /* IME */
-    else
-        layout = MAKELONG( layout, layout );
-
+    layout = MAKELONG( layout, layout );
     return (HKL)layout;
 }
 
@@ -490,6 +477,17 @@ HKL WINAPI LoadKeyboardLayoutA(LPCSTR pwszKLID, UINT Flags)
 
 
 /***********************************************************************
+ *		LoadKeyboardLayoutEx (USER32.@)
+ */
+HKL WINAPI LoadKeyboardLayoutEx( HKL layout, const WCHAR *name, UINT flags )
+{
+    FIXME_(keyboard)( "layout %p, name %s, flags %x, semi-stub!\n", layout, debugstr_w( name ), flags );
+
+    if (!layout) return NULL;
+    return LoadKeyboardLayoutW( name, flags );
+}
+
+/***********************************************************************
  *		UnloadKeyboardLayout (USER32.@)
  */
 BOOL WINAPI UnloadKeyboardLayout( HKL layout )
@@ -725,8 +723,7 @@ BOOL WINAPI IsTouchWindow( HWND hwnd, ULONG *flags )
 BOOL WINAPI RegisterTouchWindow( HWND hwnd, ULONG flags )
 {
     FIXME( "hwnd %p, flags %#lx stub!\n", hwnd, flags );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    return TRUE;
 }
 
 /*****************************************************************************
@@ -735,8 +732,7 @@ BOOL WINAPI RegisterTouchWindow( HWND hwnd, ULONG flags )
 BOOL WINAPI UnregisterTouchWindow( HWND hwnd )
 {
     FIXME( "hwnd %p stub!\n", hwnd );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    return TRUE;
 }
 
 /*****************************************************************************

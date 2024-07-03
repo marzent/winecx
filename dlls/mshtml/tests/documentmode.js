@@ -352,6 +352,73 @@ sync_test("builtin_toString", function() {
     }
 });
 
+sync_test("builtin_obj", function() {
+    var v = document.documentMode;
+    var f = document.createElement;
+    var e;
+
+    if(v < 9) {
+        ok(!(window instanceof Object), "window instance of Object");
+        ok(!(document instanceof Object), "document instance of Object");
+        ok(!("arguments" in f), "arguments in f");
+        ok(!("length" in f), "length in f");
+        e = 0;
+        try {
+            f.toString();
+        }catch(ex) {
+            e = ex.number;
+        }
+        ok(e === 0xa01b6 - 0x80000000, "[f.toString] e = " + e);
+        try {
+            window.toString.call(null);
+            ok(false, "expected exception calling window.toString with null context");
+        }catch(ex) {}
+    }
+
+    e = 0;
+    try {
+        f.call(Object, "div");
+    }catch(ex) {
+        e = ex.number;
+    }
+    todo_wine_if(v >= 9).
+    ok(e === (v < 9 ? 0xa0005 : 0x0ffff) - 0x80000000, "[f.call(Object, 'div')] e = " + e);
+
+    e = 0;
+    try {
+        f.call(null, "div");
+    }catch(ex) {
+        e = ex.number;
+    }
+    todo_wine_if(v >= 9).
+    ok(e === (v < 9 ? 0xa0005 : 0x0ffff) - 0x80000000, "[f.call(null, 'div')] e = " + e);
+
+    var elem1 = f.call(document, "div");
+    var elem2 = f.call(document, "br");
+    document.body.appendChild(elem1);
+    document.body.appendChild(elem2);
+    elem1.onclick = function() { ok(false, "unexpected elem1.onclick"); };
+    var clicked = false;
+    elem2.onclick = function() { clicked = true; };
+    elem1.click.call(elem2);
+    ok(clicked === true, "elem2.onclick not called");
+
+    elem1 = f.apply(document, ["div"]);
+    elem2 = f.apply(document, ["br"]);
+    document.body.appendChild(elem1);
+    document.body.appendChild(elem2);
+    elem1.onclick = function() { ok(false, "unexpected elem1.onclick"); };
+    clicked = false;
+    elem2.onclick = function() { clicked = true; };
+    elem1.click.apply(elem2);
+    ok(clicked === true, "elem2.onclick not called");
+
+    try {
+        elem1.click.apply(elem2, { length: -1 });
+        ok(false, "exception expected");
+    }catch(ex) {}
+});
+
 sync_test("elem_props", function() {
     var elem = document.documentElement;
 
@@ -949,6 +1016,29 @@ sync_test("elem_by_id", function() {
         todo_wine_if(v >= 9).
         ok(v < 9 && e.number === 0xa01b6 - 0x80000000, "Setting document.testid threw = " + e.number);
     }
+
+    window.testid2 = 1;
+    document.testid2 = 2;
+    document.body.innerHTML = '<form id="testid2" name="testname"></form>';
+    ok(window.testid2 == 1, "window.testid2 = " + window.testid2);
+    id_elem = document.body.firstChild;
+    ok(document.testid2 == (v < 9 ? id_elem : 2), "document.testid2 = " + document.testid2);
+    document.body.innerHTML = '';
+    ok(window.testid2 == 1, "window.testid2 = " + window.testid2);
+    ok(document.testid2 == 2, "document.testid2 = " + document.testid2 + " expected 2");
+
+    ok(document.title === "", "document.title = " + document.title);
+    document.body.innerHTML = '<form id="title" name="testname"></form>';
+    id_elem = document.body.firstChild;
+    todo_wine_if(v < 9).
+    ok(document.title === (v < 9 ? id_elem : ""), "document.title = " + document.title);
+    document.body.innerHTML = '';
+    ok(document.title === "", "document.title = " + document.title);
+
+    ok(window.closed === false, "window.closed = " + window.closed);
+    document.body.innerHTML = '<form id="closed" name="testname"></form>';
+    id_elem = document.body.firstChild;
+    ok(window.closed === false, "window.closed = " + window.closed);
 
     // these tags expose name as props, and id only if they have a name
     var tags = [ "embed", "form", "iframe", "img" ];
@@ -2919,6 +3009,32 @@ sync_test("MutationObserver", function() {
     test_exposed("takeRecords");
 });
 
+sync_test("initMessageEvent", function() {
+    var e, v = document.documentMode;
+    if(!document.createEvent)
+        return;
+    e = document.createEvent("MessageEvent");
+    ok(e.data === (v < 10 ? "" : undefined), "e.data = " + e.data);
+    ok(e.bubbles === false, "bubbles = " + e.bubbles);
+    ok(e.cancelable === false, "cancelable = " + e.cancelable);
+    ok(e.source === null, "e.source = " + e.source);
+    ok(e.origin === "", "e.origin = " + e.origin);
+
+    e.initMessageEvent("blah", true, true, 137, "wine", 1234, window);
+    ok(e.data === "137", "e.data = " + e.data);
+    ok(e.bubbles === true, "bubbles = " + e.bubbles);
+    ok(e.cancelable === true, "cancelable = " + e.cancelable);
+    ok(e.source === window, "e.source = " + e.source);
+    ok(e.origin === "wine", "e.origin = " + e.origin);
+
+    e.initMessageEvent("abcd", false, false, "testdata", "origin", 42, null);
+    ok(e.data === "testdata", "e.data = " + e.data);
+    ok(e.bubbles === false, "bubbles = " + e.bubbles);
+    ok(e.cancelable === false, "cancelable = " + e.cancelable);
+    ok(e.source === null, "e.source = " + e.source);
+    ok(e.origin === "origin", "e.origin = " + e.origin);
+});
+
 async_test("postMessage", function() {
     var v = document.documentMode;
     var onmessage_called = false;
@@ -2928,6 +3044,11 @@ async_test("postMessage", function() {
             ok(e === undefined, "e = " + e);
         else {
             ok(e.data === (v < 10 ? "10" : 10), "e.data = " + e.data);
+            ok(e.source === window, "e.source = " + e.source);
+            ok(e.origin === "http://winetest.example.org", "e.origin = " + e.origin);
+
+            e = document.createEvent("MessageEvent");
+            ok(e.data === (v < 10 ? "" : undefined), "created e.data = " + e.data);
             next_test();
         }
     }
@@ -2979,4 +3100,18 @@ async_test("postMessage", function() {
     window.postMessage(10, (v < 10 ? "*" : { toString: function() { return "*"; } }));
     ok(onmessage_called == (v < 9 ? true : false), "onmessage not called");
     if(v < 9) next_test();
+});
+
+sync_test("form", function() {
+    document.body.innerHTML = "";
+    var form = document.createElement("form");
+    document.body.appendChild(form);
+
+    form[0] = "test";
+    form.innerHTML = "<input type=\"text\" id = \"i1\" /><input type=\"text\" id = \"i2\" />";
+    ok(form.length === 2, "form.length = " + form.length);
+    ok(typeof(form[0]) === "object", "form[0] = " + form[0]);
+    ok(typeof(form[1]) === "object", "form[1] = " + form[1]);
+    form.innerHTML = "";
+    ok(form[0] === "test", "form[0] = " + form[0]);
 });

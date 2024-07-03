@@ -749,6 +749,17 @@ BOOL WINAPI CPGetUserKey( HCRYPTPROV hprov, DWORD keyspec, HCRYPTKEY *ret_key )
     return ret;
 }
 
+BOOL WINAPI CPSetKeyParam( HCRYPTPROV hprov, HCRYPTKEY hkey, DWORD param, BYTE *data, DWORD flags )
+{
+    if (!data)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    return FALSE;
+}
+
 BOOL WINAPI CPGenRandom( HCRYPTPROV hprov, DWORD len, BYTE *buffer )
 {
     struct container *container = (struct container *)hprov;
@@ -1010,6 +1021,12 @@ BOOL WINAPI CPVerifySignature( HCRYPTPROV hprov, HCRYPTHASH hhash, const BYTE *s
     {
         FIXME( "flags %08lx not supported\n", flags );
         return FALSE;
+    }
+
+    if (!hash->finished)
+    {
+        if (BCryptFinishHash( hash->handle, hash->value, hash->len, 0 )) return FALSE;
+        hash->finished = TRUE;
     }
 
     return !BCryptVerifySignature( key->handle, NULL, hash->value, hash->len, (UCHAR *)sig, siglen, 0 );

@@ -437,7 +437,7 @@ static HRESULT parse_text( struct path *path, ULONG mode, const WCHAR *text )
     }
     if (path->num_namespaces)
     {
-        if (!(path->namespaces = malloc( path->num_namespaces * sizeof(WCHAR *) ))) goto done;
+        if (!(path->namespaces = calloc( path->num_namespaces, sizeof(WCHAR *) ))) goto done;
         if (!(path->len_namespaces = malloc( path->num_namespaces * sizeof(int) ))) goto done;
 
         i = 0;
@@ -1282,7 +1282,7 @@ HRESULT WbemPath_create( LPVOID *ppObj )
 
     path->IWbemPath_iface.lpVtbl = &path_vtbl;
     path->refs = 1;
-    InitializeCriticalSection( &path->cs );
+    InitializeCriticalSectionEx( &path->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
     path->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": wmiutils_path.cs");
     init_path( path );
 

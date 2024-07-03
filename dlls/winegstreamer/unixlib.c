@@ -246,6 +246,7 @@ bool push_event(GstPad *pad, GstEvent *event)
 
 NTSTATUS wg_init_gstreamer(void *arg)
 {
+    struct wg_init_gstreamer_params *params = arg;
     char arg0[] = "wine";
     char arg1[] = "--gst-disable-registry-fork";
     char *args[] = {arg0, arg1, NULL};
@@ -253,38 +254,20 @@ NTSTATUS wg_init_gstreamer(void *arg)
     char **argv = args;
     GError *err;
 
-    /* CW HACK 22668: use separate registry files for different architectures */
-    {
-        const char *e;
-        if ((e = getenv("WINE_GST_REGISTRY_DIR")))
-        {
-            char gst_reg[PATH_MAX];
-#if defined(__x86_64__)
-            const char *arch = "/gstreamer-1.0-registry.x86_64.bin";
-#elif defined(__i386__)
-            const char *arch = "/gstreamer-1.0-registry.i386.bin";
-#else
-#error Bad arch
-#endif
-            strcpy(gst_reg, e);
-            strcat(gst_reg, arch);
-            setenv("GST_REGISTRY", gst_reg, 1);
-        }
-    }
+    if (params->trace_on)
+        setenv("GST_DEBUG", "WINE:9,4", FALSE);
+    if (params->warn_on)
+        setenv("GST_DEBUG", "3", FALSE);
+    if (params->err_on)
+        setenv("GST_DEBUG", "1", FALSE);
+    setenv("GST_DEBUG_NO_COLOR", "1", FALSE);
 
-    /* CW HACK 22668: set different plugin path based on architecture */
-    {
-#if defined(__x86_64__)
-        const char *e = getenv("WINE_GST_PLUGIN_SYSTEM_PATH_64");
-#elif defined(__i386__)
-        const char *e = getenv("WINE_GST_PLUGIN_SYSTEM_PATH_32");
-#else
-#error Bad arch
-#endif
-
-        if (e)
-            setenv("GST_PLUGIN_SYSTEM_PATH", e, 1);
-    }
+    /* GStreamer installs a temporary SEGV handler when it loads plugins
+     * to initialize its registry calling exit(-1) when any fault is caught.
+     * We need to make sure any signal reaches our signal handlers to catch
+     * and handle them, or eventually propagate the exceptions to the user.
+     */
+    gst_segtrap_set_enabled(false);
 
     if (!gst_init_check(&argc, &argv, &err))
     {

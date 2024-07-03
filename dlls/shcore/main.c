@@ -1053,7 +1053,7 @@ static HRESULT WINAPI filestream_CopyTo(IStream *iface, IStream *dest, ULARGE_IN
 
         /* Write */
         hr = IStream_Write(dest, buff, read_chunk, &written_chunk);
-        if (written_chunk)
+        if (written)
             written->QuadPart += written_chunk;
         if (FAILED(hr) || written_chunk != left)
             break;
@@ -2564,6 +2564,18 @@ FEATURE_ENABLED_STATE WINAPI GetFeatureEnabledState(UINT32 feature, FEATURE_CHAN
 HRESULT WINAPI RegisterScaleChangeEvent(HANDLE handle, DWORD_PTR *cookie)
 {
     FIXME("(%p, %p) stub\n", handle, cookie);
+    return E_NOTIMPL;
+}
+
+/*************************************************************************
+ * RegisterScaleChangeNotifications        [SHCORE.@]
+ */
+HRESULT WINAPI RegisterScaleChangeNotifications(DISPLAY_DEVICE_TYPE display_device, HWND hwnd, UINT msg, DWORD *cookie)
+{
+    FIXME("(%d, %p, %u, %p) stub\n", display_device, hwnd, msg, cookie);
+
+    if (cookie) *cookie = 0;
+
     return E_NOTIMPL;
 }
 

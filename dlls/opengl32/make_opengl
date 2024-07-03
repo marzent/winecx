@@ -149,6 +149,7 @@ my %manual_win_functions =
      "wglChoosePixelFormat" => 1,
      "wglCreateLayerContext" => 1,
      "wglDescribeLayerPlane" => 1,
+     "wglDescribePixelFormat" => 1,
      "wglGetCurrentContext" => 1,
      "wglGetCurrentDC" => 1,
      "wglGetDefaultProcAddress" => 1,
@@ -180,6 +181,8 @@ my %manual_win_thunks =
      "wglGetExtensionsStringARB" => 1,
      "wglGetExtensionsStringEXT" => 1,
      "wglGetPixelFormat" => 1,
+     "wglGetPixelFormatAttribfvARB" => 1,
+     "wglGetPixelFormatAttribivARB" => 1,
      "wglGetProcAddress" => 1,
      "wglQueryCurrentRendererStringWINE" => 1,
      "wglQueryRendererStringWINE" => 1,
@@ -882,6 +885,36 @@ printf HEADER "#define WINE_WGL_DRIVER_VERSION %u\n\n", $wgl_version + 1;
 print HEADER "struct wgl_context;\n";
 print HEADER "struct wgl_pbuffer;\n\n";
 
+print HEADER "struct wgl_pixel_format\n";
+print HEADER "{\n";
+print HEADER "    PIXELFORMATDESCRIPTOR pfd;\n";
+print HEADER "    int swap_method;\n";
+print HEADER "    int transparent;\n";
+print HEADER "    int pixel_type;\n";
+print HEADER "    int draw_to_pbuffer;\n";
+print HEADER "    int max_pbuffer_pixels;\n";
+print HEADER "    int max_pbuffer_width;\n";
+print HEADER "    int max_pbuffer_height;\n";
+print HEADER "    int transparent_red_value;\n";
+print HEADER "    int transparent_red_value_valid;\n";
+print HEADER "    int transparent_green_value;\n";
+print HEADER "    int transparent_green_value_valid;\n";
+print HEADER "    int transparent_blue_value;\n";
+print HEADER "    int transparent_blue_value_valid;\n";
+print HEADER "    int transparent_alpha_value;\n";
+print HEADER "    int transparent_alpha_value_valid;\n";
+print HEADER "    int transparent_index_value;\n";
+print HEADER "    int transparent_index_value_valid;\n";
+print HEADER "    int sample_buffers;\n";
+print HEADER "    int samples;\n";
+print HEADER "    int bind_to_texture_rgb;\n";
+print HEADER "    int bind_to_texture_rgba;\n";
+print HEADER "    int bind_to_texture_rectangle_rgb;\n";
+print HEADER "    int bind_to_texture_rectangle_rgba;\n";
+print HEADER "    int framebuffer_srgb_capable;\n";
+print HEADER "    int float_components;\n";
+print HEADER "};\n\n";
+
 print HEADER "struct opengl_funcs\n{\n";
 print HEADER "    struct\n    {\n";
 foreach (sort keys %wgl_functions)
@@ -891,6 +924,7 @@ foreach (sort keys %wgl_functions)
     my $func_ret = get_func_ret( $wgl_functions{$_}, 1 );
     printf HEADER "        %-10s (WINE_GLAPI *p_$_)($decl_args);\n", $func_ret;
 }
+printf HEADER "        %-10s (WINE_GLAPI *p_get_pixel_formats)( struct wgl_pixel_format *formats, UINT max_formats, UINT *num_formats, UINT *num_onscreen_formats );\n", "void";
 print HEADER "    } wgl;\n\n";
 
 print HEADER "    struct\n    {\n";
@@ -1014,10 +1048,21 @@ foreach (sort keys %ext_functions)
     print OUT generate_func_params($_, $ext_functions{$_});
 }
 
+print OUT "struct get_pixel_formats_params\n";
+print OUT "{\n";
+print OUT "    TEB *teb;\n";
+print OUT "    HDC hdc;\n";
+print OUT "    struct wgl_pixel_format *formats;\n";
+print OUT "    unsigned int max_formats;\n";
+print OUT "    unsigned int num_formats;\n";
+print OUT "    unsigned int num_onscreen_formats;\n";
+print OUT "};\n\n";
+
 print OUT "enum unix_funcs\n";
 print OUT "{\n";
 print OUT "    unix_thread_attach,\n";
 print OUT "    unix_process_detach,\n";
+print OUT "    unix_get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1141,6 +1186,7 @@ print OUT "#endif\n\n";
 
 print OUT "extern NTSTATUS thread_attach( void *args );\n";
 print OUT "extern NTSTATUS process_detach( void *args );\n";
+print OUT "extern NTSTATUS get_pixel_formats( void *args );\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1187,6 +1233,7 @@ print OUT "const unixlib_entry_t __wine_unix_call_funcs[] =\n";
 print OUT "{\n";
 print OUT "    &thread_attach,\n";
 print OUT "    &process_detach,\n";
+print OUT "    &get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1208,7 +1255,8 @@ print OUT "\n";
 print OUT "#ifdef _WIN64\n\n";
 print OUT "typedef ULONG PTR32;\n\n";
 print OUT "extern NTSTATUS wow64_thread_attach( void *args );\n";
-print OUT "extern NTSTATUS wow64_process_detach( void *args );\n\n";
+print OUT "extern NTSTATUS wow64_process_detach( void *args );\n";
+print OUT "extern NTSTATUS wow64_get_pixel_formats( void *args );\n\n";
 
 foreach (sort keys %wgl_functions)
 {
@@ -1252,6 +1300,7 @@ print OUT "\nconst unixlib_entry_t __wine_unix_call_wow64_funcs[] =\n";
 print OUT "{\n";
 print OUT "    wow64_thread_attach,\n";
 print OUT "    wow64_process_detach,\n";
+print OUT "    wow64_get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};

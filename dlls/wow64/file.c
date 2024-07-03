@@ -37,13 +37,8 @@ static FILE_OBJECTID_BUFFER windir_id, sysdir_id;
 
 static inline NTSTATUS get_file_id( HANDLE handle, FILE_OBJECTID_BUFFER *id )
 {
-    IO_STATUS_BLOCK32 io32;
     IO_STATUS_BLOCK io;
 
-    /* HACK: this shouldn't be necessary since we open the file for synchronous
-     * I/O, but we currently ignore that in ntdll.so and always write the 32-bit
-     * IOSB */
-    io.Pointer = &io32;
     return NtFsControlFile( handle, 0, NULL, NULL, &io, FSCTL_GET_OBJECT_ID, NULL, 0, id, sizeof(*id) );
 }
 

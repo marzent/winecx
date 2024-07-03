@@ -342,7 +342,8 @@ static BOOL is_special_env_var( const char *var )
             STARTS_WITH( var, "TEMP=" ) ||
             STARTS_WITH( var, "TMP=" ) ||
             STARTS_WITH( var, "QT_" ) ||
-            STARTS_WITH( var, "VK_" ));
+            STARTS_WITH( var, "VK_" ) ||
+            STARTS_WITH( var, "XDG_SESSION_TYPE=" ));
 }
 
 /* check if an environment variable changes dynamically in every new process */
@@ -1822,7 +1823,7 @@ static void *build_wow64_parameters( const RTL_USER_PROCESS_PARAMETERS *params )
                    + ((params->RuntimeInfo.MaximumLength + 1) & ~1)
                    + params->EnvironmentSize);
 
-    status = NtAllocateVirtualMemory( NtCurrentProcess(), (void **)&wow64_params, 0, &size,
+    status = NtAllocateVirtualMemory( NtCurrentProcess(), (void **)&wow64_params, limit_2g - 1, &size,
                                       MEM_COMMIT, PAGE_READWRITE );
     assert( !status );
 

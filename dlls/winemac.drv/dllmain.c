@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 #include "macdrv_dll.h"
 #include "macdrv_res.h"
 #include "shellapi.h"
@@ -210,7 +212,7 @@ NTSTATUS WINAPI macdrv_app_quit_request(void *arg, ULONG size)
     }
 
     /* quit_callback() will clean up qi */
-    return 0;
+    return STATUS_SUCCESS;
 
 fail:
     WARN("failed to allocate window list\n");
@@ -220,7 +222,7 @@ fail:
         HeapFree(GetProcessHeap(), 0, qi);
     }
     quit_reply(FALSE);
-    return 0;
+    return STATUS_SUCCESS;
 }
 
 /***********************************************************************
@@ -260,13 +262,13 @@ static NTSTATUS WINAPI macdrv_app_icon(void *arg, ULONG size)
     if (!res_info)
     {
         WARN("found no RT_GROUP_ICON resource\n");
-        return 0;
+        return STATUS_SUCCESS;
     }
 
     if (!(res_data = LoadResource(NULL, res_info)))
     {
         WARN("failed to load RT_GROUP_ICON resource\n");
-        return 0;
+        return STATUS_SUCCESS;
     }
 
     if (!(icon_dir = LockResource(res_data)))
@@ -434,8 +436,7 @@ static NTSTATUS WINAPI macdrv_regsetvalueexa(void *arg, ULONG size)
     return 0;
 }
 
-typedef NTSTATUS (WINAPI *kernel_callback)(void *params, ULONG size);
-static const kernel_callback kernel_callbacks[] =
+static const KERNEL_CALLBACK_PROC kernel_callbacks[] =
 {
     macdrv_app_icon,
     macdrv_app_quit_request,
@@ -453,7 +454,7 @@ C_ASSERT(NtUserDriverCallbackFirst + ARRAYSIZE(kernel_callbacks) == client_func_
 static BOOL process_attach(void)
 {
     struct init_params params;
-    void **callback_table;
+    KERNEL_CALLBACK_PROC *callback_table;
 
     struct localized_string *str;
     struct localized_string strings[] = {

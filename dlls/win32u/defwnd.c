@@ -250,16 +250,13 @@ BOOL draw_rect_edge( HDC hdc, RECT *rc, UINT type, UINT flags, UINT width )
     return retval;
 }
 
-/***********************************************************************
- *           AdjustWindowRectEx (win32u.so)
- */
-BOOL WINAPI AdjustWindowRectEx( RECT *rect, DWORD style, BOOL menu, DWORD ex_style )
+/* see AdjustWindowRectExForDpi */
+BOOL adjust_window_rect( RECT *rect, DWORD style, BOOL menu, DWORD ex_style, UINT dpi )
 {
-    NONCLIENTMETRICSW ncm;
+    NONCLIENTMETRICSW ncm = {.cbSize = sizeof(ncm)};
     int adjust = 0;
 
-    ncm.cbSize = sizeof(ncm);
-    NtUserSystemParametersInfo( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0 );
+    NtUserSystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
 
     if ((ex_style & (WS_EX_STATICEDGE|WS_EX_DLGMODALFRAME)) == WS_EX_STATICEDGE)
         adjust = 1; /* for the outer frame always present */
@@ -719,7 +716,7 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
     if (style & WS_CHILD)
     {
         parent = get_parent( hwnd );
-        get_client_rect( parent, &mouse_rect );
+        get_client_rect( parent, &mouse_rect, get_thread_dpi() );
         map_window_points( parent, 0, (POINT *)&mouse_rect, 2, dpi );
         map_window_points( parent, 0, (POINT *)&sizing_rect, 2, dpi );
     }
@@ -829,7 +826,7 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
                 mon = newmon;
 
             info.cbSize = sizeof(info);
-            if (mon && get_monitor_info( mon, &info ))
+            if (mon && get_monitor_info( mon, &info, get_thread_dpi() ))
             {
                 pt.x = max( pt.x, info.rcWork.left );
                 pt.x = min( pt.x, info.rcWork.right - 1 );
@@ -1367,8 +1364,7 @@ static BOOL draw_frame_caption( HDC dc, RECT *r, UINT flags )
     return TRUE;
 }
 
-BOOL draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE type, BOOL down,
-                       BOOL grayed )
+void draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE type, BOOL down, BOOL grayed )
 {
     struct draw_non_client_button_params params;
     void *ret_ptr;
@@ -1380,7 +1376,7 @@ BOOL draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE ty
     params.rect = *r;
     params.down = down;
     params.grayed = grayed;
-    return KeUserModeCallback( NtUserDrawNonClientButton, &params, sizeof(params), &ret_ptr, &ret_len );
+    KeUserModeCallback( NtUserDrawNonClientButton, &params, sizeof(params), &ret_ptr, &ret_len );
 }
 
 BOOL draw_frame_menu( HDC dc, RECT *r, UINT flags )
@@ -1468,8 +1464,8 @@ static void draw_close_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
     {
         /* Windows does not use SM_CXSMSIZE and SM_CYSMSIZE
          * it uses 11x11 for  the close button in tool window */
-        const int bmp_height = 11;
-        const int bmp_width = 11;
+        int bmp_height = muldiv( 11, get_dpi_for_window( hwnd ), 96 );
+        int bmp_width = bmp_height;
         int caption_height = get_system_metrics( SM_CYSMCAPTION );
 
         rect.top = rect.top + (caption_height - 1 - bmp_height) / 2;
@@ -1862,7 +1858,7 @@ static void handle_nc_calc_size( HWND hwnd, WPARAM wparam, RECT *win_rect )
 
     if (!(style & WS_MINIMIZE))
     {
-        AdjustWindowRectEx( &rect, style, FALSE, ex_style & ~WS_EX_CLIENTEDGE );
+        adjust_window_rect( &rect, style, FALSE, ex_style & ~WS_EX_CLIENTEDGE, get_system_dpi() );
 
         win_rect->left   -= rect.left;
         win_rect->top    -= rect.top;
@@ -2531,7 +2527,7 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, 
                     RECT rc;
                     int x, y;
 
-                    get_client_rect( hwnd, &rc );
+                    get_client_rect( hwnd, &rc, get_thread_dpi() );
                     x = (rc.right - rc.left - get_system_metrics( SM_CXICON )) / 2;
                     y = (rc.bottom - rc.top - get_system_metrics( SM_CYICON )) / 2;
                     TRACE( "Painting class icon: vis rect=(%s)\n", wine_dbgstr_rect(&ps.rcPaint) );
@@ -2594,7 +2590,7 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, 
             if (get_class_long( hwnd, GCL_STYLE, FALSE ) & CS_PARENTDC)
             {
                 /* can't use GetClipBox with a parent DC or we fill the whole parent */
-                get_client_rect( hwnd, &rect );
+                get_client_rect( hwnd, &rect, get_thread_dpi() );
                 NtGdiTransformPoints( hdc, (POINT *)&rect, (POINT *)&rect, 1, NtGdiDPtoLP );
             }
             else NtGdiGetAppClipBox( hdc, &rect );
@@ -2973,10 +2969,10 @@ LRESULT desktop_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
 
             if (NtUserGetAncestor( hwnd, GA_PARENT )) return FALSE;  /* refuse to create non-desktop window */
 
-            sprintf( buffer, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-                     (unsigned int)guid->Data1, guid->Data2, guid->Data3,
-                     guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
-                     guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7] );
+            snprintf( buffer, sizeof(buffer), "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                      (unsigned int)guid->Data1, guid->Data2, guid->Data3,
+                      guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
+                      guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7] );
             NtAddAtom( bufferW, asciiz_to_unicode( bufferW, buffer ) - sizeof(WCHAR), &atom );
             NtUserSetProp( hwnd, wine_display_device_guidW, ULongToHandle( atom ) );
         }
@@ -2985,7 +2981,32 @@ LRESULT desktop_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
     case WM_NCCALCSIZE:
         return 0;
     case WM_DISPLAYCHANGE:
-        return user_driver->pDesktopWindowProc( hwnd, msg, wparam, lparam );
+    {
+        static RECT virtual_rect = {INT_MIN,INT_MIN,INT_MAX,INT_MAX};
+
+        RECT new_rect = NtUserGetVirtualScreenRect(), old_rect = virtual_rect;
+        UINT context, flags = 0;
+
+        if (EqualRect( &new_rect, &old_rect )) return TRUE;
+        virtual_rect = new_rect;
+
+        TRACE( "desktop %p change from %s to %s\n", hwnd, wine_dbgstr_rect( &old_rect ), wine_dbgstr_rect( &new_rect ) );
+
+        if (new_rect.right - new_rect.left == old_rect.right - old_rect.left &&
+            new_rect.bottom - new_rect.top == old_rect.bottom - old_rect.top)
+            flags |= SWP_NOSIZE;
+        if (new_rect.left == old_rect.left && new_rect.top == old_rect.top)
+            flags |= SWP_NOMOVE;
+
+        context = NtUserSetThreadDpiAwarenessContext( NTUSER_DPI_PER_MONITOR_AWARE );
+        NtUserSetWindowPos( hwnd, 0, new_rect.left, new_rect.top,
+                            new_rect.right - new_rect.left, new_rect.bottom - new_rect.top,
+                            flags | SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE );
+        NtUserSetThreadDpiAwarenessContext( context );
+
+        return send_message_timeout( HWND_BROADCAST, WM_WINE_DESKTOP_RESIZED, old_rect.left,
+                                     old_rect.top, SMTO_ABORTIFHUNG, 2000, FALSE );
+    }
     default:
         if (msg >= WM_USER && hwnd == get_desktop_window())
             return user_driver->pDesktopWindowProc( hwnd, msg, wparam, lparam );

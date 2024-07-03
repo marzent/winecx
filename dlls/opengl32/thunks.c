@@ -43,15 +43,6 @@ BOOL WINAPI wglDeleteContext( HGLRC oldContext )
     return args.ret;
 }
 
-int WINAPI wglDescribePixelFormat( HDC hdc, int ipfd, UINT cjpfd, PIXELFORMATDESCRIPTOR *ppfd )
-{
-    struct wglDescribePixelFormat_params args = { .teb = NtCurrentTeb(), .hdc = hdc, .ipfd = ipfd, .cjpfd = cjpfd, .ppfd = ppfd };
-    NTSTATUS status;
-    TRACE( "hdc %p, ipfd %d, cjpfd %u, ppfd %p\n", hdc, ipfd, cjpfd, ppfd );
-    if ((status = UNIX_CALL( wglDescribePixelFormat, &args ))) WARN( "wglDescribePixelFormat returned %#lx\n", status );
-    return args.ret;
-}
-
 BOOL WINAPI wglMakeCurrent( HDC hDc, HGLRC newContext )
 {
     struct wglMakeCurrent_params args = { .teb = NtCurrentTeb(), .hDc = hDc, .newContext = newContext };
@@ -24226,24 +24217,6 @@ static HDC WINAPI wglGetPbufferDCARB( HPBUFFERARB hPbuffer )
     return args.ret;
 }
 
-static BOOL WINAPI wglGetPixelFormatAttribfvARB( HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues )
-{
-    struct wglGetPixelFormatAttribfvARB_params args = { .teb = NtCurrentTeb(), .hdc = hdc, .iPixelFormat = iPixelFormat, .iLayerPlane = iLayerPlane, .nAttributes = nAttributes, .piAttributes = piAttributes, .pfValues = pfValues };
-    NTSTATUS status;
-    TRACE( "hdc %p, iPixelFormat %d, iLayerPlane %d, nAttributes %u, piAttributes %p, pfValues %p\n", hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, pfValues );
-    if ((status = UNIX_CALL( wglGetPixelFormatAttribfvARB, &args ))) WARN( "wglGetPixelFormatAttribfvARB returned %#lx\n", status );
-    return args.ret;
-}
-
-static BOOL WINAPI wglGetPixelFormatAttribivARB( HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues )
-{
-    struct wglGetPixelFormatAttribivARB_params args = { .teb = NtCurrentTeb(), .hdc = hdc, .iPixelFormat = iPixelFormat, .iLayerPlane = iLayerPlane, .nAttributes = nAttributes, .piAttributes = piAttributes, .piValues = piValues };
-    NTSTATUS status;
-    TRACE( "hdc %p, iPixelFormat %d, iLayerPlane %d, nAttributes %u, piAttributes %p, piValues %p\n", hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, piValues );
-    if ((status = UNIX_CALL( wglGetPixelFormatAttribivARB, &args ))) WARN( "wglGetPixelFormatAttribivARB returned %#lx\n", status );
-    return args.ret;
-}
-
 static int WINAPI wglGetSwapIntervalEXT(void)
 {
     struct wglGetSwapIntervalEXT_params args = { .teb = NtCurrentTeb() };
@@ -24349,6 +24322,8 @@ extern GLboolean WINAPI glUnmapNamedBufferEXT( GLuint buffer );
 extern HDC WINAPI wglGetCurrentReadDCARB(void);
 extern const char * WINAPI wglGetExtensionsStringARB( HDC hdc );
 extern const char * WINAPI wglGetExtensionsStringEXT(void);
+extern BOOL WINAPI wglGetPixelFormatAttribfvARB( HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues );
+extern BOOL WINAPI wglGetPixelFormatAttribivARB( HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues );
 extern const GLchar * WINAPI wglQueryCurrentRendererStringWINE( GLenum attribute );
 extern const GLchar * WINAPI wglQueryRendererStringWINE( HDC dc, GLint renderer, GLenum attribute );
 const void *extension_procs[] =

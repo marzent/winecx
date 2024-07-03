@@ -98,8 +98,6 @@ extern BOOL macdrv_SetDeviceGammaRamp(PHYSDEV dev, LPVOID ramp);
 enum macdrv_window_messages
 {
     WM_MACDRV_SET_WIN_REGION = WM_WINE_FIRST_DRIVER_MSG,
-    WM_MACDRV_RESET_DEVICE_METRICS,
-    WM_MACDRV_DISPLAYCHANGE,
     WM_MACDRV_ACTIVATE_ON_FOLLOWING_FOCUS,
 };
 
@@ -132,8 +130,7 @@ extern LONG macdrv_ChangeDisplaySettings(LPDEVMODEW displays, LPCWSTR primary_na
 extern BOOL macdrv_GetCurrentDisplaySettings(LPCWSTR name, BOOL is_primary, LPDEVMODEW devmode);
 extern INT macdrv_GetDisplayDepth(LPCWSTR name, BOOL is_primary);
 extern LRESULT macdrv_ClipboardWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-extern BOOL macdrv_UpdateDisplayDevices( const struct gdi_device_manager *device_manager,
-                                         BOOL force, void *param );
+extern UINT macdrv_UpdateDisplayDevices(const struct gdi_device_manager *device_manager, void *param);
 extern BOOL macdrv_GetDeviceGammaRamp(PHYSDEV dev, LPVOID ramp);
 extern BOOL macdrv_SetDeviceGammaRamp(PHYSDEV dev, LPVOID ramp);
 extern BOOL macdrv_ClipCursor(const RECT *clip, BOOL reset);
@@ -153,12 +150,13 @@ extern void macdrv_SetWindowStyle(HWND hwnd, INT offset, STYLESTRUCT *style);
 extern void macdrv_SetWindowText(HWND hwnd, LPCWSTR text);
 extern UINT macdrv_ShowWindow(HWND hwnd, INT cmd, RECT *rect, UINT swp);
 extern LRESULT macdrv_SysCommand(HWND hwnd, WPARAM wparam, LPARAM lparam);
-extern BOOL macdrv_UpdateLayeredWindow(HWND hwnd, const UPDATELAYEREDWINDOWINFO *info,
-                                       const RECT *window_rect);
+extern BOOL macdrv_CreateLayeredWindow(HWND hwnd, const RECT *window_rect, COLORREF color_key,
+                                       struct window_surface **surface);
+extern void macdrv_UpdateLayeredWindow(HWND hwnd, const RECT *window_rect, COLORREF color_key,
+                                       BYTE alpha, UINT flags);
 extern LRESULT macdrv_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-extern BOOL macdrv_WindowPosChanging(HWND hwnd, HWND insert_after, UINT swp_flags,
-                                     const RECT *window_rect, const RECT *client_rect,
-                                     RECT *visible_rect, struct window_surface **surface);
+extern BOOL macdrv_WindowPosChanging(HWND hwnd, UINT swp_flags, const RECT *window_rect, const RECT *client_rect, RECT *visible_rect);
+extern BOOL macdrv_CreateWindowSurface(HWND hwnd, const RECT *surface_rect, struct window_surface **surface);
 extern void macdrv_WindowPosChanged(HWND hwnd, HWND insert_after, UINT swp_flags,
                                     const RECT *window_rect, const RECT *client_rect,
                                     const RECT *visible_rect, const RECT *valid_rects,
@@ -172,7 +170,6 @@ extern BOOL macdrv_RegisterHotKey(HWND hwnd, UINT mod_flags, UINT vkey);
 extern void macdrv_UnregisterHotKey(HWND hwnd, UINT modifiers, UINT vkey);
 extern SHORT macdrv_VkKeyScanEx(WCHAR wChar, HKL hkl);
 extern UINT macdrv_ImeProcessKey(HIMC himc, UINT wparam, UINT lparam, const BYTE *state);
-extern UINT macdrv_ImeToAsciiEx(UINT vkey, UINT vsc, const BYTE *state, COMPOSITIONSTRING *compstr, HIMC himc);
 extern UINT macdrv_MapVirtualKeyEx(UINT wCode, UINT wMapType, HKL hkl);
 extern INT macdrv_ToUnicodeEx(UINT virtKey, UINT scanCode, const BYTE *lpKeyState,
                               LPWSTR bufW, int bufW_size, UINT flags, HKL hkl);
@@ -209,17 +206,14 @@ struct macdrv_win_data
     struct window_surface *unminimized_surface;
 };
 
+extern UINT get_win_monitor_dpi( HWND hwnd );
 extern struct macdrv_win_data *get_win_data(HWND hwnd);
 extern void release_win_data(struct macdrv_win_data *data);
 extern void init_win_context(void);
 extern macdrv_window macdrv_get_cocoa_window(HWND hwnd, BOOL require_on_screen);
 extern RGNDATA *get_region_data(HRGN hrgn, HDC hdc_lptodp);
 extern void activate_on_following_focus(void);
-extern struct window_surface *create_surface(macdrv_window window, const RECT *rect,
-                                             struct window_surface *old_surface, BOOL use_alpha);
-extern void set_window_surface(macdrv_window window, struct window_surface *window_surface);
 extern void set_surface_use_alpha(struct window_surface *window_surface, BOOL use_alpha);
-extern void surface_clip_to_visible_rect(struct window_surface *window_surface, const RECT *visible_rect);
 
 extern void macdrv_handle_event(const macdrv_event *event);
 
@@ -265,7 +259,7 @@ extern BOOL query_pasteboard_data(HWND hwnd, CFStringRef type);
 extern void macdrv_lost_pasteboard_ownership(HWND hwnd);
 
 extern struct opengl_funcs *macdrv_wine_get_wgl_driver(UINT version);
-extern const struct vulkan_funcs *macdrv_wine_get_vulkan_driver(UINT version);
+extern UINT macdrv_VulkanInit(UINT version, void *vulkan_handle, const struct vulkan_driver_funcs **driver_funcs);
 extern void sync_gl_view(struct macdrv_win_data* data, const RECT* old_whole_rect, const RECT* old_client_rect);
 
 extern CGImageRef create_cgimage_from_icon_bitmaps(HDC hdc, HANDLE icon, HBITMAP hbmColor,
@@ -279,8 +273,6 @@ extern void macdrv_status_item_mouse_button(const macdrv_event *event);
 extern void macdrv_status_item_mouse_move(const macdrv_event *event);
 
 extern void check_retina_status(void);
-extern void macdrv_init_display_devices(BOOL force);
-extern void macdrv_resize_desktop(void);
 extern void init_user_driver(void);
 
 /* unixlib interface */

@@ -45,58 +45,8 @@ static inline HTMLAreaElement *impl_from_IHTMLAreaElement(IHTMLAreaElement *ifac
     return CONTAINING_RECORD(iface, HTMLAreaElement, IHTMLAreaElement_iface);
 }
 
-static HRESULT WINAPI HTMLAreaElement_QueryInterface(IHTMLAreaElement *iface, REFIID riid, void **ppv)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLAreaElement_AddRef(IHTMLAreaElement *iface)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLAreaElement_Release(IHTMLAreaElement *iface)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLAreaElement_GetTypeInfoCount(IHTMLAreaElement *iface, UINT *pctinfo)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLAreaElement_GetTypeInfo(IHTMLAreaElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLAreaElement_GetIDsOfNames(IHTMLAreaElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLAreaElement_Invoke(IHTMLAreaElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLAreaElement *This = impl_from_IHTMLAreaElement(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLAreaElement, IHTMLAreaElement,
+                      impl_from_IHTMLAreaElement(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLAreaElement_put_shape(IHTMLAreaElement *iface, BSTR v)
 {
@@ -439,13 +389,13 @@ static void HTMLAreaElement_unlink(DispatchEx *dispex)
     unlink_ref(&This->nsarea);
 }
 
-static HRESULT HTMLAreaElement_handle_event(DispatchEx *dispex, eventid_t eid, nsIDOMEvent *event, BOOL *prevent_default)
+static HRESULT HTMLAreaElement_handle_event(DispatchEx *dispex, DOMEvent *event, BOOL *prevent_default)
 {
     HTMLAreaElement *This = impl_from_DispatchEx(dispex);
     nsAString href_str, target_str;
     nsresult nsres;
 
-    if(eid == EVENTID_CLICK) {
+    if(event->event_id == EVENTID_CLICK) {
         nsAString_Init(&href_str, NULL);
         nsres = nsIDOMHTMLAreaElement_GetHref(This->nsarea, &href_str);
         if (NS_FAILED(nsres)) {
@@ -460,14 +410,14 @@ static HRESULT HTMLAreaElement_handle_event(DispatchEx *dispex, eventid_t eid, n
             goto fallback;
         }
 
-        return handle_link_click_event(&This->element, &href_str, &target_str, event, prevent_default);
+        return handle_link_click_event(&This->element, &href_str, &target_str, event->nsevent, prevent_default);
 
 fallback:
         nsAString_Finish(&href_str);
         nsAString_Finish(&target_str);
     }
 
-    return HTMLElement_handle_event(&This->element.node.event_target.dispex, eid, event, prevent_default);
+    return HTMLElement_handle_event(&This->element.node.event_target.dispex, event, prevent_default);
 }
 
 static const NodeImplVtbl HTMLAreaElementImplVtbl = {

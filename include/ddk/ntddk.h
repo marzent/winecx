@@ -146,6 +146,12 @@ typedef struct _FILE_VALID_DATA_LENGTH_INFORMATION
   LARGE_INTEGER ValidDataLength;
 } FILE_VALID_DATA_LENGTH_INFORMATION, *PFILE_VALID_DATA_LENGTH_INFORMATION;
 
+typedef struct _PROCESS_ACCESS_TOKEN
+{
+    HANDLE Token;
+    HANDLE Thread;
+} PROCESS_ACCESS_TOKEN, *PPROCESS_ACCESS_TOKEN;
+
 typedef enum _RTL_GENERIC_COMPARE_RESULTS
 {
     GenericLessThan,
@@ -268,14 +274,18 @@ NTSTATUS  WINAPI PsSetLoadImageNotifyRoutine(PLOAD_IMAGE_NOTIFY_ROUTINE);
 NTSTATUS  WINAPI PsSetLoadImageNotifyRoutineEx(PLOAD_IMAGE_NOTIFY_ROUTINE,ULONG_PTR);
 LONG      WINAPI RtlCompareString(const STRING*,const STRING*,BOOLEAN);
 void      WINAPI RtlCopyString(STRING*,const STRING*);
+void *    WINAPI RtlEnumerateGenericTableWithoutSplaying(PRTL_GENERIC_TABLE,PVOID*);
+void *    WINAPI RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE,PVOID*);
 BOOLEAN   WINAPI RtlEqualString(const STRING*,const STRING*,BOOLEAN);
 void *    WINAPI RtlGetElementGenericTable(PRTL_GENERIC_TABLE,ULONG);
 void      WINAPI RtlInitializeGenericTable(PRTL_GENERIC_TABLE,PRTL_GENERIC_COMPARE_ROUTINE,PRTL_GENERIC_ALLOCATE_ROUTINE,PRTL_GENERIC_FREE_ROUTINE,void *);
 void      WINAPI RtlInitializeGenericTableAvl(PRTL_AVL_TABLE,PRTL_AVL_COMPARE_ROUTINE,PRTL_AVL_ALLOCATE_ROUTINE, PRTL_AVL_FREE_ROUTINE,void *);
 void      WINAPI RtlInsertElementGenericTableAvl(PRTL_AVL_TABLE,void *,ULONG,BOOL*);
 void *    WINAPI RtlLookupElementGenericTable(PRTL_GENERIC_TABLE,void *);
+void *    WINAPI RtlLookupElementGenericTableAvl(PRTL_AVL_TABLE,void *);
 void      WINAPI RtlMapGenericMask(ACCESS_MASK*,const GENERIC_MAPPING*);
 ULONG     WINAPI RtlNumberGenericTableElements(PRTL_GENERIC_TABLE);
+ULONG     WINAPI RtlNumberGenericTableElementsAvl(PRTL_AVL_TABLE);
 BOOLEAN   WINAPI RtlPrefixUnicodeString(const UNICODE_STRING*,const UNICODE_STRING*,BOOLEAN);
 NTSTATUS  WINAPI RtlUpcaseUnicodeString(UNICODE_STRING*,const UNICODE_STRING*,BOOLEAN);
 char      WINAPI RtlUpperChar(char);

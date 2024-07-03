@@ -2530,7 +2530,7 @@ static void alloc_arm64ec_map(void)
  *           update_arm64ec_ranges
  */
 static void update_arm64ec_ranges( struct file_view *view, IMAGE_NT_HEADERS *nt,
-                                   const IMAGE_DATA_DIRECTORY *dir )
+                                   const IMAGE_DATA_DIRECTORY *dir, UINT *entry_point )
 {
     const IMAGE_ARM64EC_METADATA *metadata;
     const IMAGE_CHPE_RANGE_ENTRY *map;
@@ -2543,6 +2543,7 @@ static void update_arm64ec_ranges( struct file_view *view, IMAGE_NT_HEADERS *nt,
     if (!arm64ec_view) alloc_arm64ec_map();
     commit_arm64ec_map( view );
     metadata = (void *)(base + (cfg->CHPEMetadataPointer - nt->OptionalHeader.ImageBase));
+    *entry_point = redirect_arm64ec_rva( base, nt->OptionalHeader.AddressOfEntryPoint, metadata );
     if (!metadata->CodeMap) return;
     map = (void *)(base + metadata->CodeMap);
 
@@ -2907,11 +2908,11 @@ static NTSTATUS map_image_into_view( struct file_view *view, const WCHAR *filena
              (!machine && main_image_info.Machine == IMAGE_FILE_MACHINE_AMD64)))
         {
             update_arm64x_mapping( view, nt, dir, sections );
-            /* reload changed data from NT header */
-            image_info->machine     = nt->FileHeader.Machine;
-            image_info->entry_point = nt->OptionalHeader.AddressOfEntryPoint;
+            /* reload changed machine from NT header */
+            image_info->machine = nt->FileHeader.Machine;
         }
-        if (image_info->machine == IMAGE_FILE_MACHINE_AMD64) update_arm64ec_ranges( view, nt, dir );
+        if (image_info->machine == IMAGE_FILE_MACHINE_AMD64)
+            update_arm64ec_ranges( view, nt, dir, &image_info->entry_point );
     }
 #endif
     if (machine && machine != nt->FileHeader.Machine && !wow64_using_32bit_prefix) return STATUS_NOT_SUPPORTED;
@@ -3204,9 +3205,12 @@ static unsigned int virtual_map_section( HANDLE handle, PVOID *addr_ptr, ULONG_P
 
     if (image_info)
     {
+        SECTION_IMAGE_INFORMATION info;
+
         filename = (WCHAR *)(image_info + 1);
         /* check if we can replace that mapping with the builtin */
-        res = load_builtin( image_info, filename, machine, addr_ptr, size_ptr, limit_low, limit_high );
+        res = load_builtin( image_info, filename, machine, &info,
+                            addr_ptr, size_ptr, limit_low, limit_high );
         if (res == STATUS_IMAGE_ALREADY_LOADED)
             res = virtual_map_image( handle, addr_ptr, size_ptr, shared_file, limit_low, limit_high,
                                      alloc_type, machine, image_info, filename, FALSE );
@@ -3505,12 +3509,13 @@ NTSTATUS virtual_map_module( HANDLE mapping, void **module, SIZE_T *size, SECTIO
     filename = (WCHAR *)(image_info + 1);
 
     /* check if we can replace that mapping with the builtin */
-    status = load_builtin( image_info, filename, machine, module, size, limit_low, limit_high );
+    status = load_builtin( image_info, filename, machine, info, module, size, limit_low, limit_high );
     if (status == STATUS_IMAGE_ALREADY_LOADED)
+    {
         status = virtual_map_image( mapping, module, size, shared_file, limit_low, limit_high, 0,
                                     machine, image_info, filename, FALSE );
-
-    virtual_fill_image_information( image_info, info );
+        virtual_fill_image_information( image_info, info );
+    }
     if (shared_file) NtClose( shared_file );
     free( image_info );
     return status;
@@ -3659,6 +3664,7 @@ static TEB *init_teb( void *ptr, BOOL is_wow )
     if (is_wow) teb64->WowTebOffset = teb_offset;
 #else
     teb = (TEB *)teb32;
+    teb32->Tib.ExceptionList = ~0u;
     teb64->Peb = PtrToUlong( (char *)peb - page_size );
     teb64->Tib.Self = PtrToUlong( teb64 );
     teb64->Tib.ExceptionList = PtrToUlong( teb32 );
@@ -3677,7 +3683,6 @@ static TEB *init_teb( void *ptr, BOOL is_wow )
 #endif
     teb->Peb = peb;
     teb->Tib.Self = &teb->Tib;
-    teb->Tib.ExceptionList = (void *)~0ul;
     teb->Tib.StackBase = (void *)~0ul;
     teb->ActivationContextStackPointer = &teb->ActivationContextStack;
     InitializeListHead( &teb->ActivationContextStack.FrameListCache );
@@ -3799,6 +3804,13 @@ void virtual_free_teb( TEB *teb )
         size = 0;
         NtFreeVirtualMemory( GetCurrentProcess(), &teb->DeallocationStack, &size, MEM_RELEASE );
     }
+#ifdef __aarch64__
+    if (teb->ChpeV2CpuAreaInfo)
+    {
+        size = 0;
+        NtFreeVirtualMemory( GetCurrentProcess(), (void **)&teb->ChpeV2CpuAreaInfo, &size, MEM_RELEASE );
+    }
+#endif
     if (thread_data->kernel_stack)
     {
         size = 0;
@@ -5563,8 +5575,8 @@ NTSTATUS WINAPI NtMapViewOfSection( HANDLE handle, HANDLE process, PVOID *addr_p
 
     offset.QuadPart = offset_ptr ? offset_ptr->QuadPart : 0;
 
-    TRACE("handle=%p process=%p addr=%p off=%s size=%lx access=%x\n",
-          handle, process, *addr_ptr, wine_dbgstr_longlong(offset.QuadPart), *size_ptr, (int)protect );
+    TRACE("handle=%p process=%p addr=%p off=%s size=0x%lx alloc_type=0x%x access=0x%x\n",
+          handle, process, *addr_ptr, wine_dbgstr_longlong(offset.QuadPart), *size_ptr, (int)alloc_type, (int)protect );
 
     /* Check parameters */
     if (zero_bits > 21 && zero_bits < 32)
@@ -5589,6 +5601,9 @@ NTSTATUS WINAPI NtMapViewOfSection( HANDLE handle, HANDLE process, PVOID *addr_p
         }
     }
 #endif
+
+    if (alloc_type & MEM_REPLACE_PLACEHOLDER)
+        mask = page_mask;
 
     if ((offset.u.LowPart & mask) || (*addr_ptr && ((UINT_PTR)*addr_ptr & mask)))
         return STATUS_MAPPED_ALIGNMENT;
@@ -5641,8 +5656,8 @@ NTSTATUS WINAPI NtMapViewOfSectionEx( HANDLE handle, HANDLE process, PVOID *addr
 
     offset.QuadPart = offset_ptr ? offset_ptr->QuadPart : 0;
 
-    TRACE( "handle=%p process=%p addr=%p off=%s size=%lx access=%x\n",
-           handle, process, *addr_ptr, wine_dbgstr_longlong(offset.QuadPart), *size_ptr, (int)protect );
+    TRACE( "handle=%p process=%p addr=%p off=%s size=0x%lx alloc_type=0x%x access=0x%x\n",
+           handle, process, *addr_ptr, wine_dbgstr_longlong(offset.QuadPart), *size_ptr, (int)alloc_type, (int)protect );
 
     status = get_extended_params( parameters, count, &limit_low, &limit_high,
                                   &align, &attributes, &machine );
@@ -5658,6 +5673,9 @@ NTSTATUS WINAPI NtMapViewOfSectionEx( HANDLE handle, HANDLE process, PVOID *addr
         mask = page_mask;
     }
 #endif
+
+    if (alloc_type & MEM_REPLACE_PLACEHOLDER)
+        mask = page_mask;
 
     if ((offset.u.LowPart & mask) || (*addr_ptr && ((UINT_PTR)*addr_ptr & mask)))
         return STATUS_MAPPED_ALIGNMENT;

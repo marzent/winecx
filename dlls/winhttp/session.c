@@ -319,7 +319,7 @@ HINTERNET WINAPI WinHttpOpen( LPCWSTR agent, DWORD access, LPCWSTR proxy, LPCWST
     session->websocket_receive_buffer_size = 32768;
     session->websocket_send_buffer_size = 32768;
     list_init( &session->cookie_cache );
-    InitializeCriticalSection( &session->cs );
+    InitializeCriticalSectionEx( &session->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
     session->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": session.cs");
 
     if (agent && !(session->agent = wcsdup( agent ))) goto end;
@@ -1896,7 +1896,17 @@ static BOOL parse_script_result( const char *result, WINHTTP_PROXY_INFO *info )
         p += 5;
         while (*p == ' ') p++;
         if (!*p || *p == ';') return TRUE;
-        if (!(info->lpszProxy = q = strdupAW( p ))) return FALSE;
+        if (!(q = strdupAW( p ))) return FALSE;
+        len = wcslen( q );
+        info->lpszProxy = GlobalAlloc( 0, (len + 1) * sizeof(WCHAR) );
+        if (!info->lpszProxy)
+        {
+            free( q );
+            return FALSE;
+        }
+        memcpy( info->lpszProxy, q, (len + 1) * sizeof(WCHAR) );
+        free( q );
+        q = info->lpszProxy;
         info->dwAccessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
         for (; *q; q++)
         {
@@ -2031,42 +2041,69 @@ BOOL WINAPI InternetDeInitializeAutoProxyDll(LPSTR, DWORD);
 BOOL WINAPI InternetGetProxyInfo(LPCSTR, DWORD, LPSTR, DWORD, LPSTR *, LPDWORD);
 BOOL WINAPI InternetInitializeAutoProxyDll(DWORD, LPSTR, LPSTR, void *, struct AUTO_PROXY_SCRIPT_BUFFER *);
 
-static BOOL run_script( char *script, DWORD size, const WCHAR *url, WINHTTP_PROXY_INFO *info )
+#define MAX_SCHEME_LENGTH 32
+static BOOL run_script( char *script, DWORD size, const WCHAR *url, WINHTTP_PROXY_INFO *info, DWORD flags )
 {
+    WCHAR scheme[MAX_SCHEME_LENGTH + 1], buf[MAX_HOST_NAME_LENGTH + 1], *hostname;
     BOOL ret;
-    char *result, *urlA;
-    DWORD len_result;
+    char *result, *urlA, *hostnameA;
+    DWORD len, len_scheme, len_hostname;
     struct AUTO_PROXY_SCRIPT_BUFFER buffer;
     URL_COMPONENTSW uc;
+
+    memset( &uc, 0, sizeof(uc) );
+    uc.dwStructSize = sizeof(uc);
+    uc.dwSchemeLength = -1;
+    uc.dwHostNameLength = -1;
+
+    if (!WinHttpCrackUrl( url, 0, 0, &uc ))
+        return FALSE;
+
+    memcpy( scheme, uc.lpszScheme, uc.dwSchemeLength * sizeof(WCHAR) );
+    scheme[uc.dwSchemeLength] = 0;
+    wcslwr( scheme );
+    len_scheme = WideCharToMultiByte( CP_ACP, 0, scheme, uc.dwSchemeLength, NULL, 0, NULL, NULL );
+
+    if (flags & WINHTTP_AUTOPROXY_HOST_LOWERCASE && !(flags & WINHTTP_AUTOPROXY_HOST_KEEPCASE))
+    {
+        memcpy( buf, uc.lpszHostName, uc.dwHostNameLength * sizeof(WCHAR) );
+        buf[uc.dwHostNameLength] = 0;
+        wcslwr( buf );
+        hostname = buf;
+    }
+    else
+    {
+        hostname = uc.lpszHostName;
+    }
+    len_hostname = WideCharToMultiByte( CP_ACP, 0, hostname, uc.dwHostNameLength, NULL, 0, NULL, NULL );
+
+    len = WideCharToMultiByte( CP_ACP, 0, uc.lpszHostName + uc.dwHostNameLength, -1, NULL, 0, NULL, NULL );
+    if (!(urlA = malloc( len + len_scheme + len_hostname + 3 ))) return FALSE;
+    WideCharToMultiByte( CP_ACP, 0, scheme, uc.dwSchemeLength, urlA, len_scheme, NULL, NULL );
+    urlA[len_scheme++] = ':';
+    urlA[len_scheme++] = '/';
+    urlA[len_scheme++] = '/';
+    WideCharToMultiByte( CP_ACP, 0, hostname, uc.dwHostNameLength, urlA + len_scheme, len_hostname, NULL, NULL );
+    hostnameA = urlA + len_scheme;
+    WideCharToMultiByte( CP_ACP, 0, uc.lpszHostName + uc.dwHostNameLength, -1,
+            urlA + len_scheme + len_hostname, len, NULL, NULL );
 
     buffer.dwStructSize = sizeof(buffer);
     buffer.lpszScriptBuffer = script;
     buffer.dwScriptBufferSize = size;
 
-    if (!(urlA = strdupWA( url ))) return FALSE;
-    if (!(ret = InternetInitializeAutoProxyDll( 0, NULL, NULL, NULL, &buffer )))
+    if (!InternetInitializeAutoProxyDll( 0, NULL, NULL, NULL, &buffer ))
     {
         free( urlA );
         return FALSE;
     }
 
-    memset( &uc, 0, sizeof(uc) );
-    uc.dwStructSize = sizeof(uc);
-    uc.dwHostNameLength = -1;
-
-    if ((ret = WinHttpCrackUrl( url, 0, 0, &uc )))
+    if ((ret = InternetGetProxyInfo( urlA, strlen(urlA), hostnameA, len_hostname, &result, &len )))
     {
-        char *hostnameA = strdupWA_sized( uc.lpszHostName, uc.dwHostNameLength );
-
-        if ((ret = InternetGetProxyInfo( urlA, strlen(urlA),
-                        hostnameA, strlen(hostnameA), &result, &len_result )))
-        {
-            ret = parse_script_result( result, info );
-            free( result );
-        }
-
-        free( hostnameA );
+        ret = parse_script_result( result, info );
+        free( result );
     }
+
     free( urlA );
     InternetDeInitializeAutoProxyDll( NULL, 0 );
     return ret;
@@ -2078,10 +2115,9 @@ static BOOL run_script( char *script, DWORD size, const WCHAR *url, WINHTTP_PROX
 BOOL WINAPI WinHttpGetProxyForUrl( HINTERNET hsession, LPCWSTR url, WINHTTP_AUTOPROXY_OPTIONS *options,
                                    WINHTTP_PROXY_INFO *info )
 {
-    WCHAR *detected_pac_url = NULL;
-    const WCHAR *pac_url;
+    WCHAR *pac_url;
     struct session *session;
-    char *script;
+    char *script = NULL;
     DWORD size;
     BOOL ret = FALSE;
 
@@ -2101,29 +2137,29 @@ BOOL WINAPI WinHttpGetProxyForUrl( HINTERNET hsession, LPCWSTR url, WINHTTP_AUTO
     if (!url || !options || !info ||
         !(options->dwFlags & (WINHTTP_AUTOPROXY_AUTO_DETECT|WINHTTP_AUTOPROXY_CONFIG_URL)) ||
         ((options->dwFlags & WINHTTP_AUTOPROXY_AUTO_DETECT) && !options->dwAutoDetectFlags) ||
-        ((options->dwFlags & WINHTTP_AUTOPROXY_AUTO_DETECT) &&
-         (options->dwFlags & WINHTTP_AUTOPROXY_CONFIG_URL)) ||
         (options->dwFlags & WINHTTP_AUTOPROXY_CONFIG_URL && !options->lpszAutoConfigUrl))
     {
         release_object( &session->hdr );
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
+
     if (options->dwFlags & WINHTTP_AUTOPROXY_AUTO_DETECT &&
-        !WinHttpDetectAutoProxyConfigUrl( options->dwAutoDetectFlags, &detected_pac_url ))
-        goto done;
-
-    if (options->dwFlags & WINHTTP_AUTOPROXY_CONFIG_URL) pac_url = options->lpszAutoConfigUrl;
-    else pac_url = detected_pac_url;
-
-    if ((script = download_script( pac_url, &size )))
+        WinHttpDetectAutoProxyConfigUrl( options->dwAutoDetectFlags, &pac_url ))
     {
-        ret = run_script( script, size, url, info );
+        script = download_script( pac_url, &size );
+        GlobalFree( pac_url );
+    }
+
+    if (!script && options->dwFlags & WINHTTP_AUTOPROXY_CONFIG_URL)
+        script = download_script( options->lpszAutoConfigUrl, &size );
+
+    if (script)
+    {
+        ret = run_script( script, size, url, info, options->dwFlags );
         free( script );
     }
 
-done:
-    GlobalFree( detected_pac_url );
     release_object( &session->hdr );
     if (ret) SetLastError( ERROR_SUCCESS );
     return ret;

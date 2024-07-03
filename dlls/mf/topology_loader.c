@@ -215,26 +215,50 @@ static HRESULT topology_node_list_branches(IMFTopologyNode *node, struct list *b
     return hr;
 }
 
-static HRESULT topology_branch_fill_media_type(IMFMediaType *up_type, IMFMediaType *down_type)
+static void media_type_try_copy_attr(IMFMediaType *dst, IMFMediaType *src, const GUID *attr, HRESULT *hr)
+{
+    PROPVARIANT value;
+
+    PropVariantInit(&value);
+    if (SUCCEEDED(*hr) && FAILED(IMFMediaType_GetItem(dst, attr, NULL))
+            && SUCCEEDED(IMFMediaType_GetItem(src, attr, &value)))
+        *hr = IMFMediaType_SetItem(dst, attr, &value);
+    PropVariantClear(&value);
+}
+
+/* update a media type with additional attributes reported by upstream element */
+/* also present in mfreadwrite/reader.c pipeline */
+static HRESULT update_media_type_from_upstream(IMFMediaType *media_type, IMFMediaType *upstream_type)
 {
     HRESULT hr = S_OK;
-    PROPVARIANT value;
-    UINT32 count;
-    GUID key;
 
-    if (FAILED(hr = IMFMediaType_GetCount(up_type, &count)))
-        return hr;
+    /* propagate common video attributes */
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_FRAME_SIZE, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_FRAME_RATE, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_DEFAULT_STRIDE, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_VIDEO_ROTATION, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_FIXED_SIZE_SAMPLES, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_PIXEL_ASPECT_RATIO, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_ALL_SAMPLES_INDEPENDENT, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_MINIMUM_DISPLAY_APERTURE, &hr);
 
-    while (count--)
-    {
-        PropVariantInit(&value);
-        hr = IMFMediaType_GetItemByIndex(up_type, count, &key, &value);
-        if (SUCCEEDED(hr) && FAILED(IMFMediaType_GetItem(down_type, &key, NULL)))
-            hr = IMFMediaType_SetItem(down_type, &key, &value);
-        PropVariantClear(&value);
-        if (FAILED(hr))
-            return hr;
-    }
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_VIDEO_CHROMA_SITING, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_INTERLACE_MODE, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_TRANSFER_FUNCTION, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_VIDEO_PRIMARIES, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_YUV_MATRIX, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_VIDEO_LIGHTING, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_VIDEO_NOMINAL_RANGE, &hr);
+
+    /* propagate common audio attributes */
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_NUM_CHANNELS, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_BITS_PER_SAMPLE, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_CHANNEL_MASK, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_SAMPLES_PER_BLOCK, &hr);
+    media_type_try_copy_attr(media_type, upstream_type, &MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, &hr);
 
     return hr;
 }
@@ -296,6 +320,8 @@ static HRESULT topology_branch_connect_indirect(IMFTopology *topology, MF_CONNEC
     {
         struct topology_branch down_branch = {.up.node = node, .down = branch->down};
         struct topology_branch up_branch = {.up = branch->up, .down.node = node};
+        MF_CONNECT_METHOD method = method_mask;
+        IMFMediaType *media_type;
 
         if (FAILED(IMFActivate_ActivateObject(activates[i], &IID_IMFTransform, (void **)&transform)))
             continue;
@@ -308,17 +334,22 @@ static HRESULT topology_branch_connect_indirect(IMFTopology *topology, MF_CONNEC
         hr = topology_branch_connect_down(topology, MF_CONNECT_DIRECT, &up_branch, up_type);
         if (down_type)
         {
-            if (SUCCEEDED(hr))
-                hr = topology_branch_fill_media_type(up_type, down_type);
-            if (SUCCEEDED(hr))
-                hr = IMFTransform_SetOutputType(transform, 0, down_type, 0);
-            if (SUCCEEDED(hr))
-                method_mask = MF_CONNECT_DIRECT;
+            if (SUCCEEDED(update_media_type_from_upstream(down_type, up_type))
+                    && SUCCEEDED(IMFTransform_SetOutputType(transform, 0, down_type, 0)))
+                method = MF_CONNECT_DIRECT;
         }
         IMFTransform_Release(transform);
 
+        if (SUCCEEDED(hr) && method != MF_CONNECT_DIRECT
+                && SUCCEEDED(IMFTransform_GetOutputAvailableType(transform, 0, 0, &media_type)))
+        {
+            if (SUCCEEDED(update_media_type_from_upstream(media_type, up_type)))
+                IMFTransform_SetOutputType(transform, 0, media_type, 0);
+            IMFMediaType_Release(media_type);
+        }
+
         if (SUCCEEDED(hr))
-            hr = topology_branch_connect(topology, method_mask, &down_branch, !down_type);
+            hr = topology_branch_connect(topology, method, &down_branch, !down_type);
         if (SUCCEEDED(hr))
             hr = IMFTopology_AddNode(topology, node);
         if (SUCCEEDED(hr))
@@ -379,8 +410,8 @@ static HRESULT topology_branch_connect_down(IMFTopology *topology, MF_CONNECT_ME
 {
     IMFMediaTypeHandler *down_handler;
     IMFMediaType *down_type = NULL;
-    MF_CONNECT_METHOD method;
     MF_TOPOLOGY_TYPE type;
+    UINT32 method;
     DWORD flags;
     HRESULT hr;
 
@@ -458,7 +489,7 @@ static HRESULT topology_branch_foreach_up_types(IMFTopology *topology, MF_CONNEC
 static HRESULT topology_branch_connect(IMFTopology *topology, MF_CONNECT_METHOD method_mask,
         struct topology_branch *branch, BOOL enumerate_source_types)
 {
-    MF_CONNECT_METHOD method;
+    UINT32 method;
     HRESULT hr;
 
     TRACE("topology %p, method_mask %#x, branch %s.\n", topology, method_mask, debugstr_topology_branch(branch));
@@ -518,8 +549,11 @@ static HRESULT topology_loader_resolve_branches(struct topoloader_context *conte
         else if (FAILED(hr = topology_branch_clone_nodes(context, branch)))
             WARN("Failed to clone nodes for branch %s\n", debugstr_topology_branch(branch));
         else
-            hr = topology_branch_connect(context->output_topology, MF_CONNECT_ALLOW_DECODER,
-                    branch, enumerate_source_types || node_type == MF_TOPOLOGY_TRANSFORM_NODE);
+        {
+            hr = topology_branch_connect(context->output_topology, MF_CONNECT_ALLOW_DECODER, branch, enumerate_source_types);
+            if (hr == MF_E_INVALIDMEDIATYPE && !enumerate_source_types && node_type == MF_TOPOLOGY_TRANSFORM_NODE)
+                hr = topology_branch_connect(context->output_topology, MF_CONNECT_ALLOW_DECODER, branch, TRUE);
+        }
 
         topology_branch_destroy(branch);
         if (FAILED(hr))
@@ -687,6 +721,7 @@ static HRESULT WINAPI topology_loader_Load(IMFTopoLoader *iface, IMFTopology *in
     unsigned short i = 0;
     IMFStreamSink *sink;
     IUnknown *object;
+    TOPOID topoid;
     HRESULT hr = E_FAIL;
 
     FIXME("iface %p, input_topology %p, ret_topology %p, current_topology %p stub!\n",
@@ -729,7 +764,8 @@ static HRESULT WINAPI topology_loader_Load(IMFTopoLoader *iface, IMFTopology *in
             return hr;
     }
 
-    if (FAILED(hr = MFCreateTopology(&output_topology)))
+    IMFTopology_GetTopologyID(input_topology, &topoid);
+    if (FAILED(hr = create_topology(topoid, &output_topology)))
         return hr;
 
     IMFTopology_CopyAllItems(input_topology, (IMFAttributes *)output_topology);

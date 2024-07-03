@@ -70,8 +70,7 @@ void OnMainThread(dispatch_block_t block);
 
 static void my_macdrv_init_display_devices(BOOL p1)
 {
-    TRACE("macdrv_init_display_devices %d\n", p1);
-    macdrv_init_display_devices(p1);
+    TRACE("macdrv_init_display_devices %d - no-op\n", p1);
 }
 
 static struct macdrv_win_data *my_get_win_data(HWND hwnd)
@@ -263,7 +262,7 @@ static BOOL WINAPI my_GetMonitorInfoA(HMONITOR monitor, LPMONITORINFO info)
 static BOOL WINAPI my_AdjustWindowRectEx(LPRECT p1,DWORD p2,BOOL p3,DWORD p4)
 {
     TRACE("AdjustWindowRectEx %p %u %d %u\n", p1, p2, p3, p4);
-    return AdjustWindowRectEx(p1, p2, p3, p4);
+    return NtUserAdjustWindowRect(p1, p2, p3, p4, NtUserGetSystemDpiForProcess(NULL));
 }
 
 static LONG_PTR WINAPI my_GetWindowLongPtrW(HWND h,int nIndex)
@@ -276,7 +275,7 @@ static LONG_PTR WINAPI my_GetWindowLongPtrW(HWND h,int nIndex)
 static BOOL WINAPI my_GetWindowRect(HWND h, LPRECT rect)
 {
     TRACE("GetWindowRect %p %p\n", h, rect);
-    return NtUserGetWindowRect(h, rect);
+    return NtUserGetWindowRect(h, rect, get_win_monitor_dpi(h));
 }
 
 static BOOL WINAPI my_MoveWindow(HWND h, int X,int Y,int nWidth,int nHeight,BOOL bRepaint)

@@ -1494,23 +1494,9 @@ static void heap_set_debug_flags( HANDLE handle )
 
 /***********************************************************************
  *           RtlCreateHeap   (NTDLL.@)
- *
- * Create a new Heap.
- *
- * PARAMS
- *  flags      [I] HEAP_ flags from "winnt.h"
- *  addr       [I] Desired base address
- *  totalSize  [I] Total size of the heap, or 0 for a growable heap
- *  commitSize [I] Amount of heap space to commit
- *  unknown    [I] Not yet understood
- *  definition [I] Heap definition
- *
- * RETURNS
- *  Success: A HANDLE to the newly created heap.
- *  Failure: a NULL HANDLE.
  */
 HANDLE WINAPI RtlCreateHeap( ULONG flags, void *addr, SIZE_T total_size, SIZE_T commit_size,
-                             void *unknown, RTL_HEAP_DEFINITION *definition )
+                             void *lock, RTL_HEAP_PARAMETERS *params )
 {
     struct entry *entry;
     struct heap *heap;
@@ -1518,8 +1504,8 @@ HANDLE WINAPI RtlCreateHeap( ULONG flags, void *addr, SIZE_T total_size, SIZE_T 
     SUBHEAP *subheap;
     unsigned int i;
 
-    TRACE( "flags %#lx, addr %p, total_size %#Ix, commit_size %#Ix, unknown %p, definition %p\n",
-           flags, addr, total_size, commit_size, unknown, definition );
+    TRACE( "flags %#lx, addr %p, total_size %#Ix, commit_size %#Ix, lock %p, params %p\n",
+           flags, addr, total_size, commit_size, lock, params );
 
     flags &= ~(HEAP_TAIL_CHECKING_ENABLED|HEAP_FREE_CHECKING_ENABLED);
     if (process_heap) flags |= HEAP_PRIVATE;
@@ -1566,7 +1552,7 @@ HANDLE WINAPI RtlCreateHeap( ULONG flags, void *addr, SIZE_T total_size, SIZE_T 
     }
     else
     {
-        RtlInitializeCriticalSection( &heap->cs );
+        RtlInitializeCriticalSectionEx( &heap->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
         heap->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": heap.cs");
     }
 

@@ -312,6 +312,19 @@ struct task_header
     volatile LONG completion_sent;
 };
 
+struct send_callback
+{
+    struct task_header task_hdr;
+    DWORD status;
+    void *info;
+    DWORD buflen;
+    union
+    {
+        WINHTTP_ASYNC_RESULT result;
+        DWORD count;
+    };
+};
+
 struct send_request
 {
     struct task_header task_hdr;
@@ -438,21 +451,6 @@ static inline char *strdupWA( const WCHAR *src )
         int len = WideCharToMultiByte( CP_ACP, 0, src, -1, NULL, 0, NULL, NULL );
         if ((dst = malloc( len )))
             WideCharToMultiByte( CP_ACP, 0, src, -1, dst, len, NULL, NULL );
-    }
-    return dst;
-}
-
-static inline char *strdupWA_sized( const WCHAR *src, DWORD size )
-{
-    char *dst = NULL;
-    if (src)
-    {
-        int len = WideCharToMultiByte( CP_ACP, 0, src, size, NULL, 0, NULL, NULL ) + 1;
-        if ((dst = malloc( len )))
-        {
-            WideCharToMultiByte( CP_ACP, 0, src, size, dst, len, NULL, NULL );
-            dst[len - 1] = 0;
-        }
     }
     return dst;
 }

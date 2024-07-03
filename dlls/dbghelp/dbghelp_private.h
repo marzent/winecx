@@ -438,9 +438,11 @@ struct module
     struct process*             process;
     IMAGEHLP_MODULEW64          module;
     WCHAR                       modulename[64]; /* used for enumeration */
+    WCHAR*                      alt_modulename; /* used in symbol lookup */
     struct module*              next;
     enum dhext_module_type	type : 16;
     unsigned short              is_virtual : 1,
+                                dont_load_symbols : 1,
                                 is_wine_builtin : 1,
                                 has_file_image : 1;
     struct cpu*                 cpu;
@@ -548,17 +550,6 @@ struct module_pair
     struct module*              effective; /* out: module with debug info */
 };
 
-enum pdb_kind {PDB_JG, PDB_DS};
-
-struct pdb_lookup
-{
-    const char*                 filename;
-    enum pdb_kind               kind;
-    unsigned int                age;
-    unsigned int                timestamp;
-    GUID                        guid;
-};
-
 struct cpu_stack_walk
 {
     HANDLE                      hProcess;
@@ -627,7 +618,9 @@ struct dump_context
     struct dump_module*                 modules;
     unsigned                            num_modules;
     unsigned                            alloc_modules;
-    /* exception information */
+    /* outter information */
+    MINIDUMP_EXCEPTION_INFORMATION     *except_param;
+    MINIDUMP_USER_STREAM_INFORMATION   *user_stream;
     /* output information */
     MINIDUMP_TYPE                       type;
     HANDLE                              hFile;
@@ -759,7 +752,6 @@ extern BOOL         pe_load_debug_directory(const struct process* pcs,
                                             const IMAGE_DEBUG_DIRECTORY* dbg, int nDbg);
 extern DWORD        msc_get_file_indexinfo(void* image, const IMAGE_DEBUG_DIRECTORY* dbgdir, DWORD size,
                                            SYMSRV_INDEX_INFOW* info);
-extern BOOL         pdb_fetch_file_info(const struct pdb_lookup* pdb_lookup, unsigned* matched);
 struct pdb_cmd_pair {
     const char*         name;
     DWORD*              pvalue;
@@ -767,11 +759,12 @@ struct pdb_cmd_pair {
 extern BOOL pdb_virtual_unwind(struct cpu_stack_walk *csw, DWORD_PTR ip,
     union ctx *context, struct pdb_cmd_pair *cpair);
 extern DWORD pdb_get_file_indexinfo(void* image, DWORD size, SYMSRV_INDEX_INFOW* info);
+extern DWORD dbg_get_file_indexinfo(void* image, DWORD size, SYMSRV_INDEX_INFOW* info);
 
 /* path.c */
-extern BOOL         path_find_symbol_file(const struct process* pcs, const struct module* module,
+extern BOOL         path_find_symbol_file(const struct process *pcs, const struct module *module,
                                           PCSTR full_path, BOOL is_pdb, const GUID* guid, DWORD dw1, DWORD dw2,
-                                          WCHAR *buffer, BOOL* is_unmatched);
+                                          SYMSRV_INDEX_INFOW *info, BOOL *unmatched);
 extern WCHAR *get_dos_file_name(const WCHAR *filename) __WINE_DEALLOC(HeapFree, 3) __WINE_MALLOC;
 extern BOOL         search_dll_path(const struct process* process, const WCHAR *name, WORD machine,
                                     BOOL (*match)(void*, HANDLE, const WCHAR*), void *param);
@@ -790,7 +783,10 @@ extern struct module*
 extern BOOL         pe_load_debug_info(const struct process* pcs,
                                        struct module* module);
 extern const char*  pe_map_directory(struct module* module, int dirno, DWORD* size);
+extern BOOL         pe_unmap_directory(struct module* module, int dirno, const char*);
 extern DWORD        pe_get_file_indexinfo(void* image, DWORD size, SYMSRV_INDEX_INFOW* info);
+extern const BYTE*  pe_lock_region_from_rva(struct module *module, DWORD rva, DWORD size, DWORD *length);
+extern BOOL         pe_unlock_region(struct module *module, const BYTE* region);
 
 /* source.c */
 extern unsigned     source_new(struct module* module, const char* basedir, const char* source);

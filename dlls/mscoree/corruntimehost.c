@@ -814,8 +814,12 @@ static ULONG WINAPI CLRRuntimeHost_Release(ICLRRuntimeHost* iface)
 
 static HRESULT WINAPI CLRRuntimeHost_Start(ICLRRuntimeHost* iface)
 {
-    FIXME("(%p)\n", iface);
-    return E_NOTIMPL;
+    RuntimeHost *This = impl_from_ICLRRuntimeHost( iface );
+    MonoDomain *dummy;
+
+    TRACE("%p\n", This);
+
+    return RuntimeHost_GetDefaultDomain(This, NULL, &dummy);
 }
 
 static HRESULT WINAPI CLRRuntimeHost_Stop(ICLRRuntimeHost* iface)
@@ -1592,7 +1596,7 @@ HRESULT RuntimeHost_Construct(CLRRuntimeInfo *runtime_version, RuntimeHost** res
 
     This->ref = 1;
     This->version = runtime_version;
-    InitializeCriticalSection(&This->lock);
+    InitializeCriticalSectionEx(&This->lock, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     This->lock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": RuntimeHost.lock");
 
     *result = This;

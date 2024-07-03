@@ -168,6 +168,7 @@ typedef struct
 {
     DWORD flags;
     critical_section cs;
+    ULONG_PTR unknown;
     DWORD thread_id;
     DWORD count;
 } *_Mtx_t;
@@ -298,7 +299,7 @@ static BOOL init(void)
         SET(p__ContextCallback__Capture, "?_Capture@_ContextCallback@details@Concurrency@@AAAXXZ");
         SET(p__ContextCallback__Reset, "?_Reset@_ContextCallback@details@Concurrency@@AAAXXZ");
         SET(p__TaskEventLogger__LogCancelTask, "?_LogCancelTask@_TaskEventLogger@details@Concurrency@@QAAXXZ");
-        SET(p__TaskEventLogger__LogScheduleTask, "?_LogScheduleTask@_TaskEventLogger@details@Concurrency@@QAEX_N@Z");
+        SET(p__TaskEventLogger__LogScheduleTask, "?_LogScheduleTask@_TaskEventLogger@details@Concurrency@@QAAX_N@Z@Z");
         SET(p__TaskEventLogger__LogTaskCompleted, "?_LogTaskCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
         SET(p__TaskEventLogger__LogTaskExecutionCompleted, "?_LogTaskExecutionCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
         SET(p__TaskEventLogger__LogWorkItemCompleted, "?_LogWorkItemCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
@@ -1396,6 +1397,8 @@ static void test__Syserror_map(void)
 
     r1 = p__Syserror_map(0);
     ok(r1 != NULL, "_Syserror_map(0) returned NULL\n");
+    r1 = p__Syserror_map(1233);
+    ok(r1 != NULL, "_Syserror_map(1233) returned NULL\n");
     r2 = p__Syserror_map(1234);
     ok(r2 != NULL, "_Syserror_map(1234) returned NULL\n");
     ok(r1 == r2, "r1 = %p(%s), r2 = %p(%s)\n", r1, r1, r2, r2);
@@ -1638,6 +1641,35 @@ static void test_Copy_file(void)
     ok(SetCurrentDirectoryW(origin_path), "SetCurrentDirectoryW to origin_path failed\n");
 }
 
+static void test__Mtx(void)
+{
+    _Mtx_t mtx = NULL;
+    int r;
+
+    r = p__Mtx_init(&mtx, 0);
+    ok(!r, "failed to init mtx\n");
+
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 0, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_lock(mtx);
+    ok(mtx->thread_id == GetCurrentThreadId(), "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_lock(mtx);
+    ok(mtx->thread_id == GetCurrentThreadId(), "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 0, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == -1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == -2, "mtx.count = %lx\n", mtx->count);
+
+    p__Mtx_destroy(mtx);
+}
+
 START_TEST(msvcp140)
 {
     if(!init()) return;
@@ -1665,5 +1697,6 @@ START_TEST(msvcp140)
     test_Equivalent();
     test_cnd();
     test_Copy_file();
+    test__Mtx();
     FreeLibrary(msvcp);
 }

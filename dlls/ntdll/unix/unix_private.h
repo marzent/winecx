@@ -202,11 +202,13 @@ extern char **build_envp( const WCHAR *envW );
 extern char *get_alternate_wineloader( WORD machine );
 extern NTSTATUS exec_wineloader( char **argv, int socketfd, const pe_image_info_t *pe_info, const char *image_path );
 extern NTSTATUS load_builtin( const pe_image_info_t *image_info, WCHAR *filename, USHORT machine,
-                              void **addr_ptr, SIZE_T *size_ptr, ULONG_PTR limit_low, ULONG_PTR limit_high );
+                              SECTION_IMAGE_INFORMATION *info, void **module, SIZE_T *size,
+                              ULONG_PTR limit_low, ULONG_PTR limit_high );
 extern BOOL is_builtin_path( const UNICODE_STRING *path, WORD *machine );
 extern NTSTATUS load_main_exe( const WCHAR *name, const char *unix_name, const WCHAR *curdir,
                                USHORT load_machine, WCHAR **image, void **module );
 extern NTSTATUS load_start_exe( WCHAR **image, void **module );
+extern ULONG_PTR redirect_arm64ec_rva( void *module, ULONG_PTR rva, const IMAGE_ARM64EC_METADATA *metadata );
 extern void start_server( BOOL debug );
 
 extern unsigned int server_call_unlocked( void *req_ptr );
@@ -229,6 +231,29 @@ extern int server_pipe( int fd[2] );
 
 extern void fpux_to_fpu( I386_FLOATING_SAVE_AREA *fpu, const XSAVE_FORMAT *fpux );
 extern void fpu_to_fpux( XSAVE_FORMAT *fpux, const I386_FLOATING_SAVE_AREA *fpu );
+
+static inline void set_context_exception_reporting_flags( DWORD *context_flags, DWORD reporting_flag )
+{
+    if (!(*context_flags & CONTEXT_EXCEPTION_REQUEST))
+    {
+        *context_flags &= ~(CONTEXT_EXCEPTION_REPORTING | CONTEXT_SERVICE_ACTIVE | CONTEXT_EXCEPTION_ACTIVE);
+        return;
+    }
+    *context_flags = (*context_flags & ~(CONTEXT_SERVICE_ACTIVE | CONTEXT_EXCEPTION_ACTIVE))
+                     | CONTEXT_EXCEPTION_REPORTING | reporting_flag;
+}
+
+extern BOOL xstate_compaction_enabled;
+extern UINT64 xstate_supported_features_mask;
+extern UINT64 xstate_features_size;
+extern unsigned int xstate_get_size( UINT64 compaction_mask, UINT64 mask );
+extern void copy_xstate( XSAVE_AREA_HEADER *dst, XSAVE_AREA_HEADER *src, UINT64 mask );
+
+static inline UINT64 xstate_extended_features(void)
+{
+    return xstate_supported_features_mask & ~(UINT64)3;
+}
+
 extern void *get_cpu_area( USHORT machine );
 extern void set_thread_id( TEB *teb, DWORD pid, DWORD tid );
 extern NTSTATUS init_thread_stack( TEB *teb, ULONG_PTR limit, SIZE_T reserve_size, SIZE_T commit_size );
@@ -236,7 +261,7 @@ extern void DECLSPEC_NORETURN abort_thread( int status );
 extern void DECLSPEC_NORETURN abort_process( int status );
 extern void DECLSPEC_NORETURN exit_process( int status );
 extern void wait_suspend( CONTEXT *context );
-extern NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance );
+extern NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance, BOOL exception );
 extern NTSTATUS set_thread_context( HANDLE handle, const void *context, BOOL *self, USHORT machine );
 extern NTSTATUS get_thread_context( HANDLE handle, void *context, BOOL *self, USHORT machine );
 extern unsigned int alloc_object_attributes( const OBJECT_ATTRIBUTES *attr, struct object_attributes **ret,
@@ -307,20 +332,20 @@ extern NTSTATUS open_hkcu_key( const char *path, HANDLE *key );
 extern NTSTATUS sync_ioctl( HANDLE file, ULONG code, void *in_buffer, ULONG in_size,
                             void *out_buffer, ULONG out_size );
 extern NTSTATUS cdrom_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                                       client_ptr_t io, UINT code, void *in_buffer,
+                                       IO_STATUS_BLOCK *io, UINT code, void *in_buffer,
                                        UINT in_size, void *out_buffer, UINT out_size );
 extern NTSTATUS serial_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                                        client_ptr_t io, UINT code, void *in_buffer,
+                                        IO_STATUS_BLOCK *io, UINT code, void *in_buffer,
                                         UINT in_size, void *out_buffer, UINT out_size );
 extern NTSTATUS serial_FlushBuffersFile( int fd );
-extern NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user, client_ptr_t io,
+extern NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user, IO_STATUS_BLOCK *io,
                             UINT code, void *in_buffer, UINT in_size, void *out_buffer, UINT out_size );
 extern NTSTATUS sock_read( HANDLE handle, int fd, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                           client_ptr_t io, void *buffer, ULONG length );
+                           IO_STATUS_BLOCK *io, void *buffer, ULONG length );
 extern NTSTATUS sock_write( HANDLE handle, int fd, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                            client_ptr_t io, const void *buffer, ULONG length );
+                            IO_STATUS_BLOCK *io, const void *buffer, ULONG length );
 extern NTSTATUS tape_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                                      client_ptr_t io, UINT code, void *in_buffer,
+                                      IO_STATUS_BLOCK *io, UINT code, void *in_buffer,
                                       UINT in_size, void *out_buffer, UINT out_size );
 
 extern struct async_fileio *alloc_fileio( DWORD size, async_callback_t callback, HANDLE handle );
@@ -336,8 +361,10 @@ extern NTSTATUS open_unix_file( HANDLE *handle, const char *unix_name, ACCESS_MA
 extern NTSTATUS get_device_info( int fd, struct _FILE_FS_DEVICE_INFORMATION *info );
 extern void init_files(void);
 extern void init_cpu_info(void);
-extern void add_completion( HANDLE handle, ULONG_PTR value, NTSTATUS status, ULONG info, BOOL async );
-extern void set_async_direct_result( HANDLE *async_handle, NTSTATUS status, ULONG_PTR information, BOOL mark_pending );
+extern void file_complete_async( HANDLE handle, unsigned int options, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
+                                 IO_STATUS_BLOCK *io, NTSTATUS status, ULONG_PTR information );
+extern void set_async_direct_result( HANDLE *async_handle, unsigned int options, IO_STATUS_BLOCK *io,
+                                     NTSTATUS status, ULONG_PTR information, BOOL mark_pending );
 
 extern NTSTATUS unixcall_wine_dbg_write( void *args );
 extern NTSTATUS unixcall_wine_server_call( void *args );

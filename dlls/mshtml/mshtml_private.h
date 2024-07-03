@@ -208,6 +208,7 @@ typedef struct EventTarget EventTarget;
     XIID(IHTMLElementCollection) \
     XIID(IHTMLEmbedElement) \
     XIID(IHTMLEventObj) \
+    XIID(IHTMLEventObj5) \
     XIID(IHTMLFiltersCollection) \
     XIID(IHTMLFormElement) \
     XIID(IHTMLFrameBase) \
@@ -370,11 +371,20 @@ typedef struct {
     /* Used when the object has custom props, and this returns DISPIDs for them */
     HRESULT (*get_dispid)(DispatchEx*,BSTR,DWORD,DISPID*);
 
+    /* Similar to get_dispid, but called only when a dynamic property can't be found */
+    HRESULT (*find_dispid)(DispatchEx*,BSTR,DWORD,DISPID*);
+
+    /* Similar to get_dispid, but called before any other lookup */
+    HRESULT (*lookup_dispid)(DispatchEx*,BSTR,DWORD,DISPID*);
+
     /* These are called when the object implements GetMemberName, InvokeEx, DeleteMemberByDispID and GetNextDispID for custom props */
     HRESULT (*get_name)(DispatchEx*,DISPID,BSTR*);
     HRESULT (*invoke)(DispatchEx*,DISPID,LCID,WORD,DISPPARAMS*,VARIANT*,EXCEPINFO*,IServiceProvider*);
     HRESULT (*delete)(DispatchEx*,DISPID);
     HRESULT (*next_dispid)(DispatchEx*,DISPID,DISPID*);
+
+    /* Similar to invoke, but allows overriding all dispids */
+    HRESULT (*disp_invoke)(DispatchEx*,DISPID,LCID,WORD,DISPPARAMS*,VARIANT*,EXCEPINFO*,IServiceProvider*);
 
     /* Used by objects that want to delay their compat mode initialization until actually needed */
     compat_mode_t (*get_compat_mode)(DispatchEx*);
@@ -403,13 +413,51 @@ typedef struct {
 } dispex_hook_t;
 
 struct DispatchEx {
-    IDispatchEx IDispatchEx_iface;
+    IWineJSDispatchHost IWineJSDispatchHost_iface;
 
     nsCycleCollectingAutoRefCnt ccref;
 
     dispex_data_t *info;
     dispex_dynamic_data_t *dynamic_data;
 };
+
+#define DISPEX_IDISPATCH_NOUNK_IMPL(prefix, iface_name, dispex)                                \
+    static HRESULT WINAPI prefix##_GetTypeInfoCount(iface_name *iface, UINT *count)            \
+    {                                                                                          \
+        return IWineJSDispatchHost_GetTypeInfoCount(&(dispex).IWineJSDispatchHost_iface, count);       \
+    }                                                                                          \
+    static HRESULT WINAPI prefix##_GetTypeInfo(iface_name *iface,                              \
+            UINT index, LCID lcid, ITypeInfo **ret)                                            \
+    {                                                                                          \
+        return IWineJSDispatchHost_GetTypeInfo(&(dispex).IWineJSDispatchHost_iface, index, lcid, ret); \
+    }                                                                                          \
+    static HRESULT WINAPI prefix##_GetIDsOfNames(iface_name *iface, REFIID riid,               \
+            LPOLESTR *names, UINT count, LCID lcid, DISPID *dispid)                            \
+    {                                                                                          \
+        return IWineJSDispatchHost_GetIDsOfNames(&(dispex).IWineJSDispatchHost_iface,                  \
+                riid, names, count, lcid, dispid);                                             \
+    }                                                                                          \
+    static HRESULT WINAPI prefix##_Invoke(iface_name *iface, DISPID dispid, REFIID riid,       \
+            LCID lcid, WORD flags, DISPPARAMS *params, VARIANT *res, EXCEPINFO *ei, UINT *err) \
+    {                                                                                          \
+        return IWineJSDispatchHost_Invoke(&(dispex).IWineJSDispatchHost_iface, dispid,                 \
+                riid, lcid, flags, params, res, ei, err);                                      \
+    }
+
+#define DISPEX_IDISPATCH_IMPL(prefix, iface_name, dispex)                                      \
+    static HRESULT WINAPI prefix##_QueryInterface(iface_name *iface, REFIID riid, void **ppv)  \
+    {                                                                                          \
+        return IWineJSDispatchHost_QueryInterface(&(dispex).IWineJSDispatchHost_iface, riid, ppv);     \
+    }                                                                                          \
+    static ULONG WINAPI prefix##_AddRef(iface_name *iface)                                     \
+    {                                                                                          \
+        return IWineJSDispatchHost_AddRef(&(dispex).IWineJSDispatchHost_iface);                        \
+    }                                                                                          \
+    static ULONG WINAPI prefix##_Release(iface_name *iface)                                    \
+    {                                                                                          \
+        return IWineJSDispatchHost_Release(&(dispex).IWineJSDispatchHost_iface);                       \
+    }                                                                                          \
+    DISPEX_IDISPATCH_NOUNK_IMPL(prefix, iface_name, dispex)
 
 typedef struct {
     void *vtbl;
@@ -532,7 +580,6 @@ struct HTMLWindow {
     IHTMLWindow6       IHTMLWindow6_iface;
     IHTMLWindow7       IHTMLWindow7_iface;
     IHTMLPrivateWindow IHTMLPrivateWindow_iface;
-    IDispatchEx        IDispatchEx_iface;
     IServiceProvider   IServiceProvider_iface;
     ITravelLogClient   ITravelLogClient_iface;
     IObjectIdentity    IObjectIdentity_iface;
@@ -547,6 +594,7 @@ struct HTMLWindow {
 struct HTMLOuterWindow {
     HTMLWindow base;
     IEventTarget IEventTarget_iface;
+    IWineJSDispatchHost IWineJSDispatchHost_iface;
 
     nsCycleCollectingAutoRefCnt ccref;
     LONG task_magic;
@@ -905,7 +953,6 @@ typedef struct nsDocumentEventListener nsDocumentEventListener;
 struct HTMLDocumentNode {
     HTMLDOMNode node;
 
-    IDispatchEx                  IDispatchEx_iface;
     IHTMLDocument2               IHTMLDocument2_iface;
     IHTMLDocument3               IHTMLDocument3_iface;
     IHTMLDocument4               IHTMLDocument4_iface;
@@ -1224,7 +1271,10 @@ HRESULT get_doc_elem_by_id(HTMLDocumentNode*,const WCHAR*,HTMLElement**);
 HTMLOuterWindow *get_target_window(HTMLOuterWindow*,nsAString*,BOOL*);
 HRESULT handle_link_click_event(HTMLElement*,nsAString*,nsAString*,nsIDOMEvent*,BOOL*);
 
-HRESULT wrap_iface(IUnknown*,IUnknown*,IUnknown**);
+HRESULT WINAPI wrapper_QueryInterface(IUnknown *iface, REFIID riid, void **ppv);
+ULONG WINAPI wrapper_AddRef(IUnknown *iface);
+ULONG WINAPI wrapper_Release(IUnknown *iface);
+extern const void *iface_wrapper_vtbl[];
 
 IHTMLElementCollection *create_all_collection(HTMLDOMNode*,BOOL);
 IHTMLElementCollection *create_collection_from_nodelist(nsIDOMNodeList*,compat_mode_t);

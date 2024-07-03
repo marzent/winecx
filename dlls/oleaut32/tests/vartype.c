@@ -4521,8 +4521,71 @@ static void test_VarBstrFromI4(void)
   }
 }
 
+struct r4_test
+{
+  float val;
+  const wchar_t *expect;
+};
+
 static void test_VarBstrFromR4(void)
 {
+  static const struct r4_test tests_en[] =
+  {
+    { 0.5, L"0.5" },
+    { 0.05, L"0.05" },
+    { 0.005, L"0.005" },
+    { 0.0005, L"0.0005" },
+    { 0.00005, L"0.00005" },
+    { 0.000005, L"0.000005" },
+
+    { 1.0e8, L"1E+08" },
+    { 1.0e12, L"1E+12" },
+    { 1.0e14, L"1E+14" },
+    { 999999999999999.0, L"1E+15" },
+    { 1000000000000000.0, L"1E+15" },
+    { 1200000000000000.0, L"1.2E+15" },
+    { 1.0e15, L"1E+15" },
+
+    { 1.000e16, L"1E+16" },
+    { 1.234e16, L"1.234E+16" },
+    { 3.14159300, L"3.141593" },
+    { 3.14159265, L"3.141593" },
+    { M_PI, L"3.141593" },
+    { 12.34567890, L"12.34568" },
+    { 123.45678901, L"123.4568" },
+    { 1234.56789012, L"1234.568" },
+
+    { 0.0, NULL }
+  };
+  static const struct r4_test tests_es[] =
+  {
+    { 0.5, L"0,5" },
+    { 0.05, L"0,05" },
+    { 0.005, L"0,005" },
+    { 0.0005, L"0,0005" },
+    { 0.00005, L"0,00005" },
+    { 0.000005, L"0,000005" },
+
+    { 1.0e8, L"1E+08" },
+    { 1.0e12, L"1E+12" },
+    { 1.0e14, L"1E+14" },
+    { 999999999999999.0, L"1E+15" },
+    { 1000000000000000.0, L"1E+15" },
+    { 1200000000000000.0, L"1,2E+15" },
+    { 1.0e15, L"1E+15" },
+
+    { 1.000e16, L"1E+16" },
+    { 1.234e16, L"1,234E+16" },
+    { 3.14159300, L"3,141593" },
+    { 3.14159265, L"3,141593" },
+    { M_PI, L"3,141593" },
+    { 12.34567890, L"12,34568" },
+    { 123.45678901, L"123,4568" },
+    { 1234.56789012, L"1234,568" },
+
+    { 0.0, NULL }
+  };
+  const struct r4_test *cur;
   static const WCHAR szNative[] = { '6','5','4','3','2','2','.','3','\0' };
   static const WCHAR szZero[] = {'0', '\0'};
   static const WCHAR szOneHalf_English[] = { '0','.','5','\0' };    /* uses period */
@@ -4573,6 +4636,146 @@ static void test_VarBstrFromR4(void)
   {
     ok(memcmp(bstr, szOneHalf_Spanish, sizeof(szOneHalf_Spanish)) == 0, "Spanish locale failed (got %s)\n", wtoascii(bstr));
     SysFreeString(bstr);
+  }
+
+  lcid = MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT);
+  cur = tests_en;
+  while (cur->expect)
+  {
+    bstr = NULL;
+    hres = VarBstrFromR4(cur->val, lcid, 0, &bstr);
+    ok(hres == S_OK, "got hres 0x%08lx\n", hres);
+    if (bstr)
+    {
+      ok(wcscmp(bstr, cur->expect) == 0, "expected '%ls', got '%ls'\n", cur->expect, bstr);
+      SysFreeString(bstr);
+    }
+    ++cur;
+  }
+
+  lcid = MAKELCID(MAKELANGID(LANG_SPANISH, SUBLANG_SPANISH), SORT_DEFAULT);
+  cur = tests_es;
+  while (cur->expect)
+  {
+    bstr = NULL;
+    hres = VarBstrFromR4(cur->val, lcid, 0, &bstr);
+    ok(hres == S_OK, "got hres 0x%08lx\n", hres);
+    if (bstr)
+    {
+      ok(wcscmp(bstr, cur->expect) == 0, "expected '%ls', got '%ls'\n", cur->expect, bstr);
+      SysFreeString(bstr);
+    }
+    ++cur;
+  }
+}
+
+struct r8_test
+{
+  double val;
+  const wchar_t *expect;
+};
+
+static void test_VarBstrFromR8(void)
+{
+  static const struct r8_test tests_en[] =
+  {
+    { 0.56789, L"0.56789" },
+    { 5.6789e-2, L"0.056789" },
+    { 5.6789e-3, L"0.0056789" },
+    { 5.6789e-4, L"0.00056789" },
+    { 5.6789e-5, L"0.000056789" },
+    { 5.6789e-6, L"0.0000056789" },
+    { 5.6789e-7, L"0.00000056789" },
+    { 5.6789e-8, L"0.000000056789" },
+    { 5.6789e-9, L"0.0000000056789" },
+    { 5.6789e-10, L"0.00000000056789" },
+    { 5.6789e-11, L"0.000000000056789" },
+    { 5.6789e-12, L"5.6789E-12" },
+    { 5.6789e-13, L"5.6789E-13" },
+    { 5.6789e-14, L"5.6789E-14" },
+    { 5.6789e-15, L"5.6789E-15" },
+    { 5.6789e-16, L"5.6789E-16" },
+
+    { 1.0e8, L"100000000" },
+    { 1.0e12, L"1000000000000" },
+    { 1.0e14, L"100000000000000" },
+    { 999999999999999.0, L"999999999999999" },
+    { 1000000000000000.0, L"1E+15" },
+    { 1200000000000000.0, L"1.2E+15" },
+    { 1.0e15, L"1E+15" },
+
+    { 1.000e16, L"1E+16" },
+    { 1.234e16, L"1.234E+16" },
+    { 3.141592653590000, L"3.14159265359" },
+    { 3.141592653589793, L"3.14159265358979" },
+    { M_PI, L"3.14159265358979" },
+    { 12.345678901234567, L"12.3456789012346" },
+    { 123.456789012345678, L"123.456789012346" },
+    { 1234.567890123456789, L"1234.56789012346" },
+
+    { 0.0, NULL }
+  };
+  static const struct r8_test tests_es[] =
+  {
+    { 0.5, L"0,5" },
+    { 0.05, L"0,05" },
+    { 0.005, L"0,005" },
+    { 0.0005, L"0,0005" },
+    { 0.00005, L"0,00005" },
+    { 0.000005, L"0,000005" },
+
+    { 1.0e8, L"100000000" },
+    { 1.0e12, L"1000000000000" },
+    { 1.0e14, L"100000000000000" },
+    { 999999999999999.0, L"999999999999999" },
+    { 1000000000000000.0, L"1E+15" },
+    { 1200000000000000.0, L"1,2E+15" },
+    { 1.0e15, L"1E+15" },
+
+    { 1.000e16, L"1E+16" },
+    { 1.234e16, L"1,234E+16" },
+    { 3.141592653590000, L"3,14159265359" },
+    { 3.141592653589793, L"3,14159265358979" },
+    { M_PI, L"3,14159265358979" },
+    { 12.345678901234567, L"12,3456789012346" },
+    { 123.456789012345678, L"123,456789012346" },
+    { 1234.567890123456789, L"1234,56789012346" },
+
+    { 0.0, NULL }
+  };
+  const struct r8_test *cur;
+  HRESULT hres;
+  BSTR bstr;
+  LCID lcid;
+
+  lcid = MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT);
+  cur = tests_en;
+  while (cur->expect)
+  {
+    bstr = NULL;
+    hres = VarBstrFromR8(cur->val, lcid, 0, &bstr);
+    ok(hres == S_OK, "got hres 0x%08lx\n", hres);
+    if (bstr)
+    {
+      ok(wcscmp(bstr, cur->expect) == 0, "expected '%ls', got '%ls'\n", cur->expect, bstr);
+      SysFreeString(bstr);
+    }
+    ++cur;
+  }
+
+  lcid = MAKELCID(MAKELANGID(LANG_SPANISH, SUBLANG_SPANISH), SORT_DEFAULT);
+  cur = tests_es;
+  while (cur->expect)
+  {
+    bstr = NULL;
+    hres = VarBstrFromR8(cur->val, lcid, 0, &bstr);
+    ok(hres == S_OK, "got hres 0x%08lx\n", hres);
+    if (bstr)
+    {
+      ok(wcscmp(bstr, cur->expect) == 0, "expected '%ls', got '%ls'\n", cur->expect, bstr);
+      SysFreeString(bstr);
+    }
+    ++cur;
   }
 }
 
@@ -6325,6 +6528,7 @@ START_TEST(vartype)
 
   test_VarBstrFromI4();
   test_VarBstrFromR4();
+  test_VarBstrFromR8();
   test_VarBstrFromDate();
   test_VarBstrFromCy();
   test_VarBstrFromDec();

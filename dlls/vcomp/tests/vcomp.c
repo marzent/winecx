@@ -153,12 +153,12 @@ static void  (CDECL   *pomp_unset_nest_lock)(omp_nest_lock_t *lock);
 
 #ifdef __i386__
 #define ARCH "x86"
+#elif defined __aarch64__ || defined__arm64ec__
+#define ARCH "arm64"
 #elif defined(__x86_64__)
 #define ARCH "amd64"
 #elif defined __arm__
 #define ARCH "arm"
-#elif defined __aarch64__
-#define ARCH "arm64"
 #else
 #define ARCH "none"
 #endif
@@ -1342,8 +1342,8 @@ static void CDECL for_static_i8_cb(void)
         {         100,         200,           3,     -1 },
         {  0x7ffffffe, -0x80000000,           1,    123 },
         {  0x7fffffff, -0x80000000,           1,    123 },
-        {  0x7ffffffffffffffeLL, -0x8000000000000000LL, 1, 123 },
-        {  0x7fffffffffffffffLL, -0x8000000000000000LL, 1, 123 },
+        { I64_MAX - 1,     I64_MIN,           1,    123 },
+        {     I64_MAX,     I64_MIN,           1,    123 },
     };
     int num_threads = pomp_get_num_threads();
     int thread_num = pomp_get_thread_num();

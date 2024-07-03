@@ -477,7 +477,7 @@ const char *get_timeout_str( timeout_t timeout )
     {
         secs = -timeout / TICKS_PER_SEC;
         nsecs = -timeout % TICKS_PER_SEC;
-        sprintf( buffer, "+%ld.%07ld", secs, nsecs );
+        snprintf( buffer, sizeof(buffer), "+%ld.%07ld", secs, nsecs );
     }
     else  /* absolute */
     {
@@ -489,12 +489,12 @@ const char *get_timeout_str( timeout_t timeout )
             secs--;
         }
         if (secs >= 0)
-            sprintf( buffer, "%x%08x (+%ld.%07ld)",
-                     (unsigned int)(timeout >> 32), (unsigned int)timeout, secs, nsecs );
+            snprintf( buffer, sizeof(buffer), "%x%08x (+%ld.%07ld)",
+                      (unsigned int)(timeout >> 32), (unsigned int)timeout, secs, nsecs );
         else
-            sprintf( buffer, "%x%08x (-%ld.%07ld)",
-                     (unsigned int)(timeout >> 32), (unsigned int)timeout,
-                     -(secs + 1), TICKS_PER_SEC - nsecs );
+            snprintf( buffer, sizeof(buffer), "%x%08x (-%ld.%07ld)",
+                      (unsigned int)(timeout >> 32), (unsigned int)timeout,
+                      -(secs + 1), TICKS_PER_SEC - nsecs );
     }
     return buffer;
 }
@@ -1977,7 +1977,7 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
         if (fd->unix_fd == -1)
         {
             /* check for trailing slash on file path */
-            if ((errno == ENOENT || errno == ENOTDIR) && name[strlen(name) - 1] == '/')
+            if ((errno == ENOENT || (errno == ENOTDIR && !(options & FILE_DIRECTORY_FILE))) && name[strlen(name) - 1] == '/')
                 set_error( STATUS_OBJECT_NAME_INVALID );
             else
                 file_set_error();

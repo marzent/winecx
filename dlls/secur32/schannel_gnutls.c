@@ -401,7 +401,7 @@ static void check_supported_protocols(
 
     for(i = 0; i < num_flags; i++)
     {
-        sprintf(priority, "NORMAL:-%s", flags[i].gnutls_flag);
+        snprintf(priority, sizeof(priority), "NORMAL:-%s", flags[i].gnutls_flag);
         err = pgnutls_priority_set_direct(session, priority, NULL);
         if (err == GNUTLS_E_SUCCESS)
         {
@@ -1022,7 +1022,7 @@ static NTSTATUS schan_get_cipher_info( void *args )
     wcscat( info->szCipherSuite, widthW );
     wcscat( info->szCipherSuite, info->szCipher );
     wcscat( info->szCipherSuite, underscoreW );
-    len = sprintf( buf, "%u", (unsigned int)info->dwCipherLen ) + 1;
+    len = snprintf( buf, sizeof(buf), "%u", (unsigned int)info->dwCipherLen ) + 1;
     ptr = info->szCipherSuite + wcslen( info->szCipherSuite );
     ntdll_umbstowcs( buf, len, ptr, len );
     wcscat( info->szCipherSuite, underscoreW );
@@ -1588,7 +1588,9 @@ else
 
     if (TRACE_ON(secur32))
     {
-        pgnutls_global_set_log_level(4);
+        char *env = getenv("GNUTLS_DEBUG_LEVEL");
+        int level = env ? atoi(env) : 4;
+        pgnutls_global_set_log_level(level);
         pgnutls_global_set_log_function(gnutls_log);
     }
 

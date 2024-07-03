@@ -20,7 +20,7 @@
 # define _WIN32_WINNT 0x0600    /* For InitOnceExecuteOnce(). */
 #endif
 
-#include "vkd3d_debug.h"
+#include "vkd3d_common.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -126,10 +126,10 @@ void vkd3d_dbg_set_log_callback(PFN_vkd3d_log callback)
 static char *get_buffer(void)
 {
     static char buffers[VKD3D_DEBUG_BUFFER_COUNT][VKD3D_DEBUG_BUFFER_SIZE];
-    static LONG buffer_index;
-    LONG current_index;
+    static unsigned int buffer_index;
+    unsigned int current_index;
 
-    current_index = InterlockedIncrement(&buffer_index) % ARRAY_SIZE(buffers);
+    current_index = vkd3d_atomic_increment_u32(&buffer_index) % ARRAY_SIZE(buffers);
     return buffers[current_index];
 }
 

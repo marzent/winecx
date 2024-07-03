@@ -59,7 +59,7 @@
 @ stub MFCreateMediaBufferWrapper
 @ stdcall MFCreateMediaEvent(long ptr long ptr ptr)
 @ stdcall MFCreateMediaType(ptr)
-@ stub MFCreateMediaTypeFromRepresentation
+@ stdcall MFCreateMediaTypeFromRepresentation(int128 ptr ptr)
 @ stdcall MFCreateMemoryBuffer(long ptr)
 @ stub MFCreateMemoryStream
 @ stdcall MFCreatePathFromURL(wstr ptr)
@@ -76,7 +76,7 @@
 @ stdcall MFCreateTransformActivate(ptr)
 @ stub MFCreateURLFromPath
 @ stub MFCreateUdpSockets
-@ stub MFCreateVideoMediaType
+@ stdcall MFCreateVideoMediaType(ptr ptr)
 @ stub MFCreateVideoMediaTypeFromBitMapInfoHeader
 @ stub MFCreateVideoMediaTypeFromBitMapInfoHeaderEx
 @ stdcall MFCreateVideoMediaTypeFromSubtype(ptr ptr)
@@ -120,10 +120,10 @@
 @ stdcall MFInitAMMediaTypeFromMFMediaType(ptr int128 ptr)
 @ stdcall MFInitAttributesFromBlob(ptr ptr long)
 @ stdcall MFInitMediaTypeFromAMMediaType(ptr ptr)
-@ stub MFInitMediaTypeFromMFVideoFormat
-@ stub MFInitMediaTypeFromMPEG1VideoInfo
-@ stub MFInitMediaTypeFromMPEG2VideoInfo
-@ stub MFInitMediaTypeFromVideoInfoHeader2
+@ stdcall MFInitMediaTypeFromMFVideoFormat(ptr ptr long)
+@ stdcall MFInitMediaTypeFromMPEG1VideoInfo(ptr ptr long ptr)
+@ stdcall MFInitMediaTypeFromMPEG2VideoInfo(ptr ptr long ptr)
+@ stdcall MFInitMediaTypeFromVideoInfoHeader2(ptr ptr long ptr)
 @ stdcall MFInitMediaTypeFromVideoInfoHeader(ptr ptr long ptr)
 @ stdcall MFInitMediaTypeFromWaveFormatEx(ptr ptr long)
 @ stub MFInitVideoFormat

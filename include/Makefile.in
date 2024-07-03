@@ -28,6 +28,7 @@ SOURCES = \
 	asysta.idl \
 	atlbase.h \
 	atlcom.h \
+	atldef.h \
 	atliface.idl \
 	atlthunk.h \
 	atlwin.h \
@@ -238,6 +239,7 @@ SOURCES = \
 	dinput.h \
 	dinputd.h \
 	directmanipulation.idl \
+	dispatcherqueue.idl \
 	dispdib.h \
 	dispex.idl \
 	dlgs.h \
@@ -345,6 +347,7 @@ SOURCES = \
 	highlevelmonitorconfigurationapi.h \
 	hlguids.h \
 	hlink.idl \
+	holographicspaceinterop.idl \
 	hrtfapoapi.idl \
 	hstring.idl \
 	htiface.idl \
@@ -375,6 +378,7 @@ SOURCES = \
 	inaddr.h \
 	indexsrv.idl \
 	initguid.h \
+	inputpaneinterop.idl \
 	inputscope.idl \
 	inseng.idl \
 	inspectable.idl \
@@ -406,6 +410,7 @@ SOURCES = \
 	lmerr.h \
 	lmjoin.h \
 	lmmsg.h \
+	lmremutl.h \
 	lmserver.h \
 	lmshare.h \
 	lmstats.h \
@@ -440,6 +445,7 @@ SOURCES = \
 	mfplay.idl \
 	mfreadwrite.idl \
 	mftransform.idl \
+	mgmtapi.h \
 	midles.h \
 	mimeinfo.idl \
 	mimeole.idl \
@@ -468,6 +474,7 @@ SOURCES = \
 	msdaguid.h \
 	msdasc.idl \
 	msdasql.h \
+	msdelta.h \
 	mshtmcid.h \
 	mshtmdid.h \
 	mshtmhst.idl \
@@ -655,6 +662,7 @@ SOURCES = \
 	rmxftmpl.x \
 	roapi.h \
 	roerrorapi.h \
+	rometadata.h \
 	rometadataresolution.h \
 	roparameterizediid.idl \
 	row.idl \
@@ -675,6 +683,7 @@ SOURCES = \
 	rstloc.idl \
 	rstnot.idl \
 	rstupd.idl \
+	rtlsupportapi.h \
 	rtutils.h \
 	rtworkq.idl \
 	sal.h \
@@ -817,12 +826,15 @@ SOURCES = \
 	windef.h \
 	windns.h \
 	windot11.h \
+	windows.applicationmodel.activation.idl \
+	windows.applicationmodel.background.idl \
 	windows.applicationmodel.core.idl \
 	windows.applicationmodel.idl \
 	windows.devices.bluetooth.idl \
 	windows.devices.enumeration.idl \
 	windows.devices.geolocation.idl \
 	windows.devices.haptics.idl \
+	windows.devices.input.idl \
 	windows.devices.power.idl \
 	windows.devices.radios.idl \
 	windows.devices.usb.idl \
@@ -841,12 +853,15 @@ SOURCES = \
 	windows.graphics.directx.idl \
 	windows.graphics.effects.idl \
 	windows.graphics.holographic.idl \
+	windows.graphics.idl \
+	windows.graphics.imaging.idl \
 	windows.h \
 	windows.management.deployment.idl \
 	windows.media.capture.idl \
 	windows.media.closedcaptioning.idl \
 	windows.media.devices.idl \
 	windows.media.effects.idl \
+	windows.media.faceanalysis.idl \
 	windows.media.idl \
 	windows.media.render.idl \
 	windows.media.speechrecognition.idl \
@@ -855,6 +870,7 @@ SOURCES = \
 	windows.networking.idl \
 	windows.perception.spatial.idl \
 	windows.perception.spatial.surfaces.idl \
+	windows.security.authentication.onlineid.idl \
 	windows.security.credentials.idl \
 	windows.security.credentials.ui.idl \
 	windows.security.cryptography.idl \
@@ -874,6 +890,7 @@ SOURCES = \
 	windows.ui.composition.interop.idl \
 	windows.ui.core.idl \
 	windows.ui.idl \
+	windows.ui.input.idl \
 	windows.ui.viewmanagement.idl \
 	windows.ui.xaml.hosting.desktopwindowxamlsource.idl \
 	windowscontracts.idl \

@@ -28,7 +28,6 @@
 
 #include <Security/AuthSession.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
-#include <unistd.h> /* CrossOver Hack 11095 */
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -457,17 +456,6 @@ static NTSTATUS macdrv_init(void *arg)
     SessionAttributeBits attributes;
     OSStatus status;
 
-    /* CrossOver Hack 11095.  Cocoa makes a similar call to confstr() during
-       its first pass through the event loop, which happens on the main thread.
-       However, if Wine is double-fork()-ing on a background thread simultaneously
-       with the first such call, the child process can become deadlocked.  It
-       appears to be a bug in the system library.
-
-       By calling this here, we greatly reduce the likelihood of such a race
-       and deadlock. */
-    char dummy[256];
-    confstr(_CS_DARWIN_USER_CACHE_DIR, dummy, sizeof(dummy));
-
     status = SessionGetInfo(callerSecuritySession, NULL, &attributes);
     if (status != noErr || !(attributes & sessionHasGraphicAccess))
         return STATUS_UNSUCCESSFUL;
@@ -484,7 +472,6 @@ static NTSTATUS macdrv_init(void *arg)
     }
 
     init_user_driver();
-    macdrv_init_display_devices(FALSE);
     return STATUS_SUCCESS;
 }
 

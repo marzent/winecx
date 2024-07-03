@@ -22,12 +22,19 @@
  */
 
 #include <stdlib.h>
+#include <stdarg.h>
 
-#include "ntdll_test.h"
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
+#include "windef.h"
+#include "winbase.h"
+#include "winreg.h"
+#include "winternl.h"
 #include "in6addr.h"
 #include "inaddr.h"
 #include "ip2string.h"
 #include "ddk/ntifs.h"
+#include "wine/test.h"
 #include "wine/asm.h"
 
 #ifndef __WINE_WINTERNL_H
@@ -99,6 +106,7 @@ static void *    (WINAPI *pRtlFindExportedRoutineByName)(HMODULE,const char *);
 static NTSTATUS  (WINAPI *pLdrEnumerateLoadedModules)(void *, void *, void *);
 static NTSTATUS  (WINAPI *pLdrRegisterDllNotification)(ULONG, PLDR_DLL_NOTIFICATION_FUNCTION, void *, void **);
 static NTSTATUS  (WINAPI *pLdrUnregisterDllNotification)(void *);
+static VOID      (WINAPI *pRtlGetDeviceFamilyInfoEnum)(ULONGLONG *,DWORD *,DWORD *);
 
 static HMODULE hkernel32 = 0;
 static BOOL      (WINAPI *pIsWow64Process)(HANDLE, PBOOL);
@@ -142,6 +150,7 @@ static void InitFunctionPtrs(void)
         pLdrEnumerateLoadedModules = (void *)GetProcAddress(hntdll, "LdrEnumerateLoadedModules");
         pLdrRegisterDllNotification = (void *)GetProcAddress(hntdll, "LdrRegisterDllNotification");
         pLdrUnregisterDllNotification = (void *)GetProcAddress(hntdll, "LdrUnregisterDllNotification");
+        pRtlGetDeviceFamilyInfoEnum = (void *)GetProcAddress(hntdll, "RtlGetDeviceFamilyInfoEnum");
     }
     hkernel32 = LoadLibraryA("kernel32.dll");
     ok(hkernel32 != 0, "LoadLibrary failed\n");
@@ -157,6 +166,7 @@ static void test_RtlQueryProcessDebugInformation(void)
     DEBUG_BUFFER *buffer;
     NTSTATUS status;
 
+    /* PDI_HEAPS | PDI_HEAP_BLOCKS */
     buffer = RtlCreateQueryDebugBuffer( 0, 0 );
     ok( buffer != NULL, "RtlCreateQueryDebugBuffer returned NULL" );
 
@@ -165,6 +175,20 @@ static void test_RtlQueryProcessDebugInformation(void)
 
     status = RtlQueryProcessDebugInformation( GetCurrentProcessId(), PDI_HEAPS | PDI_HEAP_BLOCKS, buffer );
     ok( !status, "RtlQueryProcessDebugInformation returned %lx\n", status );
+    ok( buffer->InfoClassMask == (PDI_HEAPS | PDI_HEAP_BLOCKS), "unexpected InfoClassMask %ld\n", buffer->InfoClassMask);
+    ok( buffer->HeapInformation != NULL, "unexpected HeapInformation %p\n", buffer->HeapInformation);
+
+    status = RtlDestroyQueryDebugBuffer( buffer );
+    ok( !status, "RtlDestroyQueryDebugBuffer returned %lx\n", status );
+
+    /* PDI_MODULES */
+    buffer = RtlCreateQueryDebugBuffer( 0, 0 );
+    ok( buffer != NULL, "RtlCreateQueryDebugBuffer returned NULL" );
+
+    status = RtlQueryProcessDebugInformation( GetCurrentProcessId(), PDI_MODULES, buffer );
+    ok( !status, "RtlQueryProcessDebugInformation returned %lx\n", status );
+    ok( buffer->InfoClassMask == PDI_MODULES, "unexpected InfoClassMask %ld\n", buffer->InfoClassMask);
+    ok( buffer->ModuleInformation != NULL, "unexpected ModuleInformation %p\n", buffer->ModuleInformation);
 
     status = RtlDestroyQueryDebugBuffer( buffer );
     ok( !status, "RtlDestroyQueryDebugBuffer returned %lx\n", status );
@@ -2956,7 +2980,7 @@ static void test_RtlInitializeCriticalSectionEx(void)
 
     memset(&cs, 0x11, sizeof(cs));
     pRtlInitializeCriticalSectionEx(&cs, 0, 0);
-    ok((cs.DebugInfo != NULL && cs.DebugInfo != no_debug) || broken(cs.DebugInfo == no_debug) /* >= Win 8 */,
+    ok(cs.DebugInfo == no_debug || broken(cs.DebugInfo != NULL && cs.DebugInfo != no_debug) /* < Win8 */,
        "expected DebugInfo != NULL and DebugInfo != ~0, got %p\n", cs.DebugInfo);
     ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
     ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %ld\n", cs.RecursionCount);
@@ -3565,6 +3589,77 @@ static void test_RtlDestroyHeap(void)
     RtlRemoveVectoredExceptionHandler( handler );
 }
 
+struct commit_routine_context
+{
+    void *base;
+    SIZE_T size;
+};
+
+static struct commit_routine_context commit_context;
+
+static NTSTATUS NTAPI test_commit_routine(void *base, void **address, SIZE_T *size)
+{
+    commit_context.base = base;
+    commit_context.size = *size;
+
+    return VirtualAlloc(*address, *size, MEM_COMMIT, PAGE_READWRITE) ? 0 : STATUS_ASSERTION_FAILURE;
+}
+
+static void test_RtlCreateHeap(void)
+{
+    void *ptr, *base, *reserve;
+    RTL_HEAP_PARAMETERS params;
+    HANDLE heap;
+    BOOL ret;
+
+    heap = RtlCreateHeap(0, NULL, 0, 0, NULL, NULL);
+    ok(!!heap, "Failed to create a heap.\n");
+    RtlDestroyHeap(heap);
+
+    memset(&params, 0, sizeof(params));
+    heap = RtlCreateHeap(0, NULL, 0, 0, NULL, &params);
+    ok(!!heap, "Failed to create a heap.\n");
+    RtlDestroyHeap(heap);
+
+    params.Length = 1;
+    heap = RtlCreateHeap(0, NULL, 0, 0, NULL, &params);
+    ok(!!heap, "Failed to create a heap.\n");
+    RtlDestroyHeap(heap);
+
+    params.Length = sizeof(params);
+    params.CommitRoutine = test_commit_routine;
+    params.InitialCommit = 0x1000;
+    params.InitialReserve = 0x10000;
+
+    heap = RtlCreateHeap(0, NULL, 0, 0, NULL, &params);
+    todo_wine
+    ok(!heap, "Unexpected heap.\n");
+    if (heap)
+        RtlDestroyHeap(heap);
+
+    reserve = VirtualAlloc(NULL, 0x10000, MEM_RESERVE, PAGE_READWRITE);
+    base = VirtualAlloc(reserve, 0x1000, MEM_COMMIT, PAGE_READWRITE);
+    ok(!!base, "Unexpected pointer.\n");
+
+    heap = RtlCreateHeap(0, base, 0, 0, NULL, &params);
+    ok(!!heap, "Unexpected heap.\n");
+
+    /* Using block size above initially committed size to trigger
+       new allocation via user callback. */
+    ptr = RtlAllocateHeap(heap, 0, 0x4000);
+    ok(!!ptr, "Failed to allocate a block.\n");
+    todo_wine
+    ok(commit_context.base == base, "Unexpected base %p.\n", commit_context.base);
+    todo_wine
+    ok(!!commit_context.size, "Unexpected allocation size.\n");
+    RtlFreeHeap(heap, 0, ptr);
+    RtlDestroyHeap(heap);
+
+    ret = VirtualFree(reserve, 0, MEM_RELEASE);
+    todo_wine
+    ok(ret, "Unexpected return value.\n");
+}
+
 static void test_RtlFirstFreeAce(void)
 {
     PACL acl;
@@ -3668,6 +3763,27 @@ static void test_RtlFindExportedRoutineByName(void)
     ok( proc == NULL, "Shouldn't find forwarded function\n" );
 }
 
+static void test_RtlGetDeviceFamilyInfoEnum(void)
+{
+    ULONGLONG version;
+    DWORD family, form;
+
+    if (!pRtlGetDeviceFamilyInfoEnum)
+    {
+        win_skip( "RtlGetDeviceFamilyInfoEnum is not present\n" );
+        return;
+    }
+
+    version = 0x1234567;
+    family = 1234567;
+    form = 1234567;
+    pRtlGetDeviceFamilyInfoEnum(&version, &family, &form);
+    ok( version != 0x1234567, "got unexpected unchanged value 0x1234567\n" );
+    ok( family <= DEVICEFAMILYINFOENUM_MAX, "got unexpected %lu\n", family );
+    ok( form <= DEVICEFAMILYDEVICEFORM_MAX, "got unexpected %lu\n", form );
+    trace( "UAP version is %#I64x, device family is %lu, form factor is %lu\n", version, family, form );
+}
+
 START_TEST(rtl)
 {
     InitFunctionPtrs();
@@ -3711,8 +3827,10 @@ START_TEST(rtl)
     test_LdrRegisterDllNotification();
     test_DbgPrint();
     test_RtlDestroyHeap();
+    test_RtlCreateHeap();
     test_RtlFirstFreeAce();
     test_RtlInitializeSid();
     test_RtlValidSecurityDescriptor();
     test_RtlFindExportedRoutineByName();
+    test_RtlGetDeviceFamilyInfoEnum();
 }

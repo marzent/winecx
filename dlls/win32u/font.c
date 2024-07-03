@@ -462,10 +462,6 @@ static const struct nls_update_font_list
 
 static pthread_mutex_t font_lock = PTHREAD_MUTEX_INITIALIZER;
 
-#ifndef WINE_FONT_DIR
-#define WINE_FONT_DIR "fonts"
-#endif
-
 #ifdef WORDS_BIGENDIAN
 #define GET_BE_WORD(x) (x)
 #define GET_BE_DWORD(x) (x)
@@ -476,20 +472,12 @@ static pthread_mutex_t font_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void get_fonts_data_dir_path( const WCHAR *file, WCHAR *path )
 {
-    const char *dir;
+    const char *dir = ntdll_get_build_dir();
     ULONG len = MAX_PATH;
 
-    if ((dir = ntdll_get_data_dir()))
-    {
-        wine_unix_to_nt_file_name( dir, path, &len );
-        asciiz_to_unicode( path + len - 1, "\\" WINE_FONT_DIR "\\" );
-    }
-    else if ((dir = ntdll_get_build_dir()))
-    {
-        wine_unix_to_nt_file_name( dir, path, &len );
-        asciiz_to_unicode( path + len - 1, "\\fonts\\" );
-    }
-
+    if (!dir) dir = ntdll_get_data_dir();
+    wine_unix_to_nt_file_name( dir, path, &len );
+    asciiz_to_unicode( path + len - 1, "\\fonts\\" );
     if (file) lstrcatW( path, file );
 }
 
@@ -514,6 +502,12 @@ HKEY reg_open_key( HKEY root, const WCHAR *name, ULONG name_len )
 
     if (NtOpenKeyEx( &ret, MAXIMUM_ALLOWED, &attr, 0 )) return 0;
     return ret;
+}
+
+HKEY reg_open_ascii_key( HKEY root, const char *name )
+{
+    WCHAR nameW[MAX_PATH];
+    return reg_open_key( root, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) );
 }
 
 /* wrapper for NtCreateKey that creates the key recursively if necessary */
@@ -565,10 +559,17 @@ HKEY reg_create_key( HKEY root, const WCHAR *name, ULONG name_len,
     return ret;
 }
 
+HKEY reg_create_ascii_key( HKEY root, const char *name, DWORD options,
+                           DWORD *disposition )
+{
+    WCHAR nameW[MAX_PATH];
+    return reg_create_key( root, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR),
+                           options, disposition );
+}
+
 HKEY reg_open_hkcu_key( const char *name )
 {
-    WCHAR nameW[128];
-    return reg_open_key( hkcu_key, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) );
+    return reg_open_ascii_key( hkcu_key, name );
 }
 
 BOOL set_reg_value( HKEY hkey, const WCHAR *name, UINT type, const void *value, DWORD count )
@@ -1446,7 +1447,7 @@ static void add_face_to_cache( struct gdi_font_face *face )
         WCHAR nameW[10];
         char name[10];
 
-        sprintf( name, "%d", face->size.y_ppem );
+        snprintf( name, sizeof(name), "%d", face->size.y_ppem );
         hkey_face = reg_create_key( hkey_family, nameW,
                                     asciiz_to_unicode( nameW, name ) - sizeof(WCHAR),
                                     REG_OPTION_VOLATILE, NULL );
@@ -1484,7 +1485,7 @@ static void remove_face_from_cache( struct gdi_font_face *face )
     {
         WCHAR nameW[10];
         char name[10];
-        sprintf( name, "%d", face->size.y_ppem );
+        snprintf( name, sizeof(name), "%d", face->size.y_ppem );
         if ((hkey = reg_open_key( hkey_family, nameW,
                                   asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) )))
         {
@@ -3216,7 +3217,7 @@ static void update_codepage( UINT screen_dpi )
         RtlInitCodePageTable( NtCurrentTeb()->Peb->OemCodePageData, &oem_cp );
     else
         oem_cp = utf8_cp;
-    sprintf( cpbuf, "%u,%u", ansi_cp.CodePage, oem_cp.CodePage );
+    snprintf( cpbuf, sizeof(cpbuf), "%u,%u", ansi_cp.CodePage, oem_cp.CodePage );
     asciiz_to_unicode( cpbufW, cpbuf );
 
     if (query_reg_ascii_value( wine_fonts_key, "Codepages", info, sizeof(value_buffer) ))
@@ -4858,11 +4859,6 @@ const struct gdi_dc_funcs font_driver =
     NULL,                           /* pStrokeAndFillPath */
     NULL,                           /* pStrokePath */
     NULL,                           /* pUnrealizePalette */
-    NULL,                           /* pD3DKMTCheckVidPnExclusiveOwnership */
-    NULL,                           /* pD3DKMTCloseAdapter */
-    NULL,                           /* pD3DKMTOpenAdapterFromLuid */
-    NULL,                           /* pD3DKMTQueryVideoMemoryInfo */
-    NULL,                           /* pD3DKMTSetVidPnSourceOwner */
     GDI_PRIORITY_FONT_DRV           /* priority */
 };
 
@@ -6742,6 +6738,14 @@ static void update_external_font_keys(void)
         list_add_tail( &external_keys, &key->entry );
     }
 
+    LIST_FOR_EACH_ENTRY_SAFE( key, next, &external_keys, struct external_key, entry )
+    {
+        reg_delete_value( win9x_key, key->value );
+        reg_delete_value( winnt_key, key->value );
+        reg_delete_value( hkey, key->value );
+        list_remove( &key->entry );
+        free( key );
+    }
     WINE_RB_FOR_EACH_ENTRY( family, &family_name_tree, struct gdi_font_family, name_entry )
     {
         LIST_FOR_EACH_ENTRY( face, &family->faces, struct gdi_font_face, entry )
@@ -6767,14 +6771,6 @@ static void update_external_font_keys(void)
             set_reg_value( win9x_key, value, REG_SZ, file, len );
             set_reg_value( hkey, value, REG_SZ, file, len );
         }
-    }
-    LIST_FOR_EACH_ENTRY_SAFE( key, next, &external_keys, struct external_key, entry )
-    {
-        reg_delete_value( win9x_key, key->value );
-        reg_delete_value( winnt_key, key->value );
-        reg_delete_value( hkey, key->value );
-        list_remove( &key->entry );
-        free( key );
     }
     NtClose( win9x_key );
     NtClose( winnt_key );
@@ -6845,11 +6841,11 @@ static HKEY open_hkcu(void)
         return 0;
 
     sid = ((TOKEN_USER *)sid_data)->User.Sid;
-    len = sprintf( buffer, "\\Registry\\User\\S-%u-%u", (int)sid->Revision,
+    len = snprintf( buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", (int)sid->Revision,
             (int)MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5], sid->IdentifierAuthority.Value[4] ),
                            MAKEWORD( sid->IdentifierAuthority.Value[3], sid->IdentifierAuthority.Value[2] )));
     for (i = 0; i < sid->SubAuthorityCount; i++)
-        len += sprintf( buffer + len, "-%u", (int)sid->SubAuthority[i] );
+        len += snprintf( buffer + len, sizeof(buffer) - len, "-%u", (int)sid->SubAuthority[i] );
     ascii_to_unicode( bufferW, buffer, len + 1 );
 
     return reg_open_key( NULL, bufferW, len * sizeof(WCHAR) );
@@ -7162,9 +7158,10 @@ BOOL WINAPI NtGdiGetCharWidthInfo( HDC hdc, struct char_width_info *info )
 INT WINAPI DrawTextW( HDC hdc, const WCHAR *str, INT count, RECT *rect, UINT flags )
 {
     struct draw_text_params *params;
+    struct draw_text_result *result;
     ULONG ret_len, size;
-    void *ret_ptr;
-    int ret;
+    NTSTATUS status;
+    int ret = 0;
 
     if (count == -1) count = wcslen( str );
     size = FIELD_OFFSET( struct draw_text_params, str[count] );
@@ -7173,8 +7170,13 @@ INT WINAPI DrawTextW( HDC hdc, const WCHAR *str, INT count, RECT *rect, UINT fla
     params->rect = *rect;
     params->flags = flags;
     if (count) memcpy( params->str, str, count * sizeof(WCHAR) );
-    ret = KeUserModeCallback( NtUserDrawText, params, size, &ret_ptr, &ret_len );
-    if (ret_len == sizeof(*rect)) *rect = *(const RECT *)ret_ptr;
+
+    status = KeUserModeCallback( NtUserDrawText, params, size, (void **)&result, &ret_len );
+    if (!status && ret_len == sizeof(*result))
+    {
+        ret = result->height;
+        *rect = result->rect;
+    }
     free( params );
     return ret;
 }

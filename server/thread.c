@@ -830,7 +830,7 @@ static int wait_on( const select_op_t *select_op, unsigned int count, struct obj
 {
     struct thread_wait *wait;
     struct wait_queue_entry *entry;
-    unsigned int i;
+    unsigned int i, idle = 0;
 
     if (!(wait = mem_alloc( FIELD_OFFSET(struct thread_wait, queues[count]) ))) return 0;
     wait->next    = current->wait;
@@ -854,8 +854,12 @@ static int wait_on( const select_op_t *select_op, unsigned int count, struct obj
             end_wait( current, get_error() );
             return 0;
         }
+
+        if (obj == (struct object *)current->queue) idle = 1;
     }
-    return 1;
+
+    if (idle) check_thread_queue_idle( current );
+    return current->wait ? 1 : 0;
 }
 
 static int wait_on_handles( const select_op_t *select_op, unsigned int count, const obj_handle_t *handles,
@@ -1380,6 +1384,7 @@ static void copy_context( context_t *to, const context_t *from, unsigned int fla
     if (flags & SERVER_CTX_DEBUG_REGISTERS) to->debug = from->debug;
     if (flags & SERVER_CTX_EXTENDED_REGISTERS) to->ext = from->ext;
     if (flags & SERVER_CTX_YMM_REGISTERS) to->ymm = from->ymm;
+    if (flags & SERVER_CTX_EXEC_SPACE) to->exec_space = from->exec_space;
 }
 
 /* gets the current impersonation token */
@@ -1811,7 +1816,7 @@ DECL_HANDLER(queue_apc)
         process = get_process_from_handle( req->handle, PROCESS_VM_OPERATION );
         break;
     case APC_VIRTUAL_QUERY:
-        process = get_process_from_handle( req->handle, PROCESS_QUERY_INFORMATION );
+        process = get_process_from_handle( req->handle, PROCESS_QUERY_LIMITED_INFORMATION );
         break;
     case APC_MAP_VIEW:
     case APC_MAP_VIEW_EX:
@@ -2018,14 +2023,14 @@ DECL_HANDLER(set_thread_context)
             /* If context is in a pending state, we don't know if we will use WoW or native
              * context, so store both and discard irrevelant one in select request. */
             const int is_pending = thread->context->status == STATUS_PENDING;
-            unsigned int native_flags = contexts[CTX_NATIVE].flags;
+            unsigned int native_flags = contexts[CTX_NATIVE].flags & ~SERVER_CTX_EXEC_SPACE;
 
             if (ctx_count == 2 && (is_pending || thread->context->regs[CTX_WOW].machine))
             {
                 context_t *ctx = &thread->context->regs[CTX_WOW];
 
                 /* some regs are always set from the native context */
-                flags = contexts[CTX_WOW].flags & ~req->native_flags;
+                flags = contexts[CTX_WOW].flags & ~(req->native_flags | SERVER_CTX_EXEC_SPACE);
                 if (is_pending) ctx->machine = contexts[CTX_WOW].machine;
                 else native_flags &= req->native_flags;
 

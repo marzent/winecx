@@ -48,7 +48,6 @@ static const unsigned int screen_bpp = 32;  /* we don't support other modes */
 
 static RECT monitor_rc_work;
 static int device_init_done;
-static BOOL force_display_devices_refresh;
 
 PNTAPCFUNC register_window_callback;
 
@@ -78,19 +77,14 @@ void init_monitors( int width, int height )
     monitor_rc_work = virtual_screen_rect;
 
     if (!hwnd || !NtUserIsWindowVisible( hwnd )) return;
-    if (!NtUserGetWindowRect( hwnd, &rect )) return;
+    if (!NtUserGetWindowRect( hwnd, &rect, get_win_monitor_dpi( hwnd ) )) return;
     if (rect.top) monitor_rc_work.bottom = rect.top;
     else monitor_rc_work.top = rect.bottom;
     TRACE( "found tray %p %s work area %s\n", hwnd,
            wine_dbgstr_rect( &rect ), wine_dbgstr_rect( &monitor_rc_work ));
 
-    if (*p_java_vm) /* if we're notified from Java thread, update registry */
-    {
-        UINT32 num_path, num_mode;
-        force_display_devices_refresh = TRUE;
-        /* trigger refresh in win32u */
-        NtUserGetDisplayConfigBufferSizes( QDC_ONLY_ACTIVE_PATHS, &num_path, &num_mode );
-    }
+    /* if we're notified from Java thread, update registry */
+    if (*p_java_vm) NtUserCallNoParam( NtUserCallNoParam_DisplayModeChanged );
 }
 
 
@@ -269,35 +263,32 @@ LONG ANDROID_ChangeDisplaySettings( LPDEVMODEW displays, LPCWSTR primary_name, H
 /***********************************************************************
  *           ANDROID_UpdateDisplayDevices
  */
-BOOL ANDROID_UpdateDisplayDevices( const struct gdi_device_manager *device_manager, BOOL force, void *param )
+UINT ANDROID_UpdateDisplayDevices( const struct gdi_device_manager *device_manager, void *param )
 {
-    if (force || force_display_devices_refresh)
+    static const DWORD source_flags = DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_PRIMARY_DEVICE | DISPLAY_DEVICE_VGA_COMPATIBLE;
+    struct pci_id pci_id = {0};
+    struct gdi_monitor gdi_monitor =
     {
-        static const struct gdi_gpu gpu;
-        static const struct gdi_adapter adapter =
-        {
-            .state_flags = DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_PRIMARY_DEVICE | DISPLAY_DEVICE_VGA_COMPATIBLE,
-        };
-        struct gdi_monitor gdi_monitor =
-        {
-            .rc_monitor = virtual_screen_rect,
-            .rc_work = monitor_rc_work,
-            .state_flags = DISPLAY_DEVICE_ACTIVE | DISPLAY_DEVICE_ATTACHED,
-        };
-        const DEVMODEW mode =
-        {
-            .dmFields = DM_DISPLAYORIENTATION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL |
-                        DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY | DM_POSITION,
-            .dmBitsPerPel = screen_bpp, .dmPelsWidth = screen_width, .dmPelsHeight = screen_height, .dmDisplayFrequency = 60,
-        };
-        device_manager->add_gpu( &gpu, param );
-        device_manager->add_adapter( &adapter, param );
-        device_manager->add_monitor( &gdi_monitor, param );
-        device_manager->add_mode( &mode, TRUE, param );
-        force_display_devices_refresh = FALSE;
-    }
+        .rc_monitor = virtual_screen_rect,
+        .rc_work = monitor_rc_work,
+    };
+    const DEVMODEW mode =
+    {
+        .dmSize = sizeof(mode),
+        .dmFields = DM_DISPLAYORIENTATION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL |
+                    DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY,
+        .dmBitsPerPel = screen_bpp, .dmPelsWidth = screen_width, .dmPelsHeight = screen_height, .dmDisplayFrequency = 60,
+    };
+    DEVMODEW current = mode;
 
-    return TRUE;
+    device_manager->add_gpu( "Wine GPU", &pci_id, NULL, param );
+    device_manager->add_source( "Default", source_flags, param );
+    device_manager->add_monitor( &gdi_monitor, param );
+
+    current.dmFields |= DM_POSITION;
+    device_manager->add_modes( &current, 1, &mode, param );
+
+    return STATUS_SUCCESS;
 }
 
 
@@ -355,12 +346,12 @@ static const struct user_driver_funcs android_drv_funcs =
     .pSetCapture = ANDROID_SetCapture,
     .pSetLayeredWindowAttributes = ANDROID_SetLayeredWindowAttributes,
     .pSetParent = ANDROID_SetParent,
-    .pSetWindowRgn = ANDROID_SetWindowRgn,
     .pSetWindowStyle = ANDROID_SetWindowStyle,
     .pShowWindow = ANDROID_ShowWindow,
-    .pUpdateLayeredWindow = ANDROID_UpdateLayeredWindow,
+    .pCreateLayeredWindow = ANDROID_CreateLayeredWindow,
     .pWindowMessage = ANDROID_WindowMessage,
     .pWindowPosChanging = ANDROID_WindowPosChanging,
+    .pCreateWindowSurface = ANDROID_CreateWindowSurface,
     .pWindowPosChanged = ANDROID_WindowPosChanged,
     .pwine_get_wgl_driver = ANDROID_wine_get_wgl_driver,
 };

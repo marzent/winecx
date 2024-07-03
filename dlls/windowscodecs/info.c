@@ -101,7 +101,7 @@ static HRESULT ComponentInfo_GetGUIDValue(HKEY classkey, LPCWSTR value,
 }
 
 static HRESULT ComponentInfo_GetUINTValue(HKEY classkey, LPCWSTR value,
-    UINT *result)
+    void *result)
 {
     LONG ret;
     DWORD cbdata = sizeof(DWORD);
@@ -110,11 +110,11 @@ static HRESULT ComponentInfo_GetUINTValue(HKEY classkey, LPCWSTR value,
         return E_INVALIDARG;
 
     ret = RegGetValueW(classkey, NULL, value, RRF_RT_DWORD, NULL,
-        (DWORD *)result, &cbdata);
+        result, &cbdata);
 
     if (ret == ERROR_FILE_NOT_FOUND)
     {
-        *result = 0;
+        *(UINT *)result = 0;
         return S_OK;
     }
 
@@ -1413,7 +1413,7 @@ static HRESULT WINAPI PixelFormatInfo_SupportsTransparency(IWICPixelFormatInfo2 
 
     TRACE("(%p,%p)\n", iface, pfSupportsTransparency);
 
-    return ComponentInfo_GetUINTValue(This->classkey, L"SupportsTransparency", (UINT *)pfSupportsTransparency);
+    return ComponentInfo_GetUINTValue(This->classkey, L"SupportsTransparency", pfSupportsTransparency);
 }
 
 static HRESULT WINAPI PixelFormatInfo_GetNumericRepresentation(IWICPixelFormatInfo2 *iface,
@@ -1682,7 +1682,7 @@ static HRESULT WINAPI MetadataReaderInfo_DoesRequireFullStream(IWICMetadataReade
 {
     MetadataReaderInfo *This = impl_from_IWICMetadataReaderInfo(iface);
     TRACE("(%p,%p)\n", iface, param);
-    return ComponentInfo_GetUINTValue(This->classkey, L"RequiresFullStream", (UINT *)param);
+    return ComponentInfo_GetUINTValue(This->classkey, L"RequiresFullStream", param);
 }
 
 static HRESULT WINAPI MetadataReaderInfo_DoesSupportPadding(IWICMetadataReaderInfo *iface,
@@ -1690,7 +1690,7 @@ static HRESULT WINAPI MetadataReaderInfo_DoesSupportPadding(IWICMetadataReaderIn
 {
     MetadataReaderInfo *This = impl_from_IWICMetadataReaderInfo(iface);
     TRACE("(%p,%p)\n", iface, param);
-    return ComponentInfo_GetUINTValue(This->classkey, L"SupportsPadding", (UINT *)param);
+    return ComponentInfo_GetUINTValue(This->classkey, L"SupportsPadding", param);
 }
 
 static HRESULT WINAPI MetadataReaderInfo_DoesRequireFixedSize(IWICMetadataReaderInfo *iface,
@@ -2291,7 +2291,7 @@ static HRESULT WINAPI ComponentEnum_Clone(IEnumUnknown *iface, IEnumUnknown **pp
     new_enum->ref = 1;
     new_enum->cursor = NULL;
     list_init(&new_enum->objects);
-    InitializeCriticalSection(&new_enum->lock);
+    InitializeCriticalSectionEx(&new_enum->lock, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     new_enum->lock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": ComponentEnum.lock");
 
     EnterCriticalSection(&This->lock);
@@ -2361,7 +2361,7 @@ HRESULT CreateComponentEnumerator(DWORD componentTypes, DWORD options, IEnumUnkn
     This->IEnumUnknown_iface.lpVtbl = &ComponentEnumVtbl;
     This->ref = 1;
     list_init(&This->objects);
-    InitializeCriticalSection(&This->lock);
+    InitializeCriticalSectionEx(&This->lock, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     This->lock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": ComponentEnum.lock");
 
     for (category=categories; category->type && hr == S_OK; category++)

@@ -2798,8 +2798,7 @@ static HRESULT WINAPI d3d8_device_ProcessVertices(IDirect3DDevice8 *iface, UINT 
             ERR("Failed to set stream source.\n");
     }
 
-    wined3d_device_apply_stateblock(device->wined3d_device, device->state);
-    hr = wined3d_device_process_vertices(device->wined3d_device, src_start_idx, dst_idx,
+    hr = wined3d_device_process_vertices(device->wined3d_device, device->state, src_start_idx, dst_idx,
             vertex_count, dst->wined3d_buffer, NULL, flags, dst->fvf);
 
     map = device->sysmem_vb;
@@ -3649,16 +3648,16 @@ static const struct wined3d_device_parent_ops d3d8_wined3d_device_parent_ops =
 
 static void setup_fpu(void)
 {
-#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
-    WORD cw;
-    __asm__ volatile ("fnstcw %0" : "=m" (cw));
-    cw = (cw & ~0xf3f) | 0x3f;
-    __asm__ volatile ("fldcw %0" : : "m" (cw));
-#elif defined(__i386__) && defined(_MSC_VER)
+#if defined(__i386__) && defined(_MSC_VER)
     WORD cw;
     __asm fnstcw cw;
     cw = (cw & ~0xf3f) | 0x3f;
     __asm fldcw cw;
+#elif defined(__i386__) || (defined(__x86_64__) && !defined(__arm64ec__) && (defined(__GNUC__) || defined(__clang__)))
+    WORD cw;
+    __asm__ volatile ("fnstcw %0" : "=m" (cw));
+    cw = (cw & ~0xf3f) | 0x3f;
+    __asm__ volatile ("fldcw %0" : : "m" (cw));
 #else
     FIXME("FPU setup not implemented for this platform.\n");
 #endif

@@ -135,6 +135,7 @@
 @ stdcall ExAcquireSharedWaitForExclusive(ptr long)
 @ stub ExAllocateFromPagedLookasideList
 @ stdcall ExAllocatePool(long long)
+@ stdcall ExAllocatePool2(int64 long long)
 @ stdcall ExAllocatePoolWithQuota(long long)
 @ stdcall ExAllocatePoolWithQuotaTag(long long long)
 @ stdcall ExAllocatePoolWithTag(long long long)
@@ -798,7 +799,6 @@
 @ stdcall NtFsControlFile(long long ptr ptr ptr long ptr long ptr long)
 @ stub NtGlobalFlag
 @ stdcall NtLockFile(long long ptr ptr ptr ptr ptr ptr long long)
-@ stub NtMakePermanentObject
 @ stdcall NtMapViewOfSection(long long ptr long long ptr ptr long long long)
 @ stdcall NtNotifyChangeDirectoryFile(long long ptr ptr ptr ptr long long long)
 @ stdcall NtOpenFile(ptr long ptr ptr long long)
@@ -1072,7 +1072,7 @@
 @ stub RtlEnumerateGenericTableAvl
 @ stub RtlEnumerateGenericTableLikeADirectory
 @ stdcall RtlEnumerateGenericTableWithoutSplaying(ptr ptr)
-@ stub RtlEnumerateGenericTableWithoutSplayingAvl
+@ stdcall RtlEnumerateGenericTableWithoutSplayingAvl(ptr ptr)
 @ stdcall RtlEqualLuid(ptr ptr)
 @ stdcall RtlEqualSid(ptr ptr)
 @ stdcall RtlEqualString(ptr ptr long)
@@ -1199,7 +1199,7 @@
 @ stub RtlLockBootStatusData
 @ stdcall RtlLookupAtomInAtomTable(ptr wstr ptr)
 @ stdcall RtlLookupElementGenericTable(ptr ptr)
-@ stub RtlLookupElementGenericTableAvl
+@ stdcall RtlLookupElementGenericTableAvl(ptr ptr)
 @ stub RtlLookupElementGenericTableFull
 @ stub RtlLookupElementGenericTableFullAvl
 @ stdcall -arch=!i386 RtlLookupFunctionEntry(long ptr ptr)
@@ -1214,7 +1214,7 @@
 @ stdcall RtlNtStatusToDosError(long)
 @ stdcall RtlNtStatusToDosErrorNoTeb(long)
 @ stdcall RtlNumberGenericTableElements(ptr)
-@ stub RtlNumberGenericTableElementsAvl
+@ stdcall RtlNumberGenericTableElementsAvl(ptr)
 @ stdcall RtlNumberOfClearBits(ptr)
 @ stdcall RtlNumberOfSetBits(ptr)
 @ stub RtlOemStringToCountedUnicodeString
@@ -1445,6 +1445,7 @@
 @ stdcall -private ZwLoadKey(ptr ptr) NtLoadKey
 @ stdcall -private ZwLockFile(long long ptr ptr ptr ptr ptr ptr long long) NtLockFile
 @ stdcall -private ZwLockVirtualMemory(long ptr ptr long) NtLockVirtualMemory
+@ stdcall ZwMakePermanentObject(long) NtMakePermanentObject
 @ stdcall ZwMakeTemporaryObject(long) NtMakeTemporaryObject
 @ stdcall ZwMapViewOfSection(long long ptr long long ptr ptr long long long) NtMapViewOfSection
 @ stdcall -private ZwNotifyChangeDirectoryFile(long long ptr ptr ptr ptr long long long) NtNotifyChangeDirectoryFile

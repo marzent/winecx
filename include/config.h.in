@@ -12,6 +12,9 @@
 /* Define to 1 if you have the <arpa/nameser.h> header file. */
 #undef HAVE_ARPA_NAMESER_H
 
+/* Define to 1 if you have the <asm/termbits.h> header file. */
+#undef HAVE_ASM_TERMBITS_H
+
 /* Define to 1 if you have the <asm/types.h> header file. */
 #undef HAVE_ASM_TYPES_H
 
@@ -140,6 +143,9 @@
 
 /* Define to 1 if you have the `unwind' library (-lunwind). */
 #undef HAVE_LIBUNWIND
+
+/* Define if we have the wayland-egl development environment */
+#undef HAVE_LIBWAYLAND_EGL
 
 /* Define if you have the X Shape extension */
 #undef HAVE_LIBXSHAPE
@@ -426,9 +432,6 @@
 /* Define to 1 if `ips_total' is a member of `struct ip_stats'. */
 #undef HAVE_STRUCT_IP_STATS_IPS_TOTAL
 
-/* Define to 1 if `msg_accrights' is a member of `struct msghdr'. */
-#undef HAVE_STRUCT_MSGHDR_MSG_ACCRIGHTS
-
 /* Define to 1 if `mt_blkno' is a member of `struct mtget'. */
 #undef HAVE_STRUCT_MTGET_MT_BLKNO
 
@@ -657,6 +660,9 @@
 /* Define to 1 if you have the <valgrind/valgrind.h> header file. */
 #undef HAVE_VALGRIND_VALGRIND_H
 
+/* Define to 1 if the Wine preloader is being used. */
+#undef HAVE_WINE_PRELOADER
+
 /* Define to 1 if you have the <X11/extensions/shape.h> header file. */
 #undef HAVE_X11_EXTENSIONS_SHAPE_H
 
@@ -774,9 +780,6 @@
 /* Define to the soname of the libnetapi library. */
 #undef SONAME_LIBNETAPI
 
-/* Define to the soname of the libodbc library. */
-#undef SONAME_LIBODBC
-
 /* Define to the soname of the libOSMesa library. */
 #undef SONAME_LIBOSMESA
 
@@ -842,7 +845,7 @@
 /* Define for large files, on AIX-style hosts. */
 #undef _LARGE_FILES
 
-/* Define to 64 to enable 64-bit time_t on Linux */
+/* Define to 64 to enable 64-bit time_t */
 #undef _TIME_BITS
 
 /* Define to `__inline__' or `__inline' if that's what the C compiler

@@ -302,6 +302,7 @@
 @ stdcall GetDpiForMonitorInternal(long long ptr ptr) NtUserGetDpiForMonitor
 @ stdcall GetDpiForSystem()
 @ stdcall GetDpiForWindow(long)
+@ stdcall GetDpiFromDpiAwarenessContext(long)
 @ stdcall GetFocus()
 @ stdcall GetForegroundWindow() NtUserGetForegroundWindow
 @ stdcall GetGestureConfig(long long long ptr ptr long)
@@ -507,7 +508,7 @@
 @ stdcall LoadImageA(long str long long long long)
 @ stdcall LoadImageW(long wstr long long long long)
 @ stdcall LoadKeyboardLayoutA(str long)
-# @ stub LoadKeyboardLayoutEx
+@ stdcall LoadKeyboardLayoutEx(long wstr long)
 @ stdcall LoadKeyboardLayoutW(wstr long)
 @ stdcall LoadLocalFonts()
 @ stdcall LoadMenuA(long str)
@@ -758,7 +759,7 @@
 # @ stub SoftModalMessageBox
 @ stdcall SubtractRect(ptr ptr ptr)
 @ stdcall SwapMouseButton(long)
-@ stdcall SwitchDesktop(long)
+@ stdcall SwitchDesktop(long) NtUserSwitchDesktop
 @ stdcall SwitchToThisWindow(long long)
 # @ stub SysErrorBox
 @ stdcall SystemParametersInfoA(long long ptr long)

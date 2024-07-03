@@ -105,6 +105,7 @@ MAKE_FUNCPTR(SDL_HapticRumbleStop);
 MAKE_FUNCPTR(SDL_HapticRumbleSupported);
 MAKE_FUNCPTR(SDL_HapticRunEffect);
 MAKE_FUNCPTR(SDL_HapticSetGain);
+MAKE_FUNCPTR(SDL_HapticSetAutocenter);
 MAKE_FUNCPTR(SDL_HapticStopAll);
 MAKE_FUNCPTR(SDL_HapticStopEffect);
 MAKE_FUNCPTR(SDL_HapticUnpause);
@@ -551,6 +552,7 @@ static NTSTATUS sdl_device_physical_device_control(struct unix_device *iface, US
         return STATUS_SUCCESS;
     case PID_USAGE_DC_STOP_ALL_EFFECTS:
         pSDL_HapticStopAll(impl->sdl_haptic);
+        pSDL_HapticSetAutocenter(impl->sdl_haptic, 0);
         return STATUS_SUCCESS;
     case PID_USAGE_DC_DEVICE_RESET:
         pSDL_HapticStopAll(impl->sdl_haptic);
@@ -560,6 +562,7 @@ static NTSTATUS sdl_device_physical_device_control(struct unix_device *iface, US
             pSDL_HapticDestroyEffect(impl->sdl_haptic, impl->effect_ids[i]);
             impl->effect_ids[i] = -1;
         }
+        pSDL_HapticSetAutocenter(impl->sdl_haptic, 100);
         return STATUS_SUCCESS;
     case PID_USAGE_DC_DEVICE_PAUSE:
         pSDL_HapticPause(impl->sdl_haptic);
@@ -988,6 +991,8 @@ static void sdl_add_device(unsigned int index)
     if (controller)
     {
         desc.is_gamepad = TRUE;
+        desc.usages.UsagePage = HID_USAGE_PAGE_GENERIC;
+        desc.usages.Usage = HID_USAGE_GENERIC_GAMEPAD;
         axis_count = 6;
     }
     else
@@ -995,6 +1000,8 @@ static void sdl_add_device(unsigned int index)
         int button_count = pSDL_JoystickNumButtons(joystick);
         axis_count = pSDL_JoystickNumAxes(joystick);
         desc.is_gamepad = (axis_count == 6  && button_count >= 14);
+        desc.usages.UsagePage = HID_USAGE_PAGE_GENERIC;
+        desc.usages.Usage = HID_USAGE_GENERIC_JOYSTICK;
     }
 
     for (axis_offset = 0; axis_offset < axis_count; axis_offset += (options.split_controllers ? 6 : axis_count))
@@ -1122,6 +1129,7 @@ NTSTATUS sdl_bus_init(void *args)
     LOAD_FUNCPTR(SDL_HapticRumbleSupported);
     LOAD_FUNCPTR(SDL_HapticRunEffect);
     LOAD_FUNCPTR(SDL_HapticSetGain);
+    LOAD_FUNCPTR(SDL_HapticSetAutocenter);
     LOAD_FUNCPTR(SDL_HapticStopAll);
     LOAD_FUNCPTR(SDL_HapticStopEffect);
     LOAD_FUNCPTR(SDL_HapticUnpause);

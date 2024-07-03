@@ -930,7 +930,7 @@ enum wined3d_memory_segment_group
 #define WINED3DUSAGE_MASK                                       0x10007bf0
 
 #define WINED3DUSAGE_SCRATCH                                    0x00400000
-#define WINED3DUSAGE_PRIVATE                                    0x00800000
+#define WINED3DUSAGE_CS                                         0x00800000
 #define WINED3DUSAGE_LEGACY_CUBEMAP                             0x01000000
 #define WINED3DUSAGE_OWNDC                                      0x02000000
 #define WINED3DUSAGE_STATICDECL                                 0x04000000
@@ -2000,6 +2000,7 @@ struct wined3d_caps
 
     BOOL shader_double_precision;
     BOOL viewport_array_index_any_shader;
+    BOOL stencil_export;
 
     enum wined3d_feature_level max_feature_level;
 };
@@ -2400,7 +2401,7 @@ struct wined3d_swapchain * __cdecl wined3d_device_get_swapchain(const struct win
 UINT __cdecl wined3d_device_get_swapchain_count(const struct wined3d_device *device);
 struct wined3d * __cdecl wined3d_device_get_wined3d(const struct wined3d_device *device);
 ULONG __cdecl wined3d_device_incref(struct wined3d_device *device);
-HRESULT __cdecl wined3d_device_process_vertices(struct wined3d_device *device,
+HRESULT __cdecl wined3d_device_process_vertices(struct wined3d_device *device, struct wined3d_stateblock *stateblock,
         UINT src_start_idx, UINT dst_idx, UINT vertex_count, struct wined3d_buffer *dst_buffer,
         const struct wined3d_vertex_declaration *declaration, uint32_t flags, uint32_t dst_fvf);
 void __cdecl wined3d_device_release_focus_window(struct wined3d_device *device);
@@ -2882,6 +2883,9 @@ ULONG __cdecl wined3d_texture_decref(struct wined3d_texture *texture);
 HRESULT __cdecl wined3d_texture_get_dc(struct wined3d_texture *texture, unsigned int sub_resource_idx, HDC *dc);
 unsigned int __cdecl wined3d_texture_get_level_count(const struct wined3d_texture *texture);
 unsigned int __cdecl wined3d_texture_get_lod(const struct wined3d_texture *texture);
+unsigned int __cdecl wined3d_texture_set_lod(struct wined3d_texture *texture, unsigned int lod);
+void __cdecl wined3d_stateblock_texture_changed(struct wined3d_stateblock *stateblock,
+        const struct wined3d_texture *texture);
 HRESULT __cdecl wined3d_texture_get_overlay_position(const struct wined3d_texture *texture,
         unsigned int sub_resource_idx, LONG *x, LONG *y);
 void * __cdecl wined3d_texture_get_parent(const struct wined3d_texture *texture);

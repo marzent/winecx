@@ -9147,7 +9147,7 @@ static void test_effect_value_expression(void)
     ID3D10Device_OMGetBlendState(device, &blend_state, blend_factor, &sample_mask);
     ok(!blend_state, "Unexpected blend state %p.\n", blend_state);
     for (idx = 0; idx < ARRAY_SIZE(blend_factor); ++idx)
-        ok(blend_factor[idx] == UINT_MAX, "Got unexpected blend_factor[%u] %.8e.\n", idx, blend_factor[idx]);
+        ok(blend_factor[idx] == (float)UINT_MAX, "Got unexpected blend_factor[%u] %.8e.\n", idx, blend_factor[idx]);
     ok(!sample_mask, "Got unexpected sample_mask %#x.\n", sample_mask);
 
     /* movc */
@@ -9875,6 +9875,83 @@ static void test_effect_fx_4_1_blend_state(void)
     ok(!refcount, "Device has %lu references left.\n", refcount);
 }
 
+static void test_effect_compiler(void)
+{
+    static char empty_effect[] =
+        "technique10 {};";
+    static char empty_buffer[] =
+        "cbuffer cb1 { float4 m1; }\n"
+        "cbuffer cb2 { }\n"
+        "technique10 {};";
+
+    D3D10_EFFECT_VARIABLE_DESC var_desc;
+    ID3D10EffectConstantBuffer *cb;
+    D3D10_EFFECT_DESC desc;
+    ID3D10Device *device;
+    ID3D10Effect *effect;
+    ID3D10Blob *blob;
+    HRESULT hr;
+
+    if (!(device = create_device()))
+    {
+        skip("Failed to create device, skipping tests.\n");
+        return;
+    }
+
+    hr = D3D10CompileEffectFromMemory(empty_effect, sizeof(empty_effect), NULL, NULL, NULL, 0, 0,
+            &blob, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = create_effect(ID3D10Blob_GetBufferPointer(blob), 0, device, NULL, &effect);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = ID3D10Effect_GetDesc(effect, &desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(desc.Techniques == 1, "Unexpected technique count %u.\n", desc.Techniques);
+    todo_wine
+    ok(desc.ConstantBuffers == 1, "Unexpected buffer count %u.\n", desc.ConstantBuffers);
+
+    cb = effect->lpVtbl->GetConstantBufferByIndex(effect, 0);
+    hr = cb->lpVtbl->GetDesc(cb, &var_desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!strcmp(var_desc.Name, "$Globals"), "Unexpected variable name %s.\n", var_desc.Name);
+
+    ID3D10Effect_Release(effect);
+    ID3D10Blob_Release(blob);
+
+    /* Empty user buffers. */
+    hr = D3D10CompileEffectFromMemory(empty_buffer, sizeof(empty_buffer), NULL, NULL, NULL, 0, 0,
+            &blob, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = create_effect(ID3D10Blob_GetBufferPointer(blob), 0, device, NULL, &effect);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = ID3D10Effect_GetDesc(effect, &desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(desc.Techniques == 1, "Unexpected technique count %u.\n", desc.Techniques);
+    todo_wine
+    ok(desc.ConstantBuffers == 3, "Unexpected buffer count %u.\n", desc.ConstantBuffers);
+
+    cb = effect->lpVtbl->GetConstantBufferByIndex(effect, 0);
+    hr = cb->lpVtbl->GetDesc(cb, &var_desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!strcmp(var_desc.Name, "$Globals"), "Unexpected variable name %s.\n", var_desc.Name);
+
+    cb = effect->lpVtbl->GetConstantBufferByIndex(effect, 1);
+    hr = cb->lpVtbl->GetDesc(cb, &var_desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!strcmp(var_desc.Name, "cb1"), "Unexpected variable name %s.\n", var_desc.Name);
+
+    cb = effect->lpVtbl->GetConstantBufferByIndex(effect, 2);
+    hr = cb->lpVtbl->GetDesc(cb, &var_desc);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!strcmp(var_desc.Name, "cb2"), "Unexpected variable name %s.\n", var_desc.Name);
+
+    ID3D10Effect_Release(effect);
+    ID3D10Blob_Release(blob);
+
+    ID3D10Device_Release(device);
+}
+
 START_TEST(effect)
 {
     test_effect_constant_buffer_type();
@@ -9903,4 +9980,5 @@ START_TEST(effect)
     test_effect_value_expression();
     test_effect_fx_4_1();
     test_effect_fx_4_1_blend_state();
+    test_effect_compiler();
 }

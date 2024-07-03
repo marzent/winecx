@@ -209,7 +209,7 @@
 #elif defined __aarch64__
 # define __ASM_SYSCALL_FUNC(id,name) \
     __ASM_GLOBAL_FUNC( name, \
-                       __ASM_SEH(".seh_endprologue\n\t") \
+                       ".seh_endprologue\n\t" \
                        "mov x8, #(" #id ")\n\t" \
                        "mov x9, x30\n\t" \
                        "ldr x16, 1f\n\t" \
@@ -218,13 +218,16 @@
                        "ret\n" \
                        "1:\t.quad " __ASM_NAME("__wine_syscall_dispatcher") )
 #elif defined __arm64ec__
-# define __ASM_SYSCALL_FUNC(id) \
-    asm( "mov x8, #%0\n\t" \
+# define __ASM_SYSCALL_FUNC(id,name) \
+    asm( ".seh_proc " #name "\n\t" \
+         ".seh_endprologue\n\t" \
+         "mov x8, #%0\n\t" \
          "mov x9, x30\n\t" \
-         "adr x16, " __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
-         "ldr x16, [x16]\n\t" \
+         "adrp x16, __wine_syscall_dispatcher\n\t" \
+         "ldr x16, [x16, :lo12:__wine_syscall_dispatcher]\n\t" \
          "blr x16\n\t" \
-         "ret" :: "i" (id) )
+         "ret\n\t" \
+         ".seh_endproc" :: "i" (id) )
 #elif defined __x86_64__
 /* Chromium depends on syscall thunks having the same form as on
  * Windows. For 64-bit systems the only viable form we can emulate is
@@ -234,7 +237,7 @@
 # ifdef __WINE_PE_BUILD
 #  define __ASM_SYSCALL_FUNC(id,name) \
     __ASM_GLOBAL_FUNC( name, \
-                       __ASM_SEH(".seh_endprologue\n\t") \
+                       ".seh_endprologue\n\t" \
                        ".byte 0x4c,0x8b,0xd1\n\t" /* movq %rcx,%r10 */ \
                        ".byte 0xb8\n\t"           /* movl $i,%eax */ \
                        ".long (" #id ")\n\t" \
@@ -250,7 +253,6 @@
 # else
 #  define __ASM_SYSCALL_FUNC(id,name) \
     __ASM_GLOBAL_FUNC( name, \
-                       __ASM_SEH(".seh_endprologue\n\t") \
                        ".byte 0x4c,0x8b,0xd1\n\t" /* movq %rcx,%r10 */ \
                        ".byte 0xb8\n\t"           /* movl $i,%eax */ \
                        ".long (" #id ")\n\t" \
@@ -268,34 +270,19 @@
 # define __ASM_SYSCALL_FUNC(id,name,args) \
     __ASM_GLOBAL_FUNC( name, \
                        "push {r0-r3}\n\t" \
+                       ".seh_save_regs {r0-r3}\n\t" \
+                       ".seh_endprologue\n\t" \
                        "movw ip, #(" #id ")\n\t" \
                        "mov r3, lr\n\t" \
-                       "bl " __ASM_NAME("__wine_syscall") "\n\t" \
+                       "bl __wine_syscall\n\t" \
+                       "add sp, #16\n\t" \
                        "bx lr" )
-# ifndef __PIC__
-#  define DEFINE_SYSCALL_HELPER32() \
+# define DEFINE_SYSCALL_HELPER32() \
     __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "movw r0, :lower16:" __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
-                       "movt r0, :upper16:" __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
+                       "movw r0, :lower16:__wine_syscall_dispatcher\n\t" \
+                       "movt r0, :upper16:__wine_syscall_dispatcher\n\t" \
                        "ldr r0, [r0]\n\t" \
                        "bx r0" )
-# elif defined __thumb__
-#  define DEFINE_SYSCALL_HELPER32() \
-    __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "ldr r0, 2f\n" \
-                       "1:\tadd r0, pc\n\t" \
-                       "ldr r0, [r0]\n\t" \
-                       "bx r0\n" \
-                       "2:\t.long " __ASM_NAME("__wine_syscall_dispatcher") "-1b-4" )
-# else
-#  define DEFINE_SYSCALL_HELPER32() \
-    __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "ldr r0, 2f\n" \
-                       "1:\tadd r0, pc\n\t" \
-                       "ldr r0, [r0]\n\t" \
-                       "bx r0\n" \
-                       "2:\t.long " __ASM_NAME("__wine_syscall_dispatcher") "-1b-8" )
-# endif
 #endif
 
 #endif  /* __WINE_WINE_ASM_H */

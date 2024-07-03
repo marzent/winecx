@@ -899,7 +899,7 @@ static HRESULT check_property( struct dinput_device *impl, const GUID *guid, con
         switch (LOWORD( guid ))
         {
         case (DWORD_PTR)DIPROP_AUTOCENTER:
-            if (impl->status == STATUS_ACQUIRED && !is_exclusively_acquired( impl )) return DIERR_ACQUIRED;
+            if (impl->status == STATUS_ACQUIRED) return DIERR_ACQUIRED;
             break;
         case (DWORD_PTR)DIPROP_AXISMODE:
         case (DWORD_PTR)DIPROP_BUFFERSIZE:
@@ -1290,8 +1290,6 @@ static HRESULT dinput_device_set_property( IDirectInputDevice8W *iface, const GU
     {
         const DIPROPDWORD *value = (const DIPROPDWORD *)header;
         if (!(impl->caps.dwFlags & DIDC_FORCEFEEDBACK)) return DIERR_UNSUPPORTED;
-
-        FIXME( "DIPROP_AUTOCENTER stub!\n" );
         impl->autocenter = value->dwData;
         return DI_OK;
     }
@@ -2131,8 +2129,9 @@ void dinput_device_init( struct dinput_device *device, const struct dinput_devic
     device->caps.dwSize = sizeof(DIDEVCAPS);
     device->caps.dwFlags = DIDC_ATTACHED | DIDC_EMULATED;
     device->device_gain = 10000;
+    device->autocenter = DIPROPAUTOCENTER_ON;
     device->force_feedback_state = DIGFFS_STOPPED | DIGFFS_EMPTY;
-    InitializeCriticalSection( &device->crit );
+    InitializeCriticalSectionEx( &device->crit, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
     dinput_internal_addref( (device->dinput = dinput) );
     device->vtbl = vtbl;
 

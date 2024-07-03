@@ -662,19 +662,106 @@ static const char *find_export_from_rva( UINT rva )
     const IMAGE_EXPORT_DIRECTORY *dir;
     const char *ret = NULL;
 
-    if (!(dir = get_dir( IMAGE_FILE_EXPORT_DIRECTORY ))) return NULL;
-    if (!(funcs = RVA( dir->AddressOfFunctions, dir->NumberOfFunctions * sizeof(DWORD) ))) return NULL;
+    if (!(dir = get_dir( IMAGE_FILE_EXPORT_DIRECTORY ))) return "";
+    if (!(funcs = RVA( dir->AddressOfFunctions, dir->NumberOfFunctions * sizeof(DWORD) ))) return "";
     names = RVA( dir->AddressOfNames, dir->NumberOfNames * sizeof(DWORD) );
     ordinals = RVA( dir->AddressOfNameOrdinals, dir->NumberOfNames * sizeof(WORD) );
     func_names = calloc( dir->NumberOfFunctions, sizeof(*func_names) );
 
     for (i = 0; i < dir->NumberOfNames; i++) func_names[ordinals[i]] = names[i];
-    for (i = 0; i < dir->NumberOfFunctions && !ret; i++)
-        if (funcs[i] == rva) ret = get_symbol_str( RVA( func_names[i], sizeof(DWORD) ));
+    for (i = 0; i < dir->NumberOfFunctions; i++)
+    {
+        if (funcs[i] != rva) continue;
+        if (func_names[i]) ret = get_symbol_str( RVA( func_names[i], sizeof(DWORD) ));
+        break;
+    }
 
     free( func_names );
-    if (!ret && rva == PE_nt_headers->OptionalHeader.AddressOfEntryPoint) return "<EntryPoint>";
-    return ret;
+    if (!ret && rva == PE_nt_headers->OptionalHeader.AddressOfEntryPoint) return " <EntryPoint>";
+    return ret ? strmake( " (%s)", ret ) : "";
+}
+
+static const char *find_import_from_rva( UINT rva )
+{
+    const IMAGE_IMPORT_DESCRIPTOR *imp;
+
+    if (!(imp = get_dir( IMAGE_FILE_IMPORT_DIRECTORY ))) return "";
+
+    /* check for import thunk */
+    switch (PE_nt_headers->FileHeader.Machine)
+    {
+    case IMAGE_FILE_MACHINE_AMD64:
+    {
+        const BYTE *ptr = RVA( rva, 6 );
+        if (!ptr) return "";
+        if (ptr[0] == 0xff && ptr[1] == 0x25)
+        {
+            rva += 6 + *(int *)(ptr + 2);
+            break;
+        }
+        if (ptr[0] == 0x48 && ptr[1] == 0xff && ptr[2] == 0x25)
+        {
+            rva += 7 + *(int *)(ptr + 3);
+            break;
+        }
+        return "";
+    }
+    case IMAGE_FILE_MACHINE_ARM64:
+    {
+        const UINT *ptr = RVA( rva, sizeof(DWORD) );
+        if ((ptr[0] & 0x9f00001f) == 0x90000010 &&  /* adrp x16, page */
+            (ptr[1] & 0xffc003ff) == 0xf9400210 &&  /* ldr x16, [x16, #off] */
+            ptr[2] == 0xd61f0200)                   /* br x16 */
+        {
+            rva &= ~0xfff;
+            rva += ((ptr[0] & 0x00ffffe0) << 9) + ((ptr[0] & 0x60000000) >> 17);
+            rva += (ptr[1] & 0x003ffc00) >> 7;
+            break;
+        }
+        return "";
+    }
+    default:
+        return "";
+    }
+
+    for ( ; imp->Name && imp->FirstThunk; imp++)
+    {
+        UINT imp_rva = imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk;
+        UINT thunk_rva = imp->FirstThunk;
+
+        if (PE_nt_headers->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        {
+            const IMAGE_THUNK_DATA64 *il = RVA( imp_rva, sizeof(DWORD) );
+            for ( ; il && il->u1.Ordinal; il++, thunk_rva += sizeof(LONGLONG))
+            {
+                if (thunk_rva != rva) continue;
+                if (IMAGE_SNAP_BY_ORDINAL64(il->u1.Ordinal))
+                    return strmake( " (-> #%u)", (WORD)IMAGE_ORDINAL64( il->u1.Ordinal ));
+                else
+                    return strmake( " (-> %s)", get_symbol_str( RVA( (DWORD)il->u1.AddressOfData + 2, 1 )));
+            }
+        }
+        else
+        {
+            const IMAGE_THUNK_DATA32 *il = RVA( imp_rva, sizeof(DWORD) );
+            for ( ; il && il->u1.Ordinal; il++, thunk_rva += sizeof(LONG))
+            {
+                if (thunk_rva != rva) continue;
+                if (IMAGE_SNAP_BY_ORDINAL32(il->u1.Ordinal))
+                    return strmake( " (-> #%u)", (WORD)IMAGE_ORDINAL32( il->u1.Ordinal ));
+                else
+                    return strmake( " (-> %s)", get_symbol_str( RVA( (DWORD)il->u1.AddressOfData + 2, 1 )));
+            }
+        }
+    }
+    return "";
+}
+
+static const char *get_function_name( UINT rva )
+{
+    const char *name = find_export_from_rva( rva );
+    if (!*name) name = find_import_from_rva( rva );
+    return name;
 }
 
 static	void	dump_dir_exported_functions(void)
@@ -844,6 +931,367 @@ struct unwind_info_epilogue_armnt
 #define UNW_FLAG_UHANDLER  2
 #define UNW_FLAG_CHAININFO 4
 
+static void dump_c_exception_data( unsigned int rva )
+{
+    unsigned int i;
+    const struct
+    {
+        UINT count;
+        struct
+        {
+            UINT begin;
+            UINT end;
+            UINT handler;
+            UINT target;
+        } rec[];
+    } *table = RVA( rva, sizeof(*table) );
+
+    if (!table) return;
+    printf( "    C exception data at %08x count %u\n", rva, table->count );
+    for (i = 0; i < table->count; i++)
+        printf( "      %u: %08x-%08x handler %08x target %08x\n", i,
+                table->rec[i].begin, table->rec[i].end, table->rec[i].handler, table->rec[i].target );
+}
+
+static void dump_cxx_exception_data( unsigned int rva, unsigned int func_rva )
+{
+    unsigned int i, j, flags = 0;
+    const unsigned int *ptr = RVA( rva, sizeof(*ptr) );
+
+    const struct
+    {
+        int  prev;
+        UINT handler;
+    } *unwind_info;
+
+    const struct
+    {
+        int  start;
+        int  end;
+        int  catch;
+        int  catchblock_count;
+        UINT catchblock;
+    } *tryblock;
+
+    const struct
+    {
+        UINT flags;
+        UINT type_info;
+        int  offset;
+        UINT handler;
+        UINT frame;
+    } *catchblock;
+
+    const struct
+    {
+        UINT flags;
+        UINT type_info;
+        int  offset;
+        UINT handler;
+    } *catchblock32;
+
+    const struct
+    {
+        UINT ip;
+        int  state;
+    } *ipmap;
+
+    const struct
+    {
+        UINT magic;
+        UINT unwind_count;
+        UINT unwind_table;
+        UINT tryblock_count;
+        UINT tryblock;
+        UINT ipmap_count;
+        UINT ipmap;
+        int  unwind_help;
+        UINT expect_list;
+        UINT flags;
+    } *func;
+
+    if (!ptr || !*ptr) return;
+    rva = *ptr;
+    if (!(func = RVA( rva, sizeof(*func) ))) return;
+    if (func->magic < 0x19930520 || func->magic > 0x19930522) return;
+    if (func->magic > 0x19930521) flags = func->flags;
+    printf( "    C++ exception data at %08x magic %08x", rva, func->magic );
+    if (flags & 1) printf( " sync" );
+    if (flags & 4) printf( " noexcept" );
+    printf( "\n" );
+    printf( "      unwind help %+d\n", func->unwind_help );
+    if (func->magic > 0x19930520 && func->expect_list)
+        printf( "      expect_list %08x\n", func->expect_list );
+    if (func->unwind_count)
+    {
+        printf( "      unwind table at %08x count %u\n", func->unwind_table, func->unwind_count );
+        if ((unwind_info = RVA( func->unwind_table, func->unwind_count * sizeof(*unwind_info) )))
+        {
+            for (i = 0; i < func->unwind_count; i++)
+                printf( "        %u: prev %d func %08x\n", i,
+                        unwind_info[i].prev, unwind_info[i].handler );
+        }
+    }
+    if (func->tryblock_count)
+    {
+        printf( "      try table at %08x count %u\n", func->tryblock, func->tryblock_count );
+        if ((tryblock = RVA( func->tryblock, func->tryblock_count * sizeof(*tryblock) )))
+        {
+            for (i = 0; i < func->tryblock_count; i++)
+            {
+                catchblock = RVA( tryblock[i].catchblock, sizeof(*catchblock) );
+                catchblock32 = RVA( tryblock[i].catchblock, sizeof(*catchblock32) );
+                printf( "        %d: start %d end %d catch %d count %u\n", i,
+                        tryblock[i].start, tryblock[i].end, tryblock[i].catch,
+                        tryblock[i].catchblock_count );
+                for (j = 0; j < tryblock[i].catchblock_count; j++)
+                {
+                    const char *type = "<none>";
+
+                    if (PE_nt_headers->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+                    {
+                        if (catchblock[j].type_info) type = RVA( catchblock[j].type_info + 16, 1 );
+                        printf( "          %d: flags %x offset %+d handler %08x frame %x type %s\n", j,
+                                catchblock[j].flags, catchblock[j].offset,
+                                catchblock[j].handler, catchblock[j].frame, type );
+                    }
+                    else
+                    {
+                        if (catchblock32[j].type_info) type = RVA( catchblock32[j].type_info + 8, 1 );
+                        printf( "          %d: flags %x offset %+d handler %08x type %s\n", j,
+                                catchblock32[j].flags, catchblock32[j].offset,
+                                catchblock32[j].handler, type );
+                    }
+                }
+            }
+        }
+    }
+    if (func->ipmap_count)
+    {
+        printf( "      ip map at %08x count %u\n", func->ipmap, func->ipmap_count );
+        if ((ipmap = RVA( func->ipmap, func->ipmap_count * sizeof(*ipmap) )))
+        {
+            for (i = 0; i < func->ipmap_count; i++)
+                printf( "        %u: ip %08x state %d\n", i, ipmap[i].ip, ipmap[i].state );
+        }
+    }
+}
+
+static UINT v4_decode_uint( const BYTE **b )
+{
+    UINT ret;
+    const BYTE *p = *b;
+
+    if ((*p & 1) == 0)
+    {
+        ret = p[0] >> 1;
+        p += 1;
+    }
+    else if ((*p & 3) == 1)
+    {
+        ret = (p[0] >> 2) + (p[1] << 6);
+        p += 2;
+    }
+    else if ((*p & 7) == 3)
+    {
+        ret = (p[0] >> 3) + (p[1] << 5) + (p[2] << 13);
+        p += 3;
+    }
+    else if ((*p & 15) == 7)
+    {
+        ret = (p[0] >> 4) + (p[1] << 4) + (p[2] << 12) + (p[3] << 20);
+        p += 4;
+    }
+    else
+    {
+        ret = 0;
+        p += 5;
+    }
+
+    *b = p;
+    return ret;
+}
+
+static UINT v4_read_rva( const BYTE **b )
+{
+    UINT ret = *(UINT *)*b;
+    *b += sizeof(UINT);
+    return ret;
+}
+
+#define FUNC_DESCR_IS_CATCH      0x01
+#define FUNC_DESCR_IS_SEPARATED  0x02
+#define FUNC_DESCR_BBT           0x04
+#define FUNC_DESCR_UNWIND_MAP    0x08
+#define FUNC_DESCR_TRYBLOCK_MAP  0x10
+#define FUNC_DESCR_EHS           0x20
+#define FUNC_DESCR_NO_EXCEPT     0x40
+#define FUNC_DESCR_RESERVED      0x80
+
+#define CATCHBLOCK_FLAGS         0x01
+#define CATCHBLOCK_TYPE_INFO     0x02
+#define CATCHBLOCK_OFFSET        0x04
+#define CATCHBLOCK_SEPARATED     0x08
+#define CATCHBLOCK_RET_ADDR_MASK 0x30
+#define CATCHBLOCK_RET_ADDR      0x10
+#define CATCHBLOCK_TWO_RET_ADDRS 0x20
+
+static void dump_cxx_exception_data_v4( unsigned int rva, unsigned int func_rva )
+{
+    const unsigned int *ptr = RVA( rva, sizeof(*ptr) );
+    const BYTE *p;
+    BYTE flags;
+    UINT unwind_map = 0, tryblock_map = 0, ip_map, count, i, j, k;
+
+    if (!ptr || !*ptr) return;
+    rva = *ptr;
+    if (!(p = RVA( rva, 1 ))) return;
+    flags = *p++;
+    printf( "    C++ v4 exception data at %08x", rva );
+    if (flags & FUNC_DESCR_BBT) printf( " bbt %08x", v4_decode_uint( &p ));
+    if (flags & FUNC_DESCR_UNWIND_MAP) unwind_map = v4_read_rva( &p );
+    if (flags & FUNC_DESCR_TRYBLOCK_MAP) tryblock_map = v4_read_rva( &p );
+    ip_map = v4_read_rva(&p);
+    if (flags & FUNC_DESCR_IS_CATCH) printf( " frame %08x", v4_decode_uint( &p ));
+    if (flags & FUNC_DESCR_EHS) printf( " sync" );
+    if (flags & FUNC_DESCR_NO_EXCEPT) printf( " noexcept" );
+    printf( "\n" );
+
+    if (unwind_map)
+    {
+        int *offsets;
+        const BYTE *start, *p = RVA( unwind_map, 1 );
+        count = v4_decode_uint( &p );
+        printf( "      unwind map at %08x count %u\n", unwind_map, count );
+        offsets = calloc( count, sizeof(*offsets) );
+        start = p;
+        for (i = 0; i < count; i++)
+        {
+            UINT handler, object, type;
+            int offset = p - start, off, prev = -2;
+
+            offsets[i] = offset;
+            type = v4_decode_uint( &p );
+            off = (type >> 2);
+            if (off > offset) prev = -1;
+            else for (j = 0; j < i; j++) if (offsets[j] == offset - off) prev = j;
+
+            switch (type & 3)
+            {
+            case 0:
+                printf( "        %u: prev %d no handler\n", i, prev );
+                break;
+            case 1:
+                handler = v4_read_rva( &p );
+                object = v4_decode_uint( &p );
+                printf( "        %u: prev %d dtor obj handler %08x obj %+d\n",
+                        i, prev, handler, (int)object );
+                break;
+            case 2:
+                handler = v4_read_rva( &p );
+                object = v4_decode_uint( &p );
+                printf( "        %u: prev %d dtor ptr handler %08x obj %+d\n",
+                        i, prev, handler, (int)object );
+                break;
+            case 3:
+                handler = v4_read_rva( &p );
+                printf( "        %u: prev %d handler %08x\n", i, prev, handler );
+                break;
+            }
+        }
+        free( offsets );
+    }
+
+    if (tryblock_map)
+    {
+        const BYTE *p = RVA( tryblock_map, 1 );
+        count = v4_decode_uint( &p );
+        printf( "      tryblock map at %08x count %u\n", tryblock_map, count );
+        for (i = 0; i < count; i++)
+        {
+            int start = v4_decode_uint( &p );
+            int end = v4_decode_uint( &p );
+            int catch = v4_decode_uint( &p );
+            UINT catchblock = v4_read_rva( &p );
+
+            printf( "        %u: start %d end %d catch %d\n", i, start, end, catch );
+            if (catchblock)
+            {
+                UINT cont[3];
+                const BYTE *p = RVA( catchblock, 1 );
+                count = v4_decode_uint( &p );
+                for (j = 0; j < count; j++)
+                {
+                    BYTE flags = *p++;
+                    printf( "          %u:", j );
+                    if (flags & CATCHBLOCK_FLAGS)
+                        printf( " flags %08x", v4_decode_uint( &p ));
+                    if (flags & CATCHBLOCK_TYPE_INFO)
+                        printf( " type %08x", v4_read_rva( &p ));
+                    if (flags & CATCHBLOCK_OFFSET)
+                        printf( " offset %08x", v4_decode_uint( &p ));
+                    printf( " handler %08x", v4_read_rva( &p ));
+                    for (k = 0; k < ((flags >> 4) & 3); k++)
+                        if (flags & CATCHBLOCK_SEPARATED) cont[k] = v4_read_rva( &p );
+                        else cont[k] = func_rva + v4_decode_uint( &p );
+                    if (k == 1) printf( " cont %08x", cont[0] );
+                    else if (k == 2) printf( " cont %08x,%08x", cont[0], cont[1] );
+                    printf( "\n" );
+                }
+            }
+        }
+    }
+
+    if (ip_map && (flags & FUNC_DESCR_IS_SEPARATED))
+    {
+        const BYTE *p = RVA( ip_map, 1 );
+
+        count = v4_decode_uint( &p );
+        printf( "      separated ip map at %08x count %u\n", ip_map, count );
+        for (i = 0; i < count; i++)
+        {
+            UINT ip = v4_read_rva( &p );
+            UINT map = v4_read_rva( &p );
+
+            if (map)
+            {
+                UINT state, count2;
+                const BYTE *p = RVA( map, 1 );
+
+                count2 = v4_decode_uint( &p );
+                printf( "        %u: start %08x map %08x\n", i, ip, map );
+                for (j = 0; j < count2; j++)
+                {
+                    ip += v4_decode_uint( &p );
+                    state = v4_decode_uint( &p );
+                    printf( "          %u: ip %08x state %d\n", i, ip, state );
+                }
+            }
+        }
+    }
+    else if (ip_map)
+    {
+        UINT ip = func_rva, state;
+        const BYTE *p = RVA( ip_map, 1 );
+
+        count = v4_decode_uint( &p );
+        printf( "      ip map at %08x count %u\n", ip_map, count );
+        for (i = 0; i < count; i++)
+        {
+            ip += v4_decode_uint( &p );
+            state = v4_decode_uint( &p );
+            printf( "        %u: ip %08x state %d\n", i, ip, state );
+        }
+    }
+}
+
+static void dump_exception_data( unsigned int rva, unsigned int func_rva, const char *name )
+{
+    if (strstr( name, "__C_specific_handler" )) dump_c_exception_data( rva );
+    if (strstr( name, "__CxxFrameHandler4" )) dump_cxx_exception_data_v4( rva, func_rva );
+    else dump_cxx_exception_data( rva, func_rva );
+}
+
 static void dump_x86_64_unwind_info( const struct runtime_function_x86_64 *function )
 {
     static const char * const reg_names[16] =
@@ -854,7 +1302,8 @@ static void dump_x86_64_unwind_info( const struct runtime_function_x86_64 *funct
     const struct unwind_info_x86_64 *info;
     unsigned int i, count;
 
-    printf( "\nFunction %08x-%08x:\n", function->BeginAddress, function->EndAddress );
+    printf( "\nFunction %08x-%08x:%s\n", function->BeginAddress, function->EndAddress,
+            find_export_from_rva( function->BeginAddress ));
     if (function->UnwindData & 1)
     {
         const struct runtime_function_x86_64 *next = RVA( function->UnwindData & ~1, sizeof(*next) );
@@ -863,6 +1312,11 @@ static void dump_x86_64_unwind_info( const struct runtime_function_x86_64 *funct
     }
     info = RVA( function->UnwindData, sizeof(*info) );
 
+    if (!info)
+    {
+        printf( "  no unwind info (%x)\n", function->UnwindData );
+        return;
+    }
     printf( "  unwind info at %08x\n", function->UnwindData );
     if (info->version > 2)
     {
@@ -965,8 +1419,13 @@ static void dump_x86_64_unwind_info( const struct runtime_function_x86_64 *funct
         return;
     }
     if (info->flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER))
-        printf( "    handler %08x data at %08x\n", handler_data->handler,
-                (UINT)(function->UnwindData + (const char *)(&handler_data->handler + 1) - (const char *)info ));
+    {
+        UINT rva = function->UnwindData + ((const char *)(&handler_data->handler + 1) - (const char *)info);
+        const char *name = get_function_name( handler_data->handler );
+
+        printf( "    handler %08x%s data at %08x\n", handler_data->handler, name, rva );
+        dump_exception_data( rva, function->BeginAddress, name );
+    }
 }
 
 static const BYTE armnt_code_lengths[256] =
@@ -985,7 +1444,7 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
 {
     const struct unwind_info_armnt *info;
     const struct unwind_info_ext_armnt *infoex;
-    const struct unwind_info_epilogue_armnt *infoepi;
+    const struct unwind_info_epilogue_armnt *infoepi = NULL;
     unsigned int rva;
     WORD i, count = 0, words = 0;
 
@@ -993,18 +1452,12 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
     {
         char intregs[32] = {0}, intregspop[32] = {0}, vfpregs[32] = {0};
         WORD pf = 0, ef = 0, fpoffset = 0, stack = fnc->StackAdjust;
+        const char *pfx = "    ...     ";
 
-        printf( "\nFunction %08x-%08x:\n", fnc->BeginAddress & ~1,
-                (fnc->BeginAddress & ~1) + fnc->FunctionLength * 2 );
-        printf( "    Flag           %x\n", fnc->Flag );
-        printf( "    FunctionLength %x\n", fnc->FunctionLength );
-        printf( "    Ret            %x\n", fnc->Ret );
-        printf( "    H              %x\n", fnc->H );
-        printf( "    Reg            %x\n", fnc->Reg );
-        printf( "    R              %x\n", fnc->R );
-        printf( "    L              %x\n", fnc->L );
-        printf( "    C              %x\n", fnc->C );
-        printf( "    StackAdjust    %x\n", fnc->StackAdjust );
+        printf( "\nFunction %08x-%08x: flag=%u ret=%u H=%u reg=%u R=%u L=%u C=%u%s\n",
+                fnc->BeginAddress & ~1, (fnc->BeginAddress & ~1) + fnc->FunctionLength * 2,
+                fnc->Flag, fnc->Ret, fnc->H, fnc->Reg, fnc->R, fnc->L, fnc->C,
+                find_export_from_rva( fnc->BeginAddress ));
 
         if (fnc->StackAdjust >= 0x03f4)
         {
@@ -1075,47 +1528,48 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
                 strcpy(vfpregs, "d8");
         }
 
+        printf( "  Prologue:\n" );
         if (fnc->Flag == 1) {
             if (fnc->H)
-                printf( "    Unwind Code\tpush {r0-r3}\n" );
+                printf( "%s push {r0-r3}\n", pfx );
 
             if (intregs[0])
-                printf( "    Unwind Code\tpush {%s}\n", intregs );
+                printf( "%s push {%s}\n", pfx, intregs );
 
             if (fnc->C && fpoffset == 0)
-                printf( "    Unwind Code\tmov r11, sp\n" );
+                printf( "%s mov r11, sp\n", pfx );
             else if (fnc->C)
-                printf( "    Unwind Code\tadd r11, sp, #%d\n", fpoffset * 4 );
+                printf( "%s add r11, sp, #%d\n", pfx, fpoffset * 4 );
 
             if (fnc->R && fnc->Reg != 0x07)
-                printf( "    Unwind Code\tvpush {%s}\n", vfpregs );
+                printf( "%s vpush {%s}\n", pfx, vfpregs );
 
             if (stack && !pf)
-                printf( "    Unwind Code\tsub sp, sp, #%d\n", stack * 4 );
+                printf( "%s sub sp, sp, #%d\n", pfx, stack * 4 );
         }
 
         if (fnc->Ret == 3)
             return;
-        printf( "Epilogue:\n" );
+        printf( "  Epilogue:\n" );
 
         if (stack && !ef)
-            printf( "    Unwind Code\tadd sp, sp, #%d\n", stack * 4 );
+            printf( "%s add sp, sp, #%d\n", pfx, stack * 4 );
 
         if (fnc->R && fnc->Reg != 0x07)
-            printf( "    Unwind Code\tvpop {%s}\n", vfpregs );
+            printf( "%s vpop {%s}\n", pfx, vfpregs );
 
         if (intregspop[0])
-            printf( "    Unwind Code\tpop {%s}\n", intregspop );
+            printf( "%s pop {%s}\n", pfx, intregspop );
 
         if (fnc->H && !(fnc->L && fnc->Ret == 0))
-            printf( "    Unwind Code\tadd sp, sp, #16\n" );
+            printf( "%s add sp, sp, #16\n", pfx );
         else if (fnc->H && (fnc->L && fnc->Ret == 0))
-            printf( "    Unwind Code\tldr pc, [sp], #20\n" );
+            printf( "%s ldr pc, [sp], #20\n", pfx );
 
         if (fnc->Ret == 1)
-            printf( "    Unwind Code\tbx <reg>\n" );
+            printf( "%s bx <reg>\n", pfx );
         else if (fnc->Ret == 2)
-            printf( "    Unwind Code\tb <address>\n" );
+            printf( "%s b <address>\n", pfx );
 
         return;
     }
@@ -1125,17 +1579,9 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
     count = info->count;
     words = info->words;
 
-    printf( "\nFunction %08x-%08x:\n", fnc->BeginAddress & ~1,
-            (fnc->BeginAddress & ~1) + info->function_length * 2 );
-    printf( "  unwind info at %08x\n", fnc->UnwindData );
-    printf( "    Flag           %x\n", fnc->Flag );
-    printf( "    FunctionLength %x\n", info->function_length );
-    printf( "    Version        %x\n", info->version );
-    printf( "    X              %x\n", info->x );
-    printf( "    E              %x\n", info->e );
-    printf( "    F              %x\n", info->f );
-    printf( "    Count          %x\n", count );
-    printf( "    Words          %x\n", words );
+    printf( "\nFunction %08x-%08x: ver=%u X=%u E=%u F=%u%s\n", fnc->BeginAddress & ~1,
+            (fnc->BeginAddress & ~1) + info->function_length * 2,
+            info->version, info->x, info->e, info->f, find_export_from_rva( fnc->BeginAddress | 1 ));
 
     if (!info->count && !info->words)
     {
@@ -1143,26 +1589,13 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
         rva = rva + sizeof(*infoex);
         count = infoex->excount;
         words = infoex->exwords;
-        printf( "    ExtCount       %x\n", count );
-        printf( "    ExtWords       %x\n", words );
     }
 
-    if (!info->e)
+     if (!info->e)
     {
         infoepi = RVA( rva, count * sizeof(*infoepi) );
         rva = rva + count * sizeof(*infoepi);
-
-        for (i = 0; i < count; i++)
-        {
-            printf( "    Epilogue Scope %x\n", i );
-            printf( "      Offset       %x\n", infoepi[i].offset );
-            printf( "      Reserved     %x\n", infoepi[i].res );
-            printf( "      Condition    %x\n", infoepi[i].cond );
-            printf( "      Index        %x\n", infoepi[i].index );
-        }
     }
-    else
-        infoepi = NULL;
 
     if (words)
     {
@@ -1174,6 +1607,7 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
         rva = rva + words * sizeof(*codes);
         bytes = (BYTE*)codes;
 
+        printf( "  Prologue:\n" );
         for (b = 0; b < words * sizeof(*codes); b++)
         {
             BYTE code = bytes[b];
@@ -1181,7 +1615,7 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
 
             if (info->e && b == count)
             {
-                printf( "Epilogue:\n" );
+                printf( "  Epilogue:\n" );
                 inepilogue = TRUE;
             }
             else if (!info->e && infoepi)
@@ -1189,16 +1623,17 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
                 for (i = 0; i < count; i++)
                     if (b == infoepi[i].index)
                     {
-                        printf( "Epilogue from Scope %x at %08x:\n", i,
-                                (fnc->BeginAddress & ~1) + infoepi[i].offset * 2 );
+                        printf( "  Epilogue %u at %08x: (res=%x cond=%x)\n", i,
+                                (fnc->BeginAddress & ~1) + infoepi[i].offset * 2,
+                                infoepi[i].res, infoepi[i].cond );
                         inepilogue = TRUE;
                     }
             }
 
-            printf( "    Unwind Code");
+            printf( "   ");
             for (i = 0; i < len; i++)
                 printf( " %02x", bytes[b+i] );
-            printf( "\t" );
+            printf( " %*s", 3 * (3 - len), "" );
 
             if (code == 0x00)
                 printf( "\n" );
@@ -1232,16 +1667,16 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
                     printf( "mov sp, r%u\n", code & 0x0f );
                 else
                     printf( "mov r%u, sp\n", code & 0x0f );
+            else if (code <= 0xd3)
+                printf( "%s {r4-r%u}\n", inepilogue ? "pop" : "push", (code & 0x03) + 4 );
+            else if (code <= 0xd4)
+                printf( "%s {r4, %s}\n", inepilogue ? "pop" : "push", inepilogue ? "pc" : "lr" );
             else if (code <= 0xd7)
-                if (inepilogue)
-                    printf( "pop {r4-r%u%s}\n", (code & 0x03) + 4, (code & 0x04) ? ", pc" : "" );
-                else
-                    printf( "push {r4-r%u%s}\n", (code & 0x03) + 4, (code & 0x04) ? ", lr" : "" );
+                printf( "%s {r4-r%u, %s}\n", inepilogue ? "pop" : "push", (code & 0x03) + 4, inepilogue ? "pc" : "lr" );
+            else if (code <= 0xdb)
+                printf( "%s {r4-r%u}\n", inepilogue ? "pop" : "push", (code & 0x03) + 8 );
             else if (code <= 0xdf)
-                if (inepilogue)
-                    printf( "pop {r4-r%u%s}\n", (code & 0x03) + 8, (code & 0x04) ? ", pc" : "" );
-                else
-                    printf( "push {r4-r%u%s}\n", (code & 0x03) + 8, (code & 0x04) ? ", lr" : "" );
+                printf( "%s {r4-r%u, %s}\n", inepilogue ? "pop" : "push", (code & 0x03) + 8, inepilogue ? "pc" : "lr" );
             else if (code <= 0xe7)
                 printf( "%s {d8-d%u}\n", inepilogue ? "vpop" : "vpush", (code & 0x07) + 8 );
             else if (code <= 0xeb)
@@ -1379,11 +1814,13 @@ static void dump_armnt_unwind_info( const struct runtime_function_armnt *fnc )
     if (info->x)
     {
         const unsigned int *handler;
+        const char *name;
 
         handler = RVA( rva, sizeof(*handler) );
         rva = rva + sizeof(*handler);
-
-        printf( "    handler %08x data at %08x\n", *handler, rva);
+        name = get_function_name( *handler );
+        printf( "    handler %08x%s data at %08x\n", *handler, name, rva );
+        dump_exception_data( rva, fnc->BeginAddress & ~1, name );
     }
 }
 
@@ -1420,7 +1857,7 @@ static const BYTE code_lengths[256] =
 /* 80 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 /* a0 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 /* c0 */ 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-/* e0 */ 4,1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+/* e0 */ 4,1,2,1,1,1,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 };
 
 static void dump_arm64_codes( const BYTE *ptr, unsigned int count )
@@ -1431,8 +1868,7 @@ static void dump_arm64_codes( const BYTE *ptr, unsigned int count )
     {
         BYTE len = code_lengths[ptr[i]];
         unsigned int val = ptr[i];
-        if (len == 2) val = ptr[i] * 0x100 + ptr[i+1];
-        else if (len == 4) val = ptr[i] * 0x1000000 + ptr[i+1] * 0x10000 + ptr[i+2] * 0x100 + ptr[i+3];
+        for (j = 1; j < len; j++) val = val * 0x100 + ptr[i + j];
 
         printf( "    %04x: ", i );
         for (j = 0; j < 4; j++)
@@ -1445,15 +1881,15 @@ static void dump_arm64_codes( const BYTE *ptr, unsigned int count )
         }
         else if (ptr[i] < 0x40)  /* save_r19r20_x */
         {
-            printf( "stp r19,r20,[sp,-#%#x]!\n", 8 * (val & 0x1f) );
+            printf( "stp x19,x20,[sp,-#%#x]!\n", 8 * (val & 0x1f) );
         }
         else if (ptr[i] < 0x80) /* save_fplr */
         {
-            printf( "stp r29,lr,[sp,#%#x]\n", 8 * (val & 0x3f) );
+            printf( "stp x29,lr,[sp,#%#x]\n", 8 * (val & 0x3f) );
         }
         else if (ptr[i] < 0xc0)  /* save_fplr_x */
         {
-            printf( "stp r29,lr,[sp,-#%#x]!\n", 8 * (val & 0x3f) + 8 );
+            printf( "stp x29,lr,[sp,-#%#x]!\n", 8 * (val & 0x3f) + 8 );
         }
         else if (ptr[i] < 0xc8)  /* alloc_m */
         {
@@ -1462,27 +1898,27 @@ static void dump_arm64_codes( const BYTE *ptr, unsigned int count )
         else if (ptr[i] < 0xcc)  /* save_regp */
         {
             int reg = 19 + ((val >> 6) & 0xf);
-            printf( "stp r%u,r%u,[sp,#%#x]\n", reg, reg + 1, 8 * (val & 0x3f) );
+            printf( "stp x%u,x%u,[sp,#%#x]\n", reg, reg + 1, 8 * (val & 0x3f) );
         }
         else if (ptr[i] < 0xd0)  /* save_regp_x */
         {
             int reg = 19 + ((val >> 6) & 0xf);
-            printf( "stp r%u,r%u,[sp,-#%#x]!\n", reg, reg + 1, 8 * (val & 0x3f) + 8 );
+            printf( "stp x%u,x%u,[sp,-#%#x]!\n", reg, reg + 1, 8 * (val & 0x3f) + 8 );
         }
         else if (ptr[i] < 0xd4)  /* save_reg */
         {
             int reg = 19 + ((val >> 6) & 0xf);
-            printf( "str r%u,[sp,#%#x]\n", reg, 8 * (val & 0x3f) );
+            printf( "str x%u,[sp,#%#x]\n", reg, 8 * (val & 0x3f) );
         }
         else if (ptr[i] < 0xd6)  /* save_reg_x */
         {
             int reg = 19 + ((val >> 5) & 0xf);
-            printf( "str r%u,[sp,-#%#x]!\n", reg, 8 * (val & 0x1f) + 8 );
+            printf( "str x%u,[sp,-#%#x]!\n", reg, 8 * (val & 0x1f) + 8 );
         }
         else if (ptr[i] < 0xd8)  /* save_lrpair */
         {
             int reg = 19 + 2 * ((val >> 6) & 0x7);
-            printf( "stp r%u,lr,[sp,#%#x]\n", reg, 8 * (val & 0x3f) );
+            printf( "stp x%u,lr,[sp,#%#x]\n", reg, 8 * (val & 0x3f) );
         }
         else if (ptr[i] < 0xda)  /* save_fregp */
         {
@@ -1532,21 +1968,18 @@ static void dump_arm64_codes( const BYTE *ptr, unsigned int count )
         {
             printf( "save_next\n" );
         }
-        else if (ptr[i] == 0xe7)  /* arithmetic */
+        else if (ptr[i] == 0xe7)  /* save_any_reg */
         {
-            switch ((val >> 4) & 0x0f)
-            {
-            case 0: printf( "add lr,lr,x28\n" ); break;
-            case 1: printf( "add lr,lr,sp\n" ); break;
-            case 2: printf( "sub lr,lr,x28\n" ); break;
-            case 3: printf( "sub lr,lr,sp\n" ); break;
-            case 4: printf( "eor lr,lr,x28\n" ); break;
-            case 5: printf( "eor lr,lr,sp\n" ); break;
-            case 6: printf( "rol lr,lr,neg x28\n" ); break;
-            case 8: printf( "ror lr,lr,x28\n" ); break;
-            case 9: printf( "ror lr,lr,sp\n" ); break;
-            default:printf( "unknown op\n" ); break;
-            }
+            char reg = "xdq?"[(val >> 6) & 3];
+            int num = (val >> 8) & 0x1f;
+            if (val & 0x4000)
+                printf( "stp %c%u,%c%u", reg, num, reg, num + 1 );
+            else
+                printf( "str %c%u,", reg, num );
+            if (val & 0x2000)
+                printf( "[sp,#-%#x]!\n", 16 * (val & 0x3f) + 16 );
+            else
+                printf( "[sp,#%#x]\n", (val & 0x3f) * ((val & 0x4080) ? 16 : 8) );
         }
         else if (ptr[i] == 0xe8)  /* MSFT_OP_TRAP_FRAME */
         {
@@ -1670,17 +2103,28 @@ static void dump_arm64_unwind_info( const struct runtime_function_arm64 *func )
     const struct unwind_info_arm64 *info;
     const struct unwind_info_ext_arm64 *infoex;
     const struct unwind_info_epilog_arm64 *infoepi;
+    const struct runtime_function_arm64 *parent_func;
     const BYTE *ptr;
     unsigned int i, rva, codes, epilogs;
 
-    if (func->Flag)
+    switch (func->Flag)
     {
-        printf( "\nFunction %08x-%08x:\n", func->BeginAddress,
-                func->BeginAddress + func->FunctionLength * 4 );
+    case 1:
+    case 2:
+        printf( "\nFunction %08x-%08x:%s\n", func->BeginAddress,
+                func->BeginAddress + func->FunctionLength * 4, find_export_from_rva( func->BeginAddress ));
         printf( "    len=%#x flag=%x regF=%u regI=%u H=%u CR=%u frame=%x\n",
                 func->FunctionLength, func->Flag, func->RegF, func->RegI,
                 func->H, func->CR, func->FrameSize );
         dump_arm64_packed_info( func );
+        return;
+    case 3:
+        rva = func->UnwindData & ~3;
+        parent_func = RVA( rva, sizeof(*parent_func) );
+        printf( "\nFunction %08x-%08x:%s\n", func->BeginAddress,
+                func->BeginAddress + 12 /* adrl x16, <dest>; br x16 */,
+                find_export_from_rva( func->BeginAddress ));
+        printf( "    forward to parent %08x\n", parent_func->BeginAddress );
         return;
     }
 
@@ -1715,13 +2159,16 @@ static void dump_arm64_unwind_info( const struct runtime_function_arm64 *func )
     }
     ptr = RVA( rva, codes * 4);
     rva += codes * 4;
+    dump_arm64_codes( ptr, codes * 4 );
     if (info->x)
     {
         const UINT *handler = RVA( rva, sizeof(*handler) );
+        const char *name = get_function_name( *handler );
+
         rva += sizeof(*handler);
-        printf( "    handler: %08x data %08x\n", *handler, rva );
+        printf( "    handler: %08x%s data %08x\n", *handler, name, rva );
+        dump_exception_data( rva, func->BeginAddress, name );
     }
-    dump_arm64_codes( ptr, codes * 4 );
 }
 
 static void dump_dir_exceptions(void)
@@ -1925,6 +2372,15 @@ static void dump_hybrid_metadata(void)
         printf( "  ExtraRFETableSize                      %#x\n", (int)data->ExtraRFETableSize );
         printf( "  __os_arm64x_dispatch_fptr              %#x\n", (int)data->__os_arm64x_dispatch_fptr );
         printf( "  AuxiliaryIATCopy                       %#x\n", (int)data->AuxiliaryIATCopy );
+        printf( "  __os_arm64x_helper0                    %#x\n", (int)data->__os_arm64x_helper0 );
+        printf( "  __os_arm64x_helper1                    %#x\n", (int)data->__os_arm64x_helper1 );
+        printf( "  __os_arm64x_helper2                    %#x\n", (int)data->__os_arm64x_helper2 );
+        printf( "  __os_arm64x_helper3                    %#x\n", (int)data->__os_arm64x_helper3 );
+        printf( "  __os_arm64x_helper4                    %#x\n", (int)data->__os_arm64x_helper4 );
+        printf( "  __os_arm64x_helper5                    %#x\n", (int)data->__os_arm64x_helper5 );
+        printf( "  __os_arm64x_helper6                    %#x\n", (int)data->__os_arm64x_helper6 );
+        printf( "  __os_arm64x_helper7                    %#x\n", (int)data->__os_arm64x_helper7 );
+        printf( "  __os_arm64x_helper8                    %#x\n", (int)data->__os_arm64x_helper8 );
 
         if (data->CodeMap)
         {
@@ -1952,10 +2408,8 @@ static void dump_hybrid_metadata(void)
             for (i = 0; i < data->CodeRangesToEntryPointsCount; i++)
             {
                 const char *name = find_export_from_rva( map[i].EntryPoint );
-                printf(  "  %08x - %08x   %08x",
-                         (int)map[i].StartRva, (int)map[i].EndRva, (int)map[i].EntryPoint );
-                if (name) printf( "  %s", name );
-                printf( "\n" );
+                printf(  "  %08x - %08x   %08x%s\n",
+                         (int)map[i].StartRva, (int)map[i].EndRva, (int)map[i].EntryPoint, name );
             }
         }
 
@@ -1968,9 +2422,7 @@ static void dump_hybrid_metadata(void)
             for (i = 0; i < data->RedirectionMetadataCount; i++)
             {
                 const char *name = find_export_from_rva( map[i].Source );
-                printf(  "  %08x -> %08x", (int)map[i].Source, (int)map[i].Destination );
-                if (name) printf( "  (%s)", name );
-                printf( "\n" );
+                printf(  "  %08x -> %08x%s\n", (int)map[i].Source, (int)map[i].Destination, name );
             }
         }
         break;
@@ -3030,7 +3482,7 @@ static void dump_version_data( const void *ptr, unsigned int size, const char *p
 }
 
 /* dump data for a HTML/MANIFEST resource */
-static void dump_xml_data( const void *ptr, unsigned int size, const char *prefix )
+static void dump_text_data( const void *ptr, unsigned int size, const char *prefix )
 {
     const char *p = ptr, *end = p + size;
 
@@ -3041,6 +3493,18 @@ static void dump_xml_data( const void *ptr, unsigned int size, const char *prefi
         printf( "%s%.*s\n", prefix, (int)(p - start), start );
         while (p < end && (*p == '\r' || *p == '\n')) p++;
     }
+}
+
+static int cmp_resource_name( const IMAGE_RESOURCE_DIR_STRING_U *str_res, const char *str )
+{
+    unsigned int i;
+
+    for (i = 0; i < str_res->Length; i++)
+    {
+        int res = str_res->NameString[i] - (WCHAR)str[i];
+        if (res || !str[i]) return res;
+    }
+    return -(WCHAR)str[i];
 }
 
 static void dump_dir_resource(void)
@@ -3095,7 +3559,13 @@ static void dump_dir_resource(void)
                 data = (const IMAGE_RESOURCE_DATA_ENTRY *)((const char *)root + e3->OffsetToData);
                 if (e1->NameIsString)
                 {
-                    dump_data( RVA( data->OffsetToData, data->Size ), data->Size, "    " );
+                    string = (const IMAGE_RESOURCE_DIR_STRING_U*)((const char *)root + e1->NameOffset);
+                    if (!cmp_resource_name( string, "TYPELIB" ))
+                        tlb_dump_resource( (void *)RVA( data->OffsetToData, data->Size ), data->Size, "  |  " );
+                    else if (!cmp_resource_name( string, "WINE_REGISTRY" ))
+                        dump_text_data( RVA( data->OffsetToData, data->Size ), data->Size, "  |  " );
+                    else
+                        dump_data( RVA( data->OffsetToData, data->Size ), data->Size, "    " );
                 }
                 else switch(e1->Id)
                 {
@@ -3110,7 +3580,7 @@ static void dump_dir_resource(void)
                     break;
                 case 23:  /* RT_HTML */
                 case 24:  /* RT_MANIFEST */
-                    dump_xml_data( RVA( data->OffsetToData, data->Size ), data->Size, "  |  " );
+                    dump_text_data( RVA( data->OffsetToData, data->Size ), data->Size, "  |  " );
                     break;
                 default:
                     dump_data( RVA( data->OffsetToData, data->Size ), data->Size, "    " );

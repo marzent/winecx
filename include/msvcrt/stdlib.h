@@ -225,6 +225,7 @@ _ACRTIMP int           __cdecl rand(void);
 _ACRTIMP errno_t       __cdecl rand_s(unsigned int*);
 _ACRTIMP void          __cdecl srand(unsigned int);
 _ACRTIMP float         __cdecl strtof(const char*,char**);
+_ACRTIMP float         __cdecl _strtof_l(const char*,char**,_locale_t);
 _ACRTIMP double        __cdecl strtod(const char*,char**);
 _ACRTIMP __msvcrt_long __cdecl strtol(const char*,char**,int);
 _ACRTIMP __msvcrt_ulong __cdecl strtoul(const char*,char**,int);
@@ -237,6 +238,8 @@ _ACRTIMP unsigned __int64 __cdecl _strtoui64_l(const char*,char**,int,_locale_t)
 _ACRTIMP int           __cdecl system(const char*);
 _ACRTIMP void*         __cdecl bsearch(const void*,const void*,size_t,size_t,int (__cdecl *)(const void*,const void*));
 _ACRTIMP void          __cdecl qsort(void*,size_t,size_t,int (__cdecl *)(const void*,const void*));
+_ACRTIMP void          __cdecl qsort_s(void*,size_t,size_t,int (__cdecl *)(void*,const void*,const void*),void*);
+_ACRTIMP unsigned int  __cdecl _set_abort_behavior(unsigned int flags, unsigned int mask);
 
 typedef void (__cdecl *_purecall_handler)(void);
 _ACRTIMP _purecall_handler __cdecl _set_purecall_handler(_purecall_handler);
