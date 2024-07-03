@@ -283,6 +283,8 @@ static void apply_thread_priority( struct thread *thread, int base_priority, int
     struct thread_precedence_policy thread_precedence_policy;
     mach_port_t thread_port, process_port = thread->process->trace_data;
 
+    if (!process_port) return;
+
     kr = mach_port_extract_right( process_port, thread->unix_tid,
                                    MACH_MSG_TYPE_COPY_SEND, &thread_port, &type );
     if (kr != KERN_SUCCESS)
