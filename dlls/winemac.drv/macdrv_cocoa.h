@@ -587,11 +587,11 @@ extern void macdrv_set_view_superview(macdrv_view v, macdrv_view s, macdrv_windo
 extern void macdrv_set_view_hidden(macdrv_view v, int hidden);
 extern void macdrv_add_view_opengl_context(macdrv_view v, macdrv_opengl_context c);
 extern void macdrv_remove_view_opengl_context(macdrv_view v, macdrv_opengl_context c);
-extern macdrv_metal_device macdrv_create_metal_device(void);
-extern void macdrv_release_metal_device(macdrv_metal_device d);
-extern macdrv_metal_view macdrv_view_create_metal_view(macdrv_view v, macdrv_metal_device d);
-extern macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v);
-extern void macdrv_view_release_metal_view(macdrv_metal_view v);
+extern macdrv_metal_device macdrv_create_metal_device(void) __attribute__((visibility("default")));
+extern void macdrv_release_metal_device(macdrv_metal_device d) __attribute__((visibility("default")));
+extern macdrv_metal_view macdrv_view_create_metal_view(macdrv_view v, macdrv_metal_device d) __attribute__((visibility("default")));
+extern macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v) __attribute__((visibility("default")));
+extern void macdrv_view_release_metal_view(macdrv_metal_view v) __attribute__((visibility("default")));
 extern int macdrv_get_view_backing_size(macdrv_view v, int backing_size[2]);
 extern void macdrv_set_view_backing_size(macdrv_view v, const int backing_size[2]);
 extern uint32_t macdrv_window_background_color(void);
