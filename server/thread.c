@@ -40,6 +40,11 @@
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
 #endif
+#ifdef __APPLE__
+#include <mach/mach_init.h>
+#include <mach/mach_port.h>
+#include <mach/thread_act.h>
+#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -255,6 +260,49 @@ static void apply_thread_priority( struct thread *thread, int base_priority )
     /* map an NT application band [1,15] base priority to [-nice_limit, nice_limit] */
     niceness = (min + (base_priority - 1) * range / 14);
     setpriority( PRIO_PROCESS, thread->unix_tid, niceness );
+}
+
+#elif defined(__APPLE__)
+
+void init_threading(void)
+{
+}
+
+static int get_mach_importance( int base_priority )
+{
+    int min = -31, max = 32, range = max - min;
+    return min + (base_priority - 1) * range / 14;
+}
+
+static void apply_thread_priority( struct thread *thread, int base_priority )
+{
+    kern_return_t kr;
+    mach_msg_type_name_t type;
+    struct thread_extended_policy thread_extended_policy;
+    struct thread_precedence_policy thread_precedence_policy;
+    mach_port_t thread_port, process_port = thread->process->trace_data;
+
+    kr = mach_port_extract_right( process_port, thread->unix_tid,
+                                   MACH_MSG_TYPE_COPY_SEND, &thread_port, &type );
+    if (kr != KERN_SUCCESS)
+    {
+        fprintf( stderr, "wine: mach_port_extract_right for task %d and thread %d failed: %d\n",
+                process_port, thread->unix_tid, kr );
+        return;
+    }
+    thread_extended_policy.timeshare = base_priority > 15 ? 0 : 1;
+    thread_precedence_policy.importance = get_mach_importance( base_priority );
+    kr = thread_policy_set( thread_port, THREAD_EXTENDED_POLICY, (thread_policy_t)&thread_extended_policy,
+                            THREAD_EXTENDED_POLICY_COUNT );
+    if (kr != KERN_SUCCESS)
+        fprintf( stderr, "wine: failed to set THREAD_EXTENDED_POLICY for %d: %d\n",
+                thread->unix_tid, kr );
+    kr = thread_policy_set( thread_port, THREAD_PRECEDENCE_POLICY, (thread_policy_t)&thread_precedence_policy,
+                            THREAD_PRECEDENCE_POLICY_COUNT );
+    if (kr != KERN_SUCCESS)
+        fprintf( stderr, "wine: failed to set THREAD_PRECEDENCE_POLICY for %d: %d\n",
+                thread->unix_tid, kr );
+    mach_port_deallocate( mach_task_self(), thread_port );
 }
 
 #else
