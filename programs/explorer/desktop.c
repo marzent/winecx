@@ -683,6 +683,8 @@ static DWORD WINAPI clipboard_thread( void *arg )
     ATOM atom;
     MSG msg;
 
+    SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_IDLE );
+
     if (!wait_clipboard_mutex()) return 0;
 
     memset( &class, 0, sizeof(class) );
@@ -701,7 +703,19 @@ static DWORD WINAPI clipboard_thread( void *arg )
         return 0;
     }
 
-    while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
+    while (TRUE) 
+    {
+        while (PeekMessageW( &msg, NULL, 0, 0, PM_REMOVE ))
+        {
+            if (msg.message == WM_QUIT)
+                return 0; 
+
+            DispatchMessageW( &msg );
+        }
+
+        Sleep(15);
+    }
+
     return 0;
 }
 
@@ -738,6 +752,7 @@ static DWORD WINAPI display_settings_restorer_thread( void *param )
     WNDCLASSW class;
     MSG msg;
 
+    SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_IDLE );
     SetThreadDescription( GetCurrentThread(), L"wine_explorer_display_settings_restorer" );
 
     wait_named_mutex( L"__wine_display_settings_restorer_mutex" );
@@ -1193,6 +1208,9 @@ void manage_desktop( WCHAR *arg )
     HANDLE thread;
     DWORD id;
 
+    SetPriorityClass( GetCurrentProcess(), IDLE_PRIORITY_CLASS );
+    SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_IDLE );
+
     /* get the rest of the command line (if any) */
     while (*p && !is_whitespace(*p)) p++;
     if (*p)
@@ -1305,10 +1323,22 @@ void manage_desktop( WCHAR *arg )
         shellwindows_init();
 
         TRACE( "desktop message loop starting on hwnd %p\n", hwnd );
-        while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
+        while (TRUE) 
+        {
+            while (PeekMessageW( &msg, NULL, 0, 0, PM_REMOVE ))
+            {
+                if (msg.message == WM_QUIT)
+                    goto out;
+
+                DispatchMessageW( &msg );
+            }
+
+            Sleep(15);
+        }
         TRACE( "desktop message loop exiting for hwnd %p\n", hwnd );
     }
 
+out:
     if (pShellDDEInit) pShellDDEInit( FALSE );
 
     ExitProcess( 0 );
