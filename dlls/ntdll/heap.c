@@ -765,7 +765,8 @@ static struct heap *unsafe_heap_from_handle( HANDLE handle, ULONG flags, ULONG *
     if (!heap || (heap->magic != HEAP_MAGIC))
     {
         ERR( "Invalid handle %p!\n", handle );
-        return NULL;
+        NtTerminateProcess( 0, 0 );
+        NtTerminateProcess( GetCurrentProcess(), 0 );
     }
     if (heap->flags & HEAP_VALIDATE_ALL)
     {
