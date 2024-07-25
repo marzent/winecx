@@ -1369,6 +1369,22 @@ BOOL WINAPI GetProcessInformation( HANDLE process, PROCESS_INFORMATION_CLASS inf
     return FALSE;
 }
 
+static BOOL is_ffxiv(void)
+{
+    static int status = -1;
+    if (status == -1)
+    {
+        WCHAR name[MAX_PATH], *module_exe;
+        if (GetModuleFileNameW(NULL, name, ARRAYSIZE(name)))
+        {
+            module_exe = wcsrchr(name, '\\');
+            module_exe = module_exe ? module_exe + 1 : name;
+            status = !wcsicmp(module_exe, L"ffxiv_dx11.exe");
+        }
+    }
+
+    return status;
+}
 
 /*********************************************************************
  *           OpenProcess   (kernelbase.@)
@@ -1378,6 +1394,18 @@ HANDLE WINAPI DECLSPEC_HOTPATCH OpenProcess( DWORD access, BOOL inherit, DWORD i
     HANDLE handle;
     OBJECT_ATTRIBUTES attr;
     CLIENT_ID cid;
+    static BOOL first_call = TRUE;
+
+    if (first_call && is_ffxiv && id == GetCurrentProcessId())
+    {
+        if (access & PROCESS_VM_WRITE)
+        {
+            FIXME("Faking access denied on first OpenProcess call.\n");
+            first_call = FALSE;
+            SetLastError(ERROR_ACCESS_DENIED);
+            return NULL;
+        }
+    }
 
     if (GetVersion() & 0x80000000) access = PROCESS_ALL_ACCESS;
 
