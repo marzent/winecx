@@ -426,7 +426,7 @@ static BOOL is_hidraw_enabled(WORD vid, WORD pid, const USAGE_AND_PAGE *usages, 
     UNICODE_STRING str;
     DWORD size;
 
-    if (check_bus_option(L"DisableHidraw", FALSE)) return FALSE;
+    if (check_bus_option(L"DisableHidraw", TRUE)) return FALSE;
 
     if (usages->UsagePage == HID_USAGE_PAGE_DIGITIZER)
     {
@@ -1019,7 +1019,7 @@ static NTSTATUS udev_driver_init(BOOL enable_sdl)
         .wait_code = udev_wait,
     };
 
-    bus_options.disable_hidraw = check_bus_option(L"DisableHidraw", 0);
+    bus_options.disable_hidraw = check_bus_option(L"DisableHidraw", TRUE);
     if (bus_options.disable_hidraw) TRACE("UDEV hidraw devices disabled in registry\n");
     bus_options.disable_input = check_bus_option(L"DisableInput", 0) || enable_sdl;
     if (bus_options.disable_input) TRACE("UDEV input devices disabled in registry\n");
@@ -1040,7 +1040,7 @@ static NTSTATUS iohid_driver_init(void)
         .wait_code = iohid_wait,
     };
 
-    if (check_bus_option(L"DisableHidraw", FALSE))
+    if (check_bus_option(L"DisableHidraw", TRUE))
     {
         TRACE("IOHID hidraw devices disabled in registry\n");
         return STATUS_SUCCESS;
