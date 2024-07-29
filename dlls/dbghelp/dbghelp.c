@@ -425,6 +425,24 @@ static BOOL check_live_target(struct process* pcs, BOOL wow64, BOOL child_wow64)
     return TRUE;
 }
 
+
+static BOOL is_ffxiv(void)
+{
+    static int status = -1;
+    if (status == -1)
+    {
+        WCHAR name[MAX_PATH], *module_exe;
+        if (GetModuleFileNameW(NULL, name, ARRAYSIZE(name)))
+        {
+            module_exe = wcsrchr(name, '\\');
+            module_exe = module_exe ? module_exe + 1 : name;
+            status = !wcsicmp(module_exe, L"ffxiv_dx11.exe");
+        }
+    }
+
+    return status;
+}
+
 /******************************************************************
  *		SymInitializeW (DBGHELP.@)
  *
@@ -457,6 +475,13 @@ BOOL WINAPI SymInitializeW(HANDLE hProcess, PCWSTR UserSearchPath, BOOL fInvadeP
     BOOL wow64, child_wow64;
 
     TRACE("(%p %s %u)\n", hProcess, debugstr_w(UserSearchPath), fInvadeProcess);
+
+    if (is_ffxiv()) 
+    {
+        ERR("suppressed for FFXIV!\n");
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
 
     if (process_find_by_handle(hProcess))
     {
