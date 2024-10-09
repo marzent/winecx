@@ -20,6 +20,8 @@
  */
 
 #define COBJMACROS
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 #include "x11drv_dll.h"
 #include "shellapi.h"
 #include "shlobj.h"
@@ -246,11 +248,14 @@ NTSTATUS WINAPI x11drv_dnd_position_event( void *arg, ULONG size )
         }
     }
 
-    return accept ? effect : DROPEFFECT_NONE;
+    if (!accept) effect = DROPEFFECT_NONE;
+    return NtCallbackReturn( &effect, sizeof(effect), STATUS_SUCCESS );
 }
 
-NTSTATUS x11drv_dnd_drop_event( UINT arg )
+NTSTATUS WINAPI x11drv_dnd_drop_event( void *args, ULONG size )
 {
+    struct dnd_drop_event_params *params = args;
+    HWND hwnd = UlongToHandle( params->hwnd );
     IDropTarget *dropTarget;
     DWORD effect = XDNDDropEffect;
     int accept = 0; /* Assume we're not accepting */
@@ -303,7 +308,7 @@ NTSTATUS x11drv_dnd_drop_event( UINT arg )
         /* Only send WM_DROPFILES if Drop didn't succeed or DROPEFFECT_NONE was set.
          * Doing both causes winamp to duplicate the dropped files (#29081) */
 
-        HWND hwnd_drop = window_accepting_files(window_from_point_dnd( UlongToHandle(arg), XDNDxy ));
+        HWND hwnd_drop = window_accepting_files(window_from_point_dnd( hwnd, XDNDxy ));
 
         if (hwnd_drop && X11DRV_XDND_HasHDROP())
         {
@@ -319,7 +324,8 @@ NTSTATUS x11drv_dnd_drop_event( UINT arg )
     TRACE("effectRequested(0x%lx) accept(%d) performed(0x%lx) at x(%ld),y(%ld)\n",
           XDNDDropEffect, accept, effect, XDNDxy.x, XDNDxy.y);
 
-    return accept ? effect : DROPEFFECT_NONE;
+    if (!accept) effect = DROPEFFECT_NONE;
+    return NtCallbackReturn( &effect, sizeof(effect), STATUS_SUCCESS );
 }
 
 /**************************************************************************
@@ -327,7 +333,7 @@ NTSTATUS x11drv_dnd_drop_event( UINT arg )
  *
  * Handle an XdndLeave event.
  */
-NTSTATUS x11drv_dnd_leave_event( UINT arg )
+NTSTATUS WINAPI x11drv_dnd_leave_event( void *params, ULONG size )
 {
     IDropTarget *dropTarget;
 
@@ -347,25 +353,26 @@ NTSTATUS x11drv_dnd_leave_event( UINT arg )
     }
 
     X11DRV_XDND_FreeDragDropOp();
-    return 0;
+    return STATUS_SUCCESS;
 }
 
 
 /**************************************************************************
  *           x11drv_dnd_enter_event
  */
-NTSTATUS WINAPI x11drv_dnd_enter_event( void *params, ULONG size )
+NTSTATUS WINAPI x11drv_dnd_enter_event( void *args, ULONG size )
 {
-    struct format_entry *formats = params;
+    UINT formats_size = size - offsetof(struct dnd_enter_event_params, entries);
+    struct dnd_enter_event_params *params = args;
     XDNDAccepted = FALSE;
     X11DRV_XDND_FreeDragDropOp(); /* Clear previously cached data */
 
-    if ((xdnd_formats = HeapAlloc( GetProcessHeap(), 0, size )))
+    if ((xdnd_formats = HeapAlloc( GetProcessHeap(), 0, formats_size )))
     {
-        memcpy( xdnd_formats, formats, size );
-        xdnd_formats_end = (struct format_entry *)((char *)xdnd_formats + size);
+        memcpy( xdnd_formats, params->entries, formats_size );
+        xdnd_formats_end = (struct format_entry *)((char *)xdnd_formats + formats_size);
     }
-    return 0;
+    return STATUS_SUCCESS;
 }
 
 
@@ -716,20 +723,22 @@ static IDataObjectVtbl xdndDataObjectVtbl =
 
 static IDataObject XDNDDataObject = { &xdndDataObjectVtbl };
 
-NTSTATUS WINAPI x11drv_dnd_post_drop( void *data, ULONG size )
+NTSTATUS WINAPI x11drv_dnd_post_drop( void *args, ULONG size )
 {
+    UINT drop_size = size - offsetof(struct dnd_post_drop_params, drop);
+    struct dnd_post_drop_params *params = args;
     HDROP handle;
 
-    if ((handle = GlobalAlloc( GMEM_SHARE, size )))
+    if ((handle = GlobalAlloc( GMEM_SHARE, drop_size )))
     {
         DROPFILES *ptr = GlobalLock( handle );
         HWND hwnd;
-        memcpy( ptr, data, size );
+        memcpy( ptr, &params->drop, drop_size );
         hwnd = UlongToHandle( ptr->fWide );
         ptr->fWide = TRUE;
         GlobalUnlock( handle );
         PostMessageW( hwnd, WM_DROPFILES, (WPARAM)handle, 0 );
     }
 
-    return 0;
+    return STATUS_SUCCESS;
 }

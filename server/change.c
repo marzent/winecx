@@ -728,7 +728,7 @@ static char *get_path_from_fd( int fd, int sz )
 #ifdef linux
     char *ret = malloc( 32 + sz );
 
-    if (ret) sprintf( ret, "/proc/self/fd/%u", fd );
+    if (ret) snprintf( ret, 32 + sz, "/proc/self/fd/%u", fd );
     return ret;
 #elif defined(F_GETPATH)
     char *ret = malloc( PATH_MAX + sz );
@@ -1073,7 +1073,7 @@ static void dir_add_to_existing_notify( struct dir *dir )
 
     /* check if it's in the list of inodes we want to watch */
     if (fstat( unix_fd, &st_new )) return;
-    if ((inode = find_inode( st_new.st_dev, st_new.st_ino ))) return;
+    if (find_inode( st_new.st_dev, st_new.st_ino )) return;
 
     /* lookup the parent */
     if (!(link = get_path_from_fd( unix_fd, 3 ))) return;

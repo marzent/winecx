@@ -28,12 +28,27 @@ var JS_E_VBARRAY_EXPECTED = 0x800a1395;
 var JS_E_ENUMERATOR_EXPECTED = 0x800a1397;
 var JS_E_REGEXP_EXPECTED = 0x800a1398;
 var JS_E_UNEXPECTED_QUANTIFIER = 0x800a139a;
+var JS_E_INVALID_LENGTH = 0x800a13a5;
 var JS_E_INVALID_WRITABLE_PROP_DESC = 0x800a13ac;
 var JS_E_NONCONFIGURABLE_REDEFINED = 0x800a13d6;
 var JS_E_NONWRITABLE_MODIFIED = 0x800a13d7;
+var JS_E_NOT_DATAVIEW = 0x800a13df;
+var JS_E_DATAVIEW_NO_ARGUMENT = 0x800a13e0;
+var JS_E_DATAVIEW_INVALID_ACCESS = 0x800a13e1;
+var JS_E_DATAVIEW_INVALID_OFFSET = 0x800a13e2;
 var JS_E_WRONG_THIS = 0x800a13fc;
+var JS_E_ARRAYBUFFER_EXPECTED = 0x800a15e4;
 
 var tests = [];
+
+function check_enum(o, name) {
+    var ret = 0;
+    for(var iter in o) {
+        if(iter == name) ret++;
+    }
+    ok(ret < 2, name + " enumerated " + ret + " times");
+    return ret != 0;
+}
 
 sync_test("script vars", function() {
     function foo() { }
@@ -832,6 +847,11 @@ sync_test("defineProperty", function() {
     expect_exception(function() {
         Object.defineProperty(obj, "funcprop", nullDisp);
     }, JS_E_OBJECT_EXPECTED);
+    expect_exception(function() {
+        var o = {};
+        Object.defineProperty(o, "f", { get: function() { return 0; } });
+        o.f();
+    }, JS_E_FUNCTION_EXPECTED);
 });
 
 sync_test("defineProperties", function() {
@@ -1131,7 +1151,6 @@ sync_test("toString", function() {
     todo_wine.
     ok(tmp === "[object Arguments]", "toString.call(arguments) = " + tmp);
     tmp = Object.prototype.toString.call(this);
-    todo_wine.
     ok(tmp === "[object Window]", "toString.call(null) = " + tmp);
     tmp = Object.prototype.toString.call(null);
     ok(tmp === "[object Null]", "toString.call(null) = " + tmp);
@@ -1657,6 +1676,26 @@ sync_test("isFrozen", function() {
     }
 });
 
+sync_test("JSON.parse escapes", function() {
+    var i, valid = [ "b", "t", "n", "f", "r", "u1111", '"', "/" ];
+
+    for(i = 0; i < valid.length; i++) {
+        var a = JSON.parse('"\\' + valid[i] + '"'), b = eval('"\\' + valid[i] + '"');
+        ok(a === b, "JSON.parse with \\" + valid[i] + " returned " + a);
+    }
+
+    var invalid = [ "0", "00", "05", "x20", "i", "'" ];
+
+    for(i = 0; i < invalid.length; i++) {
+        try {
+            JSON.parse('"\\' + invalid[i] + '"');
+            ok(false, "expected exception calling JSON.parse with \\" + invalid[i]);
+        } catch(e) {
+            ok(e.number === 0xa03f6 - 0x80000000, "calling JSON.parse with \\" + invalid[i] + " threw " + e.number);
+        }
+    }
+});
+
 sync_test("RegExp", function() {
     var r;
 
@@ -1679,6 +1718,352 @@ sync_test("RegExp", function() {
         var n = ex.number >>> 0;
         ok(n === JS_E_UNEXPECTED_QUANTIFIER, "/(?<a>b)/ regex threw " + n);
     }
+});
+
+sync_test("ArrayBuffers & Views", function() {
+    var i, r, buf, buf2, view, view2, arr;
+
+    var types = [
+        [ "Int8",    1 ],
+        [ "Uint8",   1 ],
+        [ "Int16",   2 ],
+        [ "Uint16",  2 ],
+        [ "Int32",   4 ],
+        [ "Uint32",  4 ],
+        [ "Float32", 4 ],
+        [ "Float64", 8 ]
+    ];
+
+    function test_own_props(obj_name, props) {
+        var obj = eval(obj_name);
+        for(var i = 0; i < props.length; i++)
+            ok(Object.prototype.hasOwnProperty.call(obj, props[i]), props[i] + " not a property of " + obj_name);
+    }
+
+    function test_not_own_props(obj_name, props) {
+        var obj = eval(obj_name);
+        for(var i = 0; i < props.length; i++)
+            ok(!Object.prototype.hasOwnProperty.call(obj, props[i]), props[i] + " is a property of " + obj_name);
+    }
+
+    function test_readonly(obj, prop, val) {
+        var name = Object.getPrototypeOf(obj).constructor.toString();
+        name = name.substring(9, name.indexOf("(", 9)) + ".prototype." + prop;
+        obj[prop] = val + 42;
+        ok(obj[prop] === val, name + " not read-only");
+    }
+
+    test_own_props("ArrayBuffer", [ "isView" ]);
+    test_own_props("ArrayBuffer.prototype", [ "byteLength", "slice" ]);
+    test_own_data_prop_desc(ArrayBuffer.prototype, "byteLength", false, false, false);
+
+    r = Object.prototype.toString.call(new ArrayBuffer());
+    ok(r === "[object ArrayBuffer]", "Object toString(new ArrayBuffer()) = " + r);
+    r = ArrayBuffer.length;
+    ok(r === 1, "ArrayBuffer.length = " + r);
+    r = ArrayBuffer.isView.length;
+    ok(r === 1, "ArrayBuffer.isView.length = " + r);
+    r = ArrayBuffer.prototype.slice.length;
+    ok(r === 2, "ArrayBuffer.prototype.slice.length = " + r);
+
+    try {
+        ArrayBuffer.prototype.slice.call(null);
+        ok(false, "ArrayBuffer: calling slice with null context did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_ARRAYBUFFER_EXPECTED, "ArrayBuffer: calling slice with null context threw " + n);
+    }
+    try {
+        ArrayBuffer.prototype.slice.call({});
+        ok(false, "ArrayBuffer: calling slice with an object context did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_ARRAYBUFFER_EXPECTED, "ArrayBuffer: calling slice with an object context threw " + n);
+    }
+    try {
+        new ArrayBuffer(-1);
+        ok(false, "new ArrayBuffer(-1) did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_INVALID_LENGTH, "new ArrayBuffer(-1) threw " + n);
+    }
+
+    buf = new ArrayBuffer();
+    ok(buf.byteLength === 0, "ArrayBuffer().byteLength = " + buf.byteLength);
+    buf = new ArrayBuffer(13.1);
+    ok(buf.byteLength === 13, "ArrayBuffer(13).byteLength = " + buf.byteLength);
+    buf = ArrayBuffer("10");
+    ok(buf.byteLength === 10, "ArrayBuffer(10).byteLength = " + buf.byteLength);
+    test_readonly(buf, "byteLength", 10);
+    test_own_data_prop_desc(buf, "byteLength", false, false, false);
+
+    test_own_props("DataView.prototype", [
+        "buffer", "byteLength", "byteOffset",
+        "getInt8",  "setInt8",  "getUint8",  "setUint8",
+        "getInt16", "setInt16", "getUint16", "setUint16",
+        "getInt32", "setInt32", "getUint32", "setUint32",
+        "getFloat32", "setFloat32", "getFloat64", "setFloat64"
+    ]);
+
+    r = Object.prototype.toString.call(new DataView(buf));
+    ok(r === "[object Object]", "Object toString(new DataView(buf)) = " + r);
+    r = DataView.length;
+    ok(r === 1, "DataView.length = " + r);
+
+    /* DataView.prototype has actual accessors, but others don't */
+    arr = [ "buffer", "byteLength", "byteOffset" ];
+    for(i = 0; i < arr.length; i++) {
+        var prop = arr[i], desc = Object.getOwnPropertyDescriptor(DataView.prototype, prop);
+        ok(!("value" in desc), "DataView: value is in desc");
+        ok(!("writable" in desc), "DataView: writable is in desc");
+        ok(desc.enumerable === false, "DataView: desc.enumerable = " + desc.enumerable);
+        ok(desc.configurable === true, "DataView: desc.configurable = " + desc.configurable);
+        ok(Object.getPrototypeOf(desc.get) === Function.prototype, "DataView: desc.get not a function: " + desc.get);
+        ok("set" in desc, "DataView: set is not in desc");
+        ok(desc.set === undefined, "DataView: desc.set not undefined: " + desc.set);
+        try {
+            desc.get.call(null);
+            ok(false, "DataView: calling " + prop + " getter with null did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "DataView: calling " + prop + " getter with null threw " + n);
+        }
+        try {
+            desc.get.call({});
+            ok(false, "DataView: calling " + prop + " getter with an object did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "DataView: calling " + prop + " getter with an object threw " + n);
+        }
+        try {
+            desc.get.call(DataView);
+            ok(false, "DataView: calling " + prop + " getter with DataView constructor did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "DataView: calling " + prop + " getter with DataView constructor threw " + n);
+        }
+        try {
+            desc.get.call(new ArrayBuffer());
+            ok(false, "DataView: calling " + prop + " getter with ArrayBuffer did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "DataView: calling " + prop + " getter with ArrayBuffer threw " + n);
+        }
+        r = desc.get.call(DataView.prototype);
+        if(prop === "buffer")
+            ok(Object.getPrototypeOf(r) === ArrayBuffer.prototype, "DataView: calling " + prop + " getter with DataView.prototype returned " + r);
+        else
+            ok(r === 0, "DataView: calling " + prop + " getter with DataView.prototype returned " + r);
+    }
+
+    try {
+        new DataView();
+        ok(false, "new DataView() did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_DATAVIEW_NO_ARGUMENT, "new DataView() threw " + n);
+    }
+    try {
+        new DataView(ArrayBuffer);
+        ok(false, "new DataView(ArrayBuffer) did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_DATAVIEW_NO_ARGUMENT, "new DataView(ArrayBuffer) threw " + n);
+    }
+    try {
+        new DataView(buf, -1);
+        ok(false, "new DataView(buf, -1) did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_DATAVIEW_INVALID_OFFSET, "new DataView(buf, -1) threw " + n);
+    }
+    try {
+        new DataView(buf, 11);
+        ok(false, "new DataView(buf, 11) did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_DATAVIEW_INVALID_OFFSET, "new DataView(buf, 11) threw " + n);
+    }
+    try {
+        new DataView(buf, 9, 2);
+        ok(false, "new DataView(buf, 9, 2) did not throw exception");
+    }catch(ex) {
+        var n = ex.number >>> 0;
+        ok(n === JS_E_DATAVIEW_INVALID_OFFSET, "new DataView(buf, 9, 2) threw " + n);
+    }
+
+    view = new DataView(buf, 9, 1);
+    ok(view.buffer === buf,  "DataView(buf, 9, 1).buffer = " + view.buffer);
+    ok(view.byteLength === 1, "DataView(buf, 9, 1).byteLength = " + view.byteLength);
+    ok(view.byteOffset === 9, "DataView(buf, 9, 1).byteOffset = " + view.byteOffset);
+    test_readonly(view, "byteLength", 1);
+    test_readonly(view, "byteOffset", 9);
+    test_not_own_props("view", [ "buffer", "byteLength", "byteOffset" ]);
+
+    view = new DataView(buf, 10);
+    ok(view.buffer === buf,  "DataView(buf, 10).buffer = " + view.buffer);
+    ok(view.byteLength === 0, "DataView(buf, 10).byteLength = " + view.byteLength);
+    ok(view.byteOffset === 10, "DataView(buf, 10).byteOffset = " + view.byteOffset);
+    view = new DataView(buf, 1, 7);
+    ok(view.buffer === buf,  "DataView(buf, 1, 7).buffer = " + view.buffer);
+    ok(view.byteLength === 7, "DataView(buf, 1, 7).byteLength = " + view.byteLength);
+    ok(view.byteOffset === 1, "DataView(buf, 1, 7).byteOffset = " + view.byteOffset);
+    view2 = new DataView(buf, 6);
+    ok(view2.buffer === buf,  "DataView(buf, 6).buffer = " + view2.buffer);
+    ok(view2.byteLength === 4, "DataView(buf, 6).byteLength = " + view2.byteLength);
+    ok(view2.byteOffset === 6, "DataView(buf, 6).byteOffset = " + view2.byteOffset);
+    view = DataView(buf);
+    ok(view.buffer === buf,  "DataView(buf).buffer = " + view.buffer);
+    ok(view.byteLength === 10, "DataView(buf).byteLength = " + view.byteLength);
+    ok(view.byteOffset === 0,  "DataView(buf).byteOffset = " + view.byteOffset);
+
+    for(i = 0; i < 10; i++) {
+        r = view.getInt8(i);
+        ok(r === 0, "view byte " + i + " = " + r);
+    }
+
+    for(i = 0; i < types.length; i++) {
+        var method = "get" + types[i][0], offs = 11 - types[i][1];
+        r = DataView.prototype[method].length;
+        ok(r === 1, "DataView.prototype." + method + ".length = " + r);
+        try {
+            view[method]();
+            ok(false, "view." + method + "() did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_NO_ARGUMENT, "view." + method + "() threw " + n);
+        }
+        try {
+            view[method](-1);
+            ok(false, "view." + method + "(-1) did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_INVALID_ACCESS, "view." + method + "(-1) threw " + n);
+        }
+        try {
+            view[method](offs);
+            ok(false, "view." + method + "(" + offs + ") did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_INVALID_ACCESS, "view." + method + "(" + offs + ") threw " + n);
+        }
+        try {
+            view[method].call(null, 0);
+            ok(false, "view." + method + "(0) with null context did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "view." + method + "(0) with null context threw " + n);
+        }
+        try {
+            view[method].call({}, 0);
+            ok(false, "view." + method + "(0) with an object context did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "view." + method + "(0) with an object context threw " + n);
+        }
+        method = "set" + types[i][0];
+        r = DataView.prototype[method].length;
+        ok(r === 1, "DataView.prototype." + method + ".length = " + r);
+        try {
+            view[method]();
+            ok(false, "view." + method + "() did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_NO_ARGUMENT, "view." + method + "() threw " + n);
+        }
+        try {
+            view[method](0);
+            ok(false, "view." + method + "(0) did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_NO_ARGUMENT, "view." + method + "(0) threw " + n);
+        }
+        try {
+            view[method](-1, 0);
+            ok(false, "view." + method + "(-1, 0) did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_INVALID_ACCESS, "view." + method + "(-1, 0) threw " + n);
+        }
+        try {
+            view[method](offs, 0);
+            ok(false, "view." + method + "(" + offs + ", 0) did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_DATAVIEW_INVALID_ACCESS, "view." + method + "(" + offs + ", 0) threw " + n);
+        }
+        try {
+            view[method].call(null, 0, 0);
+            ok(false, "view." + method + "(0, 0) with null context did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "view." + method + "(0, 0) with null context threw " + n);
+        }
+        try {
+            view[method].call({}, 0, 0);
+            ok(false, "view." + method + "(0, 0) with an object context did not throw exception");
+        }catch(ex) {
+            var n = ex.number >>> 0;
+            ok(n === JS_E_NOT_DATAVIEW, "view." + method + "(0, 0) with an object context threw " + n);
+        }
+    }
+
+    r = view.setInt8(1, -257);
+    ok(r === undefined, "view.setInt8(1, -1) returned " + r);
+    r = view.getUint16(0);
+    ok(r === 255, "view.getUint16(0) returned " + r);
+    r = view.getUint16(0, true);
+    ok(r === 65280, "view.getUint16(0, true) returned " + r);
+    r = view.setUint32(2, "12345678", true);
+    ok(r === undefined, "view.setUint32(2, '12345678', true) returned " + r);
+    r = view.getInt32(1);
+    ok(r === -11640388, "view.getInt32(1) returned " + r);
+    r = view.setInt16(3, 65535, true);
+    ok(r === undefined, "view.setInt16(3, 65535) returned " + r);
+    r = view.getUint16(3);
+    ok(r === 65535, "view.getUint16(3) returned " + r);
+    r = view.setUint32(0, -2, true);
+    ok(r === undefined, "view.setUint32(0, -2) returned " + r);
+    r = view.getInt32(0, true);
+    ok(r === -2, "view.getInt32(0) returned " + r);
+    r = view.setFloat32(6, 1234.5, true);
+    ok(r === undefined, "view.setFloat32(6, 1234.5) returned " + r);
+    r = view2.getFloat32(0, true);
+    ok(r === 1234.5, "view2.getFloat32(0) returned " + r);
+
+    r = buf.slice(-9, 1);
+    ok(r instanceof ArrayBuffer, "buf.slice did not return an ArrayBuffer");
+    ok(r.byteLength === 0, "buf.slice(-9, 1).byteLength = " + r.byteLength);
+    r = buf.slice();
+    ok(r.byteLength === 10, "buf.slice().byteLength = " + r.byteLength);
+    r = buf.slice(9, 16);
+    ok(r.byteLength === 1, "buf.slice(9, 16).byteLength = " + r.byteLength);
+    r = buf.slice(-9, -1);
+    ok(r.byteLength === 8, "buf.slice(-9, -1).byteLength = " + r.byteLength);
+
+    /* setters differing only in signedness have identical behavior, but they're not the same methods */
+    ok(view.setInt8 !== view.setUint8, "setInt8 and setUint8 are the same method");
+    ok(view.setInt16 !== view.setUint16, "setInt16 and setUint16 are the same method");
+    ok(view.setInt32 !== view.setUint32, "setInt32 and setUint32 are the same method");
+
+    /* slice makes a copy */
+    buf2 = buf.slice(-9);
+    ok(buf2.byteLength === 9, "buf.slice(-9).byteLength = " + buf2.byteLength);
+    view2 = DataView(buf2, 1);
+    ok(view2.byteLength === 8, "buf.slice(-9) view(1).byteLength = " + view2.byteLength);
+
+    r = view2.getUint32(0);
+    ok(r === 4294967040, "buf.slice(-9) view(1).getUint32(0) returned " + r);
+    view2.setInt16(0, -5);
+    r = view2.getUint16(1);
+    ok(r === 64511, "buf.slice(-9) view(1).getUint16(1) returned " + r);
+    r = view.getInt32(1);
+    ok(r === -1, "view.getInt32(1) after slice changed returned " + r);
+
+    r = view2.setFloat64(0, 11.875);
+    ok(r === undefined, "buf.slice(-9) view(1).setFloat64(0, 11.875) returned " + r);
+    r = view2.getFloat64(0);
+    ok(r === 11.875, "buf.slice(-9) view(1).getFloat64(0) returned " + r);
 });
 
 sync_test("builtin_context", function() {
@@ -1931,7 +2316,6 @@ sync_test("substituted this", function() {
     ok(r === "[object Undefined]", "detached scope Object.toString returned " + r);
 
     var r = (function() { this.f = Object.prototype.toString; return this.f(); })();
-    todo_wine.
     ok(r === "[object Window]", "Object.toString returned " + r);
 
     var r = (function() { var f = Object.prototype.toString; return f(); })();
@@ -2248,4 +2632,213 @@ sync_test("initProgressEvent", function() {
     ok(e.lengthComputable === false, "lengthComputable after re-init = " + e.lengthComputable);
     ok(e.loaded === 99, "loaded after re-init = " + e.loaded);
     ok(e.total === 50, "total after re-init = " + e.total);
+});
+
+sync_test("screen", function() {
+    var o = screen;
+
+    ok(typeof(o) == "object", "typeof(o) = " + typeof(o));
+    ok(o instanceof Object, "o is not an instance of Object");
+
+    o.prop = 1;
+    ok(o.prop === 1, "o.prop = " + o.prop);
+    ok(o.hasOwnProperty("prop"), 'o.hasOwnProperty("prop") = ' + o.hasOwnProperty("prop"));
+    test_own_data_prop_desc(o, "prop", true, true, true);
+
+    Object.defineProperty(o, "defprop", {writable: false, enumerable: false, configurable: true, value: 2});
+    ok(o.defprop === 2, "o.prop = " + o.prop);
+    test_own_data_prop_desc(o, "defprop", false, false, true);
+
+    ok(typeof(Object.keys(o)) === "object", "Object.keys(o) = " + Object.keys(o));
+    ok(Object.isExtensible(o) === true, "Object.isExtensible(o) = " + Object.isExtensible(o));
+    ok(Object.isFrozen(o) === false, "Object.isFrozen(o) = " + Object.isFrozen(o));
+    ok(Object.isSealed(o) === false, "Object.isSealed(o) = " + Object.isSealed(o));
+
+    Object.seal(o);
+    test_own_data_prop_desc(o, "prop", true, true, false);
+    test_own_data_prop_desc(o, "defprop", false, false, false);
+    ok(Object.isExtensible(o) === false, "Object.isExtensible(o) = " + Object.isExtensible(o));
+    ok(Object.isFrozen(o) === false, "Object.isFrozen(o) = " + Object.isFrozen(o));
+    ok(Object.isSealed(o) === true, "Object.isSealed(o) = " + Object.isSealed(o));
+
+    ok(!o.hasOwnProperty("width"), 'o.hasOwnProperty("width") = ' + o.hasOwnProperty("width"));
+    ok(Screen.prototype.hasOwnProperty("width"),
+       'Screen.prototype.hasOwnProperty("width") = ' + Screen.prototype.hasOwnProperty("width"));
+
+    var desc = Object.getOwnPropertyDescriptor(Screen.prototype, "width");
+    ok(!("value" in desc), "width prop: value is in desc");
+    ok(!("writable" in desc), "width prop: writable is in desc");
+    ok(desc.enumerable === true, "width prop: enumerable = " + desc.enumerable);
+    ok(desc.configurable === true, "width prop: configurable = " + desc.configurable);
+    ok(Object.getPrototypeOf(desc.get) === Function.prototype, "width prop: get not a function: " + desc.get);
+    ok("set" in desc, "width prop: set is not in desc");
+    ok(desc.set === undefined, "width prop: set not undefined: " + desc.set);
+    ok(desc.get.call(o) === o.width, "width prop: get.call() not same as o.width: " + desc.get.call(o) + ", expected " + o.width);
+
+    o.prop2 = 3;
+    ok(!("prop2" in o), "o.prop2 = " + o.prop2);
+
+    ok(check_enum(o, "width"), "width not enumerated");
+    ok(check_enum(o, "height"), "height not enumerated");
+    ok(check_enum(o, "prop"), "prop not enumerated");
+    ok(!check_enum(o, "defprop"), "defprop enumerated");
+    ok(!check_enum(o, "prop2"), "prop2 enumerated");
+});
+
+sync_test("builtin_func", function() {
+    var o = document.implementation, r;
+    var f = o.hasFeature;
+
+    ok(f instanceof Function, "f is not an instance of Function");
+    ok(Object.getPrototypeOf(f) === Function.prototype, "Object.getPrototypeOf(f) = " + Object.getPrototypeOf(f));
+    ok(!f.hasOwnProperty("length"), "f has own length property");
+    ok(f.length === 0, "f.length = " + f.length);
+    ok(f.call(o, "test", 1) === false, 'f.call(o, "test", 1) = ' + f.call(o, "test", 1));
+    ok("" + f === "\nfunction hasFeature() {\n    [native code]\n}\n", "f = " + f);
+
+    o = document.body;
+    var desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Object.getPrototypeOf(o)), "innerHTML");
+    ok(!("value" in desc), "innerHTML prop: value is in desc");
+    ok(!("writable" in desc), "innerHTML prop: writable is in desc");
+    ok(desc.enumerable === true, "innerHTML prop: enumerable = " + desc.enumerable);
+    ok(desc.configurable === true, "innerHTML prop: configurable = " + desc.configurable);
+    ok(Object.getPrototypeOf(desc.get) === Function.prototype, "innerHTML prop: get not a function: " + desc.get);
+    ok(Object.getPrototypeOf(desc.set) === Function.prototype, "innerHTML prop: set not a function: " + desc.set);
+    r = desc.set.call(o, '<div id="winetest"></div>');
+    ok(r === undefined, "innerHTML prop: setter returned " + r);
+    r = desc.get.call(o);
+    ok(r === '<div id="winetest"></div>', "innerHTML prop: getter returned " + r);
+    ok(r === o.innerHTML, "innerHTML prop: getter not same as o.innerHTML: " + r + ", expected " + o.innerHTML);
+});
+
+async_test("script_global", function() {
+    // Created documents share script global, so their objects are instances of Object from
+    // the current script context.
+    var doc = document.implementation.createHTMLDocument("test");
+    todo_wine.
+    ok(doc instanceof Object, "created doc is not an instance of Object");
+    ok(doc.implementation instanceof Object, "created doc.implementation is not an instance of Object");
+
+    document.body.innerHTML = "";
+    var iframe = document.createElement("iframe");
+
+    // Documents created in iframe use iframe's script global, so their objects are not instances of
+    // current script context Object.
+    iframe.onload = guard(function() {
+        var doc = iframe.contentWindow.document;
+        ok(!(doc instanceof Object), "doc is an instance of Object");
+        ok(!(doc.implementation instanceof Object), "doc.implementation is an instance of Object");
+
+        doc = doc.implementation.createHTMLDocument("test");
+        ok(!(doc instanceof Object), "created iframe doc is an instance of Object");
+        ok(!(doc.implementation instanceof Object), "created iframe doc.implementation is an instance of Object");
+
+        next_test();
+    });
+
+    iframe.src = "about:blank";
+    document.body.appendChild(iframe);
+});
+
+sync_test("form_as_prop", function() {
+    document.body.innerHTML = '<form id="testid" name="testname"></form>';
+    var form = document.body.firstChild;
+    var o = Object.create(document);
+
+    ok(document.testid === form, "document.testid = " + document.testid);
+    ok(o.testid === form, "o.testid = " + o.testid);
+    ok(document.hasOwnProperty("testid"), 'document.hasOwnProperty("testid") = ' + document.hasOwnProperty("testid"));
+    ok(!o.hasOwnProperty("testid"), 'o.hasOwnProperty("testid") = ' + o.hasOwnProperty("testid"));
+    test_own_data_prop_desc(document, "testid", true, true, true);
+
+    ok(document.testname === form, "document.testname = " + document.testname);
+    ok(o.testname === form, "o.testname = " + o.testname);
+    ok(document.hasOwnProperty("testname"), 'document.hasOwnProperty("testname") = ' + document.hasOwnProperty("testname"));
+    ok(!o.hasOwnProperty("testname"), 'o.hasOwnProperty("testname") = ' + o.hasOwnProperty("testname"));
+    test_own_data_prop_desc(document, "testname", true, true, true);
+    todo_wine.
+    ok(!check_enum(document, "testid"), "testid enumerated in document");
+    ok(check_enum(document, "testname"), "testid not enumerated in document");
+    todo_wine.
+    ok(!check_enum(o, "testid"), "testid enumerated in o");
+    ok(check_enum(o, "testname"), "testid not enumerated in o");
+
+    document.body.innerHTML = '';
+    ok(!("testid" in o), "testid is in o");
+    ok(!("testname" in o), "testname is in o");
+    ok(!("testid" in document), "testid is in document");
+    ok(!("testname" in document), "testname is in document");
+    ok(!document.hasOwnProperty("testid"), 'document.hasOwnProperty("testid") = ' + document.hasOwnProperty("testid"));
+    ok(!document.hasOwnProperty("testname"), 'document.hasOwnProperty("testname") = ' + document.hasOwnProperty("testname"));
+});
+
+sync_test("prototypes", function() {
+    var constr = DOMImplementation;
+    test_own_data_prop_desc(window, "DOMImplementation", true, false, true);
+    ok(Object.getPrototypeOf(DOMImplementation) === Object.prototype,
+       "Object.getPrototypeOf(DOMImplementation) = " + Object.getPrototypeOf(DOMImplementation));
+    todo_wine.
+    ok(DOMImplementation == "[object DOMImplementation]", "DOMImplementation = " + DOMImplementation);
+
+    var proto = constr.prototype;
+    ok(proto == "[object DOMImplementationPrototype]", "DOMImplementation.prototype = " + proto);
+    ok(Object.getPrototypeOf(document.implementation) === proto,
+       "Object.getPrototypeOf(document.implementation) = " + Object.getPrototypeOf(document.implementation));
+    ok(Object.getPrototypeOf(proto) === Object.prototype, "Object.getPrototypeOf(proto) = " + Object.getPrototypeOf(proto));
+
+    test_own_data_prop_desc(constr, "prototype", false, false, false);
+    test_own_data_prop_desc(proto, "constructor", true, false, true);
+    ok(proto.hasOwnProperty("createHTMLDocument"), "prototype has no own createHTMLDocument property");
+    ok(!document.implementation.hasOwnProperty("createHTMLDocument"),
+       "prototype has own createHTMLDocument property");
+
+    ok(proto.constructor === constr, "proto.constructor = " + proto.constructor);
+    proto.constructor = 1;
+    ok(proto.constructor === 1, "proto.constructor = " + proto.constructor + " expected 1");
+    proto.constructor = constr;
+
+    DOMImplementation = 1;
+    ok(DOMImplementation === 1, "DOMImplementation = " + DOMImplementation + " expected 1");
+    DOMImplementation = constr;
+
+    ok(!HTMLBodyElement.prototype.hasOwnProperty("click"), "HTMLBodyElement prototype has own click property");
+    ok(HTMLElement.prototype.hasOwnProperty("click"), "HTMLElement prototype does not have own click property");
+
+    ok(!HTMLBodyElement.prototype.hasOwnProperty("removeChild"), "HTMLBodyElement prototype has own removeChild property");
+    ok(!HTMLElement.prototype.hasOwnProperty("removeChild"), "HTMLElement prototype has own removeChild property");
+    ok(!Element.prototype.hasOwnProperty("removeChild"), "Element prototype has own removeChild property");
+    ok(Node.prototype.hasOwnProperty("removeChild"), "Node prototype does not have own removeChild property");
+
+    test_own_data_prop_desc(window, "XMLHttpRequest", true, false, true);
+    ok(typeof(XMLHttpRequest) === "function", "typeof(XMLHttpRequest) = " + typeof(XMLHttpRequest));
+    ok(XMLHttpRequest.hasOwnProperty("create"), "XMLHttpRequest does not have create property");
+    ok(Object.getPrototypeOf(XMLHttpRequest) === Function.prototype,
+       "Object.getPrototypeOf(XMLHttpRequest) = " + Object.getPrototypeOf(XMLHttpRequest));
+    ok(XMLHttpRequest.prototype.constructor === XMLHttpRequest,
+       "XMLHttpRequest.prototype.constructor !== XMLHttpRequest");
+    var xhr = new XMLHttpRequest();
+    ok(Object.getPrototypeOf(xhr) === XMLHttpRequest.prototype,
+       "Object.getPrototypeOf(xhr) = " + Object.getPrototypeOf(xhr));
+    constr = XMLHttpRequest;
+    XMLHttpRequest = 1;
+    ok(XMLHttpRequest === 1, "XMLHttpRequest = " + XMLHttpRequest);
+    XMLHttpRequest = constr;
+
+    ok(Image != HTMLImageElement, "Image == HTMLImageElement");
+    ok(typeof(HTMLImageElement) === "object", "typeof(HTMLImageElement) = " + typeof(HTMLImageElement));
+    ok(typeof(Image) === "function", "typeof(Image) = " + typeof(Image));
+    ok(Image.prototype === HTMLImageElement.prototype, "Image.prototype != HTMLImageElement.prototype");
+
+    ok(Option != HTMLOptionElement, "Option == HTMLOptionElement");
+    ok(typeof(HTMLOptionElement) === "object", "typeof(HTMLOptionElement) = " + typeof(HTMLOptionElement));
+    ok(typeof(Option) === "function", "typeof(Option) = " + typeof(Option));
+    ok(Option.prototype === HTMLOptionElement.prototype, "Option.prototype != HTMLOptionElement.prototype");
+
+    ok(document.implementation instanceof DOMImplementation, "document.implementation is not an instance of DOMImplementation");
+    ok(navigator instanceof Navigator, "navigator is not an instance of Navigator");
+    ok(!(navigator instanceof DOMImplementation), "navigator is an instance of DOMImplementation");
+    ok(document.body instanceof HTMLBodyElement, "body is not an instance of HTMLBodyElement");
+    ok(document.body instanceof HTMLElement, "body is not an instance of HTMLElement");
+    ok(document.body instanceof Element, "body is not an instance of Element");
+    ok(document.body instanceof Node, "body is not an instance of Node");
 });

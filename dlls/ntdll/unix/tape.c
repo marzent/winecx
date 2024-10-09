@@ -518,17 +518,19 @@ static NTSTATUS TAPE_WriteMarks( int fd, const TAPE_WRITE_MARKS *data )
  *		tape_DeviceIoControl
  */
 NTSTATUS tape_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                               client_ptr_t io, UINT code,
+                               IO_STATUS_BLOCK *io, UINT code,
                                void *in_buffer, UINT in_size, void *out_buffer, UINT out_size )
 {
     DWORD sz = 0;
     NTSTATUS status = STATUS_INVALID_PARAMETER;
+    unsigned int options;
     int fd, needs_close;
 
-    TRACE( "%p %s %p %d %p %d\n", device, io2str(code),
-           in_buffer, in_size, out_buffer, out_size );
+    TRACE( "%p %s %p %d %p %d %p\n", device, io2str(code),
+           in_buffer, in_size, out_buffer, out_size, io );
 
-    if ((status = server_get_unix_fd( device, 0, &fd, &needs_close, NULL, NULL ))) goto error;
+    if ((status = server_get_unix_fd( device, 0, &fd, &needs_close, NULL, &options )))
+        return status;
 
     switch (code)
     {
@@ -578,8 +580,7 @@ NTSTATUS tape_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc,
 
     if (needs_close) close( fd );
 
-error:
-    set_async_iosb( io, status, sz );
-    if (event) NtSetEvent( event, NULL );
+    if (!NT_ERROR(status))
+        file_complete_async( device, options, event, apc, apc_user, io, status, sz );
     return status;
 }

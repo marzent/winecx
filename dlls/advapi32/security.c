@@ -2695,8 +2695,8 @@ BOOL WINAPI CreateProcessWithTokenW(HANDLE token, DWORD logon_flags, LPCWSTR app
           startup_info, process_information);
 
     /* FIXME: check if handles should be inherited */
-    return CreateProcessW( application_name, command_line, NULL, NULL, FALSE, creation_flags, environment,
-                           current_directory, startup_info, process_information );
+    return CreateProcessAsUserW( token, application_name, command_line, NULL, NULL, FALSE, creation_flags,
+                                 environment, current_directory, startup_info, process_information );
 }
 
 /******************************************************************************
@@ -2720,6 +2720,166 @@ DWORD WINAPI GetNamedSecurityInfoA(const char *pObjectName,
     free( wstr );
 
     return r;
+}
+
+/* CW HACK 23881 */
+static int is_battle_net_agent(void)
+{
+    static int status = -1;
+    if (status == -1)
+    {
+        WCHAR name[MAX_PATH], *module_exe;
+        if (GetModuleFileNameW(NULL, name, ARRAYSIZE(name)))
+        {
+            module_exe = wcsrchr(name, '\\');
+            module_exe = module_exe ? module_exe + 1 : name;
+            status = !wcsicmp(module_exe, L"Agent.exe");
+        }
+    }
+
+    return status;
+}
+
+/* CW HACK 23881 */
+/* Assumes orig_sd is self-relative. Returns a new self-relative SD. */
+static PSECURITY_DESCRIPTOR replace_dacl_and_owner(PSECURITY_DESCRIPTOR orig_sd, PACL new_dacl, PSID new_owner)
+{
+    DWORD abs_sd_size = 0, new_sd_size = 0;
+    DWORD old_dacl_size = 0, old_owner_size = 0;
+    DWORD sacl_size = 0, group_size = 0;
+    PSECURITY_DESCRIPTOR abs_sd = NULL, new_sd = NULL;
+    PACL old_dacl = NULL, sacl = NULL;
+    PSID old_owner = NULL, group = NULL;
+
+    /* Go to an absolute SD, call SetSecurityDescriptor* (which require absolute
+       SDs), then go back to a self-relative one. */
+
+    MakeAbsoluteSD(orig_sd, NULL, &abs_sd_size, NULL, &old_dacl_size, NULL, &sacl_size, NULL, &old_owner_size, NULL, &group_size);
+
+    abs_sd = LocalAlloc(0, abs_sd_size);
+    old_dacl = LocalAlloc(0, old_dacl_size);
+    sacl = LocalAlloc(0, sacl_size);
+    old_owner = LocalAlloc(0, old_owner_size);
+    group = LocalAlloc(0, group_size);
+
+    if (!MakeAbsoluteSD(orig_sd, abs_sd, &abs_sd_size, old_dacl, &old_dacl_size, sacl, &sacl_size, old_owner, &old_owner_size, group, &group_size))
+    {
+        ERR("HACK: MakeAbsoluteSD error %08lx\n", GetLastError());
+        goto done;
+    }
+
+    if (!SetSecurityDescriptorDacl(abs_sd, TRUE, new_dacl, FALSE))
+    {
+        ERR("HACK: SetSecurityDescriptorDacl error %08lx\n", GetLastError());
+        goto done;
+    }
+
+    if (!SetSecurityDescriptorOwner(abs_sd, new_owner, FALSE))
+    {
+        ERR("HACK: SetSecurityDescriptorOwner error %08lx\n", GetLastError());
+        goto done;
+    }
+
+    MakeSelfRelativeSD(abs_sd, NULL, &new_sd_size);
+    new_sd = LocalAlloc(0, new_sd_size);
+    if (!MakeSelfRelativeSD(abs_sd, new_sd, &new_sd_size))
+    {
+        ERR("HACK: MakeSelfRelativeSD error %08lx\n", GetLastError());
+        LocalFree(new_sd);
+        new_sd = NULL;
+        goto done;
+    }
+
+done:
+    LocalFree(abs_sd);
+    LocalFree(old_dacl);
+    LocalFree(sacl);
+    LocalFree(old_owner);
+    LocalFree(group);
+
+    return new_sd;
+}
+
+/* CW HACK 23881 */
+void hack_battle_net_sd(PSID* owner, PSID* group, PACL* dacl,
+                        PACL* sacl, PSECURITY_DESCRIPTOR* descriptor)
+{
+    SID *sid;
+    SID_IDENTIFIER_AUTHORITY auth = { SECURITY_NT_AUTHORITY };
+    MAX_SID sid_entries[3];
+    MAX_SID new_owner;
+    EXPLICIT_ACCESS_W entries[3] = { 0 };
+    int i;
+    PACL new_dacl;
+    PSECURITY_DESCRIPTOR old_sd, new_sd;
+    DWORD err;
+
+    WARN("HACK: adjusting owner and ACLs for a Battle.net directory\n");
+
+    for (i = 0; i < 3; i++)
+    {
+        entries[i].grfAccessMode = SET_ACCESS;
+        /* Permissions and inheritance on these ACLs were determined from the
+           app's own calls to SetEntriesInAclW. */
+        entries[i].grfInheritance = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+        entries[i].grfAccessPermissions = 0x1f01ff;
+
+        entries[i].Trustee.pMultipleTrustee = NULL;
+        entries[i].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+        entries[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+        entries[i].Trustee.TrusteeType = TRUSTEE_IS_UNKNOWN;
+    }
+
+    /* ACL: S-1-5-32-544 */
+    i = 0;
+    sid = (SID *)&sid_entries[i];
+    InitializeSid(sid, &auth, 2);
+    sid->SubAuthority[0] = SECURITY_BUILTIN_DOMAIN_RID;
+    sid->SubAuthority[1] = DOMAIN_ALIAS_RID_ADMINS;
+    entries[i].Trustee.ptstrName = (WCHAR *)sid;
+
+    /* ACL: S-1-5-32-545 */
+    i++;
+    sid = (SID *)&sid_entries[i];
+    InitializeSid(sid, &auth, 2);
+    sid->SubAuthority[0] = SECURITY_BUILTIN_DOMAIN_RID;
+    sid->SubAuthority[1] = DOMAIN_ALIAS_RID_USERS;
+    entries[i].Trustee.ptstrName = (WCHAR *)sid;
+
+    /* ACL: S-1-5-4 */
+    i++;
+    sid = (SID *)&sid_entries[i];
+    InitializeSid(sid, &auth, 1);
+    sid->SubAuthority[0] = SECURITY_INTERACTIVE_RID;
+    entries[i].Trustee.ptstrName = (WCHAR *)sid;
+
+    /* New owner: S-1-5-32-544 */
+    InitializeSid(&new_owner, &auth, 2);
+    new_owner.SubAuthority[0] = SECURITY_BUILTIN_DOMAIN_RID;
+    new_owner.SubAuthority[1] = DOMAIN_ALIAS_RID_ADMINS;
+
+    err = SetEntriesInAclW(3, entries, *dacl, &new_dacl);
+    if (err != ERROR_SUCCESS)
+    {
+        ERR("HACK: SetEntriesInAclW error %08lx\n", err);
+        return;
+    }
+
+    old_sd = *descriptor;
+    new_sd = replace_dacl_and_owner(old_sd, new_dacl, &new_owner);
+    LocalFree(new_dacl);
+    if (new_sd)
+    {
+        BOOL dummy;
+
+        *descriptor = new_sd;
+        LocalFree(old_sd);
+
+        if (owner) GetSecurityDescriptorOwner(new_sd, owner, &dummy);
+        if (group) GetSecurityDescriptorGroup(new_sd, group, &dummy);
+        if (dacl) GetSecurityDescriptorDacl(new_sd, &dummy, dacl, &dummy);
+        if (sacl) GetSecurityDescriptorSacl(new_sd, &dummy, sacl, &dummy);
+    }
 }
 
 /******************************************************************************
@@ -2773,6 +2933,18 @@ DWORD WINAPI GetNamedSecurityInfoW( const WCHAR *name, SE_OBJECT_TYPE type,
         {
             err = GetSecurityInfo( handle, type, info, owner, group, dacl, sacl, descriptor );
             CloseHandle( handle );
+
+            /* CW HACK 23881: The Battle.net launcher requires that everything under these
+               directories have certain owners and ACLs. */
+            if (err == ERROR_SUCCESS &&
+                descriptor &&
+                is_battle_net_agent() &&
+                (wcsstr( name, L"/ProgramData/Battle.net/Agent" ) ||
+                 wcsstr( name, L"\\ProgramData\\Battle.net_components" ) ||
+                 wcsstr( name, L"/Program Files (x86)/Battle.net" )))
+            {
+                hack_battle_net_sd( owner, group, dacl, sacl, descriptor );
+            }
         }
         break;
     default:
@@ -3099,6 +3271,19 @@ BOOL WINAPI SaferCloseLevel(SAFER_LEVEL_HANDLE handle)
 {
     FIXME("(%p) stub\n", handle);
     return TRUE;
+}
+
+/******************************************************************************
+ * TreeSetNamedSecurityInfoW   [ADVAPI32.@]
+ */
+DWORD WINAPI TreeSetNamedSecurityInfoW(WCHAR *name, SE_OBJECT_TYPE type, SECURITY_INFORMATION info,
+                                       SID *owner, SID *group, ACL *dacl, ACL *sacl, DWORD action,
+                                       FN_PROGRESS progress, PROG_INVOKE_SETTING pis, void *args)
+{
+    FIXME("(%s, %d, %lu, %p, %p, %p, %p, %lu, %p, %d, %p) stub\n",
+          debugstr_w(name), type, info, owner, group, dacl, sacl, action, progress, pis, args);
+
+    return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
 /******************************************************************************

@@ -43,6 +43,9 @@
 #ifdef HAVE_SCHED_H
 # include <sched.h>
 #endif
+#ifdef HAVE_SYS_RESOURCE_H
+# include <sys/resource.h>
+#endif
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -84,11 +87,7 @@ static inline ULONGLONG monotonic_counter(void)
     static mach_timebase_info_data_t timebase;
 
     if (!timebase.denom) mach_timebase_info( &timebase );
-#ifdef HAVE_MACH_CONTINUOUS_TIME
-    if (&mach_continuous_time != NULL)
-        return mach_continuous_time() * timebase.numer / timebase.denom / 100;
-#endif
-    return mach_absolute_time() * timebase.numer / timebase.denom / 100;
+    return mach_continuous_time() * timebase.numer / timebase.denom / 100;
 #elif defined(HAVE_CLOCK_GETTIME)
     struct timespec ts;
 #ifdef CLOCK_MONOTONIC_RAW
@@ -102,13 +101,11 @@ static inline ULONGLONG monotonic_counter(void)
     return ticks_from_time_t( now.tv_sec ) + now.tv_usec * 10 - server_start_time;
 }
 
-
 #ifdef __linux__
 
-#define FUTEX_WAIT 0
-#define FUTEX_WAKE 1
+#define USE_FUTEX
 
-static int futex_private = 128;
+#include <linux/futex.h>
 
 static inline int futex_wait( const LONG *addr, int val, struct timespec *timeout )
 {
@@ -120,36 +117,82 @@ static inline int futex_wait( const LONG *addr, int val, struct timespec *timeou
             long tv_nsec;
         } timeout32 = { timeout->tv_sec, timeout->tv_nsec };
 
-        return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, &timeout32, 0, 0 );
+        return syscall( __NR_futex, addr, FUTEX_WAIT_PRIVATE, val, &timeout32, 0, 0 );
     }
 #endif
-    return syscall( __NR_futex, addr, FUTEX_WAIT | futex_private, val, timeout, 0, 0 );
+    return syscall( __NR_futex, addr, FUTEX_WAIT_PRIVATE, val, timeout, 0, 0 );
 }
 
-static inline int futex_wake( const LONG *addr, int val )
+static inline int futex_wake_one( const LONG *addr )
 {
-    return syscall( __NR_futex, addr, FUTEX_WAKE | futex_private, val, NULL, 0, 0 );
+    return syscall( __NR_futex, addr, FUTEX_WAKE_PRIVATE, 1, NULL, 0, 0 );
 }
 
-static inline int use_futexes(void)
-{
-    static LONG supported = -1;
+#elif defined(__APPLE__)
 
-    if (supported == -1)
+#define USE_FUTEX
+
+#include <AvailabilityMacros.h>
+
+#ifdef MAC_OS_VERSION_14_4
+#include <os/os_sync_wait_on_address.h>
+#endif
+
+#define UL_COMPARE_AND_WAIT 1
+
+extern int __ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_t timeout );
+
+extern int __ulock_wake( uint32_t operation, void *addr, uint64_t wake_value );
+
+static inline int futex_wait( const LONG *addr, int val, struct timespec *timeout )
+{
+#ifdef MAC_OS_VERSION_14_4
+    if (__builtin_available( macOS 14.4, * ))
     {
-        futex_wait( &supported, 10, NULL );
-        if (errno == ENOSYS)
+        /* 18446744073 seconds could overflow a uint64_t in nanoseconds */
+        if (timeout && timeout->tv_sec < 18446744073)
         {
-            futex_private = 0;
-            futex_wait( &supported, 10, NULL );
-        }
-        supported = (errno != ENOSYS);
-    }
-    return supported;
-}
+            uint64_t ns_timeout = (timeout->tv_sec * 1000000000) + timeout->tv_nsec;
 
+            if (!ns_timeout)
+            {
+                errno = ETIMEDOUT;
+                return -1;
+            }
+            return os_sync_wait_on_address_with_timeout( (void *)addr, (uint64_t)val, 4, OS_SYNC_WAIT_ON_ADDRESS_NONE,
+                                                         OS_CLOCK_MACH_ABSOLUTE_TIME, ns_timeout );
+        }
+
+        return os_sync_wait_on_address( (void *)addr, (uint64_t)val, 4, OS_SYNC_WAIT_ON_ADDRESS_NONE );
+    }
 #endif
 
+    /* 4294 seconds could overflow a uint32_t in microseconds */
+    if (timeout && timeout->tv_sec < 4294)
+    {
+        uint32_t us_timeout = ((uint32_t)timeout->tv_sec * 1000000) + ((uint32_t)timeout->tv_nsec / 1000);
+
+        if (!us_timeout)
+        {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        return __ulock_wait( UL_COMPARE_AND_WAIT, (void *)addr, (uint64_t)val, us_timeout );
+    }
+
+    return __ulock_wait( UL_COMPARE_AND_WAIT, (void *)addr, (uint64_t)val, 0 );
+}
+
+static inline int futex_wake_one( const LONG *addr )
+{
+#ifdef MAC_OS_VERSION_14_4
+    if (__builtin_available( macOS 14.4, * ))
+        return os_sync_wake_by_address_any( (void *)addr, 4, OS_SYNC_WAKE_BY_ADDRESS_NONE );
+#endif
+    return __ulock_wake( UL_COMPARE_AND_WAIT, (void *)addr, 0 );
+}
+
+#endif /* __APPLE__ */
 
 /* create a struct security_descriptor and contained information in one contiguous piece of memory */
 unsigned int alloc_object_attributes( const OBJECT_ATTRIBUTES *attr, struct object_attributes **ret,
@@ -1332,53 +1375,94 @@ NTSTATUS WINAPI NtQueryDirectoryObject( HANDLE handle, DIRECTORY_BASIC_INFORMATI
                                         ULONG size, BOOLEAN single_entry, BOOLEAN restart,
                                         ULONG *context, ULONG *ret_size )
 {
+    unsigned int status, i, count, total_len, pos, used_size, used_count, strpool_head;
     ULONG index = restart ? 0 : *context;
-    unsigned int ret;
+    struct directory_entry *entries;
 
-    if (single_entry)
+    if (!(entries = malloc( size ))) return STATUS_NO_MEMORY;
+
+    SERVER_START_REQ( get_directory_entries )
     {
-        SERVER_START_REQ( get_directory_entry )
+        req->handle = wine_server_obj_handle( handle );
+        req->index = index;
+        req->max_count = single_entry ? 1 : UINT_MAX;
+        wine_server_set_reply( req, entries, size );
+        status = wine_server_call( req );
+        count = reply->count;
+        total_len = reply->total_len;
+    }
+    SERVER_END_REQ;
+
+    if (status && status != STATUS_MORE_ENTRIES)
+    {
+        free( entries );
+        return status;
+    }
+
+    used_count = 0;
+    used_size = sizeof(*buffer);  /* "null terminator" entry */
+    for (i = pos = 0; i < count; i++)
+    {
+        const struct directory_entry *entry = (const struct directory_entry *)((char *)entries + pos);
+        unsigned int entry_size = sizeof(*buffer) + entry->name_len + entry->type_len + 2 * sizeof(WCHAR);
+
+        if (used_size + entry_size > size)
         {
-            req->handle = wine_server_obj_handle( handle );
-            req->index = index;
-            if (size >= 2 * sizeof(*buffer) + 2 * sizeof(WCHAR))
-                wine_server_set_reply( req, buffer + 2, size - 2 * sizeof(*buffer) - 2 * sizeof(WCHAR) );
-            if (!(ret = wine_server_call( req )))
-            {
-                buffer->ObjectName.Buffer = (WCHAR *)(buffer + 2);
-                buffer->ObjectName.Length = reply->name_len;
-                buffer->ObjectName.MaximumLength = reply->name_len + sizeof(WCHAR);
-                buffer->ObjectTypeName.Buffer = (WCHAR *)(buffer + 2) + reply->name_len/sizeof(WCHAR) + 1;
-                buffer->ObjectTypeName.Length = wine_server_reply_size( reply ) - reply->name_len;
-                buffer->ObjectTypeName.MaximumLength = buffer->ObjectTypeName.Length + sizeof(WCHAR);
-                /* make room for the terminating null */
-                memmove( buffer->ObjectTypeName.Buffer, buffer->ObjectTypeName.Buffer - 1,
-                         buffer->ObjectTypeName.Length );
-                buffer->ObjectName.Buffer[buffer->ObjectName.Length/sizeof(WCHAR)] = 0;
-                buffer->ObjectTypeName.Buffer[buffer->ObjectTypeName.Length/sizeof(WCHAR)] = 0;
-
-                memset( &buffer[1], 0, sizeof(buffer[1]) );
-
-                *context = index + 1;
-            }
-            else if (ret == STATUS_NO_MORE_ENTRIES)
-            {
-                if (size > sizeof(*buffer))
-                    memset( buffer, 0, sizeof(*buffer) );
-                if (ret_size) *ret_size = sizeof(*buffer);
-            }
-
-            if (ret_size && (!ret || ret == STATUS_BUFFER_TOO_SMALL))
-                *ret_size = 2 * sizeof(*buffer) + reply->total_len + 2 * sizeof(WCHAR);
+            status = STATUS_MORE_ENTRIES;
+            break;
         }
-        SERVER_END_REQ;
+        used_count++;
+        used_size += entry_size;
+        pos += sizeof(*entry) + ((entry->name_len + entry->type_len + 3) & ~3);
     }
-    else
+
+    /*
+     * Avoid making strpool_head a pointer, since it can point beyond end
+     * of the buffer.  Out-of-bounds pointers trigger undefined behavior
+     * just by existing, even when they are never dereferenced.
+     */
+    strpool_head = sizeof(*buffer) * (used_count + 1);  /* after the "null terminator" entry */
+    for (i = pos = 0; i < used_count; i++)
     {
-        FIXME("multiple entries not implemented\n");
-        ret = STATUS_NOT_IMPLEMENTED;
+        const struct directory_entry *entry = (const struct directory_entry *)((char *)entries + pos);
+
+        buffer[i].ObjectName.Buffer = (WCHAR *)((char *)buffer + strpool_head);
+        buffer[i].ObjectName.Length = entry->name_len;
+        buffer[i].ObjectName.MaximumLength = entry->name_len + sizeof(WCHAR);
+        memcpy( buffer[i].ObjectName.Buffer, (entry + 1), entry->name_len );
+        buffer[i].ObjectName.Buffer[entry->name_len / sizeof(WCHAR)] = 0;
+        strpool_head += entry->name_len + sizeof(WCHAR);
+
+        buffer[i].ObjectTypeName.Buffer = (WCHAR *)((char *)buffer + strpool_head);
+        buffer[i].ObjectTypeName.Length = entry->type_len;
+        buffer[i].ObjectTypeName.MaximumLength = entry->type_len + sizeof(WCHAR);
+        memcpy( buffer[i].ObjectTypeName.Buffer, (char *)(entry + 1) + entry->name_len, entry->type_len );
+        buffer[i].ObjectTypeName.Buffer[entry->type_len / sizeof(WCHAR)] = 0;
+        strpool_head += entry->type_len + sizeof(WCHAR);
+
+        pos += sizeof(*entry) + ((entry->name_len + entry->type_len + 3) & ~3);
     }
-    return ret;
+
+    if (size >= sizeof(*buffer))
+        memset( &buffer[used_count], 0, sizeof(buffer[used_count]) );
+
+    free( entries );
+
+    if (!count && !status)
+    {
+        if (ret_size) *ret_size = sizeof(*buffer);
+        return STATUS_NO_MORE_ENTRIES;
+    }
+
+    if (single_entry && !used_count)
+    {
+        if (ret_size) *ret_size = 2 * sizeof(*buffer) + 2 * sizeof(WCHAR) + total_len;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    *context = index + used_count;
+    if (ret_size) *ret_size = strpool_head;
+    return status;
 }
 
 
@@ -1465,6 +1549,26 @@ NTSTATUS WINAPI NtQuerySymbolicLinkObject( HANDLE handle, UNICODE_STRING *target
 
 
 /**************************************************************************
+ *		NtMakePermanentObject (NTDLL.@)
+ */
+NTSTATUS WINAPI NtMakePermanentObject( HANDLE handle )
+{
+    unsigned int ret;
+
+    TRACE("%p\n", handle);
+
+    SERVER_START_REQ( set_object_permanence )
+    {
+        req->handle = wine_server_obj_handle( handle );
+        req->permanent = 1;
+        ret = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+    return ret;
+}
+
+
+/**************************************************************************
  *		NtMakeTemporaryObject (NTDLL.@)
  */
 NTSTATUS WINAPI NtMakeTemporaryObject( HANDLE handle )
@@ -1473,9 +1577,10 @@ NTSTATUS WINAPI NtMakeTemporaryObject( HANDLE handle )
 
     TRACE("%p\n", handle);
 
-    SERVER_START_REQ( make_temporary )
+    SERVER_START_REQ( set_object_permanence )
     {
         req->handle = wine_server_obj_handle( handle );
+        req->permanent = 0;
         ret = wine_server_call( req );
     }
     SERVER_END_REQ;
@@ -1705,7 +1810,17 @@ NTSTATUS WINAPI NtSignalAndWaitForSingleObject( HANDLE signal, HANDLE wait,
 NTSTATUS WINAPI NtYieldExecution(void)
 {
 #ifdef HAVE_SCHED_YIELD
+#ifdef RUSAGE_THREAD
+    struct rusage u1, u2;
+    int ret;
+
+    ret = getrusage( RUSAGE_THREAD, &u1 );
+#endif
     sched_yield();
+#ifdef RUSAGE_THREAD
+    if (!ret) ret = getrusage( RUSAGE_THREAD, &u2 );
+    if (!ret && u1.ru_nvcsw == u2.ru_nvcsw && u1.ru_nivcsw == u2.ru_nivcsw) return STATUS_NO_YIELD_PERFORMED;
+#endif
     return STATUS_SUCCESS;
 #else
     return STATUS_NO_YIELD_PERFORMED;
@@ -2556,13 +2671,12 @@ NTSTATUS WINAPI NtQueryInformationAtom( RTL_ATOM atom, ATOM_INFORMATION_CLASS cl
 
 union tid_alert_entry
 {
-#ifdef HAVE_KQUEUE
+#ifdef USE_FUTEX
+    LONG futex;
+#elif defined(HAVE_KQUEUE)
     int kq;
 #else
     HANDLE event;
-#ifdef __linux__
-    LONG futex;
-#endif
 #endif
 };
 
@@ -2598,7 +2712,9 @@ static union tid_alert_entry *get_tid_alert_entry( HANDLE tid )
 
     entry = &tid_alert_blocks[block_idx][idx % TID_ALERT_BLOCK_SIZE];
 
-#ifdef HAVE_KQUEUE
+#ifdef USE_FUTEX
+    return entry;
+#elif defined(HAVE_KQUEUE)
     if (!entry->kq)
     {
         int kq = kqueue();
@@ -2629,11 +2745,6 @@ static union tid_alert_entry *get_tid_alert_entry( HANDLE tid )
             close( kq );
     }
 #else
-#ifdef __linux__
-    if (use_futexes())
-        return entry;
-#endif
-
     if (!entry->event)
     {
         HANDLE event;
@@ -2660,7 +2771,14 @@ NTSTATUS WINAPI NtAlertThreadByThreadId( HANDLE tid )
 
     if (!entry) return STATUS_INVALID_CID;
 
-#ifdef HAVE_KQUEUE
+#ifdef USE_FUTEX
+    {
+        LONG *futex = &entry->futex;
+        if (!InterlockedExchange( futex, 1 ))
+            futex_wake_one( futex );
+        return STATUS_SUCCESS;
+    }
+#elif defined(HAVE_KQUEUE)
     {
         static const struct kevent signal_event =
         {
@@ -2676,22 +2794,12 @@ NTSTATUS WINAPI NtAlertThreadByThreadId( HANDLE tid )
         return STATUS_SUCCESS;
     }
 #else
-#ifdef __linux__
-    if (use_futexes())
-    {
-        LONG *futex = &entry->futex;
-        if (!InterlockedExchange( futex, 1 ))
-            futex_wake( futex, 1 );
-        return STATUS_SUCCESS;
-    }
-#endif
-
     return NtSetEvent( entry->event, NULL );
 #endif
 }
 
 
-#if defined(__linux__) || defined(HAVE_KQUEUE)
+#if defined(USE_FUTEX) || defined(HAVE_KQUEUE)
 static LONGLONG get_absolute_timeout( const LARGE_INTEGER *timeout )
 {
     LARGE_INTEGER now;
@@ -2714,73 +2822,18 @@ static LONGLONG update_timeout( ULONGLONG end )
 #endif
 
 
-#ifdef HAVE_KQUEUE
-
 /***********************************************************************
  *             NtWaitForAlertByThreadId (NTDLL.@)
  */
 NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEGER *timeout )
 {
     union tid_alert_entry *entry = get_tid_alert_entry( NtCurrentTeb()->ClientId.UniqueThread );
-    ULONGLONG end;
-    int ret;
-    struct timespec timespec;
-    struct kevent wait_event;
 
     TRACE( "%p %s\n", address, debugstr_timeout( timeout ) );
 
     if (!entry) return STATUS_INVALID_CID;
 
-    if (timeout)
-    {
-        if (timeout->QuadPart == TIMEOUT_INFINITE)
-            timeout = NULL;
-        else
-            end = get_absolute_timeout( timeout );
-    }
-
-    do
-    {
-        if (timeout)
-        {
-            LONGLONG timeleft = update_timeout( end );
-
-            timespec.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
-            timespec.tv_nsec = (timeleft % TICKSPERSEC) * 100;
-            if (timespec.tv_sec > 0x7FFFFFFF) timeout = NULL;
-        }
-
-        ret = kevent( entry->kq, NULL, 0, &wait_event, 1, timeout ? &timespec : NULL );
-    } while (ret == -1 && errno == EINTR);
-
-    switch (ret)
-    {
-    case 1:
-        return STATUS_ALERTED;
-    case 0:
-        return STATUS_TIMEOUT;
-    default:
-        ERR( "kevent failed with error: %d (%s)\n", errno, strerror( errno ) );
-        return STATUS_INVALID_HANDLE;
-    }
-}
-
-#else
-
-/***********************************************************************
- *             NtWaitForAlertByThreadId (NTDLL.@)
- */
-NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEGER *timeout )
-{
-    union tid_alert_entry *entry = get_tid_alert_entry( NtCurrentTeb()->ClientId.UniqueThread );
-    NTSTATUS status;
-
-    TRACE( "%p %s\n", address, debugstr_timeout( timeout ) );
-
-    if (!entry) return STATUS_INVALID_CID;
-
-#ifdef __linux__
-    if (use_futexes())
+#ifdef USE_FUTEX
     {
         LONG *futex = &entry->futex;
         ULONGLONG end;
@@ -2812,42 +2865,55 @@ NTSTATUS WINAPI NtWaitForAlertByThreadId( const void *address, const LARGE_INTEG
         }
         return STATUS_ALERTED;
     }
-#endif
-
-    status = NtWaitForSingleObject( entry->event, FALSE, timeout );
-    if (!status) return STATUS_ALERTED;
-    return status;
-}
-
-#endif
-
-/* Notify direct completion of async and close the wait handle if it is no longer needed.
- * This function is a no-op (returns status as-is) if the supplied handle is NULL.
- */
-void set_async_direct_result( HANDLE *async_handle, NTSTATUS status, ULONG_PTR information, BOOL mark_pending )
-{
-    unsigned int ret;
-
-    /* if we got STATUS_ALERTED, we must have a valid async handle */
-    assert( *async_handle );
-
-    SERVER_START_REQ( set_async_direct_result )
+#elif defined(HAVE_KQUEUE)
     {
-        req->handle       = wine_server_obj_handle( *async_handle );
-        req->status       = status;
-        req->information  = information;
-        req->mark_pending = mark_pending;
-        ret = wine_server_call( req );
-        if (ret == STATUS_SUCCESS)
-            *async_handle = wine_server_ptr_handle( reply->handle );
+        ULONGLONG end;
+        int ret;
+        struct timespec timespec;
+        struct kevent wait_event;
+
+        if (timeout)
+        {
+            if (timeout->QuadPart == TIMEOUT_INFINITE)
+                timeout = NULL;
+            else
+                end = get_absolute_timeout( timeout );
+        }
+
+        do
+        {
+            if (timeout)
+            {
+                LONGLONG timeleft = update_timeout( end );
+
+                timespec.tv_sec = timeleft / (ULONGLONG)TICKSPERSEC;
+                timespec.tv_nsec = (timeleft % TICKSPERSEC) * 100;
+                if (timespec.tv_sec > 0x7FFFFFFF) timeout = NULL;
+            }
+
+            ret = kevent( entry->kq, NULL, 0, &wait_event, 1, timeout ? &timespec : NULL );
+        } while (ret == -1 && errno == EINTR);
+
+        switch (ret)
+        {
+        case 1:
+            return STATUS_ALERTED;
+        case 0:
+            return STATUS_TIMEOUT;
+        default:
+            ERR( "kevent failed with error: %d (%s)\n", errno, strerror( errno ) );
+            return STATUS_INVALID_HANDLE;
+        }
     }
-    SERVER_END_REQ;
-
-    if (ret != STATUS_SUCCESS)
-        ERR( "cannot report I/O result back to server: %08x\n", ret );
-
-    return;
+#else
+    {
+        NTSTATUS status = NtWaitForSingleObject( entry->event, FALSE, timeout );
+        if (!status) return STATUS_ALERTED;
+        return status;
+    }
+#endif
 }
+
 
 /***********************************************************************
  *           NtCreateTransaction (NTDLL.@)

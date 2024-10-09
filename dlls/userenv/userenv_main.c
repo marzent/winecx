@@ -439,7 +439,7 @@ BOOL WINAPI GetUserProfileDirectoryW( HANDLE hToken, LPWSTR lpProfileDir,
     if (!GetProfilesDirectoryW( dirW, &dir_len )) goto done;
 
     len += dir_len + 2;
-    if (*lpcchSize < len)
+    if (*lpcchSize < len || !lpProfileDir)
     {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
         *lpcchSize = len;
@@ -687,4 +687,14 @@ BOOL WINAPI USERENV_138( int csidl, LPCSTR lnk_dir, LPCSTR lnk_filename,
             debugstr_a(comment), debugstr_a(loc_filename_resfile), loc_filename_resid );
 
     return FALSE;
+}
+
+HRESULT WINAPI CreateAppContainerProfile(PCWSTR container_name, PCWSTR display_name, PCWSTR description,
+                                         SID_AND_ATTRIBUTES *capabilities, DWORD capability_count,
+                                         SID **container_sid)
+{
+    FIXME("(%s, %s, %s, %p, %ld, %p): stub\n", debugstr_w(container_name), debugstr_w(display_name),
+          debugstr_w(description), capabilities, capability_count, container_sid);
+
+    return E_NOTIMPL;
 }

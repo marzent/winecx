@@ -43,59 +43,8 @@ static inline HTMLCommentElement *impl_from_IHTMLCommentElement(IHTMLCommentElem
     return CONTAINING_RECORD(iface, HTMLCommentElement, IHTMLCommentElement_iface);
 }
 
-static HRESULT WINAPI HTMLCommentElement_QueryInterface(IHTMLCommentElement *iface,
-        REFIID riid, void **ppv)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLCommentElement_AddRef(IHTMLCommentElement *iface)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLCommentElement_Release(IHTMLCommentElement *iface)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLCommentElement_GetTypeInfoCount(IHTMLCommentElement *iface, UINT *pctinfo)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLCommentElement_GetTypeInfo(IHTMLCommentElement *iface, UINT iTInfo,
-        LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLCommentElement_GetIDsOfNames(IHTMLCommentElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLCommentElement_Invoke(IHTMLCommentElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLCommentElement *This = impl_from_IHTMLCommentElement(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLCommentElement, IHTMLCommentElement,
+                      impl_from_IHTMLCommentElement(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLCommentElement_put_text(IHTMLCommentElement *iface, BSTR v)
 {
@@ -194,17 +143,18 @@ static const event_target_vtbl_t HTMLCommentElement_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static const tid_t HTMLCommentElement_iface_tids[] = {
+static const tid_t Comment_iface_tids[] = {
     HTMLELEMENT_TIDS,
     IHTMLCommentElement_tid,
     0
 };
-static dispex_static_data_t HTMLCommentElement_dispex = {
-    "Comment",
-    &HTMLCommentElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLCommentElement_tid,
-    HTMLCommentElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t Comment_dispex = {
+    .id           = PROT_Comment,
+    .prototype_id = PROT_CharacterData,
+    .vtbl         = &HTMLCommentElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLCommentElement_tid,
+    .iface_tids   = Comment_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 HRESULT HTMLCommentElement_Create(HTMLDocumentNode *doc, nsIDOMNode *nsnode, HTMLElement **elem)
@@ -218,8 +168,8 @@ HRESULT HTMLCommentElement_Create(HTMLDocumentNode *doc, nsIDOMNode *nsnode, HTM
     ret->element.node.vtbl = &HTMLCommentElementImplVtbl;
     ret->IHTMLCommentElement_iface.lpVtbl = &HTMLCommentElementVtbl;
 
-    HTMLElement_Init(&ret->element, doc, NULL, &HTMLCommentElement_dispex);
-    HTMLDOMNode_Init(doc, &ret->element.node, nsnode, &HTMLCommentElement_dispex);
+    HTMLElement_Init(&ret->element, doc, NULL, &Comment_dispex);
+    HTMLDOMNode_Init(doc, &ret->element.node, nsnode, &Comment_dispex);
 
     *elem = &ret->element;
     return S_OK;

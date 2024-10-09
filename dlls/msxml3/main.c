@@ -170,12 +170,12 @@ static int to_utf8(int cp, unsigned char *out, int *outlen, const unsigned char 
     if (!in || !inlen) goto done;
 
     len = MultiByteToWideChar(cp, 0, (const char *)in, *inlen, NULL, 0);
-    tmp = heap_alloc(len * sizeof(WCHAR));
+    tmp = malloc(len * sizeof(WCHAR));
     if (!tmp) return -1;
     MultiByteToWideChar(cp, 0, (const char *)in, *inlen, tmp, len);
 
     len = WideCharToMultiByte(CP_UTF8, 0, tmp, len, (char *)out, *outlen, NULL, NULL);
-    heap_free(tmp);
+    free(tmp);
     if (!len) return -1;
 done:
     *outlen = len;
@@ -190,12 +190,12 @@ static int from_utf8(int cp, unsigned char *out, int *outlen, const unsigned cha
     if (!in || !inlen) goto done;
 
     len = MultiByteToWideChar(CP_UTF8, 0, (const char *)in, *inlen, NULL, 0);
-    tmp = heap_alloc(len * sizeof(WCHAR));
+    tmp = malloc(len * sizeof(WCHAR));
     if (!tmp) return -1;
     MultiByteToWideChar(CP_UTF8, 0, (const char *)in, *inlen, tmp, len);
 
     len = WideCharToMultiByte(cp, 0, tmp, len, (char *)out, *outlen, NULL, NULL);
-    heap_free(tmp);
+    free(tmp);
     if (!len) return -1;
 done:
     *outlen = len;
@@ -210,6 +210,16 @@ static int gbk_to_utf8(unsigned char *out, int *outlen, const unsigned char *in,
 static int utf8_to_gbk(unsigned char *out, int *outlen, const unsigned char *in, int *inlen)
 {
     return from_utf8(936, out, outlen, in, inlen);
+}
+
+static int iso8859_1_to_utf8(unsigned char *out, int *outlen, const unsigned char *in, int *inlen)
+{
+    return to_utf8(28591, out, outlen, in, inlen);
+}
+
+static int utf8_to_iso8859_1(unsigned char *out, int *outlen, const unsigned char *in, int *inlen)
+{
+    return from_utf8(28591, out, outlen, in, inlen);
 }
 
 static int win1250_to_utf8(unsigned char *out, int *outlen, const unsigned char *in, int *inlen)
@@ -310,16 +320,17 @@ static void init_char_encoders(void)
         xmlCharEncodingOutputFunc output;
     } encoder[] =
     {
-        { "gbk",          gbk_to_utf8,     utf8_to_gbk     },
-        { "windows-1250", win1250_to_utf8, utf8_to_win1250 },
-        { "windows-1251", win1251_to_utf8, utf8_to_win1251 },
-        { "windows-1252", win1252_to_utf8, utf8_to_win1252 },
-        { "windows-1253", win1253_to_utf8, utf8_to_win1253 },
-        { "windows-1254", win1254_to_utf8, utf8_to_win1254 },
-        { "windows-1255", win1255_to_utf8, utf8_to_win1255 },
-        { "windows-1256", win1256_to_utf8, utf8_to_win1256 },
-        { "windows-1257", win1257_to_utf8, utf8_to_win1257 },
-        { "windows-1258", win1258_to_utf8, utf8_to_win1258 }
+        { "gbk",          gbk_to_utf8,       utf8_to_gbk       },
+        { "iso8859-1",    iso8859_1_to_utf8, utf8_to_iso8859_1 },
+        { "windows-1250", win1250_to_utf8,   utf8_to_win1250   },
+        { "windows-1251", win1251_to_utf8,   utf8_to_win1251   },
+        { "windows-1252", win1252_to_utf8,   utf8_to_win1252   },
+        { "windows-1253", win1253_to_utf8,   utf8_to_win1253   },
+        { "windows-1254", win1254_to_utf8,   utf8_to_win1254   },
+        { "windows-1255", win1255_to_utf8,   utf8_to_win1255   },
+        { "windows-1256", win1256_to_utf8,   utf8_to_win1256   },
+        { "windows-1257", win1257_to_utf8,   utf8_to_win1257   },
+        { "windows-1258", win1258_to_utf8,   utf8_to_win1258   }
     };
     int i;
 

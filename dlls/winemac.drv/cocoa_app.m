@@ -44,15 +44,16 @@ static NSString* const WineActivatingAppPIDKey = @"ActivatingAppPID";
 static NSString* const WineActivatingAppPrefixKey = @"ActivatingAppPrefix";
 static NSString* const WineActivatingAppConfigDirKey = @"ActivatingAppConfigDir";
 
-/* CW Hack 22310 */
-// WineAppUserModelIDQuitRequestNotification is sent on the distributed notification center when an
-// app with an AUMID is quit via Cocoa. Any app in the same prefix with a corresponding AUMID should
-// also quit.
-static NSString* const WineAppUserModelIDQuitRequestNotification = @"WineAppUserModelIDQuitRequestNotification";
-static NSString* const WineAUMIDQuitNotificationAUMIDKey = @"AUMID";
-static NSString* const WineAUMIDQuitNotificationSourcePIDKey = @"SourcePID";
-static NSString* const WineAUMIDQuitNotificationWineConfigDirKey = @"WineConfigDir";
-static NSString* const WineAUMIDQuitNotificationWinePrefixKey = @"WinePrefix";
+/* CW Hack 22310, 24199 */
+// WineExternalQuitRequestNotification is sent on the distributed notification center when an app
+// may need to quit in response to another app quitting via Cocoa. Any app in the same prefix with a
+// corresponding AUMID or EXE name should also quit.
+static NSString* const WineExternalQuitRequestNotification = @"WineExternalQuitRequestNotification";
+static NSString* const WineExternalQuitNotificationAUMIDKey = @"AUMID";
+static NSString* const WineExternalQuitNotificationExeNameKey = @"ExeName";
+static NSString* const WineExternalQuitNotificationSourcePIDKey = @"SourcePID";
+static NSString* const WineExternalQuitNotificationWineConfigDirKey = @"WineConfigDir";
+static NSString* const WineExternalQuitNotificationWinePrefixKey = @"WinePrefix";
 
 int macdrv_err_on;
 
@@ -321,6 +322,29 @@ static NSString* WineLocalizedString(unsigned int stringID)
             NSString* title;
             NSMenuItem* item;
 
+            /* CW HACK 24141: Prevent dock icon creation for certain apps. */
+            {
+                static NSArray *blacklistedProcesses;
+                static dispatch_once_t onceToken;
+                NSString *exeName;
+
+                dispatch_once(&onceToken, ^{
+                    blacklistedProcesses = [@[
+                        @"GOG Galaxy Notifications Renderer.exe",  /* Hack 24141 */
+                    ] retain];
+                });
+
+                exeName = [NSRunningApplication currentApplication].executableURL.lastPathComponent;
+                if ([blacklistedProcesses containsObject:exeName])
+                {
+                    /* Try to honor the activation request regardless. */
+                    if (activateIfTransformed)
+                        [self tryToActivateIgnoringOtherApps:YES];
+
+                    return;
+                }
+            }
+
             [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
             if (activateIfTransformed)
@@ -567,8 +591,6 @@ static NSString* WineLocalizedString(unsigned int stringID)
         if (lastKeyboardLayoutInputSource)
             CFRelease(lastKeyboardLayoutInputSource);
         lastKeyboardLayoutInputSource = inputSourceLayout;
-
-        inputSourceIsInputMethodValid = FALSE;
 
         if (inputSourceLayout)
         {
@@ -1408,7 +1430,7 @@ static NSString* WineLocalizedString(unsigned int stringID)
     {
         for (WineWindow* w in [NSApp windows])
         {
-            if ([w isKindOfClass:[WineWindow class]] && ![w isMiniaturized] && [w isVisible])
+            if ([w isKindOfClass:[WineWindow class]] && ![w isMiniaturized] && [w isVisible] && [w presentsVisibleContent])
                 return YES;
         }
 
@@ -2070,8 +2092,8 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
         /* CW Hack 22310 */
         [dnc addObserver:self
-                selector:@selector(handleAppUserModelIDQuitRequest:)
-                    name:WineAppUserModelIDQuitRequestNotification
+                selector:@selector(handleExternalQuitRequest:)
+                    name:WineExternalQuitRequestNotification
                   object:nil
       suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
 
@@ -2218,28 +2240,32 @@ static NSString* WineLocalizedString(unsigned int stringID)
         [NSApp activate];
      }
 
-    /* CW Hack 22310 */
-    - (void) handleAppUserModelIDQuitRequest:(NSNotification *)notification
+    /* CW Hack 22310, 24199 */
+    - (void) handleExternalQuitRequest:(NSNotification *)notification
     {
-        NSString *aumid;
+        NSString *targetAUMID, *targetExeName, *ourExeName;
         pid_t sourcePID;
         NSProcessInfo *ourProcess;
         NSString *ourConfigDir, *otherConfigDir, *ourPrefix, *otherPrefix;
 
-        if (!self.explicitAppUserModelID.length) return;
-
-        sourcePID = [notification.userInfo[WineAUMIDQuitNotificationAUMIDKey] intValue];
+        sourcePID = [notification.userInfo[WineExternalQuitNotificationSourcePIDKey] intValue];
         ourProcess = [NSProcessInfo processInfo];
 
         // Ignore requests from ourself
         if (sourcePID == ourProcess.processIdentifier) return;
 
-        aumid = notification.userInfo[WineAUMIDQuitNotificationAUMIDKey];
-        if (![self.explicitAppUserModelID isEqualToString:aumid]) return;
+        targetAUMID = notification.userInfo[WineExternalQuitNotificationAUMIDKey];
+        if (targetAUMID.length && ![self.explicitAppUserModelID isEqualToString:targetAUMID])
+            return;
 
-        // AUMID matches. Make sure it's from the same prefix.
+        targetExeName = notification.userInfo[WineExternalQuitNotificationExeNameKey];
+        ourExeName = [NSRunningApplication currentApplication].executableURL.lastPathComponent;;
+        if (targetExeName.length && ![ourExeName isEqualToString:targetExeName])
+            return;
+
+        // AUMID or EXE name matches. Make sure it's from the same prefix.
         ourConfigDir = ourProcess.environment[@"WINECONFIGDIR"];
-        otherConfigDir = notification.userInfo[WineAUMIDQuitNotificationWineConfigDirKey];
+        otherConfigDir = notification.userInfo[WineExternalQuitNotificationWineConfigDirKey];
         if (ourConfigDir.length && otherConfigDir.length &&
             ![ourConfigDir isEqualToString:otherConfigDir])
         {
@@ -2247,28 +2273,46 @@ static NSString* WineLocalizedString(unsigned int stringID)
         }
 
         ourPrefix = ourProcess.environment[@"WINEPREFIX"];
-        otherPrefix = notification.userInfo[WineAUMIDQuitNotificationWinePrefixKey];
+        otherPrefix = notification.userInfo[WineExternalQuitNotificationWinePrefixKey];
         if (ourPrefix.length && otherPrefix.length &&
             ![ourPrefix isEqualToString:otherPrefix])
         {
             return;
         }
 
-        terminatingDueToAUMIDRequest = YES;
+        terminatingDueToExternalRequest = YES;
         [NSApp terminate:NSApp];
     }
 
-    /* CW Hack 22310 */
-    - (void) postAppUserModelIDQuitRequest
+    /* CW Hack 22310, 24199 */
+    - (void) postExternalQuitRequest
     {
+        static NSArray *whitelistedAUMIDs, *whitelistedExeNames;
+        static dispatch_once_t onceToken;
         NSDictionary *userInfo;
         NSProcessInfo *process;
-        NSString *wineConfigDir, *winePrefix;
+        NSString *wineConfigDir, *winePrefix, *ourExeName, *targetExeName = @"";
 
-        if (!self.explicitAppUserModelID.length) return;
+        /* temporarily only enabling this in certain apps that really need it */
+        dispatch_once(&onceToken, ^{
+            whitelistedAUMIDs = [@[
+                @"Valve.Steam.Client",                 /* CW Hack 22310 */
+                @"RockstarGames.SocialClub.UI.Final",  /* CW Hack 23655 */
+            ] retain];
+        });
 
-        /* temporarily only supporting this for Steam */
-        if (![self.explicitAppUserModelID isEqualToString:@"Valve.Steam.Client"]) return;
+        ourExeName = [NSRunningApplication currentApplication].executableURL.lastPathComponent;
+        if ([ourExeName isEqualToString:@"EpicGamesLauncher.exe"])
+        {
+            /* CW Hack 24199: Quitting the Epic launcher should also quit the
+               web helpers. */
+            targetExeName = @"EpicWebHelper.exe";
+        }
+        else
+        {
+            if (!self.explicitAppUserModelID.length) return;
+            if (![whitelistedAUMIDs containsObject:self.explicitAppUserModelID]) return;
+        }
 
         process = [NSProcessInfo processInfo];
         wineConfigDir = process.environment[@"WINECONFIGDIR"];
@@ -2277,37 +2321,87 @@ static NSString* WineLocalizedString(unsigned int stringID)
         if (!winePrefix) winePrefix = @"";
 
         userInfo = @{
-            WineAUMIDQuitNotificationAUMIDKey: self.explicitAppUserModelID,
-            WineAUMIDQuitNotificationSourcePIDKey: @([NSProcessInfo processInfo].processIdentifier),
-            WineAUMIDQuitNotificationWineConfigDirKey: wineConfigDir,
-            WineAUMIDQuitNotificationWinePrefixKey: winePrefix
+            WineExternalQuitNotificationAUMIDKey: self.explicitAppUserModelID ? self.explicitAppUserModelID : @"",
+            WineExternalQuitNotificationExeNameKey: targetExeName,
+            WineExternalQuitNotificationSourcePIDKey: @([NSProcessInfo processInfo].processIdentifier),
+            WineExternalQuitNotificationWineConfigDirKey: wineConfigDir,
+            WineExternalQuitNotificationWinePrefixKey: winePrefix
         };
 
         [[NSDistributedNotificationCenter defaultCenter]
-            postNotificationName:WineAppUserModelIDQuitRequestNotification
+            postNotificationName:WineExternalQuitRequestNotification
                           object:nil
                         userInfo:userInfo
               deliverImmediately:YES];
     }
 
-    - (BOOL) inputSourceIsInputMethod
+    static BOOL InputSourceShouldBeIgnored(TISInputSourceRef inputSource)
     {
-        if (!inputSourceIsInputMethodValid)
+        /* Certain system utilities are technically input sources, but we
+           shouldn't consider them as such for our purposes. */
+        static CFStringRef ignoredIDs[] = {
+            /* The "Emoji & Symbols" palette. */
+            CFSTR("com.apple.CharacterPaletteIM"),
+            /* The on-screen keyboard and accessibility panel. */
+            CFSTR("com.apple.inputmethod.AssistiveControl"),
+            /* The popup for accented characters when you hold down a key. */
+            CFSTR("com.apple.PressAndHold"),
+            /* Emoji list on MacBooks with the Touch Bar. */
+            CFSTR("com.apple.inputmethod.EmojiFunctionRowItem"),
+            /* Dictation. Ideally this would actually receive key events, since
+               escape cancels it, but it remains a "selected" input source even
+               when not active, so we need to ignore it to avoid incorrectly
+               sending input to it. */
+            CFSTR("com.apple.inputmethod.ironwood"),
+        };
+
+        CFStringRef sourceID = TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceID);
+        for (int i = 0; i < sizeof(ignoredIDs) / sizeof(CFStringRef); i++)
         {
-            TISInputSourceRef inputSource = TISCopyCurrentKeyboardInputSource();
-            if (inputSource)
-            {
-                CFStringRef type = TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceType);
-                inputSourceIsInputMethod = !CFEqual(type, kTISTypeKeyboardLayout);
-                CFRelease(inputSource);
-            }
-            else
-                inputSourceIsInputMethod = FALSE;
-            inputSourceIsInputMethodValid = TRUE;
+            if (CFEqual(sourceID, ignoredIDs[i]))
+                return YES;
         }
 
-        return inputSourceIsInputMethod;
+        return NO;
     }
+
+    - (BOOL) inputSourceIsInputMethod
+    {
+        static dispatch_once_t onceToken;
+        static CFDictionaryRef filterDict;
+        CFArrayRef enabledSources;
+        CFIndex i;
+        BOOL ret = NO;
+
+        /* There may be multiple active ("selected") input sources, but there is
+           always exactly one selected keyboard input source. For instance,
+           handwriting methods are active simultaneously with a keyboard source.
+           As the name implies, TISCopyCurrentKeyboardInputSource only returns
+           the keyboard source, so it's not sufficient for our needs. We use
+           TISCreateInputSourceList instead to find all selected sources. */
+        dispatch_once(&onceToken, ^{
+            filterDict = CFDictionaryCreate(NULL, (const void **)&kTISPropertyInputSourceIsSelected, (const void **)&kCFBooleanTrue, 1,
+                                            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+        });
+        enabledSources = TISCreateInputSourceList(filterDict, false);
+        for (i = 0; i < CFArrayGetCount(enabledSources); i++)
+        {
+            TISInputSourceRef source = (TISInputSourceRef)CFArrayGetValueAtIndex(enabledSources, i);
+            CFStringRef type = TISGetInputSourceProperty(source, kTISPropertyInputSourceType);
+
+            /* kTISTypeKeyboardLayout is for physical keyboards. Any type other
+               than that is an IME. */
+            if (!CFEqual(type, kTISTypeKeyboardLayout) && !InputSourceShouldBeIgnored(source))
+            {
+                ret = YES;
+                break;
+            }
+        }
+
+        CFRelease(enabledSources);
+        return ret;
+     }
 
     - (void) releaseMouseCapture
     {
@@ -2331,17 +2425,24 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
     - (void) unminimizeWindowIfNoneVisible
     {
-        if (![self frontWineWindow])
+        WineWindow *bestOption = nil;
+
+        if ([self isAnyWineWindowVisible])
+            return;
+
+        for (WineWindow *window in [NSApp windows])
         {
-            for (WineWindow* window in [NSApp windows])
-            {
-                if ([window isKindOfClass:[WineWindow class]] && [window isMiniaturized])
-                {
-                    [window deminiaturize:self];
-                    break;
-                }
-            }
+            if (![window isKindOfClass:[WineWindow class]] || ![window isMiniaturized])
+                continue;
+
+            bestOption = window;
+
+            /* Prefer any window that would actually show something. */
+            if ([window presentsVisibleContent])
+                break;
         }
+
+        [bestOption deminiaturize:self];
     }
 
     - (void) setRetinaMode:(int)mode
@@ -2488,18 +2589,18 @@ static NSString* WineLocalizedString(unsigned int stringID)
         return ret;
     }
 
-    /* CW Hack 22310 */
+    /* CW Hack 22310, 24199 */
     - (void)handleApplicationShouldTerminateReply:(BOOL)reply
     {
-        if (reply && !terminatingDueToAUMIDRequest)
+        if (reply && !terminatingDueToExternalRequest)
         {
-            // Normal Cocoa-initiated quit, so tell everyone else with our AUMID
-            // to quit as well.
-            [self postAppUserModelIDQuitRequest];
+            // Normal Cocoa-initiated quit, so potentially tell other related
+            // apps to quit as well.
+            [self postExternalQuitRequest];
         }
 
         if (!reply)
-            terminatingDueToAUMIDRequest = NO;
+            terminatingDueToExternalRequest = NO;
 
         [NSApp replyToApplicationShouldTerminate:reply];
     }

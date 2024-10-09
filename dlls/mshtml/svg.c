@@ -45,59 +45,8 @@ static inline SVGElement *impl_from_ISVGElement(ISVGElement *iface)
     return CONTAINING_RECORD(iface, SVGElement, ISVGElement_iface);
 }
 
-static HRESULT WINAPI SVGElement_QueryInterface(ISVGElement *iface,
-        REFIID riid, void **ppv)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI SVGElement_AddRef(ISVGElement *iface)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI SVGElement_Release(ISVGElement *iface)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI SVGElement_GetTypeInfoCount(ISVGElement *iface, UINT *pctinfo)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI SVGElement_GetTypeInfo(ISVGElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI SVGElement_GetIDsOfNames(ISVGElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI SVGElement_Invoke(ISVGElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    SVGElement *This = impl_from_ISVGElement(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(SVGElement, ISVGElement,
+                      impl_from_ISVGElement(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI SVGElement_put_xmlbase(ISVGElement *iface, BSTR v)
 {
@@ -207,12 +156,13 @@ static const event_target_vtbl_t SVGElement_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static dispex_static_data_t SVGElement_dispex = {
-    "HTMLUnknownElement",
-    &SVGElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLUnknownElement_tid,
-    HTMLElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t SVGElement_dispex = {
+    .id           = PROT_SVGElement,
+    .prototype_id = PROT_Element,
+    .vtbl         = &SVGElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLUnknownElement_tid,
+    .iface_tids   = HTMLElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 static void init_svg_element(SVGElement *svg_element, HTMLDocumentNode *doc, nsIDOMSVGElement *nselem, dispex_static_data_t *dispex_data)
@@ -231,59 +181,8 @@ static inline SVGSVGElement *impl_from_ISVGSVGElement(ISVGSVGElement *iface)
     return CONTAINING_RECORD(iface, SVGSVGElement, ISVGSVGElement_iface);
 }
 
-static HRESULT WINAPI SVGSVGElement_QueryInterface(ISVGSVGElement *iface,
-        REFIID riid, void **ppv)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->svg_element.element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI SVGSVGElement_AddRef(ISVGSVGElement *iface)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->svg_element.element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI SVGSVGElement_Release(ISVGSVGElement *iface)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-
-    return IHTMLDOMNode_Release(&This->svg_element.element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI SVGSVGElement_GetTypeInfoCount(ISVGSVGElement *iface, UINT *pctinfo)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI SVGSVGElement_GetTypeInfo(ISVGSVGElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI SVGSVGElement_GetIDsOfNames(ISVGSVGElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI SVGSVGElement_Invoke(ISVGSVGElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    return IDispatchEx_Invoke(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(SVGSVGElement, ISVGSVGElement,
+                      impl_from_ISVGSVGElement(iface)->svg_element.element.node.event_target.dispex)
 
 static HRESULT WINAPI SVGSVGElement_putref_x(ISVGSVGElement *iface, ISVGAnimatedLength *v)
 {
@@ -758,12 +657,13 @@ static const event_target_vtbl_t SVGSVGElement_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static dispex_static_data_t SVGSVGElement_dispex = {
-    "HTMLUnknownElement",
-    &SVGSVGElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLUnknownElement_tid,
-    HTMLElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t SVGSVGElement_dispex = {
+    .id           = PROT_SVGSVGElement,
+    .prototype_id = PROT_SVGElement,
+    .vtbl         = &SVGSVGElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLUnknownElement_tid,
+    .iface_tids   = HTMLElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 static HRESULT create_viewport_element(HTMLDocumentNode *doc, nsIDOMSVGElement *nselem, HTMLElement **elem)
@@ -793,59 +693,8 @@ static inline SVGCircleElement *impl_from_ISVGCircleElement(ISVGCircleElement *i
     return CONTAINING_RECORD(iface, SVGCircleElement, ISVGCircleElement_iface);
 }
 
-static HRESULT WINAPI SVGCircleElement_QueryInterface(ISVGCircleElement *iface,
-        REFIID riid, void **ppv)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->svg_element.element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI SVGCircleElement_AddRef(ISVGCircleElement *iface)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->svg_element.element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI SVGCircleElement_Release(ISVGCircleElement *iface)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-
-    return IHTMLDOMNode_Release(&This->svg_element.element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI SVGCircleElement_GetTypeInfoCount(ISVGCircleElement *iface, UINT *pctinfo)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI SVGCircleElement_GetTypeInfo(ISVGCircleElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI SVGCircleElement_GetIDsOfNames(ISVGCircleElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI SVGCircleElement_Invoke(ISVGCircleElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    SVGCircleElement *This = impl_from_ISVGCircleElement(iface);
-    return IDispatchEx_Invoke(&This->svg_element.element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(SVGCircleElement, ISVGCircleElement,
+                      impl_from_ISVGCircleElement(iface)->svg_element.element.node.event_target.dispex)
 
 static HRESULT WINAPI SVGCircleElement_putref_cx(ISVGCircleElement *iface, ISVGAnimatedLength *v)
 {
@@ -939,12 +788,13 @@ static const event_target_vtbl_t SVGCircleElement_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static dispex_static_data_t SVGCircleElement_dispex = {
-    "HTMLUnknownElement",
-    &SVGCircleElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLUnknownElement_tid,
-    HTMLElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t SVGCircleElement_dispex = {
+    .id           = PROT_SVGCircleElement,
+    .prototype_id = PROT_SVGElement,
+    .vtbl         = &SVGCircleElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLUnknownElement_tid,
+    .iface_tids   = HTMLElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 static HRESULT create_circle_element(HTMLDocumentNode *doc, nsIDOMSVGElement *nselem, HTMLElement **elem)
@@ -974,58 +824,8 @@ static inline SVGTextContentElement *impl_from_ISVGTextContentElement(ISVGTextCo
     return CONTAINING_RECORD(iface, SVGTextContentElement, ISVGTextContentElement_iface);
 }
 
-static HRESULT WINAPI SVGTextContentElement_QueryInterface(ISVGTextContentElement *iface,
-        REFIID riid, void **ppv)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    return IHTMLDOMNode_QueryInterface(&This->svg_element->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI SVGTextContentElement_AddRef(ISVGTextContentElement *iface)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->svg_element->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI SVGTextContentElement_Release(ISVGTextContentElement *iface)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-
-    return IHTMLDOMNode_Release(&This->svg_element->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI SVGTextContentElement_GetTypeInfoCount(ISVGTextContentElement *iface, UINT *pctinfo)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->svg_element->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI SVGTextContentElement_GetTypeInfo(ISVGTextContentElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->svg_element->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI SVGTextContentElement_GetIDsOfNames(ISVGTextContentElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->svg_element->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI SVGTextContentElement_Invoke(ISVGTextContentElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    return IDispatchEx_Invoke(&This->svg_element->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(SVGTextContentElement, ISVGTextContentElement,
+                      impl_from_ISVGTextContentElement(iface)->svg_element->element.node.event_target.dispex)
 
 static HRESULT WINAPI SVGTextContentElement_putref_textLength(ISVGTextContentElement *iface, ISVGAnimatedLength *v)
 {
@@ -1176,6 +976,16 @@ static void *SVGTSpanElement_query_interface(DispatchEx *dispex, REFIID riid)
     return SVGElement_query_interface(&This->svg_element.element.node.event_target.dispex, riid);
 }
 
+dispex_static_data_t SVGTextContentElement_dispex = {
+    .id           = PROT_SVGTextContentElement,
+    .prototype_id = PROT_SVGElement,
+};
+
+dispex_static_data_t SVGTextPositioningElement_dispex = {
+    .id           = PROT_SVGTextPositioningElement,
+    .prototype_id = PROT_SVGTextContentElement,
+};
+
 static const NodeImplVtbl SVGTSpanElementImplVtbl = {
     .clsid                 = &CLSID_SVGTSpanElement,
     .cpc_entries           = HTMLElement_cpc,
@@ -1195,12 +1005,13 @@ static const event_target_vtbl_t SVGTSpanElement_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static dispex_static_data_t SVGTSpanElement_dispex = {
-    "HTMLUnknownElement",
-    &SVGTSpanElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLUnknownElement_tid,
-    HTMLElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t SVGTSpanElement_dispex = {
+    .id           = PROT_SVGTSpanElement,
+    .prototype_id = PROT_SVGTextPositioningElement,
+    .vtbl         = &SVGTSpanElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLUnknownElement_tid,
+    .iface_tids   = HTMLElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 static HRESULT create_tspan_element(HTMLDocumentNode *doc, nsIDOMSVGElement *nselem, HTMLElement **elem)

@@ -210,18 +210,16 @@ static RTL_USER_PROCESS_PARAMETERS *create_process_params( const WCHAR *filename
         params->hStdOutput = startup->hStdOutput;
         params->hStdError  = startup->hStdError;
     }
-    else if (flags & (DETACHED_PROCESS | CREATE_NEW_CONSOLE))
-    {
-        params->hStdInput  = INVALID_HANDLE_VALUE;
-        params->hStdOutput = INVALID_HANDLE_VALUE;
-        params->hStdError  = INVALID_HANDLE_VALUE;
-    }
-    else
+    else if (!(flags & (DETACHED_PROCESS | CREATE_NEW_CONSOLE)))
     {
         params->hStdInput  = NtCurrentTeb()->Peb->ProcessParameters->hStdInput;
         params->hStdOutput = NtCurrentTeb()->Peb->ProcessParameters->hStdOutput;
         params->hStdError  = NtCurrentTeb()->Peb->ProcessParameters->hStdError;
     }
+
+    if (params->hStdInput  == INVALID_HANDLE_VALUE) params->hStdInput  = NULL;
+    if (params->hStdOutput == INVALID_HANDLE_VALUE) params->hStdOutput = NULL;
+    if (params->hStdError  == INVALID_HANDLE_VALUE) params->hStdError  = NULL;
 
     params->dwX             = startup->dwX;
     params->dwY             = startup->dwY;
@@ -577,6 +575,10 @@ static WCHAR *hack_replace_command_line(const WCHAR *cmd)
         /* Hack 22704 */
         { L"\\Baldurs Gate 3\\Launcher\\LariLauncher.exe",
           L"\\Baldurs Gate 3\\bin\\bg3_dx11.exe" },
+
+        /* Hack 21786, 24153 */
+        { L"\\bin\\x64_dx12\\witcher3.exe",
+          L"\\bin\\x64\\witcher3.exe" },
     };
     WCHAR *new_command, *pos;
     SIZE_T substring_len, replacement_len, new_len;
@@ -648,21 +650,34 @@ static const WCHAR *hack_append_command_line( const WCHAR *cmd, const WCHAR *cmd
      * used by Quicken.
      */
     /* CROSSOVER HACK: bug 22598
-     * Add --launcher-skip to the Witcher 3 prelauncher.
+     * Add --launcher-skip to the Witcher 3 RED prelauncher, and also the
+     * uppercase spelling for the GOG version, bug 24153.
      */
     /* CROSSOVER HACK: bug 20279
      * Add --in-process-gpu to the Warframe launcher (...\Tools\Launcher.exe), with
      * various parent directories per server type.
     */
-    /* CROSSOVER HACK: bug 22769
-     * Add --in-process-gpu --use-gl=swiftshader to cefsubprocess.exe for Marvel Snap.
-     */
     /* CROSSOVER HACK: bug 23066
      * Add  --no-sandbox --in-process-gpu --use-gl=swiftshader to t2gp.exe for
      * the 2k launcher (e.g. Mafia: Definitive Edition).
      */
     /* CROSSOVER HACK: bug 23061
      * Add `/devicetype DX12` to Anno 1800 to force DX12.
+     */
+    /* CROSSOVER HACK: bug 23949
+     * Add --in-process-gpu to HYP.exe.
+     */
+    /* CROSSOVER HACK: bug 13896
+     * Add --in-process-gpu --use-gl=swiftshader for various GOG Galaxy processes.
+     */
+    /* CROSSOVER HACK: bug 24098
+     * Add --in-process-gpu --disable-gpu for NARAKA: BLADEPOINT.
+     */
+    /* CROSSOVER HACK: bug 23854
+     * Add --in-process-gpu --use-gl=angle for Epic launcher processes.
+     */
+    /* CROSSOVER HACK: bug 24279
+     * Add -nobattleye for GTA V.
      */
 
     static const struct
@@ -683,11 +698,21 @@ static const WCHAR *hack_append_command_line( const WCHAR *cmd, const WCHAR *cmd
         {L"Battle.net.exe", L" --in-process-gpu --use-gl=swiftshader", NULL, NULL},
         {L"msedgewebview2.exe", L" --in-process-gpu --use-gl=swiftshader --no-sandbox", NULL, L"--type=crashpad-handler"},
         {L"redprelauncher.exe", L" --launcher-skip", NULL, NULL},
+        {L"REDprelauncher.exe", L" --launcher-skip", NULL, NULL},
         {L"\\Tools\\Launcher.exe", L" --in-process-gpu", NULL, NULL},
-        {L"cefsubprocess.exe", L" --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
         {L"t2gp.exe", L" --no-sandbox --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
         {L"WXWorkWeb.exe", L" --in-process-gpu", NULL, L"--type=crashpad-handler"},
         {L"Anno1800.exe", L" /devicetype DX12", NULL, NULL},
+        {L"HYP.exe", L" --in-process-gpu", NULL, NULL},
+        {L"GalaxyClient.exe", L" --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
+        {L"GalaxyClient Helper.exe", L" --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
+        {L"GOG Galaxy Notifications Renderer.exe", L" --in-process-gpu --use-gl=swiftshader", NULL, L"--type=crashpad-handler"},
+        {L"LootHoarder.exe", L" --in-process-gpu --disable-gpu", NULL, NULL},
+        {L"EpicGamesLauncher.exe", L" --in-process-gpu --use-gl=angle", NULL, L"--type=crashpad-handler"},
+        {L"EpicOnlineServicesUIHelper.exe", L" --in-process-gpu --use-gl=angle", NULL, L"--type=crashpad-handler"},
+        {L"EOSOverlayRenderer-Win64-Shipping.exe", L" --in-process-gpu --use-gl=angle", NULL, L"--type=crashpad-handler"},
+        {L"EOSOverlayRenderer-Win32-Shipping.exe", L" --in-process-gpu --use-gl=angle", NULL, L"--type=crashpad-handler"},
+        {L"PlayGTAV.exe", L" -nobattleye", NULL, NULL},
     };
     unsigned int i;
 
@@ -1000,15 +1025,6 @@ BOOL WINAPI DECLSPEC_HOTPATCH DuplicateHandle( HANDLE source_process, HANDLE sou
 {
     return set_ntstatus( NtDuplicateObject( source_process, source, dest_process, dest,
                                             access, inherit ? OBJ_INHERIT : 0, options ));
-}
-
-
-/****************************************************************************
- *           FlushInstructionCache   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH FlushInstructionCache( HANDLE process, LPCVOID addr, SIZE_T size )
-{
-    return set_ntstatus( NtFlushInstructionCache( process, addr, size ));
 }
 
 

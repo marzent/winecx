@@ -102,9 +102,25 @@ void close_objects(void)
 
 /*****************************************************************/
 
-/* mark a block of memory as uninitialized for debugging purposes */
-static inline void mark_block_uninitialized( void *ptr, size_t size )
+/* mark a block of memory as not accessible for debugging purposes */
+void mark_block_noaccess( void *ptr, size_t size )
 {
+    memset( ptr, 0xfe, size );
+#if defined(VALGRIND_MAKE_MEM_NOACCESS)
+    VALGRIND_DISCARD( VALGRIND_MAKE_MEM_NOACCESS( ptr, size ) );
+#elif defined(VALGRIND_MAKE_NOACCESS)
+    VALGRIND_DISCARD( VALGRIND_MAKE_NOACCESS( ptr, size ) );
+#endif
+}
+
+/* mark a block of memory as uninitialized for debugging purposes */
+void mark_block_uninitialized( void *ptr, size_t size )
+{
+#if defined(VALGRIND_MAKE_MEM_UNDEFINED)
+    VALGRIND_DISCARD( VALGRIND_MAKE_MEM_UNDEFINED( ptr, size ));
+#elif defined(VALGRIND_MAKE_WRITABLE)
+    VALGRIND_DISCARD( VALGRIND_MAKE_WRITABLE( ptr, size ));
+#endif
     memset( ptr, 0x55, size );
 #if defined(VALGRIND_MAKE_MEM_UNDEFINED)
     VALGRIND_DISCARD( VALGRIND_MAKE_MEM_UNDEFINED( ptr, size ));
@@ -495,7 +511,6 @@ struct object *find_object_index( const struct namespace *namespace, unsigned in
             if (!index--) return grab_object( ptr->obj );
         }
     }
-    set_error( STATUS_NO_MORE_ENTRIES );
     return NULL;
 }
 
@@ -657,15 +672,11 @@ int set_sd_defaults_from_token( struct object *obj, const struct security_descri
     }
     new_sd_ptr = (struct security_descriptor*)ptr;
 
-    memcpy( ptr, &new_sd, sizeof(new_sd) );
-    ptr += sizeof(new_sd);
-    memcpy( ptr, owner, new_sd.owner_len );
-    ptr += new_sd.owner_len;
-    memcpy( ptr, group, new_sd.group_len );
-    ptr += new_sd.group_len;
-    memcpy( ptr, sacl, new_sd.sacl_len );
-    ptr += new_sd.sacl_len;
-    memcpy( ptr, dacl, new_sd.dacl_len );
+    ptr = mem_append( ptr, &new_sd, sizeof(new_sd) );
+    ptr = mem_append( ptr, owner, new_sd.owner_len );
+    ptr = mem_append( ptr, group, new_sd.group_len );
+    ptr = mem_append( ptr, sacl, new_sd.sacl_len );
+    mem_append( ptr, dacl, new_sd.dacl_len );
 
     free( replaced_sacl );
     free( obj->sd );

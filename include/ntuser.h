@@ -34,10 +34,26 @@
 # endif
 #endif
 
-/* KernelCallbackTable codes, not compatible with Windows */
+/* avoid including shellscalingapi.h */
+typedef enum MONITOR_DPI_TYPE
+{
+    MDT_EFFECTIVE_DPI   = 0,
+    MDT_ANGULAR_DPI     = 1,
+    MDT_RAW_DPI         = 2,
+    MDT_DEFAULT         = MDT_EFFECTIVE_DPI,
+} MONITOR_DPI_TYPE;
+
+typedef NTSTATUS (WINAPI *ntuser_callback)( void *args, ULONG len );
+NTSYSAPI NTSTATUS KeUserModeCallback( ULONG id, const void *args, ULONG len, void **ret_ptr, ULONG *ret_len );
+
+/* KernelCallbackTable codes, not compatible with Windows.
+   All of these functions must live inside user32.dll. Overwatch 2's
+   KiUserCallbackDispatcher hook verifies this and prevents the callback from
+   running if that check fails. */
 enum
 {
     /* user32 callbacks */
+    NtUserCallDispatchCallback,
     NtUserCallEnumDisplayMonitor,
     NtUserCallSendAsyncCallback,
     NtUserCallWinEventHook,
@@ -57,19 +73,21 @@ enum
     NtUserPostDDEMessage,
     NtUserRenderSynthesizedFormat,
     NtUserUnpackDDEMessage,
-    /* win16 hooks */
-    NtUserCallFreeIcon,
-    NtUserThunkLock,
-    /* Vulkan support */
-    NtUserCallVulkanDebugReportCallback,
-    NtUserCallVulkanDebugUtilsCallback,
-    /* OpenGL support */
-    NtUserCallOpenGLDebugMessageCallback,
-    /* Driver-specific callbacks */
-    NtUserDriverCallbackFirst,
-    NtUserDriverCallbackLast = NtUserDriverCallbackFirst + 9,
     NtUserCallCount
 };
+
+/* NtUserCallDispatchCallback params */
+struct dispatch_callback_params
+{
+    UINT64 callback;
+};
+
+static inline NTSTATUS KeUserDispatchCallback( const struct dispatch_callback_params *params, ULONG len,
+                                               void **ret_ptr, ULONG *ret_len )
+{
+    if (!params->callback) return STATUS_ENTRYPOINT_NOT_FOUND;
+    return KeUserModeCallback( NtUserCallDispatchCallback, params, len, ret_ptr, ret_len );
+}
 
 /* TEB thread info, not compatible with Windows */
 struct ntuser_thread_info
@@ -83,7 +101,7 @@ struct ntuser_thread_info
     UINT           receive_flags;     /* currently received message flags */
     UINT           top_window;        /* desktop window */
     UINT           msg_window;        /* HWND_MESSAGE parent window */
-    DPI_AWARENESS  dpi_awareness;     /* DPI awareness */
+    UINT           dpi_context;       /* DPI awareness context */
     UINT           default_imc;       /* default input context */
     UINT64         client_imm;        /* client IMM thread info */
     UINT64         wmchar_data;       /* client data for WM_CHAR mappings */
@@ -160,7 +178,7 @@ struct win_proc_params
     BOOL ansi;
     BOOL ansi_dst;
     enum wm_char_mapping mapping;
-    DPI_AWARENESS_CONTEXT dpi_awareness;
+    UINT dpi_context;
     WNDPROC procA;
     WNDPROC procW;
 };
@@ -199,6 +217,11 @@ struct draw_text_params
     RECT rect;
     UINT flags;
     WCHAR str[1];
+};
+struct draw_text_result
+{
+    int height;
+    RECT rect;
 };
 
 /* NtUserFreeCachedClipboardData params */
@@ -262,28 +285,37 @@ struct render_synthesized_format_params
 };
 
 /* NtUserUnpackDDEMessage params */
-struct unpack_dde_message_result
-{
-    WPARAM wparam;
-    LPARAM lparam;
-};
-
 struct unpack_dde_message_params
 {
-    struct unpack_dde_message_result *result;  /* FIXME: Use NtCallbackReturn instead */
     HWND hwnd;
     UINT message;
     WPARAM wparam;
     LPARAM lparam;
     char data[1];
 };
+struct unpack_dde_message_result
+{
+    WPARAM wparam;
+    LPARAM lparam;
+};
 
-/* process DPI awareness contexts */
-#define NTUSER_DPI_UNAWARE                0x00006010
-#define NTUSER_DPI_SYSTEM_AWARE           0x00006011
-#define NTUSER_DPI_PER_MONITOR_AWARE      0x00000012
-#define NTUSER_DPI_PER_MONITOR_AWARE_V2   0x00000022
-#define NTUSER_DPI_PER_UNAWARE_GDISCALED  0x40006010
+/* DPI awareness contexts */
+#define MAKE_NTUSER_DPI_CONTEXT( awareness, version, dpi, flags )  ((awareness) | ((version) << 4) | ((dpi) << 8) | (flags))
+#define NTUSER_DPI_CONTEXT_GET_AWARENESS( ctx )                    ((ctx) & 0x0f)
+#define NTUSER_DPI_CONTEXT_GET_VERSION( ctx )                      (((ctx) & 0xf0) >> 4)
+#define NTUSER_DPI_CONTEXT_GET_DPI( ctx )                          ((((ctx) & 0x1ff00) >> 8))
+#define NTUSER_DPI_CONTEXT_GET_FLAGS( ctx )                        ((ctx) & 0xfffe0000)
+#define NTUSER_DPI_CONTEXT_FLAG_GDISCALED                          0x40000000
+#define NTUSER_DPI_CONTEXT_FLAG_PROCESS                            0x80000000
+#define NTUSER_DPI_CONTEXT_FLAG_VALID_MASK                         (NTUSER_DPI_CONTEXT_FLAG_PROCESS | NTUSER_DPI_CONTEXT_FLAG_GDISCALED)
+
+#define NTUSER_DPI_CONTEXT_IS_MONITOR_AWARE( ctx )  (NTUSER_DPI_CONTEXT_GET_AWARENESS( ctx ) == DPI_AWARENESS_PER_MONITOR_AWARE)
+
+#define NTUSER_DPI_UNAWARE                MAKE_NTUSER_DPI_CONTEXT( DPI_AWARENESS_UNAWARE, 1, USER_DEFAULT_SCREEN_DPI, 0 )
+#define NTUSER_DPI_SYSTEM_AWARE           MAKE_NTUSER_DPI_CONTEXT( DPI_AWARENESS_SYSTEM_AWARE, 1, system_dpi, 0 )
+#define NTUSER_DPI_PER_MONITOR_AWARE      MAKE_NTUSER_DPI_CONTEXT( DPI_AWARENESS_PER_MONITOR_AWARE, 1, 0, 0 )
+#define NTUSER_DPI_PER_MONITOR_AWARE_V2   MAKE_NTUSER_DPI_CONTEXT( DPI_AWARENESS_PER_MONITOR_AWARE, 2, 0, 0 )
+#define NTUSER_DPI_PER_UNAWARE_GDISCALED  MAKE_NTUSER_DPI_CONTEXT( DPI_AWARENESS_UNAWARE, 1, USER_DEFAULT_SCREEN_DPI, NTUSER_DPI_CONTEXT_FLAG_GDISCALED )
 
 /* message spy definitions */
 #define SPY_DISPATCHMESSAGE  0x0100
@@ -294,7 +326,8 @@ struct unpack_dde_message_params
 #define SPY_RESULT_DEFWND  0x0002
 
 /* CreateDesktop wine specific flag */
-#define DF_WINE_CREATE_DESKTOP   0x80000000
+#define DF_WINE_ROOT_DESKTOP      0x40000000
+#define DF_WINE_VIRTUAL_DESKTOP   0x80000000
 
 /* NtUserMessageCall codes */
 enum
@@ -476,8 +509,10 @@ enum associate_input_context_result
     AICR_FAILED,
 };
 
+/* CX HACK 23950 */
 struct flush_shm_surface_params
 {
+    BITMAPINFO info;
     RECT bounds;
     ULONG section;
     ULONG hwnd;
@@ -496,10 +531,11 @@ enum wine_internal_message
     WM_WINE_KEYBOARD_LL_HOOK,
     WM_WINE_MOUSE_LL_HOOK,
     WM_WINE_UPDATEWINDOWSTATE,
-    WM_WINE_FLUSHSHMSURFACE,
+    WM_WINE_FLUSHSHMSURFACE, /* CX HACK 23950 */
     WM_WINE_FIRST_DRIVER_MSG = 0x80001000,  /* range of messages reserved for the USER driver */
     WM_WINE_CLIPCURSOR = 0x80001ff0, /* internal driver notification messages */
     WM_WINE_SETCURSOR,
+    WM_WINE_DESKTOP_RESIZED,
     WM_WINE_LAST_DRIVER_MSG = 0x80001fff
 };
 
@@ -519,6 +555,7 @@ enum wine_ime_call
 {
     WINE_IME_PROCESS_KEY,
     WINE_IME_TO_ASCII_EX,
+    WINE_IME_POST_UPDATE,  /* for the user drivers */
 };
 
 /* NtUserImeDriverCall params */
@@ -787,6 +824,7 @@ W32KAPI BOOL    WINAPI NtUserShowWindow( HWND hwnd, INT cmd );
 W32KAPI BOOL    WINAPI NtUserShowWindowAsync( HWND hwnd, INT cmd );
 W32KAPI BOOL    WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT winini );
 W32KAPI BOOL    WINAPI NtUserSystemParametersInfoForDpi( UINT action, UINT val, PVOID ptr, UINT winini, UINT dpi );
+W32KAPI BOOL    WINAPI NtUserSwitchDesktop( HDESK desktop );
 W32KAPI BOOL    WINAPI NtUserThunkedMenuInfo( HMENU menu, const MENUINFO *info );
 W32KAPI UINT    WINAPI NtUserThunkedMenuItemInfo( HMENU menu, UINT pos, UINT flags, UINT method,
                                                   MENUITEMINFOW *info, UNICODE_STRING *str );
@@ -824,6 +862,7 @@ enum
     NtUserCallNoParam_GetShellWindow,
     NtUserCallNoParam_GetTaskmanWindow,
     NtUserCallNoParam_ReleaseCapture,
+    NtUserCallNoParam_DisplayModeChanged,
     /* temporary exports */
     NtUserExitingThread,
     NtUserThreadDetach,
@@ -893,13 +932,15 @@ enum
     NtUserCallOneParam_GetSysColorPen,
     NtUserCallOneParam_GetSystemMetrics,
     NtUserCallOneParam_GetVirtualScreenRect,
-    NtUserCallOneParam_IsWindowRectFullScreen,
     NtUserCallOneParam_MessageBeep,
     NtUserCallOneParam_RealizePalette,
     NtUserCallOneParam_ReplyMessage,
     NtUserCallOneParam_SetCaretBlinkTime,
     NtUserCallOneParam_SetProcessDefaultLayout,
     NtUserCallOneParam_SetKeyboardAutoRepeat,
+    NtUserCallOneParam_SetThreadDpiAwarenessContext,
+    NtUserCallOneParam_D3DKMTOpenAdapterFromGdiDisplayName,
+    NtUserCallOneParam_GetAsyncKeyboardState,
     /* temporary exports */
     NtUserGetDeskPattern,
 };
@@ -924,9 +965,16 @@ static inline WORD NtUserEnableDC( HDC hdc )
     return NtUserCallOneParam( HandleToUlong(hdc), NtUserCallOneParam_EnableDC );
 }
 
-static inline void NtUserEnableThunkLock( BOOL enable )
+struct thunk_lock_params
 {
-    NtUserCallOneParam( enable, NtUserCallOneParam_EnableThunkLock );
+    struct dispatch_callback_params dispatch;
+    BOOL restore;
+    DWORD locks;
+};
+
+static inline void NtUserEnableThunkLock( ntuser_callback thunk_lock_callback )
+{
+    NtUserCallOneParam( (UINT_PTR)thunk_lock_callback, NtUserCallOneParam_EnableThunkLock );
 }
 
 static inline UINT NtUserEnumClipboardFormats( UINT format )
@@ -986,18 +1034,6 @@ static inline INT NtUserGetSystemMetrics( INT index )
     return NtUserCallOneParam( index, NtUserCallOneParam_GetSystemMetrics );
 }
 
-static inline RECT NtUserGetVirtualScreenRect(void)
-{
-    RECT virtual;
-    NtUserCallOneParam( (UINT_PTR)&virtual, NtUserCallOneParam_GetVirtualScreenRect );
-    return virtual;
-}
-
-static inline BOOL NtUserIsWindowRectFullScreen( const RECT *rect )
-{
-    return NtUserCallOneParam( (UINT_PTR)rect, NtUserCallOneParam_IsWindowRectFullScreen );
-}
-
 static inline BOOL NtUserMessageBeep( UINT i )
 {
     return NtUserCallOneParam( i, NtUserCallOneParam_MessageBeep );
@@ -1018,6 +1054,23 @@ static inline UINT NtUserSetProcessDefaultLayout( DWORD layout )
     return NtUserCallOneParam( layout, NtUserCallOneParam_SetProcessDefaultLayout );
 }
 
+static inline UINT NtUserSetThreadDpiAwarenessContext( UINT context )
+{
+    return NtUserCallOneParam( context, NtUserCallOneParam_SetThreadDpiAwarenessContext );
+}
+
+typedef struct _D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME;
+
+static inline NTSTATUS NtUserD3DKMTOpenAdapterFromGdiDisplayName( D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME *desc )
+{
+    return NtUserCallOneParam( (UINT_PTR)desc, NtUserCallOneParam_D3DKMTOpenAdapterFromGdiDisplayName );
+}
+
+static inline BOOL NtUserGetAsyncKeyboardState( BYTE state[256] )
+{
+    return NtUserCallOneParam( (UINT_PTR)state, NtUserCallOneParam_GetAsyncKeyboardState );
+}
+
 /* NtUserCallTwoParam codes, not compatible with Windows */
 enum
 {
@@ -1028,7 +1081,10 @@ enum
     NtUserCallTwoParam_MonitorFromRect,
     NtUserCallTwoParam_SetCaretPos,
     NtUserCallTwoParam_SetIconParam,
+    NtUserCallTwoParam_SetIMECompositionWindowPos,
     NtUserCallTwoParam_UnhookWindowsHook,
+    NtUserCallTwoParam_AdjustWindowRect,
+    NtUserCallTwoParam_GetVirtualScreenRect,
     /* temporary exports */
     NtUserAllocWinProc,
 };
@@ -1066,14 +1122,48 @@ static inline BOOL NtUserSetCaretPos( int x, int y )
     return NtUserCallTwoParam( x, y, NtUserCallTwoParam_SetCaretPos );
 }
 
-static inline UINT_PTR NtUserSetIconParam( HICON icon, ULONG_PTR param )
+struct free_icon_params
 {
-    return NtUserCallTwoParam( HandleToUlong(icon), param, NtUserCallTwoParam_SetIconParam );
+    struct dispatch_callback_params dispatch;
+    UINT64 param;
+};
+
+static inline UINT_PTR NtUserSetIconParam( HICON icon, ULONG_PTR param, ntuser_callback callback )
+{
+    struct free_icon_params params = {.dispatch = {.callback = (UINT_PTR)callback}, .param = param};
+    return NtUserCallTwoParam( HandleToUlong(icon), (UINT_PTR)&params, NtUserCallTwoParam_SetIconParam );
 }
 
 static inline BOOL NtUserUnhookWindowsHook( INT id, HOOKPROC proc )
 {
     return NtUserCallTwoParam( id, (UINT_PTR)proc, NtUserCallTwoParam_UnhookWindowsHook );
+}
+
+struct adjust_window_rect_params
+{
+    DWORD style;
+    DWORD ex_style;
+    BOOL menu;
+    UINT dpi;
+};
+
+static inline BOOL NtUserAdjustWindowRect( RECT *rect, DWORD style, BOOL menu, DWORD ex_style, UINT dpi )
+{
+    struct adjust_window_rect_params params =
+    {
+        .style = style,
+        .ex_style = ex_style,
+        .menu = menu,
+        .dpi = dpi,
+    };
+    return NtUserCallTwoParam( (ULONG_PTR)rect, (ULONG_PTR)&params, NtUserCallTwoParam_AdjustWindowRect );
+}
+
+static inline RECT NtUserGetVirtualScreenRect( MONITOR_DPI_TYPE type )
+{
+    RECT virtual;
+    NtUserCallTwoParam( (UINT_PTR)&virtual, type, NtUserCallTwoParam_GetVirtualScreenRect );
+    return virtual;
 }
 
 /* NtUserCallHwnd codes, not compatible with Windows */
@@ -1150,10 +1240,9 @@ static inline HWND NtUserGetParent( HWND hwnd )
     return UlongToHandle( NtUserCallHwnd( hwnd, NtUserCallHwnd_GetParent ));
 }
 
-static inline DPI_AWARENESS_CONTEXT NtUserGetWindowDpiAwarenessContext( HWND hwnd )
+static inline UINT NtUserGetWindowDpiAwarenessContext( HWND hwnd )
 {
-    return (DPI_AWARENESS_CONTEXT)NtUserCallHwnd( hwnd,
-                                                  NtUserCallHwnd_GetWindowDpiAwarenessContext );
+    return NtUserCallHwnd( hwnd, NtUserCallHwnd_GetWindowDpiAwarenessContext );
 }
 
 static inline HIMC NtUserGetWindowInputContext( HWND hwnd )
@@ -1217,14 +1306,13 @@ enum
     NtUserCallHwndParam_GetClassLongPtrA,
     NtUserCallHwndParam_GetClassLongPtrW,
     NtUserCallHwndParam_GetClassWord,
-    NtUserCallHwndParam_GetClientRect,
     NtUserCallHwndParam_GetScrollInfo,
     NtUserCallHwndParam_GetWindowInfo,
     NtUserCallHwndParam_GetWindowLongA,
     NtUserCallHwndParam_GetWindowLongW,
     NtUserCallHwndParam_GetWindowLongPtrA,
     NtUserCallHwndParam_GetWindowLongPtrW,
-    NtUserCallHwndParam_GetWindowRect,
+    NtUserCallHwndParam_GetWindowRects,
     NtUserCallHwndParam_GetWindowRelative,
     NtUserCallHwndParam_GetWindowThread,
     NtUserCallHwndParam_GetWindowWord,
@@ -1238,8 +1326,18 @@ enum
     NtUserCallHwndParam_SetMDIClientInfo,
     NtUserCallHwndParam_SetWindowContextHelpId,
     NtUserCallHwndParam_ShowOwnedPopups,
+    NtUserCallHwndParam_SendHardwareInput,
+    NtUserCallHwndParam_ExposeWindowSurface,
+    NtUserCallHwndParam_GetWinMonitorDpi,
     /* temporary exports */
     NtUserSetWindowStyle,
+};
+
+struct get_window_rects_params
+{
+    RECT *rect;
+    BOOL client;
+    UINT dpi;
 };
 
 static inline BOOL NtUserClientToScreen( HWND hwnd, POINT *pt )
@@ -1282,9 +1380,10 @@ static inline WORD NtUserGetClassWord( HWND hwnd, INT offset )
     return NtUserCallHwndParam( hwnd, offset, NtUserCallHwndParam_GetClassWord );
 }
 
-static inline BOOL NtUserGetClientRect( HWND hwnd, RECT *rect )
+static inline BOOL NtUserGetClientRect( HWND hwnd, RECT *rect, UINT dpi )
 {
-    return NtUserCallHwndParam( hwnd, (UINT_PTR)rect, NtUserCallHwndParam_GetClientRect );
+    struct get_window_rects_params params = {.rect = rect, .client = TRUE, .dpi = dpi};
+    return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_GetWindowRects );
 }
 
 struct get_scroll_info_params
@@ -1324,9 +1423,10 @@ static inline LONG NtUserGetWindowLongW( HWND hwnd, INT offset )
     return NtUserCallHwndParam( hwnd, offset, NtUserCallHwndParam_GetWindowLongW );
 }
 
-static inline BOOL NtUserGetWindowRect( HWND hwnd, RECT *rect )
+static inline BOOL NtUserGetWindowRect( HWND hwnd, RECT *rect, UINT dpi )
 {
-    return NtUserCallHwndParam( hwnd, (UINT_PTR)rect, NtUserCallHwndParam_GetWindowRect );
+    struct get_window_rects_params params = {.rect = rect, .client = FALSE, .dpi = dpi};
+    return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_GetWindowRects );
 }
 
 static inline HWND NtUserGetWindowRelative( HWND hwnd, UINT rel )
@@ -1360,14 +1460,16 @@ struct map_window_points_params
     HWND hwnd_to;
     POINT *points;
     UINT count;
+    UINT dpi;
 };
 
-static inline int NtUserMapWindowPoints( HWND hwnd_from, HWND hwnd_to, POINT *points, UINT count )
+static inline int NtUserMapWindowPoints( HWND hwnd_from, HWND hwnd_to, POINT *points, UINT count, UINT dpi )
 {
     struct map_window_points_params params;
     params.hwnd_to = hwnd_to;
     params.points = points;
     params.count = count;
+    params.dpi = dpi;
     return NtUserCallHwndParam( hwnd_from, (UINT_PTR)&params,
                                 NtUserCallHwndParam_MapWindowPoints );
 }
@@ -1408,8 +1510,54 @@ static inline BOOL NtUserShowOwnedPopups( HWND hwnd, BOOL show )
     return NtUserCallHwndParam( hwnd, show, NtUserCallHwndParam_ShowOwnedPopups );
 }
 
-/* Wine extensions */
-W32KAPI BOOL WINAPI __wine_send_input( HWND hwnd, const INPUT *input, const RAWINPUT *rawinput );
+struct hid_input
+{
+    UINT device;
+    UINT usage;
+    UINT count;
+    UINT length;
+};
+
+struct hid_packet
+{
+    struct hid_input head;
+    BYTE data[];
+};
+
+C_ASSERT(sizeof(struct hid_packet) == offsetof(struct hid_packet, data[0]));
+
+struct send_hardware_input_params
+{
+    UINT flags;
+    const INPUT *input;
+    LPARAM lparam;  /* struct hid_packet pointer for WM_INPUT* messages */
+};
+
+static inline BOOL NtUserSendHardwareInput( HWND hwnd, UINT flags, const INPUT *input, LPARAM lparam )
+{
+    struct send_hardware_input_params params = {.flags = flags, .input = input, .lparam = lparam};
+    return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_SendHardwareInput );
+}
+
+struct expose_window_surface_params
+{
+    UINT flags;
+    BOOL whole;
+    RECT rect;
+    UINT dpi;
+};
+
+static inline BOOL NtUserExposeWindowSurface( HWND hwnd, UINT flags, const RECT *rect, UINT dpi )
+{
+    struct expose_window_surface_params params = {.flags = flags, .whole = !rect, .dpi = dpi};
+    if (rect) params.rect = *rect;
+    return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_ExposeWindowSurface );
+}
+
+static inline UINT NtUserGetWinMonitorDpi( HWND hwnd, MONITOR_DPI_TYPE type )
+{
+    return NtUserCallHwndParam( hwnd, type, NtUserCallHwndParam_GetWinMonitorDpi );
+}
 
 /* CW Hack 22310 */
 extern NTSTATUS WINAPI __wine_get_current_process_explicit_app_user_model_id( WCHAR *buffer, INT size );

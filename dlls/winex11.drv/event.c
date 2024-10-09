@@ -40,7 +40,6 @@
 #include <string.h>
 
 #include "x11drv.h"
-#include "shlobj.h"  /* DROPFILES */
 #include "shellapi.h"
 
 #include "wine/server.h"
@@ -229,17 +228,14 @@ static Bool filter_event( Display *display, XEvent *event, char *arg )
     case KeyRelease:
     case KeymapNotify:
     case MappingNotify:
-        return (mask & (QS_KEY|QS_HOTKEY)) != 0;
+        return (mask & (QS_KEY | QS_HOTKEY | QS_RAWINPUT)) != 0;
     case ButtonPress:
     case ButtonRelease:
-        return (mask & QS_MOUSEBUTTON) != 0;
-#ifdef GenericEvent
-    case GenericEvent:
-#endif
+        return (mask & (QS_MOUSEBUTTON | QS_RAWINPUT)) != 0;
     case MotionNotify:
     case EnterNotify:
     case LeaveNotify:
-        return (mask & QS_MOUSEMOVE) != 0;
+        return (mask & (QS_MOUSEMOVE | QS_RAWINPUT)) != 0;
     case Expose:
         return (mask & QS_PAINT) != 0;
     case FocusIn:
@@ -250,6 +246,13 @@ static Bool filter_event( Display *display, XEvent *event, char *arg )
     case PropertyNotify:
     case ClientMessage:
         return (mask & QS_POSTMESSAGE) != 0;
+#ifdef GenericEvent
+    case GenericEvent:
+#ifdef HAVE_X11_EXTENSIONS_XINPUT2_H
+        if (event->xcookie.extension == xinput2_opcode) return (mask & QS_INPUT) != 0;
+#endif
+        /* fallthrough */
+#endif
     default:
         return (mask & QS_SENDMESSAGE) != 0;
     }
@@ -401,7 +404,7 @@ static inline BOOL call_event_handler( Display *display, XEvent *event )
 /***********************************************************************
  *           process_events
  */
-static BOOL process_events( Display *display, Bool (*filter)(Display*, XEvent*,XPointer), ULONG_PTR arg )
+BOOL process_events( Display *display, Bool (*filter)(Display*, XEvent*,XPointer), ULONG_PTR arg )
 {
     XEvent event, prev_event;
     int count = 0;
@@ -532,7 +535,7 @@ static inline BOOL can_activate_window( HWND hwnd )
     if (style & WS_MINIMIZE) return FALSE;
     if (NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_NOACTIVATE) return FALSE;
     if (hwnd == NtUserGetDesktopWindow()) return FALSE;
-    if (NtUserGetWindowRect( hwnd, &rect ) && IsRectEmpty( &rect )) return FALSE;
+    if (NtUserGetWindowRect( hwnd, &rect, NtUserGetDpiForWindow( hwnd ) ) && IsRectEmpty( &rect )) return FALSE;
     return !(style & WS_DISABLED);
 }
 
@@ -684,16 +687,10 @@ static void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
 
         if (can_activate_window(hwnd))
         {
-            /* simulate a mouse click on the menu to find out
-             * whether the window wants to be activated */
-            LRESULT ma = send_message( hwnd, WM_MOUSEACTIVATE,
-                                       (WPARAM)NtUserGetAncestor( hwnd, GA_ROOT ),
-                                       MAKELONG( HTMENU, WM_LBUTTONDOWN ) );
-            if (ma != MA_NOACTIVATEANDEAT && ma != MA_NOACTIVATE)
-            {
-                set_focus( event->display, hwnd, event_time );
-                return;
-            }
+            /* CrossOver Bug 18896: don't send WM_MOUSEACTIVATE, it breaks Unity games */
+            /* CrossOver Bug 22868: don't send WM_MOUSEACTIVATE, it breaks Office 2010/2016 right click menus */
+            set_focus( event->display, hwnd, event_time );
+            return;
         }
         else if (hwnd == NtUserGetDesktopWindow())
         {
@@ -768,7 +765,7 @@ static BOOL X11DRV_FocusIn( HWND hwnd, XEvent *xev )
 
     if (event->detail == NotifyPointer) return FALSE;
     /* when focusing in the virtual desktop window, re-apply the cursor clipping rect */
-    if (is_virtual_desktop() && hwnd == NtUserGetDesktopWindow()) retry_grab_clipping_window();
+    if (is_virtual_desktop() && hwnd == NtUserGetDesktopWindow()) reapply_cursor_clipping();
     if (hwnd == NtUserGetDesktopWindow()) return FALSE;
 
     x11drv_thread_data()->keymapnotify_hwnd = hwnd;
@@ -776,7 +773,7 @@ static BOOL X11DRV_FocusIn( HWND hwnd, XEvent *xev )
     /* when keyboard grab is released, re-apply the cursor clipping rect */
     was_grabbed = keyboard_grabbed;
     keyboard_grabbed = event->mode == NotifyGrab || event->mode == NotifyWhileGrabbed;
-    if (was_grabbed > keyboard_grabbed) retry_grab_clipping_window();
+    if (was_grabbed > keyboard_grabbed) reapply_cursor_clipping();
     /* ignore wm specific NotifyUngrab / NotifyGrab events w.r.t focus */
     if (event->mode == NotifyGrab || event->mode == NotifyUngrab) return FALSE;
 
@@ -872,7 +869,6 @@ static BOOL X11DRV_Expose( HWND hwnd, XEvent *xev )
     RECT rect, abs_rect;
     POINT pos;
     struct x11drv_win_data *data;
-    HRGN surface_region = 0;
     UINT flags = RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN;
 
     TRACE( "win %p (%lx) %d,%d %dx%d\n",
@@ -893,35 +889,20 @@ static BOOL X11DRV_Expose( HWND hwnd, XEvent *xev )
     rect.bottom = pos.y + event->height;
 
     if (event->window != data->client_window)
-    {
-        if (data->surface)
-        {
-            surface_region = expose_surface( data->surface, &rect );
-            if (!surface_region) flags = 0;
-            else NtGdiOffsetRgn( surface_region, data->whole_rect.left - data->client_rect.left,
-                                 data->whole_rect.top - data->client_rect.top );
-
-            if (data->vis.visualid != default_visual.visualid)
-                data->surface->funcs->flush( data->surface );
-        }
-        OffsetRect( &rect, data->whole_rect.left - data->client_rect.left,
-                    data->whole_rect.top - data->client_rect.top );
-    }
+        OffsetRect( &rect, data->rects.visible.left - data->rects.client.left,
+                    data->rects.visible.top - data->rects.client.top );
 
     if (event->window != root_window)
     {
         if (NtUserGetWindowLongW( data->hwnd, GWL_EXSTYLE ) & WS_EX_LAYOUTRTL)
-            mirror_rect( &data->client_rect, &rect );
+            mirror_rect( &data->rects.client, &rect );
         abs_rect = rect;
-        NtUserMapWindowPoints( hwnd, 0, (POINT *)&abs_rect, 2 );
+        NtUserMapWindowPoints( hwnd, 0, (POINT *)&abs_rect, 2, 0 /* per-monitor DPI */ );
 
         SERVER_START_REQ( update_window_zorder )
         {
             req->window      = wine_server_user_handle( hwnd );
-            req->rect.left   = abs_rect.left;
-            req->rect.top    = abs_rect.top;
-            req->rect.right  = abs_rect.right;
-            req->rect.bottom = abs_rect.bottom;
+            req->rect        = wine_server_rectangle( abs_rect );
             wine_server_call( req );
         }
         SERVER_END_REQ;
@@ -930,8 +911,7 @@ static BOOL X11DRV_Expose( HWND hwnd, XEvent *xev )
 
     release_win_data( data );
 
-    if (flags) NtUserRedrawWindow( hwnd, &rect, surface_region, flags );
-    if (surface_region) NtGdiDeleteObjectApp( surface_region );
+    NtUserExposeWindowSurface( hwnd, flags, &rect, NtUserGetWinMonitorDpi( hwnd, MDT_DEFAULT ) );
     return TRUE;
 }
 
@@ -973,7 +953,7 @@ static BOOL X11DRV_UnmapNotify( HWND hwnd, XEvent *event )
 static void reparent_notify( Display *display, HWND hwnd, Window xparent, int x, int y )
 {
     HWND parent, old_parent;
-    DWORD style;
+    DWORD style, flags = 0;
 
     style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
     if (xparent == root_window)
@@ -990,9 +970,9 @@ static void reparent_notify( Display *display, HWND hwnd, Window xparent, int x,
     NtUserShowWindow( hwnd, SW_HIDE );
     old_parent = NtUserSetParent( hwnd, parent );
     NtUserSetWindowLong( hwnd, GWL_STYLE, style, FALSE );
-    NtUserSetWindowPos( hwnd, HWND_TOP, x, y, 0, 0,
-                        SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOCOPYBITS |
-                        ((style & WS_VISIBLE) ? SWP_SHOWWINDOW : 0) );
+
+    if (style & WS_VISIBLE) flags = SWP_SHOWWINDOW;
+    set_window_pos( hwnd, HWND_TOP, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOCOPYBITS | flags );
 
     /* make old parent destroy itself if it no longer has children */
     if (old_parent != NtUserGetDesktopWindow()) NtUserPostMessage( old_parent, WM_CLOSE, 0, 0 );
@@ -1085,8 +1065,9 @@ static BOOL X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
     }
     else pos = root_to_virtual_screen( x, y );
 
-    X11DRV_X_to_window_rect( data, &rect, pos.x, pos.y, event->width, event->height );
-    if (root_coords) NtUserMapWindowPoints( 0, parent, (POINT *)&rect, 2 );
+    SetRect( &rect, pos.x, pos.y, pos.x + event->width, pos.y + event->height );
+    rect = window_rect_from_visible( &data->rects, rect );
+    if (root_coords) NtUserMapWindowPoints( 0, parent, (POINT *)&rect, 2, 0 /* per-monitor DPI */ );
 
     TRACE( "win %p/%lx new X rect %d,%d,%dx%d (event %d,%d,%dx%d)\n",
            hwnd, data->whole_window, (int)rect.left, (int)rect.top,
@@ -1103,22 +1084,22 @@ static BOOL X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
 
     if (!data->whole_window) flags |= SWP_NOCOPYBITS;  /* we can't copy bits of foreign windows */
 
-    if (data->window_rect.left == x && data->window_rect.top == y) flags |= SWP_NOMOVE;
+    if (data->rects.window.left == x && data->rects.window.top == y) flags |= SWP_NOMOVE;
     else
         TRACE( "%p moving from (%d,%d) to (%d,%d)\n",
-               hwnd, (int)data->window_rect.left, (int)data->window_rect.top, x, y );
+               hwnd, (int)data->rects.window.left, (int)data->rects.window.top, x, y );
 
-    if ((data->window_rect.right - data->window_rect.left == cx &&
-         data->window_rect.bottom - data->window_rect.top == cy) ||
-        IsRectEmpty( &data->window_rect ))
+    if ((data->rects.window.right - data->rects.window.left == cx &&
+         data->rects.window.bottom - data->rects.window.top == cy) ||
+        IsRectEmpty( &data->rects.window ))
         flags |= SWP_NOSIZE;
     else
         TRACE( "%p resizing from (%dx%d) to (%dx%d)\n",
-               hwnd, (int)(data->window_rect.right - data->window_rect.left),
-               (int)(data->window_rect.bottom - data->window_rect.top), cx, cy );
+               hwnd, (int)(data->rects.window.right - data->rects.window.left),
+               (int)(data->rects.window.bottom - data->rects.window.top), cx, cy );
 
     style = NtUserGetWindowLongW( data->hwnd, GWL_STYLE );
-    if ((style & WS_CAPTION) == WS_CAPTION || !NtUserIsWindowRectFullScreen( &data->whole_rect ))
+    if ((style & WS_CAPTION) == WS_CAPTION || !data->is_fullscreen)
     {
         read_net_wm_states( event->display, data );
         if ((data->net_wm_state & (1 << NET_WM_STATE_MAXIMIZED)))
@@ -1143,7 +1124,7 @@ static BOOL X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
     if ((flags & (SWP_NOSIZE | SWP_NOMOVE)) != (SWP_NOSIZE | SWP_NOMOVE))
     {
         release_win_data( data );
-        NtUserSetWindowPos( hwnd, 0, x, y, cx, cy, flags );
+        set_window_pos( hwnd, 0, x, y, cx, cy, flags );
         return TRUE;
     }
 
@@ -1171,17 +1152,17 @@ static BOOL X11DRV_GravityNotify( HWND hwnd, XEvent *xev )
         return FALSE;
     }
 
-    x = event->x + data->window_rect.left - data->whole_rect.left;
-    y = event->y + data->window_rect.top - data->whole_rect.top;
+    x = event->x + data->rects.window.left - data->rects.visible.left;
+    y = event->y + data->rects.window.top - data->rects.visible.top;
 
     TRACE( "win %p/%lx new X pos %d,%d (event %d,%d)\n",
            hwnd, data->whole_window, x, y, event->x, event->y );
 
-    window_rect = data->window_rect;
+    window_rect = data->rects.window;
     release_win_data( data );
 
     if (window_rect.left != x || window_rect.top != y)
-        NtUserSetWindowPos( hwnd, 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS );
+        set_window_pos( hwnd, 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS );
 
     return TRUE;
 }
@@ -1404,24 +1385,24 @@ void X11DRV_SetFocus( HWND hwnd )
 
 static HWND find_drop_window( HWND hQueryWnd, LPPOINT lpPt )
 {
+    UINT dpi = NtUserGetWinMonitorDpi( hQueryWnd, MDT_DEFAULT );
     RECT tempRect;
 
     if (!NtUserIsWindowEnabled(hQueryWnd)) return 0;
     
-    NtUserGetWindowRect(hQueryWnd, &tempRect);
+    NtUserGetWindowRect( hQueryWnd, &tempRect, dpi );
 
     if(!PtInRect(&tempRect, *lpPt)) return 0;
 
     if (!(NtUserGetWindowLongW( hQueryWnd, GWL_STYLE ) & WS_MINIMIZE))
     {
         POINT pt = *lpPt;
-        NtUserScreenToClient( hQueryWnd, &pt );
-        NtUserGetClientRect( hQueryWnd, &tempRect );
+        NtUserMapWindowPoints( 0, hQueryWnd, &pt, 1, 0 /* per-monitor DPI */ );
+        NtUserGetClientRect( hQueryWnd, &tempRect, dpi );
 
         if (PtInRect( &tempRect, pt))
         {
-            HWND ret = NtUserChildWindowFromPointEx( hQueryWnd, pt.x, pt.y,
-                                                     CWP_SKIPINVISIBLE|CWP_SKIPDISABLED );
+            HWND ret = child_window_from_point( hQueryWnd, pt.x, pt.y, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED );
             if (ret && ret != hQueryWnd)
             {
                 ret = find_drop_window( ret, lpPt );
@@ -1432,15 +1413,22 @@ static HWND find_drop_window( HWND hQueryWnd, LPPOINT lpPt )
 
     if(!(NtUserGetWindowLongW( hQueryWnd, GWL_EXSTYLE ) & WS_EX_ACCEPTFILES)) return 0;
     
-    NtUserScreenToClient( hQueryWnd, lpPt );
+    NtUserMapWindowPoints( 0, hQueryWnd, lpPt, 1, 0 /* per-monitor DPI */ );
 
     return hQueryWnd;
 }
 
 static void post_drop( HWND hwnd, DROPFILES *drop, ULONG size )
 {
-    drop->fWide = HandleToUlong( hwnd ); /* abuse fWide to pass window handle */
-    x11drv_client_func( client_func_dnd_post_drop, drop, size );
+    struct dnd_post_drop_params *params;
+    void *ret_ptr;
+    ULONG ret_len;
+    if (!(params = malloc( sizeof(*params) + size - sizeof(*drop) ))) return;
+    memcpy( &params->drop, drop, size );
+    params->drop.fWide = HandleToUlong( hwnd ); /* abuse fWide to pass window handle */
+    params->dispatch.callback = dnd_post_drop_callback;
+    KeUserDispatchCallback( &params->dispatch, size, &ret_ptr, &ret_len );
+    free( params );
 }
 
 /**********************************************************************
@@ -1460,8 +1448,8 @@ static void EVENT_DropFromOffiX( HWND hWnd, XClientMessageEvent *event )
     Window		win, w_aux_root, w_aux_child;
 
     if (!(data = get_win_data( hWnd ))) return;
-    cx = data->whole_rect.right - data->whole_rect.left;
-    cy = data->whole_rect.bottom - data->whole_rect.top;
+    cx = data->rects.visible.right - data->rects.visible.left;
+    cy = data->rects.visible.bottom - data->rects.visible.top;
     win = data->whole_window;
     release_win_data( data );
 
@@ -1487,11 +1475,10 @@ static void EVENT_DropFromOffiX( HWND hWnd, XClientMessageEvent *event )
 
     if (!aux_long && p_data)  /* don't bother if > 64K */
     {
-        DROPFILES *drop;
         size_t drop_size;
+        DROPFILES *drop;
 
-        drop = file_list_to_drop_files( p_data, get_property_size( format, data_length ), &drop_size );
-        if (drop)
+        if ((drop = file_list_to_drop_files( p_data, get_property_size( format, data_length ), &drop_size )))
         {
             post_drop( hWnd, drop, drop_size );
             free( drop );
@@ -1516,7 +1503,6 @@ static void EVENT_DropURLs( HWND hWnd, XClientMessageEvent *event )
   unsigned long	aux_long;
   unsigned char	*p_data = NULL; /* property data */
   int		x, y;
-  DROPFILES *drop;
   int format;
   union {
     Atom	atom_aux;
@@ -1538,9 +1524,9 @@ static void EVENT_DropURLs( HWND hWnd, XClientMessageEvent *event )
   if (!aux_long && p_data) /* don't bother if > 64K */
   {
       size_t drop_size;
-      drop = uri_list_to_drop_files( p_data, get_property_size( format, data_length ), &drop_size );
+      DROPFILES *drop;
 
-      if (drop)
+      if ((drop = uri_list_to_drop_files( p_data, get_property_size( format, data_length ), &drop_size )))
       {
           XQueryPointer( event->display, root_window, &u.w_aux, &u.w_aux,
                          &x, &y, &u.i, &u.i, &u.u);
@@ -1549,16 +1535,18 @@ static void EVENT_DropURLs( HWND hWnd, XClientMessageEvent *event )
           if ((win_data = get_win_data( hWnd )))
           {
               drop->fNC =
-                  (drop->pt.x < (win_data->client_rect.left - win_data->whole_rect.left)  ||
-                   drop->pt.y < (win_data->client_rect.top - win_data->whole_rect.top)    ||
-                   drop->pt.x > (win_data->client_rect.right - win_data->whole_rect.left) ||
-                   drop->pt.y > (win_data->client_rect.bottom - win_data->whole_rect.top) );
+                  (drop->pt.x < (win_data->rects.client.left - win_data->rects.visible.left)  ||
+                   drop->pt.y < (win_data->rects.client.top - win_data->rects.visible.top)    ||
+                   drop->pt.x > (win_data->rects.client.right - win_data->rects.visible.left) ||
+                   drop->pt.y > (win_data->rects.client.bottom - win_data->rects.visible.top) );
               release_win_data( win_data );
           }
 
           post_drop( hWnd, drop, drop_size );
           free( drop );
       }
+
+      free( drop );
   }
   if (p_data) XFree( p_data );
 }
@@ -1648,6 +1636,7 @@ static void handle_dnd_protocol( HWND hwnd, XClientMessageEvent *event )
  */
 static void handle_xdnd_enter_event( HWND hWnd, XClientMessageEvent *event )
 {
+    struct dnd_enter_event_params *params;
     struct format_entry *data;
     unsigned long count = 0;
     Atom *xdndtypes;
@@ -1703,11 +1692,16 @@ static void handle_xdnd_enter_event( HWND hWnd, XClientMessageEvent *event )
 
     data = import_xdnd_selection( event->display, event->window, x11drv_atom(XdndSelection),
                                   xdndtypes, count, &size );
-    if (data)
+    if (data && (params = malloc( sizeof(*params) + size )))
     {
-        x11drv_client_func( client_func_dnd_enter_event, data, size );
-        free( data );
+        void *ret_ptr;
+        ULONG ret_len;
+        memcpy( params->entries, data, size );
+        params->dispatch.callback = dnd_enter_event_callback;
+        KeUserDispatchCallback( &params->dispatch, sizeof(*params) + size, &ret_ptr, &ret_len );
+        free( params );
     }
+    free( data );
 
     if (event->data.l[1] & 1)
         XFree(xdndtypes);
@@ -1754,13 +1748,18 @@ static void handle_xdnd_position_event( HWND hwnd, XClientMessageEvent *event )
 {
     struct dnd_position_event_params params;
     XClientMessageEvent e;
+    void *ret_ptr;
+    ULONG ret_len;
     UINT effect;
 
+    params.dispatch.callback = dnd_position_event_callback;
     params.hwnd = HandleToUlong( hwnd );
     params.point = root_to_virtual_screen( event->data.l[2] >> 16, event->data.l[2] & 0xFFFF );
     params.effect = effect = xdnd_action_to_drop_effect( event->data.l[4] );
 
-    effect = x11drv_client_func( client_func_dnd_position_event, &params, sizeof(params) );
+    if (KeUserDispatchCallback( &params.dispatch, sizeof(params), &ret_ptr, &ret_len ) || ret_len != sizeof(effect))
+        return;
+    effect = *(UINT *)ret_ptr;
 
     TRACE( "actionRequested(%ld) chosen(0x%x) at x(%d),y(%d)\n",
            event->data.l[4], effect, (int)params.point.x, (int)params.point.y );
@@ -1785,10 +1784,15 @@ static void handle_xdnd_position_event( HWND hwnd, XClientMessageEvent *event )
 
 static void handle_xdnd_drop_event( HWND hwnd, XClientMessageEvent *event )
 {
+    struct dnd_drop_event_params params = {.dispatch.callback = dnd_drop_event_callback, .hwnd = HandleToULong(hwnd)};
     XClientMessageEvent e;
-    DWORD effect;
+    void *ret_ptr;
+    ULONG ret_len;
+    UINT effect;
 
-    effect = x11drv_client_call( client_dnd_drop_event, HandleToUlong( hwnd ));
+    if (KeUserDispatchCallback( &params.dispatch, sizeof(params), &ret_ptr, &ret_len ) || ret_len != sizeof(effect))
+        return;
+    effect = *(UINT *)ret_ptr;
 
     /* Tell the target we are finished. */
     memset( &e, 0, sizeof(e) );
@@ -1806,7 +1810,10 @@ static void handle_xdnd_drop_event( HWND hwnd, XClientMessageEvent *event )
 
 static void handle_xdnd_leave_event( HWND hwnd, XClientMessageEvent *event )
 {
-    x11drv_client_call( client_dnd_leave_event, 0 );
+    struct dispatch_callback_params params = {.callback = dnd_leave_event_callback};
+    void *ret_ptr;
+    ULONG ret_len;
+    KeUserDispatchCallback( &params, sizeof(params), &ret_ptr, &ret_len );
 }
 
 

@@ -25,21 +25,21 @@ use Digest::SHA;
 use Encode;
 use Time::Local qw(timegm_modern);
 
-my $UNIVERSION = "15.1.0";
-my $CLDRVERSION = "44";
+my $UNIVERSION = "16.0.0";
+my $CLDRVERSION = "45";
 my $ISO639VERSION = "20230123";
-my $TZVERSION = "2023c";
+my $TZVERSION = "2024a";
 
 my %data_files =
 (
  ucd       => { url  => "https://www.unicode.org/Public/$UNIVERSION/ucd/UCD.zip", name => "UCD-$UNIVERSION.zip",
-                sha  => "cb1c663d053926500cd501229736045752713a066bd75802098598b7a7056177" },
+                sha  => "c86dd81f2b14a43b0cc064aa5f89aa7241386801e35c59c7984e579832634eb2" },
  unihan    => { url  => "https://www.unicode.org/Public/$UNIVERSION/ucd/Unihan.zip", name => "Unihan-$UNIVERSION.zip",
-                sha  => "a0226610e324bcf784ac380e11f4cbf533ee1e6b3d028b0991bf8c0dc3f85853" },
+                sha  => "b8f000df69de7828d21326a2ffea462b04bc7560022989f7cc704f10521ef3e0" },
  idna      => { url  => "https://www.unicode.org/Public/idna/$UNIVERSION/IdnaMappingTable.txt", name => "IdnaMappingTable-$UNIVERSION.txt",
-                sha  => "402cbd285f1f952fcd0834b63541d54f69d3d8f1b8f8599bf71a1a14935f82c4" },
+                sha  => "6db2ef4ed35f3b3de74ebc2e00404a9607f76d499f576b8d4043cf14f1ed175c" },
  cldr      => { url  => "https://github.com/unicode-org/cldr/archive/refs/tags/release-$CLDRVERSION.zip",
-                sha  => "38d04cf28ccfee8b86d2feecebf99d5dc6d3317f53f87ba53b1e774f6395573c" },
+                sha  => "29f4dafa918017e74cb84edf19fb707894cbce1cf7da1dd89fff24c107a66ecb" },
  cldr33    => { url  => "https://www.unicode.org/Public/cldr/33/cldr-common-33.0.zip",
                 sha  => "fa3490082c086d21257153609642f54fcf788fcfda4966fe67f3f6daca0d58b9" },
  sorting   => { url  => "https://download.microsoft.com/download/C/F/7/CF713A5E-9FBC-4FD6-9246-275F65C0E498/Windows 10 Sorting Weight Table.txt",
@@ -55,7 +55,7 @@ my %data_files =
  jis0212   => { url  => "https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0212.TXT",
                 sha  => "477820bb3055bbcc90880d788cd95607d221dc94457bae249231adecf13c12e6" },
  tzdata    => { url  => "https://data.iana.org/time-zones/releases/tzdata$TZVERSION.tar.gz",
-                sha  => "3f510b5d1b4ae9bb38e485aa302a776b317fb3637bdb6404c4adf7b6cadd965c" },
+                sha  => "0d0434459acbd2059a7a8da1f3304a84a86591f6ed69c6248fffa502b6edffe3" },
 );
 
 
@@ -213,6 +213,7 @@ my %indic_types =
     "Syllable_Modifier" => 0x0021,
     "Consonant_Killer" => 0x0022,
     "Consonant_Initial_Postfixed" => 0x0023,
+    "Reordering_Killer" => 0x0024,
 );
 
 my %matra_types =
@@ -5402,7 +5403,7 @@ sub load_windows_zones()
     my $INPUT = open_data_file( "cldr", "$base/common/supplemental/windowsZones.xml" );
     while (<$INPUT>)
     {
-        if (/<!-- +(\(UTC.*) -->.*/)
+        if (/<!-- +(\(UTC[^<]*) -->.*/)
         {
             $current_name = $1;
         }

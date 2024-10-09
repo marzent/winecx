@@ -728,6 +728,7 @@ static HRESULT media_stream_send_sample(struct media_stream *stream, const struc
 
     if (!wg_parser_stream_copy_buffer(stream->wg_stream, data, 0, wg_buffer->size))
     {
+        hr = S_FALSE;
         wg_parser_stream_release_buffer(stream->wg_stream);
         IMFMediaBuffer_Unlock(buffer);
         goto out;
@@ -789,8 +790,12 @@ static HRESULT wait_on_sample(struct media_stream *stream, IUnknown *token)
 
     TRACE("%p, %p\n", stream, token);
 
-    if (wg_parser_stream_get_buffer(source->wg_parser, stream->wg_stream, &buffer))
-        return media_stream_send_sample(stream, &buffer, token);
+    while (wg_parser_stream_get_buffer(source->wg_parser, stream->wg_stream, &buffer))
+    {
+        HRESULT hr = media_stream_send_sample(stream, &buffer, token);
+        if (hr != S_FALSE)
+            return hr;
+    }
 
     return media_stream_send_eos(source, stream);
 }
@@ -1634,7 +1639,7 @@ static HRESULT media_source_create(struct object_context *context, IMFMediaSourc
     IMFByteStream_AddRef(context->stream);
     object->file_size = context->file_size;
     object->rate = 1.0f;
-    InitializeCriticalSection(&object->cs);
+    InitializeCriticalSectionEx(&object->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     object->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": cs");
 
     if (FAILED(hr = MFCreateEventQueue(&object->event_queue)))
@@ -1643,7 +1648,7 @@ static HRESULT media_source_create(struct object_context *context, IMFMediaSourc
     if (FAILED(hr = MFAllocateWorkQueue(&object->async_commands_queue)))
         goto fail;
 
-    if (!(parser = wg_parser_create(WG_PARSER_DECODEBIN, false, true)))
+    if (!(parser = wg_parser_create(FALSE)))
     {
         hr = E_OUTOFMEMORY;
         goto fail;
@@ -1654,7 +1659,7 @@ static HRESULT media_source_create(struct object_context *context, IMFMediaSourc
 
     object->state = SOURCE_OPENING;
 
-    if (FAILED(hr = wg_parser_connect(parser, object->file_size)))
+    if (FAILED(hr = wg_parser_connect(parser, object->file_size, context->url)))
         goto fail;
 
     stream_count = wg_parser_get_stream_count(parser);
@@ -1673,7 +1678,7 @@ static HRESULT media_source_create(struct object_context *context, IMFMediaSourc
         struct media_stream *stream;
         struct wg_format format;
 
-        wg_parser_stream_get_preferred_format(wg_stream, &format);
+        wg_parser_stream_get_current_format(wg_stream, &format);
         if (FAILED(hr = stream_descriptor_create(i, &format, &descriptor)))
             goto fail;
         if (FAILED(hr = media_stream_create(&object->IMFMediaSource_iface, descriptor, wg_stream, &stream)))

@@ -58,9 +58,9 @@ typedef struct tagDC
     DC_ATTR     *attr;             /* DC attributes accessible by client */
     struct tagDC *saved_dc;
     struct dce  *dce;              /* associated dce, if any */
-    BOOL         bounds_enabled:1; /* bounds tracking is enabled */
-    BOOL         path_open:1;      /* path is currently open (only for saved DCs) */
-    BOOL         is_display:1;     /* DC is for display device */
+    UINT         bounds_enabled:1; /* bounds tracking is enabled */
+    UINT         path_open:1;      /* path is currently open (only for saved DCs) */
+    UINT         is_display:1;     /* DC is for display device */
 
     RECT         device_rect;      /* rectangle for the whole device */
     int          pixel_format;     /* pixel format (for memory DCs) */
@@ -280,11 +280,11 @@ struct gdi_font
     UINT                   ntmAvgWidth;
     UINT                   aa_flags;
     ULONG                  ttc_item_offset;    /* 0 if font is not a part of TrueType collection */
-    BOOL                   can_use_bitmap : 1;
-    BOOL                   fake_italic : 1;
-    BOOL                   fake_bold : 1;
-    BOOL                   scalable : 1;
-    BOOL                   use_logfont_name : 1;
+    UINT                   can_use_bitmap : 1;
+    UINT                   fake_italic : 1;
+    UINT                   fake_bold : 1;
+    UINT                   scalable : 1;
+    UINT                   use_logfont_name : 1;
     struct gdi_font       *base_font;
     void                  *gsub_table;
     void                  *vert_feature;
@@ -339,7 +339,7 @@ struct font_backend_funcs
 extern int add_gdi_face( const WCHAR *family_name, const WCHAR *second_name,
                          const WCHAR *style, const WCHAR *fullname, const WCHAR *file,
                          void *data_ptr, SIZE_T data_size, UINT index, FONTSIGNATURE fs,
-                         DWORD ntmflags, DWORD version, DWORD flags,
+                         DWORD ntmflags, DWORD weight, DWORD version, DWORD flags,
                          const struct bitmap_font_size *size );
 extern UINT font_init(void);
 extern const struct font_backend_funcs *init_freetype_lib(void);
@@ -370,7 +370,7 @@ extern BOOL opentype_enum_full_names( const struct tt_name_v0 *tt_name_v0,
                                       opentype_enum_names_cb callback, void *user );
 
 extern BOOL opentype_get_properties( const void *data, size_t size, const struct ttc_sfnt_v1 *ttc_sfnt_v1,
-                                     DWORD *version, FONTSIGNATURE *fs, DWORD *ntm_flags );
+                                     DWORD *version, FONTSIGNATURE *fs, DWORD *ntm_flags, UINT *weight );
 
 /* gdiobj.c */
 extern HGDIOBJ alloc_gdi_handle( struct gdi_obj_header *obj, DWORD type,

@@ -257,7 +257,7 @@ static NTSTATUS define_unix_drive( const void *in_buff, SIZE_T insize )
         case DRIVE_RAMDISK:   type = DEVICE_RAMDISK; break;
         case DRIVE_FIXED:     type = DEVICE_HARDDISK_VOL; break;
         }
-        return add_dos_device( letter - 'a', NULL, device, mount_point, type, NULL, NULL );
+        return add_dos_device( letter - 'a', NULL, device, mount_point, type, NULL, NULL, NULL );
     }
     else
     {
@@ -443,11 +443,11 @@ static void device_op( void )
     {
     case ADD_DOS_DEVICE:
         add_dos_device( -1, info.udi, info.device, info.mount_point,
-                        info.type, info.guid, info.scsi_info );
+                        info.type, info.guid, info.label, info.scsi_info );
         break;
     case ADD_VOLUME:
         add_volume( info.udi, info.device, info.mount_point, DEVICE_HARDDISK_VOL,
-                    info.guid, info.serial, info.scsi_info );
+                    info.guid, info.serial, info.label, info.scsi_info );
         break;
     case REMOVE_DEVICE:
         if (!remove_dos_device( -1, info.udi )) remove_volume( info.udi );

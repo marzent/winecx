@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 #include "user_private.h"
 #include "controls.h"
 #include "wine/asm.h"
@@ -159,7 +161,55 @@ void release_display_dc( HDC hdc )
  */
 void SYSPARAMS_Init(void)
 {
+    WCHAR buffer[256];
+    DWORD option;
+
     system_dpi = NtUserGetSystemDpiForProcess( NULL );
+
+    if (!LdrQueryImageFileExecutionOptions( &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName,
+                                            L"dpiAwareness", REG_DWORD, &option, sizeof(option), NULL ))
+    {
+        TRACE( "got option %lx\n", option );
+        if (option <= 2)
+        {
+            SetProcessDpiAwarenessContext( (DPI_AWARENESS_CONTEXT)~(ULONG_PTR)option );
+            return;
+        }
+    }
+
+    if (QueryActCtxSettingsW( 0, NULL, L"http://schemas.microsoft.com/SMI/2016/WindowsSettings",
+                              L"dpiAwareness", buffer, ARRAY_SIZE(buffer), NULL ))
+    {
+        static const WCHAR * const types[] = { L"unaware", L"system", L"permonitor", L"permonitorv2" };
+        WCHAR *p, *start, *end;
+        ULONG_PTR i;
+
+        TRACE( "got dpiAwareness=%s\n", debugstr_w(buffer) );
+        for (start = buffer; *start; start = end)
+        {
+            start += wcsspn( start, L" \t\r\n" );
+            if (!(end = wcschr( start, ',' ))) end = start + lstrlenW(start);
+            else *end++ = 0;
+            if ((p = wcspbrk( start, L" \t\r\n" ))) *p = 0;
+            for (i = 0; i < ARRAY_SIZE(types); i++)
+            {
+                if (wcsicmp( start, types[i] )) continue;
+                SetProcessDpiAwarenessContext( (DPI_AWARENESS_CONTEXT)~i );
+                return;
+            }
+        }
+    }
+    else if (QueryActCtxSettingsW( 0, NULL, L"http://schemas.microsoft.com/SMI/2005/WindowsSettings",
+                                   L"dpiAware", buffer, ARRAY_SIZE(buffer), NULL ))
+    {
+        TRACE( "got dpiAware=%s\n", debugstr_w(buffer) );
+        if (!wcsicmp( buffer, L"true" ))
+            SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT_SYSTEM_AWARE );
+        else if (!wcsicmp( buffer, L"true/pm" ) || !wcsicmp( buffer, L"per monitor" ))
+            SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE );
+        else
+            SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT_UNAWARE );
+    }
 }
 
 static BOOL update_desktop_wallpaper(void)
@@ -574,38 +624,75 @@ BOOL WINAPI EnumDisplaySettingsExW( const WCHAR *device, DWORD mode,
     return NtUserEnumDisplaySettings( &str, mode, dev_mode, flags );
 }
 
+static UINT get_ntuser_dpi_context( DPI_AWARENESS_CONTEXT context )
+{
+    switch ((UINT_PTR)context)
+    {
+    case (UINT_PTR)DPI_AWARENESS_CONTEXT_UNAWARE:              return NTUSER_DPI_UNAWARE;
+    case (UINT_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE:         return NTUSER_DPI_SYSTEM_AWARE;
+    case (UINT_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE:    return NTUSER_DPI_PER_MONITOR_AWARE;
+    case (UINT_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: return NTUSER_DPI_PER_MONITOR_AWARE_V2;
+    case (UINT_PTR)DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED:    return NTUSER_DPI_PER_UNAWARE_GDISCALED;
+    }
+
+    return (UINT_PTR)context;
+}
+
+/* keep in sync with win32u */
+static BOOL is_valid_dpi_awareness_context( UINT context, UINT dpi )
+{
+    switch (NTUSER_DPI_CONTEXT_GET_AWARENESS( context ))
+    {
+    case DPI_AWARENESS_UNAWARE:
+        if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & ~NTUSER_DPI_CONTEXT_FLAG_VALID_MASK) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_VERSION( context ) != 1) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_DPI( context ) != USER_DEFAULT_SCREEN_DPI) return FALSE;
+        return TRUE;
+
+    case DPI_AWARENESS_SYSTEM_AWARE:
+        if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & ~NTUSER_DPI_CONTEXT_FLAG_VALID_MASK) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & NTUSER_DPI_CONTEXT_FLAG_GDISCALED) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_VERSION( context ) != 1) return FALSE;
+        if (dpi && NTUSER_DPI_CONTEXT_GET_DPI( context ) != dpi) return FALSE;
+        return TRUE;
+
+    case DPI_AWARENESS_PER_MONITOR_AWARE:
+        if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & ~NTUSER_DPI_CONTEXT_FLAG_VALID_MASK) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & NTUSER_DPI_CONTEXT_FLAG_GDISCALED) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_VERSION( context ) != 1 && NTUSER_DPI_CONTEXT_GET_VERSION( context ) != 2) return FALSE;
+        if (NTUSER_DPI_CONTEXT_GET_DPI( context )) return FALSE;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/* keep in sync with win32u */
+UINT set_thread_dpi_awareness_context( UINT context )
+{
+    struct ntuser_thread_info *info = NtUserGetThreadInfo();
+    UINT prev;
+
+    if (!is_valid_dpi_awareness_context( context, system_dpi ))
+    {
+        RtlSetLastWin32Error( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (!(prev = info->dpi_context)) prev = NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) | NTUSER_DPI_CONTEXT_FLAG_PROCESS;
+    if (NTUSER_DPI_CONTEXT_GET_FLAGS( context ) & NTUSER_DPI_CONTEXT_FLAG_PROCESS) info->dpi_context = 0;
+    else info->dpi_context = context;
+
+    return prev;
+}
+
 /**********************************************************************
  *              SetProcessDpiAwarenessContext   (USER32.@)
  */
 BOOL WINAPI SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 {
-    ULONG awareness;
-
-    switch (GetAwarenessFromDpiAwarenessContext( context ))
-    {
-    case DPI_AWARENESS_UNAWARE:
-        awareness = NTUSER_DPI_UNAWARE;
-        break;
-    case DPI_AWARENESS_SYSTEM_AWARE:
-        awareness = NTUSER_DPI_SYSTEM_AWARE;
-        break;
-    case DPI_AWARENESS_PER_MONITOR_AWARE:
-        awareness = context == DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-            ? NTUSER_DPI_PER_MONITOR_AWARE_V2 : NTUSER_DPI_PER_MONITOR_AWARE;
-        break;
-    default:
-        SetLastError( ERROR_INVALID_PARAMETER );
-        return FALSE;
-    }
-
-    if (!NtUserSetProcessDpiAwarenessContext( awareness, 0 ))
-    {
-        SetLastError( ERROR_ACCESS_DENIED );
-        return FALSE;
-    }
-
-    TRACE( "set to %p\n", context );
-    return TRUE;
+    UINT value = get_ntuser_dpi_context( context );
+    return NtUserSetProcessDpiAwarenessContext( value, 0 );
 }
 
 /**********************************************************************
@@ -613,7 +700,8 @@ BOOL WINAPI SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
  */
 BOOL WINAPI GetProcessDpiAwarenessInternal( HANDLE process, DPI_AWARENESS *awareness )
 {
-    *awareness = NtUserGetProcessDpiAwarenessContext( process ) & 3;
+    ULONG context = NtUserGetProcessDpiAwarenessContext( process );
+    *awareness = NTUSER_DPI_CONTEXT_GET_AWARENESS( context );
     return TRUE;
 }
 
@@ -639,32 +727,30 @@ BOOL WINAPI SetProcessDpiAwarenessInternal( DPI_AWARENESS awareness )
  */
 BOOL WINAPI AreDpiAwarenessContextsEqual( DPI_AWARENESS_CONTEXT ctx1, DPI_AWARENESS_CONTEXT ctx2 )
 {
-    DPI_AWARENESS aware1 = GetAwarenessFromDpiAwarenessContext( ctx1 );
-    DPI_AWARENESS aware2 = GetAwarenessFromDpiAwarenessContext( ctx2 );
-    return aware1 != DPI_AWARENESS_INVALID && aware1 == aware2;
+    UINT value1, value2;
+    if (!(value1 = get_ntuser_dpi_context( ctx1 ))) return FALSE;
+    if (!(value2 = get_ntuser_dpi_context( ctx2 ))) return FALSE;
+    return (value1 & ~NTUSER_DPI_CONTEXT_FLAG_PROCESS) == (value2 & ~NTUSER_DPI_CONTEXT_FLAG_PROCESS);
 }
 
 /***********************************************************************
  *              GetAwarenessFromDpiAwarenessContext   (USER32.@)
+ *              copied into win32u, make sure to keep that in sync
  */
 DPI_AWARENESS WINAPI GetAwarenessFromDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 {
-    switch ((ULONG_PTR)context)
-    {
-    case 0x10:
-    case 0x11:
-    case 0x12:
-    case 0x80000010:
-    case 0x80000011:
-    case 0x80000012:
-        return (ULONG_PTR)context & 3;
-    case (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE:
-    case (ULONG_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE:
-    case (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE:
-        return ~(ULONG_PTR)context;
-    default:
-        return DPI_AWARENESS_INVALID;
-    }
+    UINT value = get_ntuser_dpi_context( context );
+    if (!is_valid_dpi_awareness_context( value, 0 )) return DPI_AWARENESS_INVALID;
+    return NTUSER_DPI_CONTEXT_GET_AWARENESS( value );
+}
+
+/***********************************************************************
+ *              GetDpiFromDpiAwarenessContext   (USER32.@)
+ */
+UINT WINAPI GetDpiFromDpiAwarenessContext( DPI_AWARENESS_CONTEXT handle )
+{
+    UINT context = get_ntuser_dpi_context( handle );
+    return NTUSER_DPI_CONTEXT_GET_DPI( context );
 }
 
 /***********************************************************************
@@ -672,7 +758,8 @@ DPI_AWARENESS WINAPI GetAwarenessFromDpiAwarenessContext( DPI_AWARENESS_CONTEXT 
  */
 BOOL WINAPI IsValidDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 {
-    return GetAwarenessFromDpiAwarenessContext( context ) != DPI_AWARENESS_INVALID;
+    UINT value = get_ntuser_dpi_context( context );
+    return is_valid_dpi_awareness_context( value, 0 );
 }
 
 /***********************************************************************
@@ -719,8 +806,8 @@ DPI_AWARENESS_CONTEXT WINAPI GetThreadDpiAwarenessContext(void)
 {
     struct ntuser_thread_info *info = NtUserGetThreadInfo();
 
-    if (info->dpi_awareness) return ULongToHandle( info->dpi_awareness );
-    return UlongToHandle( (NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) & 3 ) | 0x10 );
+    if (info->dpi_context) return ULongToHandle( info->dpi_context );
+    return ULongToHandle( NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) );
 }
 
 /**********************************************************************
@@ -728,22 +815,7 @@ DPI_AWARENESS_CONTEXT WINAPI GetThreadDpiAwarenessContext(void)
  */
 DPI_AWARENESS_CONTEXT WINAPI SetThreadDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 {
-    struct ntuser_thread_info *info = NtUserGetThreadInfo();
-    DPI_AWARENESS prev, val = GetAwarenessFromDpiAwarenessContext( context );
-
-    if (val == DPI_AWARENESS_INVALID)
-    {
-        SetLastError( ERROR_INVALID_PARAMETER );
-        return 0;
-    }
-    if (!(prev = info->dpi_awareness))
-    {
-        prev = NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) & 3;
-        prev |= 0x80000010;  /* restore to process default */
-    }
-    if (((ULONG_PTR)context & ~(ULONG_PTR)0x13) == 0x80000000) info->dpi_awareness = 0;
-    else info->dpi_awareness = val | 0x10;
-    return ULongToHandle( prev );
+    return ULongToHandle( set_thread_dpi_awareness_context( get_ntuser_dpi_context( context ) ) );
 }
 
 /**********************************************************************
@@ -849,14 +921,17 @@ __ASM_GLOBAL_FUNC( enum_mon_callback_wrapper,
     "ret" )
 #endif /* __i386__ */
 
-BOOL WINAPI User32CallEnumDisplayMonitor( struct enum_display_monitor_params *params, ULONG size )
+NTSTATUS WINAPI User32CallEnumDisplayMonitor( void *args, ULONG size )
 {
+    struct enum_display_monitor_params *params = args;
+    BOOL ret;
 #ifdef __i386__
-    return enum_mon_callback_wrapper( params->proc, params->monitor, params->hdc,
-                                      &params->rect, params->lparam );
+    ret = enum_mon_callback_wrapper( params->proc, params->monitor, params->hdc,
+                                     &params->rect, params->lparam );
 #else
-    return params->proc( params->monitor, params->hdc, &params->rect, params->lparam );
+    ret = params->proc( params->monitor, params->hdc, &params->rect, params->lparam );
 #endif
+    return NtCallbackReturn( &ret, sizeof(ret), STATUS_SUCCESS );
 }
 
 /***********************************************************************
@@ -989,6 +1064,15 @@ LONG WINAPI DisplayConfigGetDeviceInfo(DISPLAYCONFIG_DEVICE_INFO_HEADER *packet)
 }
 
 /***********************************************************************
+ *              DisplayConfigSetDeviceInfo (USER32.@)
+ */
+LONG WINAPI DisplayConfigSetDeviceInfo( DISPLAYCONFIG_DEVICE_INFO_HEADER *packet )
+{
+    FIXME( "stub!\n" );
+    return RtlNtStatusToDosError( STATUS_NOT_IMPLEMENTED );
+}
+
+/***********************************************************************
  *              SetDisplayConfig (USER32.@)
  */
 LONG WINAPI SetDisplayConfig(UINT32 path_info_count, DISPLAYCONFIG_PATH_INFO *path_info, UINT32 mode_info_count,
@@ -998,4 +1082,34 @@ LONG WINAPI SetDisplayConfig(UINT32 path_info_count, DISPLAYCONFIG_PATH_INFO *pa
             path_info_count, path_info, mode_info_count, mode_info, flags);
 
     return ERROR_SUCCESS;
+}
+
+
+/***********************************************************************
+ *      AdjustWindowRect (USER32.@)
+ */
+BOOL WINAPI DECLSPEC_HOTPATCH AdjustWindowRect( RECT *rect, DWORD style, BOOL menu )
+{
+    TRACE( "(%s) %08lx %d\n", wine_dbgstr_rect( rect ), style, menu );
+    return NtUserAdjustWindowRect( rect, style, menu, 0, system_dpi );
+}
+
+
+/***********************************************************************
+ *      AdjustWindowRectEx (USER32.@)
+ */
+BOOL WINAPI DECLSPEC_HOTPATCH AdjustWindowRectEx( RECT *rect, DWORD style, BOOL menu, DWORD ex_style )
+{
+    TRACE( "(%s) %08lx %d %08lx\n", wine_dbgstr_rect( rect ), style, menu, ex_style );
+    return NtUserAdjustWindowRect( rect, style, menu, ex_style, system_dpi );
+}
+
+
+/***********************************************************************
+ *      AdjustWindowRectExForDpi (USER32.@)
+ */
+BOOL WINAPI DECLSPEC_HOTPATCH AdjustWindowRectExForDpi( RECT *rect, DWORD style, BOOL menu, DWORD ex_style, UINT dpi )
+{
+    TRACE( "(%s) %08lx %d %08lx %u\n", wine_dbgstr_rect( rect ), style, menu, ex_style, dpi );
+    return NtUserAdjustWindowRect( rect, style, menu, ex_style, dpi );
 }

@@ -83,16 +83,16 @@ typedef struct DOMEvent {
     EventTarget *target;
     EventTarget *current_target;
     ULONGLONG time_stamp;
-    BOOL bubbles;
-    BOOL cancelable;
-    BOOL prevent_default;
-    BOOL stop_propagation;
-    BOOL stop_immediate_propagation;
-    BOOL trusted;
+    unsigned bubbles : 1;
+    unsigned cancelable : 1;
+    unsigned prevent_default : 1;
+    unsigned stop_propagation : 1;
+    unsigned stop_immediate_propagation : 1;
+    unsigned trusted : 1;
+    unsigned no_event_obj : 1;
     DOM_EVENT_PHASE phase;
 
     IHTMLEventObj *event_obj;
-    BOOL no_event_obj;
 } DOMEvent;
 
 const WCHAR *get_event_name(eventid_t);
@@ -107,7 +107,7 @@ HRESULT fire_event(HTMLDOMNode*,const WCHAR*,VARIANT*,VARIANT_BOOL*);
 void update_doc_cp_events(HTMLDocumentNode*,cp_static_data_t*);
 HRESULT doc_init_events(HTMLDocumentNode*);
 void detach_events(HTMLDocumentNode *doc);
-HRESULT create_event_obj(DOMEvent*,compat_mode_t,IHTMLEventObj**);
+HRESULT create_event_obj(DOMEvent*,HTMLDocumentNode*,IHTMLEventObj**);
 void bind_target_event(HTMLDocumentNode*,EventTarget*,const WCHAR*,IDispatch*);
 HRESULT ensure_doc_nsevent_handler(HTMLDocumentNode*,nsIDOMNode*,eventid_t);
 
@@ -115,8 +115,8 @@ void dispatch_event(EventTarget*,DOMEvent*);
 
 HRESULT create_document_event(HTMLDocumentNode*,eventid_t,DOMEvent**);
 HRESULT create_document_event_str(HTMLDocumentNode*,const WCHAR*,IDOMEvent**);
-HRESULT create_event_from_nsevent(nsIDOMEvent*,compat_mode_t,DOMEvent**);
-HRESULT create_message_event(HTMLDocumentNode*,VARIANT*,DOMEvent**);
+HRESULT create_event_from_nsevent(nsIDOMEvent*,HTMLInnerWindow*,compat_mode_t,DOMEvent**);
+HRESULT create_message_event(HTMLDocumentNode*,IHTMLWindow2*,VARIANT*,DOMEvent**);
 HRESULT create_storage_event(HTMLDocumentNode*,BSTR,BSTR,BSTR,const WCHAR*,BOOL,DOMEvent**);
 
 void init_nsevents(HTMLDocumentNode*);
@@ -127,11 +127,11 @@ void detach_nsevent(HTMLDocumentNode*,const WCHAR*);
 /* We extend dispex vtbl for EventTarget functions to avoid separated vtbl. */
 typedef struct {
     dispex_static_data_vtbl_t dispex_vtbl;
-    IDispatch *(*get_dispatch_this)(DispatchEx*);
     nsISupports *(*get_gecko_target)(DispatchEx*);
     void (*bind_event)(DispatchEx*,eventid_t);
     EventTarget *(*get_parent_event_target)(DispatchEx*);
-    HRESULT (*handle_event)(DispatchEx*,eventid_t,nsIDOMEvent*,BOOL*);
+    HRESULT (*pre_handle_event)(DispatchEx*,DOMEvent*);
+    HRESULT (*handle_event)(DispatchEx*,DOMEvent*,BOOL*);
     ConnectionPointContainer *(*get_cp_container)(DispatchEx*);
     IHTMLEventObj *(*set_current_event)(DispatchEx*,IHTMLEventObj*);
 } event_target_vtbl_t;
@@ -141,7 +141,7 @@ IHTMLEventObj *default_set_current_event(HTMLInnerWindow*,IHTMLEventObj*);
 nsISupports *HTMLElement_get_gecko_target(DispatchEx*);
 void HTMLElement_bind_event(DispatchEx*,eventid_t);
 EventTarget *HTMLElement_get_parent_event_target(DispatchEx*);
-HRESULT HTMLElement_handle_event(DispatchEx*,eventid_t,nsIDOMEvent*,BOOL*);
+HRESULT HTMLElement_handle_event(DispatchEx*,DOMEvent*,BOOL*);
 ConnectionPointContainer *HTMLElement_get_cp_container(DispatchEx*);
 IHTMLEventObj *HTMLElement_set_current_event(DispatchEx*,IHTMLEventObj*);
 

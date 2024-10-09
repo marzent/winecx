@@ -94,8 +94,8 @@
 @ cdecl __fpecode()
 @ cdecl __initialize_lconv_for_unsigned_char() __lconv_init
 @ cdecl __intrinsic_abnormal_termination()
-@ cdecl -norelay __intrinsic_setjmp(ptr) MSVCRT__setjmp
-@ cdecl -arch=!i386 -norelay __intrinsic_setjmpex(ptr ptr) __wine_setjmpex
+@ cdecl -norelay __intrinsic_setjmp(ptr) _setjmp
+@ cdecl -arch=!i386 -norelay __intrinsic_setjmpex(ptr ptr) _setjmpex
 @ cdecl __isascii(long)
 @ cdecl __iscsym(long)
 @ cdecl __iscsymf(long)
@@ -570,7 +570,7 @@
 @ cdecl _locking(long long long)
 @ cdecl _logb(double) logb
 @ cdecl -arch=!i386 _logbf(float) logbf
-@ cdecl -arch=i386 _longjmpex(ptr long) MSVCRT_longjmp
+@ cdecl -arch=i386 _longjmpex(ptr long) longjmp
 @ cdecl _lrotl(long long) MSVCRT__lrotl
 @ cdecl _lrotr(long long) MSVCRT__lrotr
 @ cdecl _lsearch(ptr ptr ptr long ptr)
@@ -673,8 +673,8 @@
 @ stub _mbsncoll_l
 @ cdecl _mbsncpy(ptr str long)
 @ cdecl _mbsncpy_l(ptr str long ptr)
-@ stub _mbsncpy_s
-@ stub _mbsncpy_s_l
+@ cdecl _mbsncpy_s(ptr long str long)
+@ cdecl _mbsncpy_s_l(ptr long str long ptr)
 @ cdecl _mbsnextc(str)
 @ cdecl _mbsnextc_l(str ptr)
 @ cdecl _mbsnicmp(str str long)
@@ -1242,8 +1242,8 @@
 @ stub _o__mbsncoll_l
 @ cdecl _o__mbsncpy(ptr str long) _mbsncpy
 @ cdecl _o__mbsncpy_l(ptr str long ptr) _mbsncpy_l
-@ stub _o__mbsncpy_s
-@ stub _o__mbsncpy_s_l
+@ cdecl _o__mbsncpy_s(ptr long str long) _mbsncpy_s
+@ cdecl _o__mbsncpy_s_l(ptr long str long ptr) _mbsncpy_s_l
 @ cdecl _o__mbsnextc(str) _mbsnextc
 @ cdecl _o__mbsnextc_l(str ptr) _mbsnextc_l
 @ cdecl _o__mbsnicmp(str str long) _mbsnicmp
@@ -1737,7 +1737,7 @@
 @ cdecl _o_nexttowardf(float double) __nexttowardf
 @ cdecl _o_nexttowardl(double double) __nexttoward
 @ cdecl _o_pow(double double) pow
-@ cdecl -arch=!i386 _o_powf(float float) powf
+@ cdecl _o_powf(float float) powf
 @ cdecl _o_putc(long ptr) putc
 @ cdecl _o_putchar(long) putchar
 @ cdecl _o_puts(str) puts
@@ -1898,7 +1898,7 @@
 @ cdecl _set_se_translator(ptr)
 @ cdecl _set_thread_local_invalid_parameter_handler(ptr)
 @ cdecl _seterrormode(long)
-@ cdecl -arch=i386 -norelay _setjmp3(ptr long) MSVCRT__setjmp3
+@ cdecl -arch=i386 -norelay _setjmp3(ptr long)
 @ cdecl _setmaxstdio(long)
 @ cdecl _setmbcp(long)
 @ cdecl _setmode(long long)
@@ -2293,7 +2293,7 @@
 @ cdecl fegetenv(ptr)
 @ cdecl fegetexceptflag(ptr long)
 @ cdecl fegetround()
-@ stub feholdexcept
+@ cdecl feholdexcept(ptr)
 @ cdecl feof(ptr)
 @ cdecl ferror(ptr)
 @ cdecl fesetenv(ptr)
@@ -2405,7 +2405,7 @@
 @ cdecl logbf(float)
 @ cdecl logbl(double) logb
 @ cdecl -arch=!i386 logf(float)
-@ cdecl longjmp(ptr long) MSVCRT_longjmp
+@ cdecl longjmp(ptr long)
 @ cdecl lrint(double)
 @ cdecl lrintf(float)
 @ cdecl lrintl(double) lrint
@@ -2449,7 +2449,7 @@
 @ stub norml
 @ cdecl perror(str)
 @ cdecl pow(double double)
-@ cdecl -arch=!i386 powf(float float)
+@ cdecl powf(float float)
 @ cdecl putc(long ptr)
 @ cdecl putchar(long)
 @ cdecl puts(str)
@@ -2487,7 +2487,7 @@
 @ cdecl set_terminate(ptr)
 @ cdecl set_unexpected(ptr)
 @ cdecl setbuf(ptr ptr)
-@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr) MSVCRT__setjmp
+@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr ptr) _setjmp
 @ cdecl setlocale(long str)
 @ cdecl setvbuf(ptr str long long)
 @ cdecl signal(long long)

@@ -20,6 +20,38 @@
 #ifndef __WINE_MSVCRT_H
 #define __WINE_MSVCRT_H
 
+#if _MSVCR_VER >= 140
+#ifndef _FILE_DEFINED
+#define _FILE_DEFINED
+typedef struct _iobuf
+{
+  char* _ptr;
+  char* _base;
+  int   _cnt;
+  int   _flag;
+  int   _file;
+  int   _charbuf;
+  int   _bufsiz;
+  char* _tmpfname;
+} FILE;
+
+#define _IOREAD     0x0001
+#define _IOWRT      0x0002
+#define _IORW       0x0004
+#define _IOEOF      0x0008
+#define _IOERR      0x0010
+#define _IOMYBUF    0x0040
+#define _IOSTRG     0x1000
+#endif
+
+#define MSVCRT__NOBUF 0x0400
+
+#else
+
+#define MSVCRT__NOBUF _IONBF
+
+#endif
+
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -117,11 +149,10 @@ BOOL __cdecl __CxxRegisterExceptionObject(EXCEPTION_POINTERS*, cxx_frame_info*);
 void __cdecl __CxxUnregisterExceptionObject(cxx_frame_info*, BOOL);
 void CDECL __DestructExceptionObject(EXCEPTION_RECORD*);
 
-#if defined(__x86_64__) && _MSVCR_VER>=140
 void** __cdecl __current_exception(void);
 int* __cdecl __processing_throw(void);
-void __cdecl terminate(void);
 
+#if defined(__x86_64__) && _MSVCR_VER>=140
 BOOL msvcrt_init_handler4(void);
 void msvcrt_attach_handler4(void);
 void msvcrt_free_handler4(void);
@@ -285,14 +316,13 @@ extern BOOL msvcrt_create_io_inherit_block(WORD*, BYTE**);
 #define _RT_CRNL        252
 #define _RT_BANNER      255
 
-extern FILE MSVCRT__iob[];
-
 #define MSVCRT_NO_CONSOLE_FD (-2)
 #define MSVCRT_NO_CONSOLE ((HANDLE)MSVCRT_NO_CONSOLE_FD)
 
-#define MSVCRT_stdin       (MSVCRT__iob+STDIN_FILENO)
-#define MSVCRT_stdout      (MSVCRT__iob+STDOUT_FILENO)
-#define MSVCRT_stderr      (MSVCRT__iob+STDERR_FILENO)
+#if _MSVCR_VER < 140
+extern FILE MSVCRT__iob[];
+#define __acrt_iob_func(idx) (MSVCRT__iob+(idx))
+#endif
 
 /* internal file._flag flags */
 #define MSVCRT__USERBUF  0x0100

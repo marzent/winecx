@@ -447,6 +447,9 @@ obj1.func = function () {
     ok(arguments.length === 1, "arguments.length is not 1");
     ok(arguments["0"] === true, "arguments[0] is not true");
     ok(typeof(arguments.callee) === "function", "typeof(arguments.calee) = " + typeof(arguments.calee));
+    ok(arguments.caller === null, "arguments.caller = " + arguments.caller);
+    function test_caller() { ok(arguments.caller === foobar.arguments, "nested arguments.caller = " + arguments.caller); }
+    function foobar() { test_caller(); } foobar();
 
     return "test";
 };
@@ -1710,6 +1713,18 @@ try {
         var r = delete to_delete;
         ok(r === true, "delete returned " + r);
     }
+})();
+
+(function() {
+    function constr() {}
+    constr.prototype = { prop: 1 };
+    var o = new constr(), r;
+    ok(o.prop === 1, "o.prop = " + o.prop);
+    r = delete constr.prototype.prop;
+    ok(r === true, "delete returned " + r);
+    ok(o.prop === undefined, "o.prop = " + o.prop);
+    r = delete o["prop"];
+    ok(r === true, "delete returned " + r);
 })();
 
 if (false)

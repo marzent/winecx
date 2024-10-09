@@ -53,7 +53,28 @@ static void (WINAPI *pglDebugMessageCallbackARB)(void *, void *);
 static void (WINAPI *pglDebugMessageControlARB)(GLenum, GLenum, GLenum, GLsizei, const GLuint *, GLboolean);
 static void (WINAPI *pglDebugMessageInsertARB)(GLenum, GLenum, GLuint, GLenum, GLsizei, const char *);
 
+/* GL_ARB_framebuffer_object */
+static void (WINAPI *pglBindFramebuffer)(GLenum target, GLuint framebuffer);
+static GLenum (WINAPI *pglCheckFramebufferStatus)(GLenum target);
+
 static const char* wgl_extensions = NULL;
+
+static void flush_events(void)
+{
+    MSG msg;
+    int diff = 200;
+    int min_timeout = 100;
+    DWORD time = GetTickCount() + diff;
+
+    while (diff > 0)
+    {
+        if (MsgWaitForMultipleObjects(0, NULL, FALSE, min_timeout, QS_ALLINPUT) == WAIT_TIMEOUT)
+            break;
+        while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE))
+            DispatchMessageA(&msg);
+        diff = time - GetTickCount();
+    }
+}
 
 static void init_functions(void)
 {
@@ -89,6 +110,10 @@ static void init_functions(void)
     GET_PROC(glDebugMessageCallbackARB)
     GET_PROC(glDebugMessageControlARB)
     GET_PROC(glDebugMessageInsertARB)
+
+    /* GL_ARB_framebuffer_object */
+    GET_PROC(glBindFramebuffer)
+    GET_PROC(glCheckFramebufferStatus)
 
 #undef GET_PROC
 }
@@ -301,6 +326,7 @@ static void test_choosepixelformat(void)
         ok( ret_fmt.cAlphaShift == 24, "Got %u.\n", ret_fmt.cAlphaShift );
     else
         ok( !ret_fmt.cAlphaShift, "Got %u.\n", ret_fmt.cAlphaShift );
+    ok( ret_fmt.cDepthBits, "Got %u.\n", ret_fmt.cDepthBits );
 
     pfd.dwFlags |= PFD_DOUBLEBUFFER_DONTCARE;
     ok( test_pfd(&pfd, NULL), "PFD_DOUBLEBUFFER_DONTCARE failed\n" );
@@ -725,7 +751,8 @@ static void test_makecurrent(HDC winhdc)
 static void test_colorbits(HDC hdc)
 {
     const int iAttribList[] = { WGL_COLOR_BITS_ARB, WGL_RED_BITS_ARB, WGL_GREEN_BITS_ARB,
-                                WGL_BLUE_BITS_ARB, WGL_ALPHA_BITS_ARB };
+                                WGL_BLUE_BITS_ARB, WGL_ALPHA_BITS_ARB, WGL_BLUE_SHIFT_ARB, WGL_GREEN_SHIFT_ARB,
+                                WGL_RED_SHIFT_ARB, WGL_ALPHA_SHIFT_ARB, };
     int iAttribRet[ARRAY_SIZE(iAttribList)];
     const int iAttribs[] = { WGL_ALPHA_BITS_ARB, 1, 0 };
     unsigned int nFormats;
@@ -753,6 +780,11 @@ static void test_colorbits(HDC hdc)
         skip("wglGetPixelFormatAttribivARB failed\n");
         return;
     }
+    ok(!iAttribRet[5], "got %d.\n", iAttribRet[5]);
+    ok(iAttribRet[6] == iAttribRet[3], "got %d.\n", iAttribRet[6]);
+    ok(iAttribRet[7] == iAttribRet[6] + iAttribRet[2], "got %d.\n", iAttribRet[7]);
+    ok(iAttribRet[8] == iAttribRet[7] + iAttribRet[1], "got %d.\n", iAttribRet[8]);
+
     iAttribRet[1] += iAttribRet[2]+iAttribRet[3]+iAttribRet[4];
     ok(iAttribRet[0] == iAttribRet[1], "WGL_COLOR_BITS_ARB (%d) does not equal R+G+B+A (%d)!\n",
                                        iAttribRet[0], iAttribRet[1]);
@@ -1331,6 +1363,71 @@ static void test_minimized(void)
     ret = wglDeleteContext(ctx);
     ok(ret, "Failed to delete GL context, last error %#lx.\n", GetLastError());
 
+    ReleaseDC(window, dc);
+    DestroyWindow(window);
+}
+
+static void test_framebuffer(void)
+{
+    static const PIXELFORMATDESCRIPTOR pf_desc =
+    {
+        sizeof(PIXELFORMATDESCRIPTOR),
+        1,                     /* version */
+        PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+        PFD_TYPE_RGBA,
+        24,                    /* 24-bit color depth */
+        0, 0, 0, 0, 0, 0,      /* color bits */
+        0,                     /* alpha buffer */
+        0,                     /* shift bit */
+        0,                     /* accumulation buffer */
+        0, 0, 0, 0,            /* accum bits */
+        32,                    /* z-buffer */
+        0,                     /* stencil buffer */
+        0,                     /* auxiliary buffer */
+        PFD_MAIN_PLANE,        /* main layer */
+        0,                     /* reserved */
+        0, 0, 0                /* layer masks */
+    };
+    int pixel_format;
+    GLenum status;
+    HWND window;
+    HGLRC ctx;
+    BOOL ret;
+    HDC dc;
+
+    /* Test the default framebuffer status for a window that becomes visible after wglMakeCurrent() */
+    window = CreateWindowA("static", "opengl32_test", WS_POPUP, 0, 0, 640, 480, 0, 0, 0, 0);
+    ok(!!window, "Failed to create window, last error %#lx.\n", GetLastError());
+    dc = GetDC(window);
+    ok(!!dc, "Failed to get DC.\n");
+    pixel_format = ChoosePixelFormat(dc, &pf_desc);
+    if (!pixel_format)
+    {
+        win_skip("Failed to find pixel format.\n");
+        ReleaseDC(window, dc);
+        DestroyWindow(window);
+        return;
+    }
+
+    ret = SetPixelFormat(dc, pixel_format, &pf_desc);
+    ok(ret, "Failed to set pixel format, last error %#lx.\n", GetLastError());
+    ctx = wglCreateContext(dc);
+    ok(!!ctx, "Failed to create GL context, last error %#lx.\n", GetLastError());
+    ret = wglMakeCurrent(dc, ctx);
+    ok(ret, "Failed to make context current, last error %#lx.\n", GetLastError());
+
+    ShowWindow(window, SW_SHOW);
+    flush_events();
+
+    pglBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    status = pglCheckFramebufferStatus(GL_FRAMEBUFFER);
+    ok(status == GL_FRAMEBUFFER_COMPLETE, "Expected %#x, got %#x.\n", GL_FRAMEBUFFER_COMPLETE, status);
+
+    ret = wglMakeCurrent(NULL, NULL);
+    ok(ret, "Failed to clear current context, last error %#lx.\n", GetLastError());
+    ret = wglDeleteContext(ctx);
+    ok(ret, "Failed to delete GL context, last error %#lx.\n", GetLastError());
     ReleaseDC(window, dc);
     DestroyWindow(window);
 }
@@ -2006,6 +2103,55 @@ static void test_copy_context(HDC hdc)
     ok(ret, "wglMakeCurrent failed, last error %#lx.\n", GetLastError());
 }
 
+static void test_child_window(HWND hwnd, PIXELFORMATDESCRIPTOR *pfd)
+{
+    int pixel_format;
+    DWORD t1, t;
+    HGLRC hglrc;
+    HWND child;
+    HDC hdc;
+    int res;
+
+    child = CreateWindowA("static", "Title", WS_CHILDWINDOW | WS_VISIBLE, 50, 50, 100, 100, hwnd, NULL, NULL, NULL);
+    ok(!!child, "got error %lu.\n", GetLastError());
+
+    hdc = GetDC(child);
+    pixel_format = ChoosePixelFormat(hdc, pfd);
+    res = SetPixelFormat(hdc, pixel_format, pfd);
+    ok(res, "got error %lu.\n", GetLastError());
+
+    hglrc = wglCreateContext(hdc);
+    ok(!!hglrc, "got error %lu.\n", GetLastError());
+
+    /* Test SwapBuffers with NULL context. */
+
+    glDrawBuffer(GL_BACK);
+
+    /* Currently blit happening for child window in winex11 may not be updated with the latest GL frame
+     * even on glXWaitForSbcOML() path. So simulate continuous present for the test purpose. */
+    trace("Child window rectangle should turn from red to green now.\n");
+    t1 = GetTickCount();
+    while ((t = GetTickCount()) - t1 < 3000)
+    {
+        res = wglMakeCurrent(hdc, hglrc);
+        ok(res, "got error %lu.\n", GetLastError());
+        if (t - t1 > 1500)
+            glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+        else
+            glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        res = wglMakeCurrent(NULL, NULL);
+        ok(res, "got error %lu.\n", GetLastError());
+        SwapBuffers(hdc);
+    }
+
+    res = wglDeleteContext(hglrc);
+    ok(res, "got error %lu.\n", GetLastError());
+
+    ReleaseDC(child, hdc);
+    DestroyWindow(child);
+}
+
 START_TEST(opengl)
 {
     HWND hwnd;
@@ -2113,6 +2259,7 @@ START_TEST(opengl)
         test_colorbits(hdc);
         test_gdi_dbuf(hdc);
         test_acceleration(hdc);
+        test_framebuffer();
 
         wgl_extensions = pwglGetExtensionsStringARB(hdc);
         if(wgl_extensions == NULL) skip("Skipping opengl32 tests because this OpenGL implementation doesn't support WGL extensions!\n");
@@ -2137,6 +2284,9 @@ START_TEST(opengl)
             test_swap_control(hdc);
         else
             skip("WGL_EXT_swap_control not supported, skipping test\n");
+
+        if (winetest_interactive)
+            test_child_window(hwnd, &pfd);
 
 cleanup:
         ReleaseDC(hwnd, hdc);

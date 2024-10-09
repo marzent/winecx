@@ -44,6 +44,10 @@
 #ifdef __APPLE__
 # include <CoreFoundation/CFLocale.h>
 # include <CoreFoundation/CFString.h>
+# include <crt_externs.h>
+# define environ (*_NSGetEnviron())
+#else
+  extern char **environ;
 #endif
 
 #include "ntstatus.h"
@@ -71,7 +75,6 @@ static const WCHAR bootstrapW[] = {'W','I','N','E','B','O','O','T','S','T','R','
 
 int main_argc = 0;
 char **main_argv = NULL;
-char **main_envp = NULL;
 WCHAR **main_wargv = NULL;
 
 static LCID user_lcid, system_lcid;
@@ -342,7 +345,8 @@ static BOOL is_special_env_var( const char *var )
             STARTS_WITH( var, "TEMP=" ) ||
             STARTS_WITH( var, "TMP=" ) ||
             STARTS_WITH( var, "QT_" ) ||
-            STARTS_WITH( var, "VK_" ));
+            STARTS_WITH( var, "VK_" ) ||
+            STARTS_WITH( var, "XDG_SESSION_TYPE=" ));
 }
 
 /* check if an environment variable changes dynamically in every new process */
@@ -931,12 +935,12 @@ static WCHAR *get_initial_environment( SIZE_T *pos, SIZE_T *size )
 
     /* estimate needed size */
     *size = 1;
-    for (e = main_envp; *e; e++) *size += strlen(*e) + 1;
+    for (e = environ; *e; e++) *size += strlen(*e) + 1;
 
     env = malloc( *size * sizeof(WCHAR) );
     ptr = env;
     end = env + *size - 1;
-    for (e = main_envp; *e && ptr < end; e++)
+    for (e = environ; *e && ptr < end; e++)
     {
         char *str = *e;
 
@@ -1822,7 +1826,7 @@ static void *build_wow64_parameters( const RTL_USER_PROCESS_PARAMETERS *params )
                    + ((params->RuntimeInfo.MaximumLength + 1) & ~1)
                    + params->EnvironmentSize);
 
-    status = NtAllocateVirtualMemory( NtCurrentProcess(), (void **)&wow64_params, 0, &size,
+    status = NtAllocateVirtualMemory( NtCurrentProcess(), (void **)&wow64_params, limit_2g - 1, &size,
                                       MEM_COMMIT, PAGE_READWRITE );
     assert( !status );
 

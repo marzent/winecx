@@ -104,6 +104,7 @@
 @ stdcall CreateMDIWindowW(wstr wstr long long long long long long long long)
 @ stdcall CreateMenu()
 @ stdcall CreatePopupMenu()
+@ stdcall CreateSyntheticPointerDevice(long long long)
 # @ stub CreateSystemThreads
 @ stdcall CreateWindowExA(long str str long long long long long long long long ptr)
 @ stdcall CreateWindowExW(long wstr wstr long long long long long long long long ptr)
@@ -173,6 +174,7 @@
 @ stdcall DispatchMessageA(ptr)
 @ stdcall DispatchMessageW(ptr)
 @ stdcall DisplayConfigGetDeviceInfo(ptr)
+@ stdcall DisplayConfigSetDeviceInfo(ptr)
 # @ stub DisplayExitWindowsWarnings
 @ stdcall DlgDirListA(long str long long long)
 @ stdcall DlgDirListComboBoxA(long ptr long long long)
@@ -302,6 +304,7 @@
 @ stdcall GetDpiForMonitorInternal(long long ptr ptr) NtUserGetDpiForMonitor
 @ stdcall GetDpiForSystem()
 @ stdcall GetDpiForWindow(long)
+@ stdcall GetDpiFromDpiAwarenessContext(long)
 @ stdcall GetFocus()
 @ stdcall GetForegroundWindow() NtUserGetForegroundWindow
 @ stdcall GetGestureConfig(long long long ptr ptr long)
@@ -507,7 +510,7 @@
 @ stdcall LoadImageA(long str long long long long)
 @ stdcall LoadImageW(long wstr long long long long)
 @ stdcall LoadKeyboardLayoutA(str long)
-# @ stub LoadKeyboardLayoutEx
+@ stdcall LoadKeyboardLayoutEx(long wstr long)
 @ stdcall LoadKeyboardLayoutW(wstr long)
 @ stdcall LoadLocalFonts()
 @ stdcall LoadMenuA(long str)
@@ -758,7 +761,7 @@
 # @ stub SoftModalMessageBox
 @ stdcall SubtractRect(ptr ptr ptr)
 @ stdcall SwapMouseButton(long)
-@ stdcall SwitchDesktop(long)
+@ stdcall SwitchDesktop(long) NtUserSwitchDesktop
 @ stdcall SwitchToThisWindow(long long)
 # @ stub SysErrorBox
 @ stdcall SystemParametersInfoA(long long ptr long)

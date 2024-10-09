@@ -45,57 +45,8 @@ static inline HTMLTableCell *impl_from_IHTMLTableCell(IHTMLTableCell *iface)
     return CONTAINING_RECORD(iface, HTMLTableCell, IHTMLTableCell_iface);
 }
 
-static HRESULT WINAPI HTMLTableCell_QueryInterface(IHTMLTableCell *iface, REFIID riid, void **ppv)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTableCell_AddRef(IHTMLTableCell *iface)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLTableCell_Release(IHTMLTableCell *iface)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLTableCell_GetTypeInfoCount(IHTMLTableCell *iface, UINT *pctinfo)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTableCell_GetTypeInfo(IHTMLTableCell *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTableCell_GetIDsOfNames(IHTMLTableCell *iface, REFIID riid,
-        LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTableCell_Invoke(IHTMLTableCell *iface, DISPID dispIdMember, REFIID riid,
-        LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo,
-        UINT *puArgErr)
-{
-    HTMLTableCell *This = impl_from_IHTMLTableCell(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTableCell, IHTMLTableCell,
+                      impl_from_IHTMLTableCell(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLTableCell_put_rowSpan(IHTMLTableCell *iface, LONG v)
 {
@@ -479,7 +430,12 @@ static const NodeImplVtbl HTMLTableCellImplVtbl = {
     .get_attr_col          = HTMLElement_get_attr_col,
 };
 
-static const event_target_vtbl_t HTMLTableCell_event_target_vtbl = {
+dispex_static_data_t HTMLTableCellElement_dispex = {
+    .id           = PROT_HTMLTableCellElement,
+    .prototype_id = PROT_HTMLElement,
+};
+
+static const event_target_vtbl_t HTMLTableDataCellElement_event_target_vtbl = {
     {
         HTMLELEMENT_DISPEX_VTBL_ENTRIES,
         .query_interface= HTMLTableCell_query_interface,
@@ -491,18 +447,19 @@ static const event_target_vtbl_t HTMLTableCell_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static const tid_t HTMLTableCell_iface_tids[] = {
+static const tid_t HTMLTableDataCellElement_iface_tids[] = {
     HTMLELEMENT_TIDS,
     IHTMLTableCell_tid,
     0
 };
 
-static dispex_static_data_t HTMLTableCell_dispex = {
-    "HTMLTableDataCellElement",
-    &HTMLTableCell_event_target_vtbl.dispex_vtbl,
-    DispHTMLTableCell_tid,
-    HTMLTableCell_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t HTMLTableDataCellElement_dispex = {
+    .id           = PROT_HTMLTableDataCellElement,
+    .prototype_id = PROT_HTMLTableCellElement,
+    .vtbl         = &HTMLTableDataCellElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLTableCell_tid,
+    .iface_tids   = HTMLTableDataCellElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 HRESULT HTMLTableCell_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLElement **elem)
@@ -517,7 +474,7 @@ HRESULT HTMLTableCell_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLE
     ret->IHTMLTableCell_iface.lpVtbl = &HTMLTableCellVtbl;
     ret->element.node.vtbl = &HTMLTableCellImplVtbl;
 
-    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTableCell_dispex);
+    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTableDataCellElement_dispex);
 
     nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMHTMLTableCellElement, (void**)&ret->nscell);
     assert(nsres == NS_OK);
@@ -539,59 +496,8 @@ static inline HTMLTableRow *impl_from_IHTMLTableRow(IHTMLTableRow *iface)
     return CONTAINING_RECORD(iface, HTMLTableRow, IHTMLTableRow_iface);
 }
 
-static HRESULT WINAPI HTMLTableRow_QueryInterface(IHTMLTableRow *iface,
-        REFIID riid, void **ppv)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTableRow_AddRef(IHTMLTableRow *iface)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLTableRow_Release(IHTMLTableRow *iface)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLTableRow_GetTypeInfoCount(IHTMLTableRow *iface, UINT *pctinfo)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTableRow_GetTypeInfo(IHTMLTableRow *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTableRow_GetIDsOfNames(IHTMLTableRow *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTableRow_Invoke(IHTMLTableRow *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLTableRow *This = impl_from_IHTMLTableRow(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTableRow, IHTMLTableRow,
+                      impl_from_IHTMLTableRow(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLTableRow_put_align(IHTMLTableRow *iface, BSTR v)
 {
@@ -793,7 +699,7 @@ static HRESULT WINAPI HTMLTableRow_get_cells(IHTMLTableRow *iface, IHTMLElementC
         return E_FAIL;
     }
 
-    *p = create_collection_from_htmlcol(nscol, dispex_compat_mode(&This->element.node.event_target.dispex));
+    *p = create_collection_from_htmlcol(nscol, &This->element.node.event_target.dispex);
 
     nsIDOMHTMLCollection_Release(nscol);
     return S_OK;
@@ -904,7 +810,7 @@ static const NodeImplVtbl HTMLTableRowImplVtbl = {
     .get_attr_col          = HTMLElement_get_attr_col,
 };
 
-static const event_target_vtbl_t HTMLTableRow_event_target_vtbl = {
+static const event_target_vtbl_t HTMLTableRowElement_event_target_vtbl = {
     {
         HTMLELEMENT_DISPEX_VTBL_ENTRIES,
         .query_interface= HTMLTableRow_query_interface,
@@ -916,18 +822,19 @@ static const event_target_vtbl_t HTMLTableRow_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static const tid_t HTMLTableRow_iface_tids[] = {
+static const tid_t HTMLTableRowElement_iface_tids[] = {
     HTMLELEMENT_TIDS,
     IHTMLTableRow_tid,
     0
 };
 
-static dispex_static_data_t HTMLTableRow_dispex = {
-    "HTMLTableRowElement",
-    &HTMLTableRow_event_target_vtbl.dispex_vtbl,
-    DispHTMLTableRow_tid,
-    HTMLTableRow_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t HTMLTableRowElement_dispex = {
+    .id           = PROT_HTMLTableRowElement,
+    .prototype_id = PROT_HTMLElement,
+    .vtbl         = &HTMLTableRowElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     =  DispHTMLTableRow_tid,
+    .iface_tids   = HTMLTableRowElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 HRESULT HTMLTableRow_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLElement **elem)
@@ -942,7 +849,7 @@ HRESULT HTMLTableRow_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLEl
     ret->IHTMLTableRow_iface.lpVtbl = &HTMLTableRowVtbl;
     ret->element.node.vtbl = &HTMLTableRowImplVtbl;
 
-    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTableRow_dispex);
+    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTableRowElement_dispex);
 
     nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMHTMLTableRowElement, (void**)&ret->nsrow);
     assert(nsres == NS_OK);
@@ -1007,59 +914,7 @@ static HRESULT var2str(const VARIANT *p, nsAString *nsstr)
     return ret ? S_OK : E_OUTOFMEMORY;
 }
 
-static HRESULT WINAPI HTMLTable_QueryInterface(IHTMLTable *iface,
-                                                         REFIID riid, void **ppv)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTable_AddRef(IHTMLTable *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLTable_Release(IHTMLTable *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLTable_GetTypeInfoCount(IHTMLTable *iface, UINT *pctinfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTable_GetTypeInfo(IHTMLTable *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTable_GetIDsOfNames(IHTMLTable *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTable_Invoke(IHTMLTable *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLTable *This = impl_from_IHTMLTable(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTable, IHTMLTable, impl_from_IHTMLTable(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLTable_put_cols(IHTMLTable *iface, LONG v)
 {
@@ -1376,7 +1231,7 @@ static HRESULT WINAPI HTMLTable_get_rows(IHTMLTable *iface, IHTMLElementCollecti
         return E_FAIL;
     }
 
-    *p = create_collection_from_htmlcol(nscol, dispex_compat_mode(&This->element.node.event_target.dispex));
+    *p = create_collection_from_htmlcol(nscol, &This->element.node.event_target.dispex);
 
     nsIDOMHTMLCollection_Release(nscol);
     return S_OK;
@@ -1491,7 +1346,7 @@ static HRESULT WINAPI HTMLTable_get_tBodies(IHTMLTable *iface, IHTMLElementColle
         return E_FAIL;
     }
 
-    *p = create_collection_from_htmlcol(nscol, dispex_compat_mode(&This->element.node.event_target.dispex));
+    *p = create_collection_from_htmlcol(nscol, &This->element.node.event_target.dispex);
 
     nsIDOMHTMLCollection_Release(nscol);
     return S_OK;
@@ -1666,60 +1521,7 @@ static const IHTMLTableVtbl HTMLTableVtbl = {
     HTMLTable_get_onreadystatechange
 };
 
-/* IHTMLTable2 */
-static HRESULT WINAPI HTMLTable2_QueryInterface(IHTMLTable2 *iface,
-                                                         REFIID riid, void **ppv)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTable2_AddRef(IHTMLTable2 *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLTable2_Release(IHTMLTable2 *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLTable2_GetTypeInfoCount(IHTMLTable2 *iface, UINT *pctinfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTable2_GetTypeInfo(IHTMLTable2 *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTable2_GetIDsOfNames(IHTMLTable2 *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTable2_Invoke(IHTMLTable2 *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLTable *This = impl_from_IHTMLTable2(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTable2, IHTMLTable2, impl_from_IHTMLTable2(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLTable2_firstPage(IHTMLTable2 *iface)
 {
@@ -1764,60 +1566,7 @@ static const IHTMLTable2Vtbl HTMLTable2Vtbl = {
     HTMLTable2_moveRow
 };
 
-/* IHTMLTable3 */
-static HRESULT WINAPI HTMLTable3_QueryInterface(IHTMLTable3 *iface,
-                                                         REFIID riid, void **ppv)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTable3_AddRef(IHTMLTable3 *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLTable3_Release(IHTMLTable3 *iface)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLTable3_GetTypeInfoCount(IHTMLTable3 *iface, UINT *pctinfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTable3_GetTypeInfo(IHTMLTable3 *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTable3_GetIDsOfNames(IHTMLTable3 *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTable3_Invoke(IHTMLTable3 *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLTable *This = impl_from_IHTMLTable3(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTable3, IHTMLTable3, impl_from_IHTMLTable3(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLTable3_put_summary(IHTMLTable3 *iface, BSTR v)
 {
@@ -1913,7 +1662,7 @@ static const NodeImplVtbl HTMLTableImplVtbl = {
     .get_attr_col          = HTMLElement_get_attr_col,
 };
 
-static const event_target_vtbl_t HTMLTable_event_target_vtbl = {
+static const event_target_vtbl_t HTMLTableElement_event_target_vtbl = {
     {
         HTMLELEMENT_DISPEX_VTBL_ENTRIES,
         .query_interface= HTMLTable_query_interface,
@@ -1925,7 +1674,7 @@ static const event_target_vtbl_t HTMLTable_event_target_vtbl = {
     .handle_event       = HTMLElement_handle_event
 };
 
-static const tid_t HTMLTable_iface_tids[] = {
+static const tid_t HTMLTableElement_iface_tids[] = {
     HTMLELEMENT_TIDS,
     IHTMLTable_tid,
     IHTMLTable2_tid,
@@ -1933,12 +1682,13 @@ static const tid_t HTMLTable_iface_tids[] = {
     0
 };
 
-static dispex_static_data_t HTMLTable_dispex = {
-    "HTMLTableElement",
-    &HTMLTable_event_target_vtbl.dispex_vtbl,
-    DispHTMLTable_tid,
-    HTMLTable_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t HTMLTableElement_dispex = {
+    .id           = PROT_HTMLTableElement,
+    .prototype_id = PROT_HTMLElement,
+    .vtbl         = &HTMLTableElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLTable_tid,
+    .iface_tids   = HTMLTableElement_iface_tids,
+    .init_info    = HTMLElement_init_dispex_info,
 };
 
 HRESULT HTMLTable_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLElement **elem)
@@ -1955,7 +1705,7 @@ HRESULT HTMLTable_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLEleme
     ret->IHTMLTable2_iface.lpVtbl = &HTMLTable2Vtbl;
     ret->IHTMLTable3_iface.lpVtbl = &HTMLTable3Vtbl;
 
-    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTable_dispex);
+    HTMLElement_Init(&ret->element, doc, nselem, &HTMLTableElement_dispex);
 
     nsres = nsIDOMElement_QueryInterface(nselem, &IID_nsIDOMHTMLTableElement, (void**)&ret->nstable);
     assert(nsres == NS_OK);

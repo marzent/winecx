@@ -42,10 +42,10 @@ WINE_DEFAULT_DEBUG_CHANNEL(service);
 struct scmdatabase *active_database;
 
 /* CW HACK 20218:
- * Double service_pipe_timeout, the Rockstar Launcher service takes 10+
+ * Quadruple service_pipe_timeout, the Rockstar Launcher service takes 20+
  * seconds to launch under Rosetta.
  */
-DWORD service_pipe_timeout = 20000;
+DWORD service_pipe_timeout = 40000;
 DWORD service_kill_timeout = 60000;
 static DWORD default_preshutdown_timeout = 180000;
 static DWORD autostart_delay = 120000;
@@ -279,6 +279,14 @@ DWORD save_service_config(struct service_entry *entry)
         goto cleanup;
     if ((err = RegSetValueExW(hKey, SZ_PRESHUTDOWN, 0, REG_DWORD, (LPBYTE)&entry->preshutdown_timeout, sizeof(DWORD))) != 0)
         goto cleanup;
+
+    if (entry->delayed_autostart)
+        err = RegSetValueExW(hKey, SZ_DELAYED_AUTOSTART, 0, REG_DWORD, (LPBYTE)&entry->delayed_autostart, sizeof(DWORD));
+    else
+        err = RegDeleteValueW(hKey, SZ_DELAYED_AUTOSTART);
+    if (err != 0 && err != ERROR_FILE_NOT_FOUND)
+        goto cleanup;
+
     if (entry->is_wow64)
     {
         const DWORD is_wow64 = 1;
@@ -671,7 +679,7 @@ static DWORD scmdatabase_create(struct scmdatabase **db)
     list_init(&(*db)->processes);
     list_init(&(*db)->services);
 
-    InitializeCriticalSection(&(*db)->cs);
+    InitializeCriticalSectionEx(&(*db)->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     (*db)->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": scmdatabase");
 
     err = RegCreateKeyExW(HKEY_LOCAL_MACHINE, SZ_SERVICES_KEY, 0, NULL,

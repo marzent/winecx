@@ -415,6 +415,31 @@ BOOLEAN WINAPI RtlIsCurrentThread( HANDLE handle )
 
 
 /***********************************************************************
+ *              RtlSetThreadErrorMode  (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlSetThreadErrorMode( DWORD mode, LPDWORD oldmode )
+{
+    if (mode & ~0x70)
+        return STATUS_INVALID_PARAMETER_1;
+
+    if (oldmode)
+        *oldmode = NtCurrentTeb()->HardErrorMode;
+
+    NtCurrentTeb()->HardErrorMode = mode;
+    return STATUS_SUCCESS;
+}
+
+
+/***********************************************************************
+ *              RtlGetThreadErrorMode  (NTDLL.@)
+ */
+DWORD WINAPI RtlGetThreadErrorMode( void )
+{
+    return NtCurrentTeb()->HardErrorMode;
+}
+
+
+/***********************************************************************
  *           _errno  (NTDLL.@)
  */
 int * CDECL _errno(void)
@@ -494,10 +519,8 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH RtlFlsAlloc( PFLS_CALLBACK_FUNCTION callback, 
 {
     unsigned int chunk_index, index, i;
     FLS_INFO_CHUNK *chunk;
-    TEB_FLS_DATA *fls;
 
-    if (!(fls = NtCurrentTeb()->FlsSlots)
-            && !(NtCurrentTeb()->FlsSlots = fls = fls_alloc_data()))
+    if (!NtCurrentTeb()->FlsSlots && !(NtCurrentTeb()->FlsSlots = fls_alloc_data()))
         return STATUS_NO_MEMORY;
 
     lock_fls_data();

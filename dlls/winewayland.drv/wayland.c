@@ -269,18 +269,18 @@ BOOL wayland_process_init(void)
         ERR("Wayland compositor doesn't support wl_subcompositor\n");
         return FALSE;
     }
-    if (!process_wayland.zwp_pointer_constraints_v1)
+    if (!process_wayland.wp_viewporter)
     {
-        ERR("Wayland compositor doesn't support zwp_pointer_constraints_v1\n");
-        return FALSE;
-    }
-    if (!process_wayland.zwp_relative_pointer_manager_v1)
-    {
-        ERR("Wayland compositor doesn't support zwp_relative_pointer_manager_v1\n");
+        ERR("Wayland compositor doesn't support wp_viewporter\n");
         return FALSE;
     }
 
-    wayland_init_display_devices(FALSE);
+    /* Check for optional globals. */
+    if (!process_wayland.zwp_pointer_constraints_v1)
+        ERR("Wayland compositor doesn't support optional zwp_pointer_constraints_v1 (pointer locking/confining won't work)\n");
+
+    if (!process_wayland.zwp_relative_pointer_manager_v1)
+        ERR("Wayland compositor doesn't support optional zwp_relative_pointer_manager_v1 (relative motion won't work)\n");
 
     process_wayland.initialized = TRUE;
 

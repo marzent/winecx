@@ -406,6 +406,8 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
         style = (style & ~BS_TYPEMASK) | btn_type;
         WIN_SetStyle( hWnd, style, BS_TYPEMASK & ~style );
 
+        NtUserNotifyWinEvent( EVENT_OBJECT_STATECHANGE, hWnd, OBJID_CLIENT, 0 );
+
         /* Only redraw if lParam flag is set.*/
         if (lParam)
             NtUserInvalidateRect( hWnd, NULL, TRUE );
@@ -452,6 +454,8 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
         {
             set_button_state( hWnd, (state & ~3) | wParam );
             paint_button( hWnd, btn_type, ODA_SELECT );
+
+            NtUserNotifyWinEvent( EVENT_OBJECT_STATECHANGE, hWnd, OBJID_CLIENT, 0 );
         }
         break;
 
@@ -466,6 +470,8 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
             set_button_state( hWnd, state & ~BST_PUSHED );
 
         paint_button( hWnd, btn_type, ODA_SELECT );
+
+        NtUserNotifyWinEvent( EVENT_OBJECT_STATECHANGE, hWnd, OBJID_CLIENT, 0 );
         break;
 
     case WM_NCHITTEST:

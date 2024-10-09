@@ -31,6 +31,7 @@
 #define IDS_NO_PROPERTY                     0x01B6
 #define IDS_UNSUPPORTED_ACTION              0x01BD
 #define IDS_ARG_NOT_OPT                     0x01c1
+#define IDS_OBJECT_NOT_COLLECTION           0x01c3
 #define IDS_SYNTAX_ERROR                    0x03EA
 #define IDS_SEMICOLON                       0x03EC
 #define IDS_LBRACKET                        0x03ED
@@ -74,8 +75,13 @@
 #define IDS_OBJECT_NONEXTENSIBLE            0x13D5
 #define IDS_NONCONFIGURABLE_REDEFINED       0x13D6
 #define IDS_NONWRITABLE_MODIFIED            0x13D7
+#define IDS_NOT_DATAVIEW                    0x13DF
+#define IDS_DATAVIEW_NO_ARGUMENT            0x13E0
+#define IDS_DATAVIEW_INVALID_ACCESS         0x13E1
+#define IDS_DATAVIEW_INVALID_OFFSET         0x13E2
 #define IDS_WRONG_THIS                      0x13FC
 #define IDS_KEY_NOT_OBJECT                  0x13FD
+#define IDS_ARRAYBUFFER_EXPECTED            0x15E4
 /* FIXME: This is not compatible with native, but we would
  * conflict with IDS_UNSUPPORTED_ACTION otherwise */
 #define IDS_PROP_DESC_MISMATCH              0x1F00

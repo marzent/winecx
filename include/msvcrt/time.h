@@ -80,7 +80,10 @@ _ACRTIMP errno_t     __cdecl _ctime64_s(char*,size_t,const __time64_t*);
 _ACRTIMP double      __cdecl _difftime32(__time32_t,__time32_t);
 _ACRTIMP double      __cdecl _difftime64(__time64_t,__time64_t);
 _ACRTIMP struct tm*  __cdecl _gmtime32(const __time32_t*);
+_ACRTIMP int         __cdecl _gmtime32_s(struct tm *res, const __time32_t *secs);
 _ACRTIMP struct tm*  __cdecl _gmtime64(const __time64_t*);
+_ACRTIMP int         __cdecl _gmtime64_s(struct tm *res, const __time64_t *secs);
+
 _ACRTIMP struct tm*  __cdecl _localtime32(const __time32_t*);
 _ACRTIMP errno_t     __cdecl _localtime32_s(struct tm*, const __time32_t*);
 _ACRTIMP struct tm*  __cdecl _localtime64(const __time64_t*);
@@ -88,6 +91,7 @@ _ACRTIMP errno_t     __cdecl _localtime64_s(struct tm*, const __time64_t*);
 _ACRTIMP __time32_t  __cdecl _mktime32(struct tm*);
 _ACRTIMP __time64_t  __cdecl _mktime64(struct tm*);
 _ACRTIMP size_t      __cdecl strftime(char*,size_t,const char*,const struct tm*);
+_ACRTIMP size_t      __cdecl _strftime_l(char*,size_t,const char*,const struct tm*,_locale_t);
 _ACRTIMP __time32_t  __cdecl _time32(__time32_t*);
 _ACRTIMP __time64_t  __cdecl _time64(__time64_t*);
 

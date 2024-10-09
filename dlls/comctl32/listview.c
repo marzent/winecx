@@ -7371,7 +7371,7 @@ static INT LISTVIEW_GetNextItem(const LISTVIEW_INFO *infoPtr, INT nItem, UINT uF
     {
       if ((infoPtr->uView == LV_VIEW_LIST) || (infoPtr->uView == LV_VIEW_DETAILS))
       {
-        while (nItem < infoPtr->nItemCount)
+        while (nItem < infoPtr->nItemCount - 1)
         {
           nItem++;
           if ((LISTVIEW_GetItemState(infoPtr, nItem, uMask) & uMask) == uMask)
@@ -9396,7 +9396,7 @@ static BOOL LISTVIEW_SortItems(LISTVIEW_INFO *infoPtr, PFNLVCOMPARE pfnCompare,
     if (infoPtr->nFocusedItem >= 0)
         focusedItem = DPA_GetPtr(infoPtr->hdpaItems, infoPtr->nFocusedItem);
 
-    context.items = hdpaItems;
+    context.items = infoPtr->hdpaItems;
     context.compare_func = pfnCompare;
     context.lParam = lParamSort;
     if (IsEx)

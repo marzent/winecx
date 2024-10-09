@@ -41,6 +41,40 @@
 
 DEFINE_GUID(GUID_NULL,0,0,0,0,0,0,0,0,0,0,0);
 
+static DWORD WINAPI test_apt_thread(void *param)
+{
+    HRESULT hr;
+    struct apt_data *test_apt_data = (struct apt_data *)param;
+
+    hr = CoGetApartmentType(&test_apt_data->type, &test_apt_data->qualifier);
+    if (hr == CO_E_NOTINITIALIZED)
+    {
+        test_apt_data->type = APTTYPE_UNITIALIZED;
+        test_apt_data->qualifier = 0;
+    }
+
+    return 0;
+}
+
+void check_apttype(struct apt_data *test_apt_data)
+{
+    HANDLE thread;
+    MSG msg;
+
+    memset(test_apt_data, 0xde, sizeof(*test_apt_data));
+
+    thread = CreateThread(NULL, 0, test_apt_thread, test_apt_data, 0, NULL);
+    while (MsgWaitForMultipleObjects(1, &thread, FALSE, INFINITE, QS_ALLINPUT) != WAIT_OBJECT_0)
+    {
+        while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    CloseHandle(thread);
+}
+
 static void IDirectSound_test(LPDIRECTSOUND dso, BOOL initialized,
                               LPCGUID lpGuid)
 {
@@ -1481,6 +1515,49 @@ static void perform_invalid_fmt_tests(const char *testname, IDirectSound *dso, I
     fmtex.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
     rc = do_invalid_fmt_test(dso, buf, (WAVEFORMATEX*)&fmtex, &got_buf);
     ok(rc == E_INVALIDARG, "%s: SetFormat: %08lx\n", testname, rc);
+
+    /* The following 4 tests show that formats with more than two channels require WAVEFORMATEXTENSIBLE */
+    wfx.wFormatTag = WAVE_FORMAT_PCM;
+    wfx.nChannels = 2;
+    wfx.nSamplesPerSec = 44100;
+    wfx.wBitsPerSample = 16;
+    wfx.nBlockAlign = wfx.nChannels * wfx.wBitsPerSample / 8;
+    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
+    rc = do_invalid_fmt_test(dso, buf, &wfx, &got_buf);
+    ok(rc == S_OK, "%s: SetFormat: %08lx\n", testname, rc);
+    IDirectSoundBuffer_Release(got_buf);
+
+    wfx.wFormatTag = WAVE_FORMAT_PCM;
+    wfx.nChannels = 4;
+    wfx.nSamplesPerSec = 44100;
+    wfx.wBitsPerSample = 16;
+    wfx.nBlockAlign = wfx.nChannels * wfx.wBitsPerSample / 8;
+    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
+    rc = do_invalid_fmt_test(dso, buf, &wfx, &got_buf);
+    ok(rc == (buf ? DSERR_ALLOCATED : DSERR_INVALIDPARAM), "%s: SetFormat: %08lx\n", testname, rc);
+
+    wfx.wFormatTag = WAVE_FORMAT_PCM;
+    wfx.nChannels = 6;
+    wfx.nSamplesPerSec = 44100;
+    wfx.wBitsPerSample = 16;
+    wfx.nBlockAlign = wfx.nChannels * wfx.wBitsPerSample / 8;
+    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nBlockAlign;
+    rc = do_invalid_fmt_test(dso, buf, &wfx, &got_buf);
+    ok(rc == (buf ? DSERR_ALLOCATED : DSERR_INVALIDPARAM), "%s: SetFormat: %08lx\n", testname, rc);
+
+    fmtex.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+    fmtex.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    fmtex.Format.nChannels = 6;
+    fmtex.Format.nSamplesPerSec = 44100;
+    fmtex.Format.wBitsPerSample = 16;
+    fmtex.Format.nBlockAlign = fmtex.Format.nChannels * fmtex.Format.wBitsPerSample / 8;
+    fmtex.Format.nAvgBytesPerSec = fmtex.Format.nSamplesPerSec * fmtex.Format.nBlockAlign;
+    fmtex.Samples.wValidBitsPerSample = fmtex.Format.wBitsPerSample;
+    fmtex.dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
+    fmtex.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+    rc = do_invalid_fmt_test(dso, buf, (WAVEFORMATEX *)&fmtex, &got_buf);
+    ok(rc == S_OK, "%s: SetFormat: %08lx\n", testname, rc);
+    IDirectSoundBuffer_Release(got_buf);
 }
 
 static HRESULT test_invalid_fmts(LPGUID lpGuid)
@@ -1780,10 +1857,59 @@ static void test_hw_buffers(void)
     IDirectSound_Release(ds);
 }
 
+static void test_implicit_mta(void)
+{
+    HRESULT hr;
+    IDirectSound *dso;
+    struct apt_data test_apt_data;
+
+    check_apttype(&test_apt_data);
+    ok(test_apt_data.type == APTTYPE_UNITIALIZED, "got apt type %d.\n", test_apt_data.type);
+
+    /* test DirectSound object */
+    hr = CoCreateInstance(&CLSID_DirectSound, NULL, CLSCTX_INPROC_SERVER,
+                          &IID_IDirectSound, (void**)&dso);
+    ok(hr == S_OK, "CoCreateInstance(CLSID_DirectSound) failed: %08lx\n", hr);
+
+    check_apttype(&test_apt_data);
+    ok(test_apt_data.type == APTTYPE_UNITIALIZED, "got apt type %d.\n", test_apt_data.type);
+
+    hr = IDirectSound_Initialize(dso, NULL);
+    ok(hr == DS_OK || hr == DSERR_NODRIVER || hr == DSERR_ALLOCATED || hr == E_FAIL,
+       "IDirectSound_Initialize() failed: %08lx\n", hr);
+    if (hr == DS_OK) {
+        check_apttype(&test_apt_data);
+        ok(test_apt_data.type == APTTYPE_MTA, "got apt type %d.\n", test_apt_data.type);
+        ok(test_apt_data.qualifier == APTTYPEQUALIFIER_IMPLICIT_MTA,
+           "got apt type qualifier %d.\n", test_apt_data.qualifier);
+    }
+    IDirectSound_Release(dso);
+
+    check_apttype(&test_apt_data);
+    ok(test_apt_data.type == APTTYPE_UNITIALIZED, "got apt type %d.\n", test_apt_data.type);
+
+    /* test DirectSoundCreate */
+    hr = DirectSoundCreate(NULL, &dso, NULL);
+    ok(hr == DS_OK || hr == DSERR_NODRIVER || hr == DSERR_ALLOCATED || hr == E_FAIL,
+       "DirectSoundCreate() failed: %08lx\n", hr);
+    if (hr == DS_OK) {
+        check_apttype(&test_apt_data);
+        ok(test_apt_data.type == APTTYPE_MTA, "got apt type %d.\n", test_apt_data.type);
+        ok(test_apt_data.qualifier == APTTYPEQUALIFIER_IMPLICIT_MTA,
+           "got apt type qualifier %d.\n", test_apt_data.qualifier);
+        IDirectSound_Release(dso);
+    }
+
+    check_apttype(&test_apt_data);
+    ok(test_apt_data.type == APTTYPE_UNITIALIZED, "got apt type %d.\n", test_apt_data.type);
+}
+
 START_TEST(dsound)
 {
     CoInitialize(NULL);
 
+    /* Run implicit MTA tests before IDirectSound_test so that a MTA won't be created before this test is run. */
+    test_implicit_mta();
     IDirectSound_tests();
     dsound_tests();
     test_hw_buffers();

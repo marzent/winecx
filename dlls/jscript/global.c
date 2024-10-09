@@ -905,12 +905,9 @@ static const builtin_prop_t JSGlobal_props[] = {
 };
 
 static const builtin_info_t JSGlobal_info = {
-    JSCLASS_GLOBAL,
-    NULL,
-    ARRAY_SIZE(JSGlobal_props),
-    JSGlobal_props,
-    NULL,
-    NULL
+    .class     = JSCLASS_GLOBAL,
+    .props_cnt = ARRAY_SIZE(JSGlobal_props),
+    .props     = JSGlobal_props,
 };
 
 static HRESULT init_object_prototype_accessors(script_ctx_t *ctx, jsdisp_t *object_prototype)
@@ -1145,6 +1142,10 @@ HRESULT init_global(script_ctx_t *ctx)
         return hres;
 
     hres = jsdisp_define_data_property(ctx->global, L"Infinity", const_flags, jsval_number(INFINITY));
+    if(FAILED(hres))
+        return hres;
+
+    hres = init_arraybuf_constructors(ctx);
     if(FAILED(hres))
         return hres;
 

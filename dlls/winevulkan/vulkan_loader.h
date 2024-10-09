@@ -28,6 +28,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
+#include "ntuser.h"
 #include "wine/debug.h"
 #include "wine/vulkan.h"
 #include "wine/unixlib.h"
@@ -39,7 +40,6 @@
 #define VULKAN_ICD_MAGIC_VALUE 0x01CDC0DE
 
 #define WINEVULKAN_QUIRK_GET_DEVICE_PROC_ADDR 0x00000001
-#define WINEVULKAN_QUIRK_ADJUST_MAX_IMAGE_COUNT 0x00000002
 
 /* Base 'class' for our Vulkan dispatchable objects such as VkDevice and VkInstance.
  * This structure MUST be the first element of a dispatchable object as the ICD
@@ -106,30 +106,69 @@ void *wine_vk_get_device_proc_addr(const char *name);
 void *wine_vk_get_phys_dev_proc_addr(const char *name);
 void *wine_vk_get_instance_proc_addr(const char *name);
 
+struct vk_callback_funcs
+{
+    UINT64 call_vulkan_debug_report_callback;
+    UINT64 call_vulkan_debug_utils_callback;
+};
+
 /* debug callbacks params */
+
+struct debug_utils_label
+{
+    UINT32 label_name_len;
+    float color[4];
+};
+
+struct debug_utils_object
+{
+    UINT32 object_type;
+    UINT64 object_handle;
+    UINT32 object_name_len;
+};
+
+struct debug_device_address_binding
+{
+    UINT32 flags;
+    UINT64 base_address;
+    UINT64 size;
+    UINT32 binding_type;
+};
 
 struct wine_vk_debug_utils_params
 {
-    PFN_vkDebugUtilsMessengerCallbackEXT user_callback;
-    void *user_data;
+    struct dispatch_callback_params dispatch;
+    UINT64 user_callback; /* client pointer */
+    UINT64 user_data; /* client pointer */
 
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity;
-    VkDebugUtilsMessageTypeFlagsEXT message_types;
-    VkDebugUtilsMessengerCallbackDataEXT data;
+    UINT32 severity;
+    UINT32 message_types;
+    UINT32 flags;
+    UINT32 message_id_number;
+
+    UINT32 message_id_name_len;
+    UINT32 message_len;
+    UINT32 queue_label_count;
+    UINT32 cmd_buf_label_count;
+    UINT32 object_count;
+
+    UINT8 has_address_binding;
+    struct debug_device_address_binding address_binding;
 };
 
 struct wine_vk_debug_report_params
 {
-    PFN_vkDebugReportCallbackEXT user_callback;
-    void *user_data;
+    struct dispatch_callback_params dispatch;
+    UINT64 user_callback; /* client pointer */
+    UINT64 user_data; /* client pointer */
 
-    VkDebugReportFlagsEXT flags;
-    VkDebugReportObjectTypeEXT object_type;
-    uint64_t object_handle;
-    size_t location;
-    int32_t code;
-    const char *layer_prefix;
-    const char *message;
+    UINT32 flags;
+    UINT32 object_type;
+    UINT64 object_handle;
+    UINT64 location;
+    UINT32 code;
+    UINT32 layer_len;
+    UINT32 message_len;
 };
 
 struct is_available_instance_function_params

@@ -50,8 +50,8 @@ static HDC (WINAPI *pGetBufferedPaintTargetDC)(HPAINTBUFFER);
 static HRESULT (WINAPI *pGetBufferedPaintTargetRect)(HPAINTBUFFER, RECT *);
 static HRESULT (WINAPI *pGetThemeIntList)(HTHEME, int, int, int, INTLIST *);
 static HRESULT (WINAPI *pGetThemeTransitionDuration)(HTHEME, int, int, int, int, DWORD *);
-static BOOL (WINAPI *pShouldSystemUseDarkMode)(void);
-static BOOL (WINAPI *pShouldAppsUseDarkMode)(void);
+static BOOLEAN (WINAPI *pShouldSystemUseDarkMode)(void);
+static BOOLEAN (WINAPI *pShouldAppsUseDarkMode)(void);
 
 static LONG (WINAPI *pDisplayConfigGetDeviceInfo)(DISPLAYCONFIG_DEVICE_INFO_HEADER *);
 static LONG (WINAPI *pDisplayConfigSetDeviceInfo)(DISPLAYCONFIG_DEVICE_INFO_HEADER *);
@@ -2633,12 +2633,15 @@ static void test_GetThemeBackgroundRegion(void)
     DestroyWindow(hwnd);
 }
 
-static void test_theme(void)
+static void test_theme(BOOL v6)
 {
+    static const int scrollbar_width = 200, scrollbar_height = 50;
+    int x, y, white_count = 0, white_percent;
     BOOL transparent;
     HTHEME htheme;
     HRESULT hr;
     HWND hwnd;
+    HDC hdc;
 
     if (!IsThemeActive())
     {
@@ -2675,12 +2678,39 @@ static void test_theme(void)
     CloseThemeData(htheme);
 
     DestroyWindow(hwnd);
+
+    /* Test that scrollbar parts should have very few #ffffff pixels */
+    hwnd = CreateWindowA(WC_SCROLLBARA, "scrollbar", WS_POPUP | WS_VISIBLE, 0, 0, scrollbar_width,
+                         scrollbar_height, 0, 0, 0, NULL);
+    ok(!!hwnd, "CreateWindowA failed, error %#lx.\n", GetLastError());
+    flush_events();
+    hdc = GetDC(hwnd);
+
+    for (y = 0; y < scrollbar_height; y++)
+    {
+        for (x = 0; x < scrollbar_width; x++)
+        {
+            COLORREF color = GetPixel(hdc, x, y);
+            ok(color != CLR_INVALID, "GetPixel failed.\n");
+            if (color == 0xffffff)
+                white_count++;
+        }
+    }
+
+    white_percent = white_count * 100 / (scrollbar_width * scrollbar_height);
+    if (v6)
+        ok(white_percent < 4, "Expected #ffffff pixels less than 4%%.\n");
+    else
+        ok(white_percent < 50, "Expected #ffffff pixels less than 50%%.\n");
+
+    ReleaseDC(hwnd, hdc);
+    DestroyWindow(hwnd);
 }
 
 static void test_ShouldSystemUseDarkMode(void)
 {
     DWORD light_theme, light_theme_size = sizeof(light_theme), last_error;
-    BOOL result;
+    BOOLEAN result;
     LSTATUS ls;
 
     if (!pShouldSystemUseDarkMode)
@@ -2709,7 +2739,7 @@ static void test_ShouldSystemUseDarkMode(void)
 static void test_ShouldAppsUseDarkMode(void)
 {
     DWORD light_theme, light_theme_size = sizeof(light_theme), last_error;
-    BOOL result;
+    BOOLEAN result;
     LSTATUS ls;
 
     if (!pShouldAppsUseDarkMode)
@@ -2760,13 +2790,14 @@ START_TEST(system)
     test_DrawThemeParentBackground();
     test_DrawThemeBackgroundEx();
     test_GetThemeBackgroundRegion();
-    test_theme();
+    test_theme(FALSE);
     test_ShouldSystemUseDarkMode();
     test_ShouldAppsUseDarkMode();
 
     if (load_v6_module(&ctx_cookie, &ctx))
     {
         test_EnableThemeDialogTexture();
+        test_theme(TRUE);
 
         unload_v6_module(ctx_cookie, ctx);
     }

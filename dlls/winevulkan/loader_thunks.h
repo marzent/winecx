@@ -1,10 +1,16 @@
-/* Automatically generated from Vulkan vk.xml; DO NOT EDIT!
+/* Automatically generated from Vulkan vk.xml and video.xml; DO NOT EDIT!
  *
  * This file is generated from Vulkan vk.xml file covered
  * by the following copyright and permission notice:
  *
- * Copyright 2015-2023 The Khronos Group Inc.
+ * Copyright 2015-2024 The Khronos Group Inc.
  *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ * and from Vulkan video.xml file covered
+ * by the following copyright and permission notice:
+ *
+ * Copyright 2021-2024 The Khronos Group Inc.
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  *
  */
@@ -24,6 +30,7 @@ enum unix_call
     unix_vkAllocateCommandBuffers,
     unix_vkAllocateDescriptorSets,
     unix_vkAllocateMemory,
+    unix_vkAntiLagUpdateAMD,
     unix_vkBeginCommandBuffer,
     unix_vkBindAccelerationStructureMemoryNV,
     unix_vkBindBufferMemory,
@@ -33,6 +40,7 @@ enum unix_call
     unix_vkBindImageMemory2,
     unix_vkBindImageMemory2KHR,
     unix_vkBindOpticalFlowSessionImageNV,
+    unix_vkBindVideoSessionMemoryKHR,
     unix_vkBuildAccelerationStructuresKHR,
     unix_vkBuildMicromapsEXT,
     unix_vkCmdBeginConditionalRenderingEXT,
@@ -45,9 +53,12 @@ enum unix_call
     unix_vkCmdBeginRendering,
     unix_vkCmdBeginRenderingKHR,
     unix_vkCmdBeginTransformFeedbackEXT,
+    unix_vkCmdBeginVideoCodingKHR,
+    unix_vkCmdBindDescriptorBufferEmbeddedSamplers2EXT,
     unix_vkCmdBindDescriptorBufferEmbeddedSamplersEXT,
     unix_vkCmdBindDescriptorBuffersEXT,
     unix_vkCmdBindDescriptorSets,
+    unix_vkCmdBindDescriptorSets2KHR,
     unix_vkCmdBindIndexBuffer,
     unix_vkCmdBindIndexBuffer2KHR,
     unix_vkCmdBindInvocationMaskHUAWEI,
@@ -69,6 +80,7 @@ enum unix_call
     unix_vkCmdClearAttachments,
     unix_vkCmdClearColorImage,
     unix_vkCmdClearDepthStencilImage,
+    unix_vkCmdControlVideoCodingKHR,
     unix_vkCmdCopyAccelerationStructureKHR,
     unix_vkCmdCopyAccelerationStructureNV,
     unix_vkCmdCopyAccelerationStructureToMemoryKHR,
@@ -96,6 +108,7 @@ enum unix_call
     unix_vkCmdDebugMarkerBeginEXT,
     unix_vkCmdDebugMarkerEndEXT,
     unix_vkCmdDebugMarkerInsertEXT,
+    unix_vkCmdDecodeVideoKHR,
     unix_vkCmdDecompressMemoryIndirectCountNV,
     unix_vkCmdDecompressMemoryNV,
     unix_vkCmdDispatch,
@@ -123,6 +136,7 @@ enum unix_call
     unix_vkCmdDrawMeshTasksNV,
     unix_vkCmdDrawMultiEXT,
     unix_vkCmdDrawMultiIndexedEXT,
+    unix_vkCmdEncodeVideoKHR,
     unix_vkCmdEndConditionalRenderingEXT,
     unix_vkCmdEndDebugUtilsLabelEXT,
     unix_vkCmdEndQuery,
@@ -133,7 +147,9 @@ enum unix_call
     unix_vkCmdEndRendering,
     unix_vkCmdEndRenderingKHR,
     unix_vkCmdEndTransformFeedbackEXT,
+    unix_vkCmdEndVideoCodingKHR,
     unix_vkCmdExecuteCommands,
+    unix_vkCmdExecuteGeneratedCommandsEXT,
     unix_vkCmdExecuteGeneratedCommandsNV,
     unix_vkCmdFillBuffer,
     unix_vkCmdInsertDebugUtilsLabelEXT,
@@ -144,9 +160,13 @@ enum unix_call
     unix_vkCmdPipelineBarrier,
     unix_vkCmdPipelineBarrier2,
     unix_vkCmdPipelineBarrier2KHR,
+    unix_vkCmdPreprocessGeneratedCommandsEXT,
     unix_vkCmdPreprocessGeneratedCommandsNV,
     unix_vkCmdPushConstants,
+    unix_vkCmdPushConstants2KHR,
+    unix_vkCmdPushDescriptorSet2KHR,
     unix_vkCmdPushDescriptorSetKHR,
+    unix_vkCmdPushDescriptorSetWithTemplate2KHR,
     unix_vkCmdPushDescriptorSetWithTemplateKHR,
     unix_vkCmdResetEvent,
     unix_vkCmdResetEvent2,
@@ -183,6 +203,7 @@ enum unix_call
     unix_vkCmdSetDepthBoundsTestEnable,
     unix_vkCmdSetDepthBoundsTestEnableEXT,
     unix_vkCmdSetDepthClampEnableEXT,
+    unix_vkCmdSetDepthClampRangeEXT,
     unix_vkCmdSetDepthClipEnableEXT,
     unix_vkCmdSetDepthClipNegativeOneToOneEXT,
     unix_vkCmdSetDepthCompareOp,
@@ -191,6 +212,7 @@ enum unix_call
     unix_vkCmdSetDepthTestEnableEXT,
     unix_vkCmdSetDepthWriteEnable,
     unix_vkCmdSetDepthWriteEnableEXT,
+    unix_vkCmdSetDescriptorBufferOffsets2EXT,
     unix_vkCmdSetDescriptorBufferOffsetsEXT,
     unix_vkCmdSetDeviceMask,
     unix_vkCmdSetDeviceMaskKHR,
@@ -210,6 +232,7 @@ enum unix_call
     unix_vkCmdSetLineRasterizationModeEXT,
     unix_vkCmdSetLineStippleEXT,
     unix_vkCmdSetLineStippleEnableEXT,
+    unix_vkCmdSetLineStippleKHR,
     unix_vkCmdSetLineWidth,
     unix_vkCmdSetLogicOpEXT,
     unix_vkCmdSetLogicOpEnableEXT,
@@ -228,6 +251,8 @@ enum unix_call
     unix_vkCmdSetRasterizerDiscardEnable,
     unix_vkCmdSetRasterizerDiscardEnableEXT,
     unix_vkCmdSetRayTracingPipelineStackSizeKHR,
+    unix_vkCmdSetRenderingAttachmentLocationsKHR,
+    unix_vkCmdSetRenderingInputAttachmentIndicesKHR,
     unix_vkCmdSetRepresentativeFragmentTestEnableNV,
     unix_vkCmdSetSampleLocationsEXT,
     unix_vkCmdSetSampleLocationsEnableEXT,
@@ -304,10 +329,13 @@ enum unix_call
     unix_vkCreateGraphicsPipelines,
     unix_vkCreateImage,
     unix_vkCreateImageView,
+    unix_vkCreateIndirectCommandsLayoutEXT,
     unix_vkCreateIndirectCommandsLayoutNV,
+    unix_vkCreateIndirectExecutionSetEXT,
     unix_vkCreateInstance,
     unix_vkCreateMicromapEXT,
     unix_vkCreateOpticalFlowSessionNV,
+    unix_vkCreatePipelineBinariesKHR,
     unix_vkCreatePipelineCache,
     unix_vkCreatePipelineLayout,
     unix_vkCreatePrivateDataSlot,
@@ -326,6 +354,8 @@ enum unix_call
     unix_vkCreateShadersEXT,
     unix_vkCreateSwapchainKHR,
     unix_vkCreateValidationCacheEXT,
+    unix_vkCreateVideoSessionKHR,
+    unix_vkCreateVideoSessionParametersKHR,
     unix_vkCreateWin32SurfaceKHR,
     unix_vkDebugMarkerSetObjectNameEXT,
     unix_vkDebugMarkerSetObjectTagEXT,
@@ -353,11 +383,14 @@ enum unix_call
     unix_vkDestroyFramebuffer,
     unix_vkDestroyImage,
     unix_vkDestroyImageView,
+    unix_vkDestroyIndirectCommandsLayoutEXT,
     unix_vkDestroyIndirectCommandsLayoutNV,
+    unix_vkDestroyIndirectExecutionSetEXT,
     unix_vkDestroyInstance,
     unix_vkDestroyMicromapEXT,
     unix_vkDestroyOpticalFlowSessionNV,
     unix_vkDestroyPipeline,
+    unix_vkDestroyPipelineBinaryKHR,
     unix_vkDestroyPipelineCache,
     unix_vkDestroyPipelineLayout,
     unix_vkDestroyPrivateDataSlot,
@@ -373,6 +406,8 @@ enum unix_call
     unix_vkDestroySurfaceKHR,
     unix_vkDestroySwapchainKHR,
     unix_vkDestroyValidationCacheEXT,
+    unix_vkDestroyVideoSessionKHR,
+    unix_vkDestroyVideoSessionParametersKHR,
     unix_vkDeviceWaitIdle,
     unix_vkEndCommandBuffer,
     unix_vkEnumerateDeviceExtensionProperties,
@@ -402,6 +437,7 @@ enum unix_call
     unix_vkGetBufferOpaqueCaptureAddressKHR,
     unix_vkGetBufferOpaqueCaptureDescriptorDataEXT,
     unix_vkGetCalibratedTimestampsEXT,
+    unix_vkGetCalibratedTimestampsKHR,
     unix_vkGetCudaModuleCacheNV,
     unix_vkGetDeferredOperationMaxConcurrencyKHR,
     unix_vkGetDeferredOperationResultKHR,
@@ -433,9 +469,11 @@ enum unix_call
     unix_vkGetDeviceQueue2,
     unix_vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI,
     unix_vkGetDynamicRenderingTilePropertiesQCOM,
+    unix_vkGetEncodedVideoSessionParametersKHR,
     unix_vkGetEventStatus,
     unix_vkGetFenceStatus,
     unix_vkGetFramebufferTilePropertiesQCOM,
+    unix_vkGetGeneratedCommandsMemoryRequirementsEXT,
     unix_vkGetGeneratedCommandsMemoryRequirementsNV,
     unix_vkGetImageMemoryRequirements,
     unix_vkGetImageMemoryRequirements2,
@@ -455,6 +493,7 @@ enum unix_call
     unix_vkGetMicromapBuildSizesEXT,
     unix_vkGetPerformanceParameterINTEL,
     unix_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT,
+    unix_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR,
     unix_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR,
     unix_vkGetPhysicalDeviceCooperativeMatrixPropertiesNV,
     unix_vkGetPhysicalDeviceExternalBufferProperties,
@@ -498,13 +537,18 @@ enum unix_call
     unix_vkGetPhysicalDeviceSurfaceSupportKHR,
     unix_vkGetPhysicalDeviceToolProperties,
     unix_vkGetPhysicalDeviceToolPropertiesEXT,
+    unix_vkGetPhysicalDeviceVideoCapabilitiesKHR,
+    unix_vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR,
+    unix_vkGetPhysicalDeviceVideoFormatPropertiesKHR,
     unix_vkGetPhysicalDeviceWin32PresentationSupportKHR,
+    unix_vkGetPipelineBinaryDataKHR,
     unix_vkGetPipelineCacheData,
     unix_vkGetPipelineExecutableInternalRepresentationsKHR,
     unix_vkGetPipelineExecutablePropertiesKHR,
     unix_vkGetPipelineExecutableStatisticsKHR,
     unix_vkGetPipelineIndirectDeviceAddressNV,
     unix_vkGetPipelineIndirectMemoryRequirementsNV,
+    unix_vkGetPipelineKeyKHR,
     unix_vkGetPipelinePropertiesEXT,
     unix_vkGetPrivateData,
     unix_vkGetPrivateDataEXT,
@@ -526,6 +570,7 @@ enum unix_call
     unix_vkGetShaderModuleIdentifierEXT,
     unix_vkGetSwapchainImagesKHR,
     unix_vkGetValidationCacheDataEXT,
+    unix_vkGetVideoSessionMemoryRequirementsKHR,
     unix_vkInitializePerformanceApiINTEL,
     unix_vkInvalidateMappedMemoryRanges,
     unix_vkLatencySleepNV,
@@ -544,6 +589,7 @@ enum unix_call
     unix_vkQueueSubmit2,
     unix_vkQueueSubmit2KHR,
     unix_vkQueueWaitIdle,
+    unix_vkReleaseCapturedPipelineDataKHR,
     unix_vkReleasePerformanceConfigurationINTEL,
     unix_vkReleaseProfilingLockKHR,
     unix_vkReleaseSwapchainImagesEXT,
@@ -575,6 +621,9 @@ enum unix_call
     unix_vkUpdateDescriptorSetWithTemplate,
     unix_vkUpdateDescriptorSetWithTemplateKHR,
     unix_vkUpdateDescriptorSets,
+    unix_vkUpdateIndirectExecutionSetPipelineEXT,
+    unix_vkUpdateIndirectExecutionSetShaderEXT,
+    unix_vkUpdateVideoSessionParametersKHR,
     unix_vkWaitForFences,
     unix_vkWaitForPresentKHR,
     unix_vkWaitSemaphores,
@@ -641,6 +690,12 @@ struct vkAllocateMemory_params
     const VkAllocationCallbacks *pAllocator;
     VkDeviceMemory *pMemory;
     VkResult result;
+};
+
+struct vkAntiLagUpdateAMD_params
+{
+    VkDevice device;
+    const VkAntiLagDataAMD *pData;
 };
 
 struct vkBeginCommandBuffer_params
@@ -715,6 +770,15 @@ struct vkBindOpticalFlowSessionImageNV_params
     VkOpticalFlowSessionBindingPointNV bindingPoint;
     VkImageView DECLSPEC_ALIGN(8) view;
     VkImageLayout layout;
+    VkResult result;
+};
+
+struct vkBindVideoSessionMemoryKHR_params
+{
+    VkDevice device;
+    VkVideoSessionKHR DECLSPEC_ALIGN(8) videoSession;
+    uint32_t bindSessionMemoryInfoCount;
+    const VkBindVideoSessionMemoryInfoKHR *pBindSessionMemoryInfos;
     VkResult result;
 };
 
@@ -808,6 +872,18 @@ struct vkCmdBeginTransformFeedbackEXT_params
     const VkDeviceSize *pCounterBufferOffsets;
 };
 
+struct vkCmdBeginVideoCodingKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkVideoBeginCodingInfoKHR *pBeginInfo;
+};
+
+struct vkCmdBindDescriptorBufferEmbeddedSamplers2EXT_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkBindDescriptorBufferEmbeddedSamplersInfoEXT *pBindDescriptorBufferEmbeddedSamplersInfo;
+};
+
 struct vkCmdBindDescriptorBufferEmbeddedSamplersEXT_params
 {
     VkCommandBuffer commandBuffer;
@@ -833,6 +909,12 @@ struct vkCmdBindDescriptorSets_params
     const VkDescriptorSet *pDescriptorSets;
     uint32_t dynamicOffsetCount;
     const uint32_t *pDynamicOffsets;
+};
+
+struct vkCmdBindDescriptorSets2KHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkBindDescriptorSetsInfoKHR *pBindDescriptorSetsInfo;
 };
 
 struct vkCmdBindIndexBuffer_params
@@ -1019,6 +1101,12 @@ struct vkCmdClearDepthStencilImage_params
     const VkClearDepthStencilValue *pDepthStencil;
     uint32_t rangeCount;
     const VkImageSubresourceRange *pRanges;
+};
+
+struct vkCmdControlVideoCodingKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkVideoCodingControlInfoKHR *pCodingControlInfo;
 };
 
 struct vkCmdCopyAccelerationStructureKHR_params
@@ -1211,6 +1299,12 @@ struct vkCmdDebugMarkerInsertEXT_params
 {
     VkCommandBuffer commandBuffer;
     const VkDebugMarkerMarkerInfoEXT *pMarkerInfo;
+};
+
+struct vkCmdDecodeVideoKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkVideoDecodeInfoKHR *pDecodeInfo;
 };
 
 struct vkCmdDecompressMemoryIndirectCountNV_params
@@ -1470,6 +1564,12 @@ struct vkCmdDrawMultiIndexedEXT_params
     const int32_t *pVertexOffset;
 };
 
+struct vkCmdEncodeVideoKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkVideoEncodeInfoKHR *pEncodeInfo;
+};
+
 struct vkCmdEndConditionalRenderingEXT_params
 {
     VkCommandBuffer commandBuffer;
@@ -1531,11 +1631,24 @@ struct vkCmdEndTransformFeedbackEXT_params
     const VkDeviceSize *pCounterBufferOffsets;
 };
 
+struct vkCmdEndVideoCodingKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkVideoEndCodingInfoKHR *pEndCodingInfo;
+};
+
 struct vkCmdExecuteCommands_params
 {
     VkCommandBuffer commandBuffer;
     uint32_t commandBufferCount;
     const VkCommandBuffer *pCommandBuffers;
+};
+
+struct vkCmdExecuteGeneratedCommandsEXT_params
+{
+    VkCommandBuffer commandBuffer;
+    VkBool32 isPreprocessed;
+    const VkGeneratedCommandsInfoEXT *pGeneratedCommandsInfo;
 };
 
 struct vkCmdExecuteGeneratedCommandsNV_params
@@ -1613,6 +1726,13 @@ struct vkCmdPipelineBarrier2KHR_params
     const VkDependencyInfo *pDependencyInfo;
 };
 
+struct vkCmdPreprocessGeneratedCommandsEXT_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkGeneratedCommandsInfoEXT *pGeneratedCommandsInfo;
+    VkCommandBuffer stateCommandBuffer;
+};
+
 struct vkCmdPreprocessGeneratedCommandsNV_params
 {
     VkCommandBuffer commandBuffer;
@@ -1629,6 +1749,18 @@ struct vkCmdPushConstants_params
     const void *pValues;
 };
 
+struct vkCmdPushConstants2KHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkPushConstantsInfoKHR *pPushConstantsInfo;
+};
+
+struct vkCmdPushDescriptorSet2KHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkPushDescriptorSetInfoKHR *pPushDescriptorSetInfo;
+};
+
 struct vkCmdPushDescriptorSetKHR_params
 {
     VkCommandBuffer commandBuffer;
@@ -1637,6 +1769,12 @@ struct vkCmdPushDescriptorSetKHR_params
     uint32_t set;
     uint32_t descriptorWriteCount;
     const VkWriteDescriptorSet *pDescriptorWrites;
+};
+
+struct vkCmdPushDescriptorSetWithTemplate2KHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkPushDescriptorSetWithTemplateInfoKHR *pPushDescriptorSetWithTemplateInfo;
 };
 
 struct vkCmdPushDescriptorSetWithTemplateKHR_params
@@ -1883,6 +2021,13 @@ struct vkCmdSetDepthClampEnableEXT_params
     VkBool32 depthClampEnable;
 };
 
+struct vkCmdSetDepthClampRangeEXT_params
+{
+    VkCommandBuffer commandBuffer;
+    VkDepthClampModeEXT depthClampMode;
+    const VkDepthClampRangeEXT *pDepthClampRange;
+};
+
 struct vkCmdSetDepthClipEnableEXT_params
 {
     VkCommandBuffer commandBuffer;
@@ -1929,6 +2074,12 @@ struct vkCmdSetDepthWriteEnableEXT_params
 {
     VkCommandBuffer commandBuffer;
     VkBool32 depthWriteEnable;
+};
+
+struct vkCmdSetDescriptorBufferOffsets2EXT_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkSetDescriptorBufferOffsetsInfoEXT *pSetDescriptorBufferOffsetsInfo;
 };
 
 struct vkCmdSetDescriptorBufferOffsetsEXT_params
@@ -2062,6 +2213,13 @@ struct vkCmdSetLineStippleEnableEXT_params
     VkBool32 stippledLineEnable;
 };
 
+struct vkCmdSetLineStippleKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    uint32_t lineStippleFactor;
+    uint16_t lineStipplePattern;
+};
+
 struct vkCmdSetLineWidth_params
 {
     VkCommandBuffer commandBuffer;
@@ -2171,6 +2329,18 @@ struct vkCmdSetRayTracingPipelineStackSizeKHR_params
 {
     VkCommandBuffer commandBuffer;
     uint32_t pipelineStackSize;
+};
+
+struct vkCmdSetRenderingAttachmentLocationsKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkRenderingAttachmentLocationInfoKHR *pLocationInfo;
+};
+
+struct vkCmdSetRenderingInputAttachmentIndicesKHR_params
+{
+    VkCommandBuffer commandBuffer;
+    const VkRenderingInputAttachmentIndexInfoKHR *pInputAttachmentIndexInfo;
 };
 
 struct vkCmdSetRepresentativeFragmentTestEnableNV_params
@@ -2815,12 +2985,30 @@ struct vkCreateImageView_params
     VkResult result;
 };
 
+struct vkCreateIndirectCommandsLayoutEXT_params
+{
+    VkDevice device;
+    const VkIndirectCommandsLayoutCreateInfoEXT *pCreateInfo;
+    const VkAllocationCallbacks *pAllocator;
+    VkIndirectCommandsLayoutEXT *pIndirectCommandsLayout;
+    VkResult result;
+};
+
 struct vkCreateIndirectCommandsLayoutNV_params
 {
     VkDevice device;
     const VkIndirectCommandsLayoutCreateInfoNV *pCreateInfo;
     const VkAllocationCallbacks *pAllocator;
     VkIndirectCommandsLayoutNV *pIndirectCommandsLayout;
+    VkResult result;
+};
+
+struct vkCreateIndirectExecutionSetEXT_params
+{
+    VkDevice device;
+    const VkIndirectExecutionSetCreateInfoEXT *pCreateInfo;
+    const VkAllocationCallbacks *pAllocator;
+    VkIndirectExecutionSetEXT *pIndirectExecutionSet;
     VkResult result;
 };
 
@@ -2848,6 +3036,15 @@ struct vkCreateOpticalFlowSessionNV_params
     const VkOpticalFlowSessionCreateInfoNV *pCreateInfo;
     const VkAllocationCallbacks *pAllocator;
     VkOpticalFlowSessionNV *pSession;
+    VkResult result;
+};
+
+struct vkCreatePipelineBinariesKHR_params
+{
+    VkDevice device;
+    const VkPipelineBinaryCreateInfoKHR *pCreateInfo;
+    const VkAllocationCallbacks *pAllocator;
+    VkPipelineBinaryHandlesInfoKHR *pBinaries;
     VkResult result;
 };
 
@@ -3016,6 +3213,24 @@ struct vkCreateValidationCacheEXT_params
     const VkValidationCacheCreateInfoEXT *pCreateInfo;
     const VkAllocationCallbacks *pAllocator;
     VkValidationCacheEXT *pValidationCache;
+    VkResult result;
+};
+
+struct vkCreateVideoSessionKHR_params
+{
+    VkDevice device;
+    const VkVideoSessionCreateInfoKHR *pCreateInfo;
+    const VkAllocationCallbacks *pAllocator;
+    VkVideoSessionKHR *pVideoSession;
+    VkResult result;
+};
+
+struct vkCreateVideoSessionParametersKHR_params
+{
+    VkDevice device;
+    const VkVideoSessionParametersCreateInfoKHR *pCreateInfo;
+    const VkAllocationCallbacks *pAllocator;
+    VkVideoSessionParametersKHR *pVideoSessionParameters;
     VkResult result;
 };
 
@@ -3214,10 +3429,24 @@ struct vkDestroyImageView_params
     const VkAllocationCallbacks *pAllocator;
 };
 
+struct vkDestroyIndirectCommandsLayoutEXT_params
+{
+    VkDevice device;
+    VkIndirectCommandsLayoutEXT DECLSPEC_ALIGN(8) indirectCommandsLayout;
+    const VkAllocationCallbacks *pAllocator;
+};
+
 struct vkDestroyIndirectCommandsLayoutNV_params
 {
     VkDevice device;
     VkIndirectCommandsLayoutNV DECLSPEC_ALIGN(8) indirectCommandsLayout;
+    const VkAllocationCallbacks *pAllocator;
+};
+
+struct vkDestroyIndirectExecutionSetEXT_params
+{
+    VkDevice device;
+    VkIndirectExecutionSetEXT DECLSPEC_ALIGN(8) indirectExecutionSet;
     const VkAllocationCallbacks *pAllocator;
 };
 
@@ -3245,6 +3474,13 @@ struct vkDestroyPipeline_params
 {
     VkDevice device;
     VkPipeline DECLSPEC_ALIGN(8) pipeline;
+    const VkAllocationCallbacks *pAllocator;
+};
+
+struct vkDestroyPipelineBinaryKHR_params
+{
+    VkDevice device;
+    VkPipelineBinaryKHR DECLSPEC_ALIGN(8) pipelineBinary;
     const VkAllocationCallbacks *pAllocator;
 };
 
@@ -3350,6 +3586,20 @@ struct vkDestroyValidationCacheEXT_params
 {
     VkDevice device;
     VkValidationCacheEXT DECLSPEC_ALIGN(8) validationCache;
+    const VkAllocationCallbacks *pAllocator;
+};
+
+struct vkDestroyVideoSessionKHR_params
+{
+    VkDevice device;
+    VkVideoSessionKHR DECLSPEC_ALIGN(8) videoSession;
+    const VkAllocationCallbacks *pAllocator;
+};
+
+struct vkDestroyVideoSessionParametersKHR_params
+{
+    VkDevice device;
+    VkVideoSessionParametersKHR DECLSPEC_ALIGN(8) videoSessionParameters;
     const VkAllocationCallbacks *pAllocator;
 };
 
@@ -3570,7 +3820,17 @@ struct vkGetCalibratedTimestampsEXT_params
 {
     VkDevice device;
     uint32_t timestampCount;
-    const VkCalibratedTimestampInfoEXT *pTimestampInfos;
+    const VkCalibratedTimestampInfoKHR *pTimestampInfos;
+    uint64_t *pTimestamps;
+    uint64_t *pMaxDeviation;
+    VkResult result;
+};
+
+struct vkGetCalibratedTimestampsKHR_params
+{
+    VkDevice device;
+    uint32_t timestampCount;
+    const VkCalibratedTimestampInfoKHR *pTimestampInfos;
     uint64_t *pTimestamps;
     uint64_t *pMaxDeviation;
     VkResult result;
@@ -3808,6 +4068,16 @@ struct vkGetDynamicRenderingTilePropertiesQCOM_params
     VkResult result;
 };
 
+struct vkGetEncodedVideoSessionParametersKHR_params
+{
+    VkDevice device;
+    const VkVideoEncodeSessionParametersGetInfoKHR *pVideoSessionParametersInfo;
+    VkVideoEncodeSessionParametersFeedbackInfoKHR *pFeedbackInfo;
+    size_t *pDataSize;
+    void *pData;
+    VkResult result;
+};
+
 struct vkGetEventStatus_params
 {
     VkDevice device;
@@ -3829,6 +4099,13 @@ struct vkGetFramebufferTilePropertiesQCOM_params
     uint32_t *pPropertiesCount;
     VkTilePropertiesQCOM *pProperties;
     VkResult result;
+};
+
+struct vkGetGeneratedCommandsMemoryRequirementsEXT_params
+{
+    VkDevice device;
+    const VkGeneratedCommandsMemoryRequirementsInfoEXT *pInfo;
+    VkMemoryRequirements2 *pMemoryRequirements;
 };
 
 struct vkGetGeneratedCommandsMemoryRequirementsNV_params
@@ -3974,7 +4251,15 @@ struct vkGetPhysicalDeviceCalibrateableTimeDomainsEXT_params
 {
     VkPhysicalDevice physicalDevice;
     uint32_t *pTimeDomainCount;
-    VkTimeDomainEXT *pTimeDomains;
+    VkTimeDomainKHR *pTimeDomains;
+    VkResult result;
+};
+
+struct vkGetPhysicalDeviceCalibrateableTimeDomainsKHR_params
+{
+    VkPhysicalDevice physicalDevice;
+    uint32_t *pTimeDomainCount;
+    VkTimeDomainKHR *pTimeDomains;
     VkResult result;
 };
 
@@ -4304,11 +4589,46 @@ struct vkGetPhysicalDeviceToolPropertiesEXT_params
     VkResult result;
 };
 
+struct vkGetPhysicalDeviceVideoCapabilitiesKHR_params
+{
+    VkPhysicalDevice physicalDevice;
+    const VkVideoProfileInfoKHR *pVideoProfile;
+    VkVideoCapabilitiesKHR *pCapabilities;
+    VkResult result;
+};
+
+struct vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR_params
+{
+    VkPhysicalDevice physicalDevice;
+    const VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR *pQualityLevelInfo;
+    VkVideoEncodeQualityLevelPropertiesKHR *pQualityLevelProperties;
+    VkResult result;
+};
+
+struct vkGetPhysicalDeviceVideoFormatPropertiesKHR_params
+{
+    VkPhysicalDevice physicalDevice;
+    const VkPhysicalDeviceVideoFormatInfoKHR *pVideoFormatInfo;
+    uint32_t *pVideoFormatPropertyCount;
+    VkVideoFormatPropertiesKHR *pVideoFormatProperties;
+    VkResult result;
+};
+
 struct vkGetPhysicalDeviceWin32PresentationSupportKHR_params
 {
     VkPhysicalDevice physicalDevice;
     uint32_t queueFamilyIndex;
     VkBool32 result;
+};
+
+struct vkGetPipelineBinaryDataKHR_params
+{
+    VkDevice device;
+    const VkPipelineBinaryDataInfoKHR *pInfo;
+    VkPipelineBinaryKeyKHR *pPipelineBinaryKey;
+    size_t *pPipelineBinaryDataSize;
+    void *pPipelineBinaryData;
+    VkResult result;
 };
 
 struct vkGetPipelineCacheData_params
@@ -4359,6 +4679,14 @@ struct vkGetPipelineIndirectMemoryRequirementsNV_params
     VkDevice device;
     const VkComputePipelineCreateInfo *pCreateInfo;
     VkMemoryRequirements2 *pMemoryRequirements;
+};
+
+struct vkGetPipelineKeyKHR_params
+{
+    VkDevice device;
+    const VkPipelineCreateInfoKHR *pPipelineCreateInfo;
+    VkPipelineBinaryKeyKHR *pPipelineKey;
+    VkResult result;
 };
 
 struct vkGetPipelinePropertiesEXT_params
@@ -4546,6 +4874,15 @@ struct vkGetValidationCacheDataEXT_params
     VkResult result;
 };
 
+struct vkGetVideoSessionMemoryRequirementsKHR_params
+{
+    VkDevice device;
+    VkVideoSessionKHR DECLSPEC_ALIGN(8) videoSession;
+    uint32_t *pMemoryRequirementsCount;
+    VkVideoSessionMemoryRequirementsKHR *pMemoryRequirements;
+    VkResult result;
+};
+
 struct vkInitializePerformanceApiINTEL_params
 {
     VkDevice device;
@@ -4682,6 +5019,14 @@ struct vkQueueSubmit2KHR_params
 struct vkQueueWaitIdle_params
 {
     VkQueue queue;
+    VkResult result;
+};
+
+struct vkReleaseCapturedPipelineDataKHR_params
+{
+    VkDevice device;
+    const VkReleaseCapturedPipelineDataInfoKHR *pInfo;
+    const VkAllocationCallbacks *pAllocator;
     VkResult result;
 };
 
@@ -4914,6 +5259,30 @@ struct vkUpdateDescriptorSets_params
     const VkWriteDescriptorSet *pDescriptorWrites;
     uint32_t descriptorCopyCount;
     const VkCopyDescriptorSet *pDescriptorCopies;
+};
+
+struct vkUpdateIndirectExecutionSetPipelineEXT_params
+{
+    VkDevice device;
+    VkIndirectExecutionSetEXT DECLSPEC_ALIGN(8) indirectExecutionSet;
+    uint32_t executionSetWriteCount;
+    const VkWriteIndirectExecutionSetPipelineEXT *pExecutionSetWrites;
+};
+
+struct vkUpdateIndirectExecutionSetShaderEXT_params
+{
+    VkDevice device;
+    VkIndirectExecutionSetEXT DECLSPEC_ALIGN(8) indirectExecutionSet;
+    uint32_t executionSetWriteCount;
+    const VkWriteIndirectExecutionSetShaderEXT *pExecutionSetWrites;
+};
+
+struct vkUpdateVideoSessionParametersKHR_params
+{
+    VkDevice device;
+    VkVideoSessionParametersKHR DECLSPEC_ALIGN(8) videoSessionParameters;
+    const VkVideoSessionParametersUpdateInfoKHR *pUpdateInfo;
+    VkResult result;
 };
 
 struct vkWaitForFences_params

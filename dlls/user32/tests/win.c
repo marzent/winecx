@@ -74,6 +74,30 @@ static const char* szAWRClass = "Winsize";
 static HMENU hmenu;
 static DWORD our_pid;
 
+static void hold_key( int vk )
+{
+    BYTE kstate[256];
+    BOOL res;
+
+    res = GetKeyboardState( kstate );
+    ok(res, "GetKeyboardState failed.\n");
+    kstate[vk] |= 0x80;
+    res = SetKeyboardState( kstate );
+    ok(res, "SetKeyboardState failed.\n");
+}
+
+static void release_key( int vk )
+{
+    BYTE kstate[256];
+    BOOL res;
+
+    res = GetKeyboardState( kstate );
+    ok(res, "GetKeyboardState failed.\n");
+    kstate[vk] &= ~0x80;
+    res = SetKeyboardState( kstate );
+    ok(res, "SetKeyboardState failed.\n");
+}
+
 static void dump_minmax_info( const MINMAXINFO *minmax )
 {
     trace("Reserved=%ld,%ld MaxSize=%ld,%ld MaxPos=%ld,%ld MinTrack=%ld,%ld MaxTrack=%ld,%ld\n",
@@ -1788,7 +1812,11 @@ static DWORD WINAPI test_shell_window_thread(LPVOID param)
 static void test_shell_window(void)
 {
     HDESK hdesk;
+    HWND orig_shell_window;
     HANDLE hthread;
+
+    orig_shell_window = GetShellWindow();
+    ok(orig_shell_window != NULL, "default desktop doesn't have a shell window\n");
 
     hdesk = CreateDesktopA("winetest", NULL, NULL, 0, GENERIC_ALL, NULL);
 
@@ -1796,9 +1824,14 @@ static void test_shell_window(void)
 
     WaitForSingleObject(hthread, INFINITE);
 
-    DeleteObject(hthread);
+    CloseHandle(hthread);
 
     CloseDesktop(hdesk);
+
+    if (!orig_shell_window)
+        skip("no shell window on default desktop\n");
+    else
+        ok(GetShellWindow() == orig_shell_window, "changing shell window on another desktop effected the default\n");
 }
 
 /************** MDI test ****************/
@@ -3814,10 +3847,13 @@ static void test_SetActiveWindow_0( char **argv )
     flush_events( TRUE );
 
     tmp = GetForegroundWindow();
+    flaky_wine
     ok( tmp == hwnd, "GetForegroundWindow returned %p\n", tmp );
     tmp = GetActiveWindow();
+    flaky_wine
     ok( tmp == hwnd, "GetActiveWindow returned %p\n", tmp );
     tmp = GetFocus();
+    flaky_wine
     ok( tmp == hwnd, "GetFocus returned %p\n", tmp );
 
     events[1] = CreateEventW( NULL, FALSE, FALSE, L"test_SetActiveWindow_0_start" );
@@ -12897,6 +12933,8 @@ static void test_cancel_mode(void)
 
 static void test_DragDetect(void)
 {
+    int cx_drag = GetSystemMetrics( SM_CXDRAG ), cy_drag = GetSystemMetrics( SM_CYDRAG );
+    HWND hwnd;
     POINT pt;
     BOOL ret;
 
@@ -12909,6 +12947,53 @@ static void test_DragDetect(void)
 
     ok(!GetCapture(), "got capture window %p\n", GetCapture());
     ok(!(GetKeyState( VK_LBUTTON ) & 0x8000), "got VK_LBUTTON\n");
+
+    /* Test mouse moving out of the drag rectangle in client coordinates */
+    hwnd = CreateWindowA( "static", "test", WS_POPUP | WS_VISIBLE, 100, 100, 50, 50, 0, 0, 0, 0 );
+    hold_key( VK_LBUTTON );
+
+    PostMessageA( hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(cx_drag, cy_drag) );
+
+    pt.x = 0;
+    pt.y = 0;
+    ret = DragDetect( hwnd, pt );
+    ok(ret, "Got unexpected %d.\n", ret);
+    flush_events( TRUE );
+
+    /* Test mouse not moving out of the drag rectangle in client coordinates */
+    PostMessageA( hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(cx_drag - 1, cy_drag - 1) );
+    PostMessageA( hwnd, WM_LBUTTONUP, 0, 0 );
+
+    pt.x = 0;
+    pt.y = 0;
+    ret = DragDetect( hwnd, pt );
+    ok(!ret || broken(ret) /* Win 7 */, "Got unexpected %d\n", ret);
+    flush_events( TRUE );
+
+    /* Test mouse moving out of the drag rectangle in screen coordinates */
+    PostMessageA( hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(cx_drag, cy_drag) );
+
+    pt.x = 0;
+    pt.y = 0;
+    ClientToScreen( hwnd, &pt );
+    ret = DragDetect( hwnd, pt );
+    ok(ret || broken(!ret) /* Win 7 */, "Got unexpected %d\n", ret);
+    flush_events( TRUE );
+
+    /* Test mouse not moving out of the drag rectangle in screen coordinates */
+    PostMessageA( hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(0, 0) );
+
+    pt.x = 0;
+    pt.y = 0;
+    ClientToScreen( hwnd, &pt );
+    ret = DragDetect( hwnd, pt );
+    /* NOTE that if DragDetect() do use screen coordinates for the second parameter for the initial
+     * mouse position, then FALSE should be returned in this case. But TRUE is returned here. So
+     * this means that DragDetect() don't use screen coordinates even though MSDN says that it does */
+    ok(ret, "Got unexpected %d\n", ret);
+
+    DestroyWindow( hwnd );
+    release_key( VK_LBUTTON );
 }
 
 static LRESULT WINAPI ncdestroy_test_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
@@ -13028,6 +13113,111 @@ static void test_WM_NCCALCSIZE(void)
     ok(EqualRect(&window_rect, &client_rect), "got %s\n", wine_dbgstr_rect(&window_rect));
 
     DestroyWindow(hwnd);
+}
+
+#define TRAY_MINIMIZE_ALL 419
+#define TRAY_MINIMIZE_ALL_UNDO 416
+
+static void test_shell_tray(void)
+{
+    HWND hwnd, traywnd;
+
+    if (!(traywnd = FindWindowA( "Shell_TrayWnd", NULL )))
+    {
+        skip( "Shell_TrayWnd not found, skipping tests.\n" );
+        return;
+    }
+
+    hwnd = CreateWindowW( L"static", L"parent", WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+                                  100, 100, 200, 200, 0, 0, 0, NULL );
+    ok( !!hwnd, "failed, error %lu.\n", GetLastError() );
+    flush_events( TRUE );
+
+    ok( !IsIconic( hwnd ), "window is minimized.\n" );
+
+    SendMessageA( traywnd, WM_COMMAND, TRAY_MINIMIZE_ALL, 0xdeadbeef );
+    flush_events( TRUE );
+    todo_wine ok( IsIconic( hwnd ), "window is not minimized.\n" );
+
+    SendMessageA( traywnd, WM_COMMAND, TRAY_MINIMIZE_ALL_UNDO, 0xdeadbeef );
+    flush_events( TRUE );
+    ok( !IsIconic( hwnd ), "window is minimized.\n" );
+
+    DestroyWindow(hwnd);
+}
+
+static int wm_mousemove_count;
+static BOOL do_release_capture;
+
+static LRESULT WINAPI test_ReleaseCapture_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_MOUSEMOVE)
+    {
+        wm_mousemove_count++;
+        if (wm_mousemove_count >= 100)
+            return 1;
+
+        if (do_release_capture)
+            ReleaseCapture();
+        return 0;
+    }
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+
+static void test_ReleaseCapture(void)
+{
+    WNDCLASSA cls = {0};
+    ATOM atom;
+    HWND hwnd;
+    POINT pt;
+    BOOL ret;
+
+    cls.lpfnWndProc = test_ReleaseCapture_proc;
+    cls.hInstance = GetModuleHandleA(0);
+    cls.hCursor = LoadCursorA(0, (LPCSTR)IDC_ARROW);
+    cls.hbrBackground = GetStockObject(BLACK_BRUSH);
+    cls.lpszClassName = "test_ReleaseCapture_class";
+    atom = RegisterClassA(&cls);
+    ok(!!atom, "RegisterClassA failed, error %#lx.\n", GetLastError());
+
+    hwnd = CreateWindowExA(WS_EX_TOPMOST, cls.lpszClassName, "", WS_POPUP | WS_VISIBLE, 100, 100,
+                           100, 100, NULL, NULL, 0, NULL);
+    ok(!!hwnd, "CreateWindowA failed, error %#lx.\n", GetLastError());
+    ret = SetForegroundWindow(hwnd);
+    ok(ret, "SetForegroundWindow failed, error %#lx.\n", GetLastError());
+    GetCursorPos(&pt);
+    ret = SetCursorPos(150, 150);
+    ok(ret, "SetCursorPos failed, error %#lx.\n", GetLastError());
+    flush_events(TRUE);
+
+    /* Test a Wine bug that WM_MOUSEMOVE is post too many times when calling ReleaseCapture() during
+     * handling WM_MOUSEMOVE and the cursor is on the window */
+    do_release_capture = TRUE;
+    ret = ReleaseCapture();
+    ok(ret, "ReleaseCapture failed, error %#lx.\n", GetLastError());
+    flush_events(TRUE);
+    do_release_capture = FALSE;
+    ok(wm_mousemove_count < 10, "Got too many WM_MOUSEMOVE.\n");
+
+    /* Test that ReleaseCapture() should send a WM_MOUSEMOVE if a window is captured */
+    SetCapture(hwnd);
+    wm_mousemove_count = 0;
+    ret = ReleaseCapture();
+    ok(ret, "ReleaseCapture failed, error %#lx.\n", GetLastError());
+    flush_events(TRUE);
+    ok(wm_mousemove_count == 1, "Got no WM_MOUSEMOVE.\n");
+
+    /* Test that ReleaseCapture() shouldn't send WM_MOUSEMOVE if no window is captured */
+    wm_mousemove_count = 0;
+    ret = ReleaseCapture();
+    ok(ret, "ReleaseCapture failed, error %#lx.\n", GetLastError());
+    flush_events(TRUE);
+    ok(wm_mousemove_count == 0, "Got WM_MOUSEMOVE.\n");
+
+    ret = SetCursorPos(pt.x, pt.y);
+    ok(ret, "SetCursorPos failed, error %#lx.\n", GetLastError());
+    DestroyWindow(hwnd);
+    UnregisterClassA(cls.lpszClassName, GetModuleHandleA(0));
 }
 
 START_TEST(win)
@@ -13212,6 +13402,7 @@ START_TEST(win)
     test_cancel_mode();
     test_DragDetect();
     test_WM_NCCALCSIZE();
+    test_ReleaseCapture();
 
     /* add the tests above this line */
     if (hhook) UnhookWindowsHookEx(hhook);
@@ -13226,4 +13417,5 @@ START_TEST(win)
     test_topmost();
 
     test_shell_window();
+    test_shell_tray();
 }

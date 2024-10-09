@@ -224,12 +224,13 @@ STRING     \"(\\[^\n]|[^\\"\n])*\"
 <INITIAL>rwatch|rwatc|rwat		{ BEGIN(NOCMD); return tRWATCH; }
 <INITIAL>whatis|whati|what		{ BEGIN(NOCMD); return tWHATIS; }
 <INITIAL,NOPROCESS>run|ru|r     	{ BEGIN(AWORD_EXPECTED); return tRUN;}
+<INITIAL,NOPROCESS>exec-file     	{ BEGIN(PATH_EXPECTED); return tEXECFILE;}
 <INITIAL>detach|detac|deta|det   	{ BEGIN(NOCMD); return tDETACH; }
 <INITIAL>kill|kil|ki|k                  { BEGIN(NOCMD); return tKILL; }
 <INITIAL,NOPROCESS>maintenance|maint    { BEGIN(MAINT_CMD); return tMAINTENANCE; }
 <INITIAL>minidump|mdmp                  { BEGIN(PATH_EXPECTED); return tMINIDUMP; }
 <INITIAL>echo				{ BEGIN(ASTRING_EXPECTED); return tECHO; }
-<NOPROCESS>attach|attac|atta|att 	{ BEGIN(NOCMD); return tATTACH; }
+<INITIAL,NOPROCESS>attach|attac|atta|att { BEGIN(NOCMD); return tATTACH; }
 <INFO_CMD>share|shar|sha                { return tSHARE; }
 <MAINT_CMD>module|modul|mod             { BEGIN(ASTRING_EXPECTED); return tMODULE; }
 <INFO_CMD>locals|local|loca|loc		{ return tLOCAL; }

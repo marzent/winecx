@@ -34,7 +34,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(android);
 
 extern NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event );
 static HANDLE stop_event;
-static HANDLE thread;
 
 
 static NTSTATUS WINAPI ioctl_callback( DEVICE_OBJECT *device, IRP *irp )
@@ -97,10 +96,10 @@ static NTSTATUS WINAPI android_start_device(void *param, ULONG size)
     HANDLE handles[2];
 
     handles[0] = CreateEventW( NULL, TRUE, FALSE, NULL );
-    handles[1] = thread = CreateThread( NULL, 0, device_thread, handles[0], 0, NULL );
+    handles[1] = CreateThread( NULL, 0, device_thread, handles[0], 0, NULL );
     WaitForMultipleObjects( 2, handles, FALSE, INFINITE );
     CloseHandle( handles[0] );
-    return HandleToULong( thread );
+    return NtCallbackReturn( &handles[1], sizeof(handles[1]), STATUS_SUCCESS );
 }
 
 
@@ -117,7 +116,6 @@ static void CALLBACK register_window_callback( ULONG_PTR arg1, ULONG_PTR arg2, U
 BOOL WINAPI DllMain( HINSTANCE inst, DWORD reason, LPVOID reserved )
 {
     struct init_params params;
-    void **callback_table;
 
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
 
@@ -125,10 +123,6 @@ BOOL WINAPI DllMain( HINSTANCE inst, DWORD reason, LPVOID reserved )
     if (__wine_init_unix_call()) return FALSE;
 
     params.register_window_callback = register_window_callback;
-    if (ANDROID_CALL( init, &params )) return FALSE;
-
-    callback_table = NtCurrentTeb()->Peb->KernelCallbackTable;
-    callback_table[client_start_device] = android_start_device;
-
-    return TRUE;
+    params.start_device_callback = android_start_device;
+    return !ANDROID_CALL( init, &params );
 }
