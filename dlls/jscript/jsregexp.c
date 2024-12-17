@@ -208,6 +208,9 @@ static HRESULT regexp_match(script_ctx_t *ctx, jsdisp_t *dispex, jsstr_t *jsstr,
         ret[i].index = result->cp - str - result->match_len;
         ret[i++].length = result->match_len;
 
+        if (result->match_len == 0)
+	    result->cp++;
+
         if(!gflag && !(This->jsregexp->flags & REG_GLOB)) {
             hres = S_OK;
             break;
@@ -550,7 +553,6 @@ static void RegExp_destructor(jsdisp_t *dispex)
         regexp_destroy(This->jsregexp);
     jsval_release(This->last_index_val);
     jsstr_release(This->str);
-    free(This);
 }
 
 static HRESULT RegExp_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsdisp_t *dispex)
@@ -570,16 +572,12 @@ static const builtin_prop_t RegExp_props[] = {
 };
 
 static const builtin_info_t RegExp_info = {
-    JSCLASS_REGEXP,
-    RegExp_value,
-    ARRAY_SIZE(RegExp_props),
-    RegExp_props,
-    RegExp_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    RegExp_gc_traverse
+    .class       = JSCLASS_REGEXP,
+    .call        = RegExp_value,
+    .props_cnt   = ARRAY_SIZE(RegExp_props),
+    .props       = RegExp_props,
+    .destructor  = RegExp_destructor,
+    .gc_traverse = RegExp_gc_traverse
 };
 
 static const builtin_prop_t RegExpInst_props[] = {
@@ -591,16 +589,12 @@ static const builtin_prop_t RegExpInst_props[] = {
 };
 
 static const builtin_info_t RegExpInst_info = {
-    JSCLASS_REGEXP,
-    RegExp_value,
-    ARRAY_SIZE(RegExpInst_props),
-    RegExpInst_props,
-    RegExp_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    RegExp_gc_traverse
+    .class       = JSCLASS_REGEXP,
+    .call        = RegExp_value,
+    .props_cnt   = ARRAY_SIZE(RegExpInst_props),
+    .props       = RegExpInst_props,
+    .destructor  = RegExp_destructor,
+    .gc_traverse = RegExp_gc_traverse
 };
 
 static HRESULT alloc_regexp(script_ctx_t *ctx, jsstr_t *str, jsdisp_t *object_prototype, RegExpInstance **ret)
@@ -961,12 +955,10 @@ static const builtin_prop_t RegExpConstr_props[] = {
 };
 
 static const builtin_info_t RegExpConstr_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(RegExpConstr_props),
-    RegExpConstr_props,
-    NULL,
-    NULL
+    .class     = JSCLASS_FUNCTION,
+    .call      = Function_value,
+    .props_cnt = ARRAY_SIZE(RegExpConstr_props),
+    .props     = RegExpConstr_props,
 };
 
 HRESULT create_regexp_constr(script_ctx_t *ctx, jsdisp_t *object_prototype, jsdisp_t **ret)

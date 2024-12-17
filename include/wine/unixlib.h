@@ -42,25 +42,12 @@ NTSYSAPI int ntdll_wcsnicmp( const WCHAR *str1, const WCHAR *str2, int n );
 
 /* exception handling */
 
-#ifdef __i386__
-typedef struct { int reg[16]; } __wine_jmp_buf;
-#elif defined(__x86_64__)
-typedef struct { DECLSPEC_ALIGN(16) struct { unsigned __int64 Part[2]; } reg[16]; } __wine_jmp_buf;
-#elif defined(__arm__)
-typedef struct { int reg[28]; } __wine_jmp_buf;
-#elif defined(__aarch64__)
-typedef struct { __int64 reg[24]; } __wine_jmp_buf;
-#else
-typedef struct { int reg; } __wine_jmp_buf;
-#endif
+#include <setjmp.h>
 
-NTSYSAPI int __attribute__ ((__nothrow__,__returns_twice__)) __wine_setjmpex( __wine_jmp_buf *buf,
-                                                                              EXCEPTION_REGISTRATION_RECORD *frame );
-NTSYSAPI void DECLSPEC_NORETURN __wine_longjmp( __wine_jmp_buf *buf, int retval );
-NTSYSAPI void ntdll_set_exception_jmp_buf( __wine_jmp_buf *jmp );
+NTSYSAPI void ntdll_set_exception_jmp_buf( jmp_buf jmp );
 
 #define __TRY \
-    do { __wine_jmp_buf __jmp; \
+    do { jmp_buf __jmp; \
          int __first = 1; \
          for (;;) if (!__first) \
          { \
@@ -71,21 +58,20 @@ NTSYSAPI void ntdll_set_exception_jmp_buf( __wine_jmp_buf *jmp );
              ntdll_set_exception_jmp_buf( NULL ); \
              break; \
          } else { \
-             if (__wine_setjmpex( &__jmp, NULL )) { \
+             if (setjmp( __jmp )) { \
                  do {
 
 #define __ENDTRY \
                  } while (0); \
                  break; \
              } \
-             ntdll_set_exception_jmp_buf( &__jmp ); \
+             ntdll_set_exception_jmp_buf( __jmp ); \
              __first = 0; \
          } \
     } while (0);
 
 NTSYSAPI BOOLEAN KeAddSystemServiceTable( ULONG_PTR *funcs, ULONG_PTR *counters, ULONG limit,
                                           BYTE *arguments, ULONG index );
-NTSYSAPI NTSTATUS KeUserModeCallback( ULONG id, const void *args, ULONG len, void **ret_ptr, ULONG *ret_len );
 
 /* wide char string functions */
 
@@ -271,12 +257,24 @@ static inline ULONG ntdll_wcstoul( const WCHAR *s, WCHAR **end, int base )
 
 #else /* WINE_UNIX_LIB */
 
-NTSYSAPI NTSTATUS WINAPI __wine_unix_call( unixlib_handle_t handle, unsigned int code, void *args );
 extern unixlib_handle_t __wine_unixlib_handle;
 extern NTSTATUS (WINAPI *__wine_unix_call_dispatcher)( unixlib_handle_t, unsigned int, void * );
 extern NTSTATUS WINAPI __wine_init_unix_call(void);
 
-#define WINE_UNIX_CALL(code,args) __wine_unix_call_dispatcher( __wine_unixlib_handle, (code), (args) )
+#ifdef __arm64ec__
+NTSTATUS __wine_unix_call_arm64ec( unixlib_handle_t handle, unsigned int code, void *args );
+static inline NTSTATUS __wine_unix_call( unixlib_handle_t handle, unsigned int code, void *args )
+{
+    return __wine_unix_call_arm64ec( handle, code, args );
+}
+#else
+static inline NTSTATUS __wine_unix_call( unixlib_handle_t handle, unsigned int code, void *args )
+{
+    return __wine_unix_call_dispatcher( handle, code, args );
+}
+#endif
+
+#define WINE_UNIX_CALL(code,args) __wine_unix_call( __wine_unixlib_handle, (code), (args) )
 
 #endif /* WINE_UNIX_LIB */
 

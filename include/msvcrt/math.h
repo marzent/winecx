@@ -111,6 +111,9 @@ _ACRTIMP float __cdecl truncf(float);
 _ACRTIMP int __cdecl ilogb(double);
 _ACRTIMP int __cdecl ilogbf(float);
 
+_ACRTIMP float __cdecl fmaf(float x, float y, float z);
+_ACRTIMP double __cdecl fma(double x, double y, double z);
+
 _ACRTIMP __int64 __cdecl llrint(double);
 _ACRTIMP __int64 __cdecl llrintf(float);
 _ACRTIMP __int64 __cdecl llround(double);
@@ -156,7 +159,6 @@ _ACRTIMP float __cdecl powf(float, float);
 _ACRTIMP float __cdecl sqrtf(float);
 _ACRTIMP float __cdecl ceilf(float);
 _ACRTIMP float __cdecl floorf(float);
-_ACRTIMP float __cdecl frexpf(float, int*);
 _ACRTIMP float __cdecl modff(float, float*);
 _ACRTIMP float __cdecl fmodf(float, float);
 
@@ -183,7 +185,6 @@ static inline float powf(float x, float y) { return pow(x, y); }
 static inline float sqrtf(float x) { return sqrt(x); }
 static inline float ceilf(float x) { return ceil(x); }
 static inline float floorf(float x) { return floor(x); }
-static inline float frexpf(float x, int *y) { return frexp(x, y); }
 static inline float modff(float x, float *y) { double yd, ret = modf(x, &yd); *y = yd; return ret; }
 static inline float fmodf(float x, float y) { return fmod(x, y); }
 
@@ -204,6 +205,12 @@ static inline int   _fpclassf(float x)
     return _fpclass(d);
 }
 
+#endif
+
+#if (defined(__x86_64__) && !defined(_UCRT)) || defined(_NO_CRT_MATH_INLINE)
+_ACRTIMP float __cdecl frexpf(float, int*);
+#else
+static inline float frexpf(float x, int *y) { return frexp(x, y); }
 #endif
 
 #if (!defined(__i386__) && !defined(__x86_64__) && (_MSVCR_VER == 0 || _MSVCR_VER >= 110)) || defined(_NO_CRT_MATH_INLINE)
@@ -277,7 +284,22 @@ static const union {
 #define FP_ILOGB0 (-0x7fffffff - _C2)
 #define FP_ILOGBNAN 0x7fffffff
 
-#if _MSVCR_VER >= 120
+_ACRTIMP short __cdecl _dtest(double*);
+_ACRTIMP short __cdecl _ldtest(long double*);
+_ACRTIMP short __cdecl _fdtest(float*);
+
+#ifdef __cplusplus
+
+extern "C++" {
+inline int fpclassify(float x) throw() { return _fdtest(&x); }
+inline int fpclassify(double x) throw() { return _dtest(&x); }
+inline int fpclassify(long double x) throw() { return _ldtest(&x); }
+template <class T> inline bool isfinite(T x) throw() { return fpclassify(x) <= 0; }
+template <class T> inline bool isinf(T x) throw() { return fpclassify(x) == FP_INFINITE; }
+template <class T> inline bool isnan(T x) throw() { return fpclassify(x) == FP_NAN; }
+} /* extern "C++" */
+
+#elif _MSVCR_VER >= 120
 
 _ACRTIMP short __cdecl _dclass(double);
 _ACRTIMP short __cdecl _fdclass(float);
@@ -351,7 +373,7 @@ static inline int __signbit(double x)
 #define _FP_EQ  2
 #define _FP_GT  4
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 # define isgreater(x, y)      __builtin_isgreater(x, y)
 # define isgreaterequal(x, y) __builtin_isgreaterequal(x, y)
 # define isless(x, y)         __builtin_isless(x, y)
@@ -404,5 +426,6 @@ static inline double y1( double x ) { return _y1( x ); }
 static inline double yn( int n, double x ) { return _yn( n, x ); }
 
 static inline float hypotf( float x, float y ) { return _hypotf( x, y ); }
+static inline long double atan2l( long double x, long double y ) { return atan2( (double)y, (double)x ); }
 
 #endif /* __WINE_MATH_H */

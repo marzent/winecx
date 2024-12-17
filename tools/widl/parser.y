@@ -87,7 +87,7 @@ static statement_t *make_statement_pragma(const char *str);
 static statement_t *make_statement_cppquote(const char *str);
 static statement_t *make_statement_importlib(const char *str);
 static statement_t *make_statement_module(type_t *type);
-static statement_t *make_statement_typedef(var_list_t *names, int declonly);
+static statement_t *make_statement_typedef(var_list_t *names, bool is_defined);
 static statement_t *make_statement_import(const char *str);
 static statement_t *make_statement_parameterized_type(type_t *type, typeref_list_t *params);
 static statement_t *make_statement_delegate(type_t *ret, var_list_t *args);
@@ -118,7 +118,7 @@ static typelib_t *current_typelib;
 
 int parser_lex( PARSER_STYPE *yylval, PARSER_LTYPE *yylloc );
 void push_import( const char *fname, PARSER_LTYPE *yylloc );
-void pop_import( PARSER_LTYPE *yylloc );
+PARSER_LTYPE pop_import(void);
 
 # define YYLLOC_DEFAULT( cur, rhs, n ) \
         do { if (n) init_location( &(cur), &YYRHSLOC( rhs, 1 ), &YYRHSLOC( rhs, n ) ); \
@@ -151,6 +151,7 @@ void pop_import( PARSER_LTYPE *yylloc );
 	char *str;
 	struct uuid *uuid;
 	unsigned int num;
+	struct integer integer;
 	double dbl;
 	typelib_t *typelib;
 	struct _import_t *import;
@@ -163,7 +164,7 @@ void pop_import( PARSER_LTYPE *yylloc );
 
 %token <str> aIDENTIFIER aPRAGMA
 %token <str> aKNOWNTYPE
-%token <num> aNUM aHEXNUM
+%token <integer> aNUM aHEXNUM
 %token <dbl> aDOUBLE
 %token <str> aSTRING aWSTRING aSQSTRING
 %token <str> tCDECL
@@ -378,6 +379,7 @@ input: gbl_statements m_acf			{ $1 = append_parameterized_type_stmts($1);
 						  write_typelib_regscript($1);
 						  write_dlldata($1);
 						  write_local_stubs($1);
+                                                  (void)parser_nerrs;  /* avoid unused variable warning */
 						}
 	;
 
@@ -494,17 +496,17 @@ pragma_warning: tPRAGMA_WARNING '(' aIDENTIFIER ':' warnings ')'
 	;
 
 warnings:
-	  aNUM { $$ = append_warning(NULL, $1); }
-	| warnings aNUM { $$ = append_warning($1, $2); }
+	  aNUM { $$ = append_warning(NULL, $1.value); }
+	| warnings aNUM { $$ = append_warning($1, $2.value); }
 	;
 
 typedecl:
 	  enumdef
-	| tENUM aIDENTIFIER                     { $$ = type_new_enum($2, current_namespace, FALSE, NULL); }
+	| tENUM typename                        { $$ = type_new_enum($2, current_namespace, FALSE, NULL, &@$); }
 	| structdef
-	| tSTRUCT aIDENTIFIER                   { $$ = type_new_struct($2, current_namespace, FALSE, NULL); }
+	| tSTRUCT typename                      { $$ = type_new_struct($2, current_namespace, FALSE, NULL, &@$); }
 	| uniondef
-	| tUNION aIDENTIFIER                    { $$ = type_new_nonencapsulated_union($2, current_namespace, FALSE, NULL); }
+	| tUNION typename                       { $$ = type_new_nonencapsulated_union($2, current_namespace, FALSE, NULL, &@$); }
 	| attributes enumdef                    { $$ = $2; $$->attrs = check_enum_attrs($1); }
 	| attributes structdef                  { $$ = $2; $$->attrs = check_struct_attrs($1); }
 	| attributes uniondef                   { $$ = $2; $$->attrs = check_union_attrs($1); }
@@ -515,7 +517,7 @@ cppquote: tCPPQUOTE '(' aSTRING ')'		{ $$ = $3; }
 
 import_start: tIMPORT aSTRING ';'		{ $$ = $2; push_import( $2, &yylloc ); }
 	;
-import: import_start imp_statements aEOF	{ pop_import( &yylloc ); }
+import: import_start imp_statements aEOF	{ yylloc = pop_import(); }
 	;
 
 importlib: tIMPORTLIB '(' aSTRING ')'
@@ -591,17 +593,19 @@ marshaling_behavior:
 	;
 
 contract_ver:
-	  aNUM					{ $$ = MAKEVERSION(0, $1); }
-	| aNUM '.' aNUM				{ $$ = MAKEVERSION($3, $1); }
+	  aNUM					{ $$ = MAKEVERSION(0, $1.value); }
+	| aNUM '.' aNUM				{ $$ = MAKEVERSION($3.value, $1.value); }
 	;
 
 contract_req
-	: decl_spec ',' contract_ver		{ if ($1->type->type_type != TYPE_APICONTRACT)
-						      error_loc("type %s is not an apicontract\n", $1->type->name);
-						  $$ = make_exprl(EXPR_NUM, $3);
-						  $$ = make_exprt(EXPR_GTREQL, declare_var(NULL, $1, make_declarator(NULL), 0), $$);
-						}
-	;
+        : decl_spec ',' contract_ver            {
+                                                  struct integer integer = {.value = $3};
+                                                  if ($1->type->type_type != TYPE_APICONTRACT)
+                                                    error_loc("type %s is not an apicontract\n", $1->type->name);
+                                                  $$ = make_exprl(EXPR_NUM, &integer);
+                                                  $$ = make_exprt(EXPR_GTREQL, declare_var(NULL, $1, make_declarator(NULL), 0), $$);
+                                                }
+        ;
 
 static_attr
 	: decl_spec ',' contract_req		{ if ($1->type->type_type != TYPE_INTERFACE)
@@ -793,21 +797,28 @@ enums
 	| enum_list
 	;
 
-enum_list: enum					{ if (!$1->eval)
-						    $1->eval = make_exprl(EXPR_NUM, 0 /* default for first enum entry */);
+enum_list: enum                                 {
+                                                  struct integer integer = {.value = 0};
+                                                  if (!$1->eval)
+                                                    $1->eval = make_exprl(EXPR_NUM, &integer);
                                                   $$ = append_var( NULL, $1 );
-						}
-	| enum_list ',' enum			{ if (!$3->eval)
+                                                }
+        | enum_list ',' enum                    {
+                                                  if (!$3->eval)
                                                   {
                                                     var_t *last = LIST_ENTRY( list_tail($$), var_t, entry );
-                                                    enum expr_type type = EXPR_NUM;
-                                                    if (last->eval->type == EXPR_HEXNUM) type = EXPR_HEXNUM;
-                                                    if (last->eval->cval + 1 < 0) type = EXPR_HEXNUM;
-                                                    $3->eval = make_exprl(type, last->eval->cval + 1);
+                                                    struct integer integer;
+
+                                                    if (last->eval->type == EXPR_NUM)
+                                                      integer.is_hex = last->eval->u.integer.is_hex;
+                                                    integer.value = last->eval->cval + 1;
+                                                    if (integer.value < 0)
+                                                      integer.is_hex = TRUE;
+                                                    $3->eval = make_exprl(EXPR_NUM, &integer);
                                                   }
                                                   $$ = append_var( $1, $3 );
-						}
-	;
+                                                }
+        ;
 
 enum_member: m_attributes ident 		{ $$ = $2;
 						  $$->attrs = check_enum_member_attrs($1);
@@ -823,7 +834,7 @@ enum:	  enum_member '=' expr_int_const	{ $$ = reg_const($1);
 						}
 	;
 
-enumdef: tENUM m_typename '{' enums '}'		{ $$ = type_new_enum($2, current_namespace, TRUE, $4); }
+enumdef: tENUM m_typename '{' enums '}'		{ $$ = type_new_enum($2, current_namespace, TRUE, $4, &@2); }
 	;
 
 m_exprs:  m_expr                                { $$ = append_expr( NULL, $1 ); }
@@ -835,12 +846,15 @@ m_expr
 	| expr
 	;
 
-expr:	  aNUM					{ $$ = make_exprl(EXPR_NUM, $1); }
-	| aHEXNUM				{ $$ = make_exprl(EXPR_HEXNUM, $1); }
+expr:     aNUM                                  { $$ = make_exprl(EXPR_NUM, &$1); }
+        | aHEXNUM                               { $$ = make_exprl(EXPR_NUM, &$1); }
 	| aDOUBLE				{ $$ = make_exprd(EXPR_DOUBLE, $1); }
-	| tFALSE				{ $$ = make_exprl(EXPR_TRUEFALSE, 0); }
-	| tNULL					{ $$ = make_exprl(EXPR_NUM, 0); }
-	| tTRUE					{ $$ = make_exprl(EXPR_TRUEFALSE, 1); }
+        | tFALSE                                { struct integer integer = {.value = 0};
+                                                  $$ = make_exprl(EXPR_TRUEFALSE, &integer); }
+        | tNULL                                 { struct integer integer = {.value = 0};
+                                                  $$ = make_exprl(EXPR_NUM, &integer); }
+        | tTRUE                                 { struct integer integer = {.value = 1};
+                                                  $$ = make_exprl(EXPR_TRUEFALSE, &integer); }
 	| aSTRING				{ $$ = make_exprs(EXPR_STRLIT, $1); }
 	| aWSTRING				{ $$ = make_exprs(EXPR_WSTRLIT, $1); }
 	| aSQSTRING				{ $$ = make_exprs(EXPR_CHARCONST, $1); }
@@ -1032,7 +1046,7 @@ coclass:  tCOCLASS typename			{ $$ = type_coclass_declare($2); }
 	;
 
 coclassdef: attributes coclass '{' class_interfaces '}' semicolon_opt
-						{ $$ = type_coclass_define($2, $1, $4); }
+						{ $$ = type_coclass_define($2, $1, $4, &@2); }
 	;
 
 runtimeclass: tRUNTIMECLASS typename		{ $$ = type_runtimeclass_declare($2, current_namespace); }
@@ -1040,14 +1054,14 @@ runtimeclass: tRUNTIMECLASS typename		{ $$ = type_runtimeclass_declare($2, curre
 
 runtimeclass_def: attributes runtimeclass inherit '{' class_interfaces '}' semicolon_opt
 						{ if ($3 && type_get_type($3) != TYPE_RUNTIMECLASS) error_loc("%s is not a runtimeclass\n", $3->name);
-						  $$ = type_runtimeclass_define($2, $1, $5); }
+						  $$ = type_runtimeclass_define($2, $1, $5, &@2); }
 	;
 
 apicontract: tAPICONTRACT typename		{ $$ = type_apicontract_declare($2, current_namespace); }
 	;
 
 apicontract_def: attributes apicontract '{' '}' semicolon_opt
-						{ $$ = type_apicontract_define($2, $1); }
+						{ $$ = type_apicontract_define($2, $1, &@2); }
 	;
 
 namespacedef: tNAMESPACE aIDENTIFIER		{ $$ = append_str( NULL, $2 ); }
@@ -1080,9 +1094,9 @@ dispint_meths: tMETHODS ':'			{ $$ = NULL; }
 
 dispinterfacedef:
 	  dispattributes dispinterface '{' dispint_props dispint_meths '}'
-						{ $$ = type_dispinterface_define($2, $1, $4, $5); }
+						{ $$ = type_dispinterface_define($2, $1, $4, $5, &@2); }
 	| dispattributes dispinterface '{' interface ';' '}'
-						{ $$ = type_dispinterface_define_from_iface($2, $1, $4); }
+						{ $$ = type_dispinterface_define_from_iface($2, $1, $4, &@2); }
 	;
 
 inherit
@@ -1107,13 +1121,13 @@ interface:
 
 delegatedef: m_attributes tDELEGATE type ident '(' m_args ')' semicolon_opt
 						{ $$ = type_delegate_declare($4->name, current_namespace);
-						  $$ = type_delegate_define($$, $1, append_statement(NULL, make_statement_delegate($3, $6)));
+						  $$ = type_delegate_define($$, $1, append_statement(NULL, make_statement_delegate($3, $6)), &@4);
 						}
 	| m_attributes tDELEGATE type ident
 	  '<' { push_parameters_namespace($4->name); } type_parameters '>'
 	  '(' m_args ')' { pop_parameters_namespace($4->name); } semicolon_opt
 						{ $$ = type_parameterized_delegate_declare($4->name, current_namespace, $7);
-						  $$ = type_parameterized_delegate_define($$, $1, append_statement(NULL, make_statement_delegate($3, $10)));
+						  $$ = type_parameterized_delegate_define($$, $1, append_statement(NULL, make_statement_delegate($3, $10)), &@4);
 						}
 	;
 
@@ -1133,12 +1147,12 @@ interfacedef: attributes interface		{ if ($2->type_type == TYPE_PARAMETERIZED_TY
 	  inherit requires '{' int_statements '}' semicolon_opt
 						{ if ($2->type_type == TYPE_PARAMETERIZED_TYPE)
 						  {
-						      $$ = type_parameterized_interface_define($2, $1, $4, $7, $5);
+						      $$ = type_parameterized_interface_define($2, $1, $4, $7, $5, &@2);
 						      pop_parameters_namespace($2->name);
 						  }
 						  else
 						  {
-						      $$ = type_interface_define($2, $1, $4, $7, $5);
+						      $$ = type_interface_define($2, $1, $4, $7, $5, &@2);
 						      check_async_uuid($$);
 						  }
 						}
@@ -1159,7 +1173,7 @@ module:   tMODULE typename			{ $$ = type_module_declare($2); }
 	;
 
 moduledef: m_attributes module '{' int_statements '}' semicolon_opt
-						{ $$ = type_module_define($2, $1, $4); }
+						{ $$ = type_module_define($2, $1, $4, &@2); }
 	;
 
 storage_cls_spec:
@@ -1334,21 +1348,21 @@ pointer_type:
 	| tPTR					{ $$ = FC_FP; }
 	;
 
-structdef: tSTRUCT m_typename '{' fields '}'	{ $$ = type_new_struct($2, current_namespace, TRUE, $4); }
+structdef: tSTRUCT m_typename '{' fields '}'	{ $$ = type_new_struct($2, current_namespace, TRUE, $4, &@2); }
 	;
 
 unqualified_type:
-	  tVOID					{ $$ = type_new_void(); }
-	| base_type				{ $$ = $1; }
-	| enumdef				{ $$ = $1; }
-	| tENUM aIDENTIFIER			{ $$ = type_new_enum($2, current_namespace, FALSE, NULL); }
-	| structdef				{ $$ = $1; }
-	| tSTRUCT aIDENTIFIER			{ $$ = type_new_struct($2, current_namespace, FALSE, NULL); }
-	| uniondef				{ $$ = $1; }
-	| tUNION aIDENTIFIER			{ $$ = type_new_nonencapsulated_union($2, current_namespace, FALSE, NULL); }
-	| tSAFEARRAY '(' type ')'		{ $$ = make_safearray($3); }
-	| aKNOWNTYPE				{ $$ = find_type_or_error(current_namespace, $1); }
-	;
+          tVOID                                 { $$ = type_new_void(); }
+        | base_type                             { $$ = $1; }
+        | enumdef                               { $$ = $1; }
+        | tENUM typename                        { $$ = type_new_enum($2, current_namespace, FALSE, NULL, &@$); }
+        | structdef                             { $$ = $1; }
+        | tSTRUCT typename                      { $$ = type_new_struct($2, current_namespace, FALSE, NULL, &@$); }
+        | uniondef                              { $$ = $1; }
+        | tUNION typename                       { $$ = type_new_nonencapsulated_union($2, current_namespace, FALSE, NULL, &@$); }
+        | tSAFEARRAY '(' type ')'               { $$ = make_safearray($3); }
+        | aKNOWNTYPE                            { $$ = find_type_or_error(current_namespace, $1); }
+        ;
 
 type:
 	  unqualified_type
@@ -1359,21 +1373,21 @@ type:
 typedef: m_attributes tTYPEDEF m_attributes decl_spec declarator_list
 						{ $1 = append_attribs($1, $3);
 						  reg_typedefs( @$, $4, $5, check_typedef_attrs( $1 ) );
-						  $$ = make_statement_typedef($5, !$4->type->defined);
+						  $$ = make_statement_typedef($5, $4->type->defined && !$4->type->defined_in_import);
 						}
 	;
 
 uniondef: tUNION m_typename '{' ne_union_fields '}'
-						{ $$ = type_new_nonencapsulated_union($2, current_namespace, TRUE, $4); }
+						{ $$ = type_new_nonencapsulated_union($2, current_namespace, TRUE, $4, &@2); }
 	| tUNION m_typename
 	  tSWITCH '(' s_field ')'
-	  m_ident '{' cases '}'			{ $$ = type_new_encapsulated_union($2, $5, $7, $9); }
+	  m_ident '{' cases '}'			{ $$ = type_new_encapsulated_union($2, $5, $7, $9, &@2); }
 	;
 
 version:
-	  aNUM					{ $$ = MAKEVERSION($1, 0); }
-	| aNUM '.' aNUM				{ $$ = MAKEVERSION($1, $3); }
-	| aHEXNUM				{ $$ = $1; }
+	  aNUM					{ $$ = MAKEVERSION($1.value, 0); }
+	| aNUM '.' aNUM				{ $$ = MAKEVERSION($1.value, $3.value); }
+	| aHEXNUM				{ $$ = $1.value; }
 	;
 
 acf_statements
@@ -1719,7 +1733,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, declarator
   v->declspec.type = decl->type;
   v->declspec.qualifier = decl->qualifier;
   v->attrs = attrs;
-  v->declonly = !type->defined;
+  v->is_defined = type->defined && !type->defined_in_import;
 
   if (is_attr(type->attrs, ATTR_CALLCONV) && !is_func(type))
     error_loc("calling convention applied to non-function type\n");
@@ -1922,7 +1936,7 @@ var_t *make_var(char *name)
   v->attrs = NULL;
   v->eval = NULL;
   init_location( &v->where, NULL, NULL );
-  v->declonly = FALSE;
+  v->is_defined = 1;
   return v;
 }
 
@@ -2742,7 +2756,7 @@ static void check_async_uuid(type_t *iface)
         stmts = append_statement(stmts, make_statement_declaration(finish_func));
     }
 
-    type_interface_define(async_iface, map_attrs(iface->attrs, async_iface_attrs), inherit, stmts, NULL);
+    type_interface_define(async_iface, map_attrs(iface->attrs, async_iface_attrs), inherit, stmts, NULL, &iface->where);
     iface->details.iface->async_iface = async_iface->details.iface->async_iface = async_iface;
 }
 
@@ -2756,7 +2770,7 @@ static statement_list_t *append_parameterized_type_stmts(statement_list_t *stmts
         {
         case STMT_TYPE:
             stmt->u.type = type_parameterized_type_specialize_define(stmt->u.type);
-            stmt->declonly = FALSE;
+            stmt->is_defined = 1;
             list_remove(&stmt->entry);
             stmts = append_statement(stmts, stmt);
             break;
@@ -2833,7 +2847,7 @@ static statement_t *make_statement_type_decl(type_t *type)
 {
     statement_t *stmt = make_statement(STMT_TYPE);
     stmt->u.type = type;
-    stmt->declonly = !type->defined;
+    stmt->is_defined = type->defined && !type->defined_in_import;
     return stmt;
 }
 
@@ -2904,7 +2918,7 @@ static statement_t *make_statement_module(type_t *type)
     return stmt;
 }
 
-static statement_t *make_statement_typedef(declarator_list_t *decls, int declonly)
+static statement_t *make_statement_typedef(declarator_list_t *decls, bool is_defined)
 {
     declarator_t *decl, *next;
     statement_t *stmt;
@@ -2913,7 +2927,7 @@ static statement_t *make_statement_typedef(declarator_list_t *decls, int declonl
 
     stmt = make_statement(STMT_TYPEDEF);
     stmt->u.type_list = NULL;
-    stmt->declonly = declonly;
+    stmt->is_defined = is_defined;
 
     LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
     {

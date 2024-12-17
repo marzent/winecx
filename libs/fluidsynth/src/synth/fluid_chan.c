@@ -128,7 +128,12 @@ fluid_channel_init_ctrl(fluid_channel_t *chan, int is_all_ctrl_off)
     for(i = 0; i < GEN_LAST; i++)
     {
         chan->gen[i] = 0.0f;
+        chan->override_gen_default[i].flags = GEN_UNUSED;
+        chan->override_gen_default[i].val = 0.0f;
     }
+    // Not all MIDIs initialize the IIR filter coefficient, e.g. Uplift.mid.
+    // A default value is not documented, hence I'm assuming zero here.
+    chan->awe32_filter_coeff = 0;
 
     if(is_all_ctrl_off)
     {
@@ -325,7 +330,7 @@ fluid_channel_set_bank_msb(fluid_channel_t *chan, int bankmsb)
         /* XG bank, do drum-channel auto-switch */
         /* The number "120" was based on several keyboards having drums at 120 - 127,
            reference: https://lists.nongnu.org/archive/html/fluid-dev/2011-02/msg00003.html */
-        chan->channel_type = (120 <= bankmsb) ? CHANNEL_TYPE_DRUM : CHANNEL_TYPE_MELODIC;
+        chan->channel_type = (120 == bankmsb || 126 == bankmsb || 127 == bankmsb) ? CHANNEL_TYPE_DRUM : CHANNEL_TYPE_MELODIC;
         return;
     }
 
@@ -729,4 +734,21 @@ void fluid_channel_cc_breath_note_on_off(fluid_channel_t *chan, int value)
     }
 
     chan->previous_cc_breath = value;
+}
+
+int fluid_channel_get_override_gen_default(fluid_channel_t *chan, int gen, fluid_real_t* val)
+{
+    if(chan->override_gen_default[gen].flags != GEN_UNUSED)
+    {
+        *val = chan->override_gen_default[gen].val;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+void fluid_channel_set_override_gen_default(fluid_channel_t *chan, int gen, fluid_real_t val)
+{
+    chan->override_gen_default[gen].flags = GEN_SET;
+    chan->override_gen_default[gen].val = val;
 }

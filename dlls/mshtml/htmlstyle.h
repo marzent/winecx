@@ -34,12 +34,15 @@ struct HTMLStyle {
     IHTMLStyle4 IHTMLStyle4_iface;
     IHTMLStyle5 IHTMLStyle5_iface;
     IHTMLStyle6 IHTMLStyle6_iface;
+    IWineCSSProperties IWineCSSProperties_iface;
 
     HTMLElement *elem;
 };
 
 /* NOTE: Make sure to keep in sync with style_tbl in htmlstyle.c */
 typedef enum {
+    STYLEID_MSTRANSFORM,
+    STYLEID_MSTRANSITION,
     STYLEID_ANIMATION,
     STYLEID_ANIMATION_NAME,
     STYLEID_BACKGROUND,
@@ -148,15 +151,15 @@ typedef enum {
 } styleid_t;
 
 HRESULT HTMLStyle_Create(HTMLElement*,HTMLStyle**);
-HRESULT create_computed_style(nsIDOMCSSStyleDeclaration*,compat_mode_t,IHTMLCSSStyleDeclaration**);
-void init_css_style(CSSStyle*,nsIDOMCSSStyleDeclaration*,dispex_static_data_t*,compat_mode_t);
+HRESULT create_computed_style(nsIDOMCSSStyleDeclaration*,DispatchEx*,IHTMLCSSStyleDeclaration**);
+void init_css_style(CSSStyle*,nsIDOMCSSStyleDeclaration*,dispex_static_data_t*,DispatchEx*);
 
 void *CSSStyle_query_interface(DispatchEx*,REFIID);
 void CSSStyle_traverse(DispatchEx*,nsCycleCollectionTraversalCallback*);
 void CSSStyle_unlink(DispatchEx*);
 void CSSStyle_destructor(DispatchEx*);
-HRESULT CSSStyle_get_dispid(DispatchEx*,BSTR,DWORD,DISPID*);
-void CSSStyle_init_dispex_info(dispex_data_t *info, compat_mode_t mode);
+HRESULT CSSStyle_get_dispid(DispatchEx*,const WCHAR*,DWORD,DISPID*);
+void MSCSSProperties_init_dispex_info(dispex_data_t *info, compat_mode_t mode);
 
 HRESULT get_style_property(CSSStyle*,styleid_t,BSTR*);
 HRESULT get_style_property_var(CSSStyle*,styleid_t,VARIANT*);

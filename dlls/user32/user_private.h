@@ -26,6 +26,7 @@
 #include "winbase.h"
 #include "wingdi.h"
 #include "ntuser.h"
+#include "shlobj.h"
 #include "winreg.h"
 #include "winnls.h"
 #include "wine/heap.h"
@@ -45,12 +46,16 @@ struct wm_char_mapping_data
 
 extern HMODULE user32_module;
 
-extern BOOL post_dde_message( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, DWORD dest_tid,
-                              DWORD type );
+extern NTSTATUS post_dde_message( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, DWORD dest_tid );
 extern BOOL unpack_dde_message( HWND hwnd, UINT message, WPARAM *wparam, LPARAM *lparam,
                                 const void *buffer, size_t size );
 extern void free_cached_data( UINT format, HANDLE handle );
 extern HANDLE render_synthesized_format( UINT format, UINT from );
+extern BOOL drag_drop_enter( UINT entries_size, const struct format_entry *entries );
+extern void drag_drop_leave(void);
+extern DWORD drag_drop_drag( HWND hwnd, POINT point, DWORD effect );
+extern DWORD drag_drop_drop( HWND hwnd );
+extern void drag_drop_post( HWND hwnd, UINT drop_size, const DROPFILES *drop );
 extern void unpack_message( HWND hwnd, UINT message, WPARAM *wparam, LPARAM *lparam,
                             void *buffer, BOOL ansi );
 
@@ -81,12 +86,12 @@ extern ATOM get_class_info( HINSTANCE instance, const WCHAR *name, WNDCLASSEXW *
 
 /* kernel callbacks */
 
-BOOL WINAPI User32CallEnumDisplayMonitor( struct enum_display_monitor_params *params, ULONG size );
-BOOL WINAPI User32CallSendAsyncCallback( const struct send_async_params *params, ULONG size );
-BOOL WINAPI User32CallWinEventHook( const struct win_event_hook_params *params, ULONG size );
-BOOL WINAPI User32CallWindowProc( struct win_proc_params *params, ULONG size );
-BOOL WINAPI User32CallWindowsHook( struct win_hook_params *params, ULONG size );
-BOOL WINAPI User32InitBuiltinClasses( const struct win_hook_params *params, ULONG size );
+NTSTATUS WINAPI User32CallEnumDisplayMonitor( void *args, ULONG size );
+NTSTATUS WINAPI User32CallSendAsyncCallback( void *args, ULONG size );
+NTSTATUS WINAPI User32CallWinEventHook( void *args, ULONG size );
+NTSTATUS WINAPI User32CallWindowProc( void *args, ULONG size );
+NTSTATUS WINAPI User32CallWindowsHook( void *args, ULONG size );
+NTSTATUS WINAPI User32InitBuiltinClasses( void *args, ULONG size );
 
 /* message spy definitions */
 

@@ -63,7 +63,7 @@ struct thread_wait
     int                     count;      /* count of objects */
     int                     flags;
     int                     abandoned;
-    enum select_op          select;
+    enum select_opcode      select;
     client_ptr_t            key;        /* wait key for keyed events */
     client_ptr_t            cookie;     /* magic cookie to return to client */
     abstime_t               when;
@@ -81,8 +81,8 @@ struct thread_apc
     struct thread      *caller;   /* thread that queued this apc */
     struct object      *owner;    /* object that queued this apc */
     int                 executed; /* has it been executed by the client? */
-    apc_call_t          call;     /* call arguments */
-    apc_result_t        result;   /* call results once executed */
+    union apc_call      call;     /* call arguments */
+    union apc_result    result;   /* call results once executed */
 };
 
 static void dump_thread_apc( struct object *obj, int verbose );
@@ -98,8 +98,6 @@ static const struct object_ops thread_apc_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_apc_signaled,        /* signaled */
-    NULL,                       /* get_esync_fd */
-    NULL,                       /* get_msync_idx */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -123,7 +121,7 @@ struct context
 {
     struct object   obj;        /* object header */
     unsigned int    status;     /* status of the context */
-    context_t       regs[2];    /* context data */
+    struct context_data regs[2];/* context data */
 };
 #define CTX_NATIVE  0  /* context for native machine */
 #define CTX_WOW     1  /* context if thread is inside WoW */
@@ -142,8 +140,6 @@ static const struct object_ops context_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     context_signaled,           /* signaled */
-    NULL,                       /* get_esync_fd */
-    NULL,                       /* get_msync_idx */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -195,8 +191,6 @@ static const struct object_ops thread_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_signaled,            /* signaled */
-    thread_get_esync_fd,        /* get_esync_fd */
-    thread_get_msync_idx,       /* get_msync_idx */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -210,7 +204,9 @@ static const struct object_ops thread_ops =
     no_open_file,               /* open_file */
     thread_get_kernel_obj_list, /* get_kernel_obj_list */
     no_close_handle,            /* close_handle */
-    destroy_thread              /* destroy */
+    destroy_thread,             /* destroy */
+    thread_get_esync_fd,        /* get_esync_fd */
+    thread_get_msync_idx,       /* get_msync_idx */
 };
 
 static const struct fd_ops thread_fd_ops =
@@ -263,6 +259,7 @@ static inline void init_thread_structure( struct thread *thread )
 
     thread->creation_time = current_time;
     thread->exit_time     = 0;
+    thread->completion_wait = NULL;
 
     list_init( &thread->mutex_list );
     list_init( &thread->system_apc );
@@ -428,6 +425,7 @@ static void cleanup_thread( struct thread *thread )
 {
     int i;
 
+    cleanup_thread_completion( thread );
     if (thread->context)
     {
         thread->context->status = STATUS_ACCESS_DENIED;
@@ -558,7 +556,7 @@ static void thread_apc_destroy( struct object *obj )
 }
 
 /* queue an async procedure call */
-static struct thread_apc *create_apc( struct object *owner, const apc_call_t *call_data )
+static struct thread_apc *create_apc( struct object *owner, const union apc_call *call_data )
 {
     struct thread_apc *apc;
 
@@ -771,7 +769,7 @@ struct thread *get_wait_queue_thread( struct wait_queue_entry *entry )
     return entry->wait->thread;
 }
 
-enum select_op get_wait_queue_select_op( struct wait_queue_entry *entry )
+enum select_opcode get_wait_queue_select_op( struct wait_queue_entry *entry )
 {
     return entry->wait->select;
 }
@@ -825,12 +823,12 @@ static unsigned int end_wait( struct thread *thread, unsigned int status )
 }
 
 /* build the thread wait structure */
-static int wait_on( const select_op_t *select_op, unsigned int count, struct object *objects[],
+static int wait_on( const union select_op *select_op, unsigned int count, struct object *objects[],
                     int flags, abstime_t when )
 {
     struct thread_wait *wait;
     struct wait_queue_entry *entry;
-    unsigned int i;
+    unsigned int i, idle = 0;
 
     if (!(wait = mem_alloc( FIELD_OFFSET(struct thread_wait, queues[count]) ))) return 0;
     wait->next    = current->wait;
@@ -854,11 +852,15 @@ static int wait_on( const select_op_t *select_op, unsigned int count, struct obj
             end_wait( current, get_error() );
             return 0;
         }
+
+        if (obj == (struct object *)current->queue) idle = 1;
     }
-    return 1;
+
+    if (idle) check_thread_queue_idle( current );
+    return current->wait ? 1 : 0;
 }
 
-static int wait_on_handles( const select_op_t *select_op, unsigned int count, const obj_handle_t *handles,
+static int wait_on_handles( const union select_op *select_op, unsigned int count, const obj_handle_t *handles,
                             int flags, abstime_t when )
 {
     struct object *objects[MAXIMUM_WAIT_OBJECTS];
@@ -1027,7 +1029,7 @@ static int signal_object( obj_handle_t handle )
 }
 
 /* select on a list of handles */
-static int select_on( const select_op_t *select_op, data_size_t op_size, client_ptr_t cookie,
+static int select_on( const union select_op *select_op, data_size_t op_size, client_ptr_t cookie,
                       int flags, abstime_t when )
 {
     int ret;
@@ -1042,8 +1044,8 @@ static int select_on( const select_op_t *select_op, data_size_t op_size, client_
 
     case SELECT_WAIT:
     case SELECT_WAIT_ALL:
-        count = (op_size - offsetof( select_op_t, wait.handles )) / sizeof(select_op->wait.handles[0]);
-        if (op_size < offsetof( select_op_t, wait.handles ) || count > MAXIMUM_WAIT_OBJECTS)
+        count = (op_size - offsetof( union select_op, wait.handles )) / sizeof(select_op->wait.handles[0]);
+        if (op_size < offsetof( union select_op, wait.handles ) || count > MAXIMUM_WAIT_OBJECTS)
         {
             set_error( STATUS_INVALID_PARAMETER );
             return 1;
@@ -1215,7 +1217,7 @@ static int queue_apc( struct process *process, struct thread *thread, struct thr
 }
 
 /* queue an async procedure call */
-int thread_queue_apc( struct process *process, struct thread *thread, struct object *owner, const apc_call_t *call_data )
+int thread_queue_apc( struct process *process, struct thread *thread, struct object *owner, const union apc_call *call_data )
 {
     struct thread_apc *apc;
     int ret = 0;
@@ -1370,7 +1372,7 @@ void kill_thread( struct thread *thread, int violent_death )
 }
 
 /* copy parts of a context structure */
-static void copy_context( context_t *to, const context_t *from, unsigned int flags )
+static void copy_context( struct context_data *to, const struct context_data *from, unsigned int flags )
 {
     assert( to->machine == from->machine );
     if (flags & SERVER_CTX_CONTROL) to->ctl = from->ctl;
@@ -1380,6 +1382,7 @@ static void copy_context( context_t *to, const context_t *from, unsigned int fla
     if (flags & SERVER_CTX_DEBUG_REGISTERS) to->debug = from->debug;
     if (flags & SERVER_CTX_EXTENDED_REGISTERS) to->ext = from->ext;
     if (flags & SERVER_CTX_YMM_REGISTERS) to->ymm = from->ymm;
+    if (flags & SERVER_CTX_EXEC_SPACE) to->exec_space = from->exec_space;
 }
 
 /* gets the current impersonation token */
@@ -1650,25 +1653,25 @@ DECL_HANDLER(resume_thread)
 /* select on a handle list */
 DECL_HANDLER(select)
 {
-    select_op_t select_op;
+    union select_op select_op;
     data_size_t op_size, ctx_size;
     struct context *ctx;
     struct thread_apc *apc;
-    const apc_result_t *result = get_req_data();
+    const union apc_result *result = get_req_data();
     unsigned int ctx_count;
 
     if (get_req_data_size() < sizeof(*result)) goto invalid_param;
     if (get_req_data_size() - sizeof(*result) < req->size) goto invalid_param;
     if (req->size & 3) goto invalid_param;
     ctx_size = get_req_data_size() - sizeof(*result) - req->size;
-    ctx_count = ctx_size / sizeof(context_t);
-    if (ctx_count * sizeof(context_t) != ctx_size) goto invalid_param;
+    ctx_count = ctx_size / sizeof(struct context_data);
+    if (ctx_count * sizeof(struct context_data) != ctx_size) goto invalid_param;
     if (ctx_count > 1 + (current->process->machine != native_machine)) goto invalid_param;
 
     if (ctx_count)
     {
-        const context_t *native_context = (const context_t *)((const char *)(result + 1) + req->size);
-        const context_t *wow_context = (ctx_count > 1) ? native_context + 1 : NULL;
+        const struct context_data *native_context = (const struct context_data *)((const char *)(result + 1) + req->size);
+        const struct context_data *wow_context = (ctx_count > 1) ? native_context + 1 : NULL;
 
         if (native_context->machine == native_machine)
         {
@@ -1735,13 +1738,13 @@ DECL_HANDLER(select)
 
     reply->signaled = select_on( &select_op, op_size, req->cookie, req->flags, req->timeout );
 
-    if (get_error() == STATUS_USER_APC && get_reply_max_size() >= sizeof(apc_call_t))
+    if (get_error() == STATUS_USER_APC && get_reply_max_size() >= sizeof(union apc_call))
     {
         apc = thread_dequeue_apc( current, 0 );
         set_reply_data( &apc->call, sizeof(apc->call) );
         release_object( apc );
     }
-    else if (get_error() == STATUS_KERNEL_APC && get_reply_max_size() >= sizeof(apc_call_t))
+    else if (get_error() == STATUS_KERNEL_APC && get_reply_max_size() >= sizeof(union apc_call))
     {
         apc = thread_dequeue_apc( current, 1 );
         if ((reply->apc_handle = alloc_handle( current->process, apc, SYNCHRONIZE, 0 )))
@@ -1755,14 +1758,14 @@ DECL_HANDLER(select)
         }
         release_object( apc );
     }
-    else if (reply->signaled && get_reply_max_size() >= sizeof(apc_call_t) + sizeof(context_t) &&
+    else if (reply->signaled && get_reply_max_size() >= sizeof(union apc_call) + sizeof(struct context_data) &&
              current->context && current->suspend_cookie == req->cookie)
     {
         ctx = current->context;
         if (ctx->regs[CTX_NATIVE].flags || ctx->regs[CTX_WOW].flags)
         {
-            apc_call_t *data;
-            data_size_t size = sizeof(*data) + (ctx->regs[CTX_WOW].flags ? 2 : 1) * sizeof(context_t);
+            union apc_call *data;
+            data_size_t size = sizeof(*data) + (ctx->regs[CTX_WOW].flags ? 2 : 1) * sizeof(struct context_data);
             unsigned int flags = system_flags & ctx->regs[CTX_NATIVE].flags;
 
             if (flags) set_thread_context( current, &ctx->regs[CTX_NATIVE], flags );
@@ -1788,7 +1791,7 @@ DECL_HANDLER(queue_apc)
     struct thread *thread = NULL;
     struct process *process = NULL;
     struct thread_apc *apc;
-    const apc_call_t *call = get_req_data();
+    const union apc_call *call = get_req_data();
 
     if (get_req_data_size() < sizeof(*call)) call = NULL;
 
@@ -1811,7 +1814,7 @@ DECL_HANDLER(queue_apc)
         process = get_process_from_handle( req->handle, PROCESS_VM_OPERATION );
         break;
     case APC_VIRTUAL_QUERY:
-        process = get_process_from_handle( req->handle, PROCESS_QUERY_INFORMATION );
+        process = get_process_from_handle( req->handle, PROCESS_QUERY_LIMITED_INFORMATION );
         break;
     case APC_MAP_VIEW:
     case APC_MAP_VIEW_EX:
@@ -1904,9 +1907,9 @@ DECL_HANDLER(get_thread_context)
 {
     struct context *thread_context = NULL;
     struct thread *thread;
-    context_t *context;
+    struct context_data *context;
 
-    if (get_reply_max_size() < 2 * sizeof(context_t))
+    if (get_reply_max_size() < 2 * sizeof(struct context_data))
     {
         set_error( STATUS_INVALID_PARAMETER );
         return;
@@ -1937,10 +1940,10 @@ DECL_HANDLER(get_thread_context)
                     get_thread_context( thread, &thread->context->regs[CTX_NATIVE], system_flags );
                 if (!get_error()) thread_context = (struct context *)grab_object( thread->context );
             }
-            else if (!get_error() && (context = set_reply_data_size( sizeof(context_t) )))
+            else if (!get_error() && (context = set_reply_data_size( sizeof(struct context_data) )))
             {
                 assert( reply->self );
-                memset( context, 0, sizeof(context_t) );
+                memset( context, 0, sizeof(struct context_data) );
                 context->machine = native_machine;
                 if (system_flags) get_thread_context( thread, context, system_flags );
             }
@@ -1958,7 +1961,7 @@ DECL_HANDLER(get_thread_context)
             native_flags = req->native_flags;
             wow_flags = req->flags & ~native_flags;
         }
-        if ((context = set_reply_data_size( (!!native_flags + !!wow_flags) * sizeof(context_t) )))
+        if ((context = set_reply_data_size( (!!native_flags + !!wow_flags) * sizeof(struct context_data) )))
         {
             if (native_flags)
             {
@@ -1991,10 +1994,10 @@ DECL_HANDLER(get_thread_context)
 DECL_HANDLER(set_thread_context)
 {
     struct thread *thread;
-    const context_t *contexts = get_req_data();
-    unsigned int ctx_count = get_req_data_size() / sizeof(context_t);
+    const struct context_data *contexts = get_req_data();
+    unsigned int ctx_count = get_req_data_size() / sizeof(struct context_data);
 
-    if (!ctx_count || ctx_count > 2 || ctx_count * sizeof(context_t) != get_req_data_size())
+    if (!ctx_count || ctx_count > 2 || ctx_count * sizeof(struct context_data) != get_req_data_size())
     {
         set_error( STATUS_INVALID_PARAMETER );
         return;
@@ -2018,14 +2021,14 @@ DECL_HANDLER(set_thread_context)
             /* If context is in a pending state, we don't know if we will use WoW or native
              * context, so store both and discard irrevelant one in select request. */
             const int is_pending = thread->context->status == STATUS_PENDING;
-            unsigned int native_flags = contexts[CTX_NATIVE].flags;
+            unsigned int native_flags = contexts[CTX_NATIVE].flags & ~SERVER_CTX_EXEC_SPACE;
 
             if (ctx_count == 2 && (is_pending || thread->context->regs[CTX_WOW].machine))
             {
-                context_t *ctx = &thread->context->regs[CTX_WOW];
+                struct context_data *ctx = &thread->context->regs[CTX_WOW];
 
                 /* some regs are always set from the native context */
-                flags = contexts[CTX_WOW].flags & ~req->native_flags;
+                flags = contexts[CTX_WOW].flags & ~(req->native_flags | SERVER_CTX_EXEC_SPACE);
                 if (is_pending) ctx->machine = contexts[CTX_WOW].machine;
                 else native_flags &= req->native_flags;
 
@@ -2035,7 +2038,7 @@ DECL_HANDLER(set_thread_context)
 
             if (native_flags)
             {
-                context_t *ctx = &thread->context->regs[CTX_NATIVE];
+                struct context_data *ctx = &thread->context->regs[CTX_NATIVE];
                 copy_context( ctx, &contexts[CTX_NATIVE], native_flags );
                 ctx->flags |= native_flags;
             }

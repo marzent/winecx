@@ -535,6 +535,17 @@ NTSTATUS WINAPI wow64_NtListenPort( UINT *args )
 
 
 /**********************************************************************
+ *           wow64_NtMakePermanentObject
+ */
+NTSTATUS WINAPI wow64_NtMakePermanentObject( UINT *args )
+{
+    HANDLE handle = get_handle( &args );
+
+    return NtMakePermanentObject( handle );
+}
+
+
+/**********************************************************************
  *           wow64_NtMakeTemporaryObject
  */
 NTSTATUS WINAPI wow64_NtMakeTemporaryObject( UINT *args )
@@ -775,21 +786,63 @@ NTSTATUS WINAPI wow64_NtQueryDirectoryObject( UINT *args )
     DIRECTORY_BASIC_INFORMATION *info;
     ULONG size = size32 + 2 * sizeof(*info) - 2 * sizeof(*info32);
 
-    if (!single_entry) FIXME( "not implemented\n" );
     info = Wow64AllocateTemp( size );
     status = NtQueryDirectoryObject( handle, info, size, single_entry, restart, context, &retsize );
-    if (!status)
+    if (NT_SUCCESS(status))
     {
-        info32->ObjectName.Buffer            = PtrToUlong( info32 + 2 );
-        info32->ObjectName.Length            = info->ObjectName.Length;
-        info32->ObjectName.MaximumLength     = info->ObjectName.MaximumLength;
-        info32->ObjectTypeName.Buffer        = info32->ObjectName.Buffer + info->ObjectName.MaximumLength;
-        info32->ObjectTypeName.Length        = info->ObjectTypeName.Length;
-        info32->ObjectTypeName.MaximumLength = info->ObjectTypeName.MaximumLength;
-        memset( info32 + 1, 0, sizeof(*info32) );
-        size = info->ObjectName.MaximumLength + info->ObjectTypeName.MaximumLength;
-        memcpy( info32 + 2, info + 2, size );
-        if (retlen) *retlen = 2 * sizeof(*info32) + size;
+        unsigned int i, count, used_size, used_count, strpool_head, validsize = min( size, retsize );
+
+        used_count = 0;
+        used_size = sizeof(*info32);  /* "null terminator" entry */
+        for (count = 0;
+             sizeof(*info) * (count + 1) <= validsize && info[count].ObjectName.MaximumLength;
+             count++)
+        {
+            unsigned int entry_size = sizeof(*info32) +
+                                      info[count].ObjectName.MaximumLength +
+                                      info[count].ObjectTypeName.MaximumLength;
+
+            if (used_size + entry_size <= size32)
+            {
+                used_count++;
+                used_size += entry_size;
+            }
+        }
+
+        if (used_count != count)
+        {
+            ERR( "64bit dir list (%u+%lu bytes, %u entries) truncated for 32bit buffer (%u+%lu bytes, %u entries)\n",
+                 validsize, size - validsize, count, used_size, size32 - min( size32, used_size ), used_count );
+
+            if (!status) status = STATUS_MORE_ENTRIES;
+            *context -= count - used_count;
+        }
+
+        /*
+         * Avoid making strpool_head a pointer, since it can point beyond end
+         * of the buffer.  Out-of-bounds pointers trigger undefined behavior
+         * just by existing, even when they are never dereferenced.
+         */
+        strpool_head = sizeof(*info32) * (used_count + 1);  /* after the "null terminator" entry */
+        for (i = 0; i < used_count; i++)
+        {
+            info32[i].ObjectName.Buffer = PtrToUlong( (char *)info32 + strpool_head );
+            info32[i].ObjectName.Length = info[i].ObjectName.Length;
+            info32[i].ObjectName.MaximumLength = info[i].ObjectName.MaximumLength;
+            memcpy( (char *)info32 + strpool_head, info[i].ObjectName.Buffer, info[i].ObjectName.MaximumLength );
+            strpool_head += info[i].ObjectName.MaximumLength;
+
+            info32[i].ObjectTypeName.Buffer = PtrToUlong( (char *)info32 + strpool_head );
+            info32[i].ObjectTypeName.Length = info[i].ObjectTypeName.Length;
+            info32[i].ObjectTypeName.MaximumLength = info[i].ObjectTypeName.MaximumLength;
+            memcpy( (char *)info32 + strpool_head, info[i].ObjectTypeName.Buffer, info[i].ObjectTypeName.MaximumLength );
+            strpool_head += info[i].ObjectTypeName.MaximumLength;
+        }
+
+        if (size32 >= sizeof(*info32))
+            memset( &info32[used_count], 0, sizeof(info32[used_count]) );
+
+        if (retlen) *retlen = strpool_head;
     }
     else if (retlen && status == STATUS_BUFFER_TOO_SMALL)
         *retlen = retsize - 2 * sizeof(*info) + 2 * sizeof(*info32);
@@ -1397,6 +1450,22 @@ NTSTATUS WINAPI wow64_NtSetIoCompletion( UINT *args )
 
 
 /**********************************************************************
+ *           wow64_NtSetIoCompletionEx
+ */
+NTSTATUS WINAPI wow64_NtSetIoCompletionEx( UINT *args )
+{
+    HANDLE completion_handle = get_handle( &args );
+    HANDLE completion_reserve_handle = get_handle( &args );
+    ULONG_PTR key = get_ulong( &args );
+    ULONG_PTR value = get_ulong( &args );
+    NTSTATUS status = get_ulong( &args );
+    SIZE_T count = get_ulong( &args );
+
+    return NtSetIoCompletionEx( completion_handle, completion_reserve_handle, key, value, status, count );
+}
+
+
+/**********************************************************************
  *           wow64_NtSetTimer
  */
 NTSTATUS WINAPI wow64_NtSetTimer( UINT *args )
@@ -1495,16 +1564,10 @@ static NTSTATUS get_image_machine( HANDLE handle, USHORT *machine )
 {
     IMAGE_DOS_HEADER dos_hdr;
     IMAGE_NT_HEADERS nt_hdr;
-    IO_STATUS_BLOCK32 iosb32;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER offset;
     FILE_POSITION_INFORMATION pos_info;
     NTSTATUS status;
-
-    /* HACK: this shouldn't be necessary since we open the file for synchronous
-     * I/O, but we currently ignore that in ntdll.so and always write the 32-bit
-     * IOSB */
-    iosb.Pointer = &iosb32;
 
     offset.QuadPart = 0;
     status = NtReadFile( handle, NULL, NULL, NULL,

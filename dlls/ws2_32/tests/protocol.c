@@ -43,6 +43,7 @@ static const char *(WINAPI *p_inet_ntop)(int family, void *addr, char *string, U
 static const WCHAR *(WINAPI *pInetNtopW)(int family, void *addr, WCHAR *string, ULONG size);
 static int (WINAPI *p_inet_pton)(int family, const char *string, void *addr);
 static int (WINAPI *pInetPtonW)(int family, WCHAR *string, void *addr);
+static int (WINAPI *pWSCGetApplicationCategory)(LPCWSTR path, DWORD path_len, LPCWSTR extra, DWORD extra_len, DWORD *category, INT *err);
 static int (WINAPI *pWSCGetProviderInfo)(GUID *provider, WSC_PROVIDER_INFO_TYPE type, BYTE *info, size_t *size, DWORD flags, INT *err);
 
 /* TCP and UDP over IP fixed set of service flags */
@@ -1917,8 +1918,8 @@ static void test_GetAddrInfoW(void)
     SetLastError(0xdeadbeef);
     result2 = NULL;
     ret = GetAddrInfoW(idn_domain, NULL, &hint, &result2);
-    ok(ret == WSAHOST_NOT_FOUND, "got %d expected WSAHOST_NOT_FOUND\n", ret);
-    ok(WSAGetLastError() == WSAHOST_NOT_FOUND, "expected 11001, got %d\n", WSAGetLastError());
+    ok(ret == WSAHOST_NOT_FOUND || ret == WSATRY_AGAIN, "got %d\n", ret);
+    ok(WSAGetLastError() == ret, "got %d\n", WSAGetLastError());
     ok(result2 == NULL, "got %p\n", result2);
 }
 
@@ -1926,6 +1927,7 @@ static struct completion_routine_test
 {
     WSAOVERLAPPED  *overlapped;
     DWORD           error;
+    DWORD           error2;
     ADDRINFOEXW   **result;
     HANDLE          event;
     DWORD           called;
@@ -1935,7 +1937,7 @@ static void CALLBACK completion_routine(DWORD error, DWORD byte_count, WSAOVERLA
 {
     struct completion_routine_test *test = &completion_routine_test;
 
-    ok(error == test->error, "got %lu\n", error);
+    ok(error == test->error || (test->error2 && error == test->error2), "got %lu\n", error);
     ok(!byte_count, "got %lu\n", byte_count);
     ok(overlapped == test->overlapped, "got %p\n", overlapped);
     ok(overlapped->Internal == test->error, "got %Iu\n", overlapped->Internal);
@@ -2073,6 +2075,7 @@ static void test_GetAddrInfoExW(void)
     overlapped.hEvent = NULL;
     completion_routine_test.overlapped = &overlapped;
     completion_routine_test.error = ERROR_SUCCESS;
+    completion_routine_test.error2 = ERROR_SUCCESS;
     completion_routine_test.result = &result;
     completion_routine_test.event = event;
     completion_routine_test.called = 0;
@@ -2093,6 +2096,7 @@ static void test_GetAddrInfoExW(void)
     result = (void *)0xdeadbeef;
     completion_routine_test.overlapped = &overlapped;
     completion_routine_test.error = WSAHOST_NOT_FOUND;
+    completion_routine_test.error2 = WSANO_DATA;
     completion_routine_test.called = 0;
     ResetEvent(event);
     ret = pGetAddrInfoExW(nxdomain, NULL, NS_DNS, NULL, NULL, &result, NULL, &overlapped, completion_routine, NULL);
@@ -2871,6 +2875,44 @@ static void test_WSAEnumNameSpaceProvidersW(void)
     free(name);
 }
 
+static void test_WSCGetApplicationCategory(void)
+{
+    int ret;
+    int errcode;
+    DWORD category;
+
+    if (!pWSCGetApplicationCategory)
+    {
+        win_skip("WSCGetApplicationCategory is not available.\n");
+        return;
+    }
+
+    errcode = 0xdeadbeef;
+    ret = pWSCGetApplicationCategory(NULL, 0, NULL, 0, NULL, &errcode);
+    ok(ret == SOCKET_ERROR, "got %d, expected SOCKET_ERROR\n", ret);
+    ok(errcode == WSAEINVAL, "got %d, expected WSAEINVAL\n", errcode);
+
+    errcode = 0xdeadbeef;
+    ret = pWSCGetApplicationCategory(L"", 0, NULL, 0, NULL, &errcode);
+    ok(ret == SOCKET_ERROR, "got %d, expected SOCKET_ERROR\n", ret);
+    todo_wine ok(errcode == WSAEINVAL, "got %d, expected WSAEINVAL\n", errcode);
+
+    errcode = 0xdeadbeef;
+    ret = pWSCGetApplicationCategory(L"", 0, L"", 0, NULL, &errcode);
+    ok(ret == SOCKET_ERROR, "got %d, expected SOCKET_ERROR\n", ret);
+    todo_wine ok(errcode == WSAEINVAL, "got %d, expected WSAEINVAL\n", errcode);
+
+    errcode = 0xdeadbeef;
+    ret = pWSCGetApplicationCategory(L"", 0, NULL, 0, &category, &errcode);
+    ok(ret == SOCKET_ERROR, "got %d, expected SOCKET_ERROR\n", ret);
+    todo_wine ok(errcode == WSAEINVAL, "got %d, expected WSAEINVAL\n", errcode);
+
+    errcode = 0xdeadbeef;
+    ret = pWSCGetApplicationCategory(L"", 0, L"", 0, &category, &errcode);
+    ok(ret == SOCKET_ERROR, "got %d, expected SOCKET_ERROR\n", ret);
+    todo_wine ok(errcode == WSAEINVAL, "got %d, expected WSAEINVAL\n", errcode);
+}
+
 static void test_WSCGetProviderInfo(void)
 {
     int ret;
@@ -3051,6 +3093,7 @@ START_TEST( protocol )
     pInetNtopW = (void *)GetProcAddress(GetModuleHandleA("ws2_32"), "InetNtopW");
     p_inet_pton = (void *)GetProcAddress(GetModuleHandleA("ws2_32"), "inet_pton");
     pInetPtonW = (void *)GetProcAddress(GetModuleHandleA("ws2_32"), "InetPtonW");
+    pWSCGetApplicationCategory = (void *)GetProcAddress(GetModuleHandleA("ws2_32"), "WSCGetApplicationCategory");
     pWSCGetProviderInfo = (void *)GetProcAddress(GetModuleHandleA("ws2_32"), "WSCGetProviderInfo");
 
     ret = WSAStartup(0x202, &data);
@@ -3083,6 +3126,7 @@ START_TEST( protocol )
 
     test_WSAEnumNameSpaceProvidersA();
     test_WSAEnumNameSpaceProvidersW();
+    test_WSCGetApplicationCategory();
     test_WSCGetProviderInfo();
     test_WSCGetProviderPath();
 

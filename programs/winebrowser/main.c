@@ -115,8 +115,7 @@ static LSTATUS get_commands( HKEY key, const WCHAR *value, WCHAR *buffer, DWORD 
 static int open_http_url( const WCHAR *url )
 {
     static const WCHAR defaultbrowsers[] =
-        L"launchurl\0"
-        "xdg-open\0"
+        L"xdg-open\0"
         "/usr/bin/open\0"
         "firefox\0"
         "konqueror\0"

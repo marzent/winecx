@@ -323,8 +323,10 @@ static void WINAPIV __WINE_PRINTF_ATTR(2,3) childPrintf(HANDLE h, const char* fm
 #define HATTR_NULL      0x08               /* NULL handle value */
 #define HATTR_INVALID   0x04               /* INVALID_HANDLE_VALUE */
 #define HATTR_TYPE      0x0c               /* valid handle, with type set */
-#define HATTR_INHERIT   0x10               /* inheritance flag set */
-#define HATTR_UNTOUCHED 0x20               /* Identify fields untouched by GetStartupInfoW */
+#define HATTR_UNTOUCHED 0x10               /* Identify fields untouched by GetStartupInfoW */
+#define HATTR_INHERIT   0x20               /* inheritance flag set */
+#define HATTR_PROTECT   0x40               /* protect from close flag set */
+#define HATTR_DANGLING  0x80               /* a pseudo value to show that the handle value has been copied but not inherited */
 
 #define HANDLE_UNTOUCHEDW (HANDLE)(DWORD_PTR)(0x5050505050505050ull)
 
@@ -346,8 +348,13 @@ static unsigned encode_handle_attributes(HANDLE h)
         if (dw == FILE_TYPE_CHAR || dw == FILE_TYPE_DISK || dw == FILE_TYPE_PIPE)
         {
             DWORD info;
-            if (GetHandleInformation(h, &info) && (info & HANDLE_FLAG_INHERIT))
-                result |= HATTR_INHERIT;
+            if (GetHandleInformation(h, &info))
+            {
+                if (info & HANDLE_FLAG_INHERIT)
+                    result |= HATTR_INHERIT;
+                if (info & HANDLE_FLAG_PROTECT_FROM_CLOSE)
+                    result |= HATTR_PROTECT;
+            }
         }
         else
             dw = FILE_TYPE_UNKNOWN;
@@ -538,8 +545,8 @@ static void     doChild(const char* file, const char* option)
         ok( ret, "Setting mode (%ld)\n", GetLastError());
         ret = SetConsoleMode(hConOut, modeOut ^ 1);
         ok( ret, "Setting mode (%ld)\n", GetLastError());
-        sbi.dwCursorPosition.X ^= 1;
-        sbi.dwCursorPosition.Y ^= 1;
+        sbi.dwCursorPosition.X = !sbi.dwCursorPosition.X;
+        sbi.dwCursorPosition.Y = !sbi.dwCursorPosition.Y;
         ret = SetConsoleCursorPosition(hConOut, sbi.dwCursorPosition);
         ok( ret, "Setting cursor position (%ld)\n", GetLastError());
     }
@@ -1852,7 +1859,7 @@ static void test_OpenProcess(void)
             ok(info.Type == MEM_PRIVATE, "%lx != MEM_PRIVATE\n", info.Type);
         }
         else /* before win8 */
-            ok(GetLastError() == ERROR_ACCESS_DENIED, "wrong error %ld\n", GetLastError());
+            ok(broken(GetLastError() == ERROR_ACCESS_DENIED), "wrong error %ld\n", GetLastError());
 
         SetLastError(0xdeadbeef);
         ok(!VirtualFreeEx(hproc, addr1, 0, MEM_RELEASE),
@@ -2543,6 +2550,47 @@ static void test_DuplicateHandle(void)
     ok(r, "DuplicateHandle error %lu\n", GetLastError());
     ok(f == out || broken(/* Win7 */ (((ULONG_PTR)f & 3) == 3) && (f != out)), "f != out\n");
     CloseHandle(out);
+
+    /* Test DUPLICATE_SAME_ATTRIBUTES */
+    f = CreateFileA("NUL", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
+    ok(f != INVALID_HANDLE_VALUE, "Failed to open NUL %lu\n", GetLastError());
+    r = GetHandleInformation(f, &info);
+    ok(r && info == 0, "Unexpected info %lx\n", info);
+
+    r = DuplicateHandle(GetCurrentProcess(), f, GetCurrentProcess(), &out,
+                        0, TRUE, DUPLICATE_SAME_ACCESS | DUPLICATE_SAME_ATTRIBUTES);
+    ok(r, "DuplicateHandle error %lu\n", GetLastError());
+    r = GetHandleInformation(out, &info);
+    ok(r && info == 0, "Unexpected info %lx\n", info);
+    CloseHandle(out);
+
+    r = SetHandleInformation(f, HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE,
+                             HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE);
+    ok(r, "SetHandleInformation error %lu\n", GetLastError());
+    info = 0xdeabeef;
+    r = GetHandleInformation(f, &info);
+    ok(r && info == (HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE), "Unexpected info %lx\n", info);
+    ok(r, "SetHandleInformation error %lu\n", GetLastError());
+    r = DuplicateHandle(GetCurrentProcess(), f, GetCurrentProcess(), &out,
+                        0, FALSE, DUPLICATE_SAME_ACCESS | DUPLICATE_SAME_ATTRIBUTES);
+    ok(r, "DuplicateHandle error %lu\n", GetLastError());
+    info = 0xdeabeef;
+    r = GetHandleInformation(out, &info);
+    ok(r && info == (HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE), "Unexpected info %lx\n", info);
+    r = SetHandleInformation(out, HANDLE_FLAG_PROTECT_FROM_CLOSE, 0);
+    ok(r, "SetHandleInformation error %lu\n", GetLastError());
+    CloseHandle(out);
+    r = SetHandleInformation(f, HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE, 0);
+    ok(r, "SetHandleInformation error %lu\n", GetLastError());
+    CloseHandle(f);
+
+    r = DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &out,
+                        0, TRUE, DUPLICATE_SAME_ACCESS | DUPLICATE_SAME_ATTRIBUTES);
+    ok(r, "DuplicateHandle error %lu\n", GetLastError());
+    info = 0xdeabeef;
+    r = GetHandleInformation(out, &info);
+    ok(r && info == 0, "Unexpected info %lx\n", info);
+    CloseHandle(out);
 }
 
 #define test_completion(a, b, c, d, e) _test_completion(__LINE__, a, b, c, d, e)
@@ -2577,6 +2625,53 @@ static void _create_process(int line, const char *command, LPPROCESS_INFORMATION
     ok_(__FILE__, line)(ret, "CreateProcess error %lu\n", GetLastError());
 }
 
+#define test_assigned_proc(job, ...) _test_assigned_proc(__LINE__, job, __VA_ARGS__)
+static void _test_assigned_proc(int line, HANDLE job, unsigned int count, ...)
+{
+    char buf[sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + sizeof(ULONG_PTR) * 20];
+    JOBOBJECT_BASIC_PROCESS_ID_LIST *list = (JOBOBJECT_BASIC_PROCESS_ID_LIST *)buf;
+    unsigned int i, pid;
+    va_list valist;
+    DWORD size;
+    BOOL ret;
+
+    memset(buf, 0, sizeof(buf));
+    ret = pQueryInformationJobObject(job, JobObjectBasicProcessIdList, list, sizeof(buf), &size);
+    ok_(__FILE__, line)(ret, "failed to get process id list, error %lu\n", GetLastError());
+
+    ok_(__FILE__, line)(list->NumberOfAssignedProcesses == count,
+                        "expected %u assigned processes, got %lu\n", count, list->NumberOfAssignedProcesses);
+    ok_(__FILE__, line)(list->NumberOfProcessIdsInList == count,
+                        "expected %u process IDs, got %lu\n", count, list->NumberOfProcessIdsInList);
+
+    va_start(valist, count);
+    for (i = 0; i < min(count, list->NumberOfProcessIdsInList); ++i)
+    {
+        pid = va_arg(valist, unsigned int);
+        ok_(__FILE__, line)(pid == list->ProcessIdList[i],
+                            "wrong pid %u: expected %#04x, got %#04Ix\n", i, pid, list->ProcessIdList[i]);
+    }
+    va_end(valist);
+}
+
+#define test_accounting(a, b, c, d) _test_accounting(__LINE__, a, b, c, d)
+static void _test_accounting(int line, HANDLE job, unsigned int total, unsigned int active, unsigned int terminated)
+{
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION info;
+    DWORD size;
+    BOOL ret;
+
+    memset(&info, 0, sizeof(info));
+    ret = pQueryInformationJobObject(job, JobObjectBasicAccountingInformation, &info, sizeof(info), &size);
+    ok_(__FILE__, line)(ret, "failed to get accounting information, error %lu\n", GetLastError());
+
+    ok_(__FILE__, line)(info.TotalProcesses == total,
+                        "expected %u total processes, got %lu\n", total, info.TotalProcesses);
+    ok_(__FILE__, line)(info.ActiveProcesses == active,
+                        "expected %u active processes, got %lu\n", active, info.ActiveProcesses);
+    ok_(__FILE__, line)(info.TotalTerminatedProcesses == terminated,
+                        "expected %u terminated processes, got %lu\n", terminated, info.TotalTerminatedProcesses);
+}
 
 static void test_IsProcessInJob(void)
 {
@@ -2602,11 +2697,15 @@ static void test_IsProcessInJob(void)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(!out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job, 0);
+    test_accounting(job, 0, 0, 0);
 
     out = TRUE;
     ret = pIsProcessInJob(pi.hProcess, job2, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(!out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job2, 0);
+    test_accounting(job2, 0, 0, 0);
 
     ret = pAssignProcessToJobObject(job, pi.hProcess);
     ok(ret, "AssignProcessToJobObject error %lu\n", GetLastError());
@@ -2615,11 +2714,15 @@ static void test_IsProcessInJob(void)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job, 1, pi.dwProcessId);
+    test_accounting(job, 1, 1, 0);
 
     out = TRUE;
     ret = pIsProcessInJob(pi.hProcess, job2, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(!out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job2, 0);
+    test_accounting(job2, 0, 0, 0);
 
     out = FALSE;
     ret = pIsProcessInJob(pi.hProcess, NULL, &out);
@@ -2633,6 +2736,8 @@ static void test_IsProcessInJob(void)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job, 0);
+    test_accounting(job, 1, 0, 0);
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -2649,11 +2754,15 @@ static void test_TerminateJobObject(void)
 
     job = pCreateJobObjectW(NULL, NULL);
     ok(job != NULL, "CreateJobObject error %lu\n", GetLastError());
+    test_assigned_proc(job, 0);
+    test_accounting(job, 0, 0, 0);
 
     create_process("wait", &pi);
 
     ret = pAssignProcessToJobObject(job, pi.hProcess);
     ok(ret, "AssignProcessToJobObject error %lu\n", GetLastError());
+    test_assigned_proc(job, 1, pi.dwProcessId);
+    test_accounting(job, 1, 1, 0);
 
     ret = pTerminateJobObject(job, 123);
     ok(ret, "TerminateJobObject error %lu\n", GetLastError());
@@ -2662,6 +2771,8 @@ static void test_TerminateJobObject(void)
     dwret = WaitForSingleObject(pi.hProcess, 1000);
     ok(dwret == WAIT_OBJECT_0, "WaitForSingleObject returned %lu\n", dwret);
     if (dwret == WAIT_TIMEOUT) TerminateProcess(pi.hProcess, 0);
+    test_assigned_proc(job, 0);
+    test_accounting(job, 1, 0, 0);
 
     ret = GetExitCodeProcess(pi.hProcess, &dwret);
     ok(ret, "GetExitCodeProcess error %lu\n", GetLastError());
@@ -2679,6 +2790,8 @@ static void test_TerminateJobObject(void)
     ret = pAssignProcessToJobObject(job, pi.hProcess);
     ok(!ret, "AssignProcessToJobObject unexpectedly succeeded\n");
     expect_eq_d(ERROR_ACCESS_DENIED, GetLastError());
+    test_assigned_proc(job, 0);
+    test_accounting(job, 1, 0, 0);
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -2877,11 +2990,15 @@ static void test_KillOnJobClose(void)
         return;
     }
     ok(ret, "SetInformationJobObject error %lu\n", GetLastError());
+    test_assigned_proc(job, 0);
+    test_accounting(job, 0, 0, 0);
 
     create_process("wait", &pi);
 
     ret = pAssignProcessToJobObject(job, pi.hProcess);
     ok(ret, "AssignProcessToJobObject error %lu\n", GetLastError());
+    test_assigned_proc(job, 1, pi.dwProcessId);
+    test_accounting(job, 1, 1, 0);
 
     CloseHandle(job);
 
@@ -2991,6 +3108,8 @@ static HANDLE test_AddSelfToJob(void)
 
     ret = pAssignProcessToJobObject(job, GetCurrentProcess());
     ok(ret, "AssignProcessToJobObject error %lu\n", GetLastError());
+    test_assigned_proc(job, 1, GetCurrentProcessId());
+    test_accounting(job, 1, 1, 0);
 
     return job;
 }
@@ -3012,6 +3131,8 @@ static void test_jobInheritance(HANDLE job)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(out, "IsProcessInJob returned out=%u\n", out);
+    test_assigned_proc(job, 2, GetCurrentProcessId(), pi.dwProcessId);
+    test_accounting(job, 2, 2, 0);
 
     wait_and_close_child_process(&pi);
 }
@@ -3054,6 +3175,9 @@ static void test_BreakawayOk(HANDLE parent_job)
 
     if (nested_jobs)
     {
+        test_assigned_proc(job, 1, GetCurrentProcessId());
+        test_accounting(job, 1, 1, 0);
+
         limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         ret = pSetInformationJobObject(job, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
         ok(ret, "SetInformationJobObject error %lu\n", GetLastError());
@@ -3084,6 +3208,11 @@ static void test_BreakawayOk(HANDLE parent_job)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(!out, "IsProcessInJob returned out=%u\n", out);
+    if (nested_jobs)
+    {
+        test_assigned_proc(job, 1, GetCurrentProcessId());
+        test_accounting(job, 1, 1, 0);
+    }
 
     ret = pIsProcessInJob(pi.hProcess, parent_job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
@@ -3101,6 +3230,11 @@ static void test_BreakawayOk(HANDLE parent_job)
     ret = pIsProcessInJob(pi.hProcess, job, &out);
     ok(ret, "IsProcessInJob error %lu\n", GetLastError());
     ok(!out, "IsProcessInJob returned out=%u\n", out);
+    if (nested_jobs)
+    {
+        test_assigned_proc(job, 1, GetCurrentProcessId());
+        test_accounting(job, 1, 1, 0);
+    }
 
     wait_and_close_child_process(&pi);
 
@@ -3141,11 +3275,15 @@ static void copy_change_subsystem(const char* in, const char* out, DWORD subsyst
 #define H_DISK     1
 #define H_CHAR     2
 #define H_PIPE     3
+#define H_NULL     4
+#define H_INVALID  5
+#define H_DEVIL    6 /* unassigned handle */
 
 #define ARG_STD                 0x80000000
 #define ARG_STARTUPINFO         0x00000000
 #define ARG_CP_INHERIT          0x40000000
 #define ARG_HANDLE_INHERIT      0x20000000
+#define ARG_HANDLE_PROTECT      0x10000000
 #define ARG_HANDLE_MASK         (~0xff000000)
 
 static  BOOL check_run_child(const char *exec, DWORD flags, BOOL cp_inherit,
@@ -3213,9 +3351,26 @@ static BOOL build_startupinfo( STARTUPINFOA *startup, unsigned args, HANDLE hstd
         ok(ret, "Couldn't create anon pipe\n");
         needs_close = TRUE;
         break;
+    case H_NULL:
+        hstd[0] = hstd[1] = NULL;
+        break;
+    case H_INVALID:
+        hstd[0] = hstd[1] = INVALID_HANDLE_VALUE;
+        break;
+    case H_DEVIL:
+        hstd[0] = (HANDLE)(ULONG_PTR)0x066600;
+        hstd[1] = (HANDLE)(ULONG_PTR)0x066610;
+        break;
     default:
         ok(0, "Unsupported handle type %x\n", args & ARG_HANDLE_MASK);
         return FALSE;
+    }
+    if ((args & ARG_HANDLE_PROTECT) && needs_close)
+    {
+        ret = SetHandleInformation(hstd[0], HANDLE_FLAG_PROTECT_FROM_CLOSE, HANDLE_FLAG_PROTECT_FROM_CLOSE);
+        ok(ret, "Couldn't set inherit flag to hstd[0]\n");
+        ret = SetHandleInformation(hstd[1], HANDLE_FLAG_PROTECT_FROM_CLOSE, HANDLE_FLAG_PROTECT_FROM_CLOSE);
+        ok(ret, "Couldn't set inherit flag to hstd[1]\n");
     }
 
     if (args & ARG_STD)
@@ -3238,7 +3393,6 @@ struct std_handle_test
     unsigned args;
     /* output */
     DWORD expected;
-    unsigned is_todo; /* bitmask: 1 on TEB values, 2 on StartupInfoA values, 4 on StartupInfoW values */
     DWORD is_broken; /* Win7 broken file types */
 };
 
@@ -3261,6 +3415,26 @@ static void test_StdHandleInheritance(void)
         /* all others handles type behave as H_DISK */
         {ARG_STARTUPINFO |                  ARG_HANDLE_INHERIT | H_DISK,      HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
         {ARG_STD         |                  ARG_HANDLE_INHERIT | H_DISK,      HATTR_TYPE | HATTR_INHERIT | FILE_TYPE_DISK},
+
+        /* all others handles type behave as H_DISK */
+        {ARG_STARTUPINFO |                                       H_DISK,      HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+/* 5*/  {ARG_STD         |                                       H_DISK,      HATTR_TYPE | FILE_TYPE_DISK},
+
+        /* all others handles type behave as H_DISK */
+        {ARG_STARTUPINFO |                  ARG_HANDLE_PROTECT | H_DISK,      HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+        {ARG_STD         |                  ARG_HANDLE_PROTECT | H_DISK,      HATTR_TYPE | HATTR_PROTECT | FILE_TYPE_DISK},
+
+        /* all others handles type behave as H_DISK */
+        {ARG_STARTUPINFO | ARG_CP_INHERIT |                      H_DISK,      HATTR_DANGLING, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+        {ARG_STD         | ARG_CP_INHERIT |                      H_DISK,      HATTR_DANGLING},
+
+        /* all others handles type behave as H_DISK */
+/*10*/  {ARG_STARTUPINFO |                                       H_DEVIL,     HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+        {ARG_STD         |                                       H_DEVIL,     HATTR_NULL},
+        {ARG_STARTUPINFO |                                       H_INVALID,   HATTR_NULL, .is_broken = HATTR_INVALID},
+        {ARG_STD         |                                       H_INVALID,   HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+        {ARG_STARTUPINFO |                                       H_NULL,      HATTR_NULL, .is_broken = HATTR_INVALID},
+/*15*/  {ARG_STD         |                                       H_NULL,      HATTR_NULL, .is_broken = HATTR_INVALID},
     },
     nothing_gui[] =
     {
@@ -3277,6 +3451,21 @@ static void test_StdHandleInheritance(void)
         /* all others handles type behave as H_DISK */
         {ARG_STARTUPINFO |                  ARG_HANDLE_INHERIT | H_DISK,      HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
         {ARG_STD         |                  ARG_HANDLE_INHERIT | H_DISK,      HATTR_NULL},
+
+        /* all others handles type behave as H_DISK */
+/*10*/  {ARG_STARTUPINFO | ARG_CP_INHERIT |                      H_DISK,      HATTR_DANGLING},
+        {ARG_STD         | ARG_CP_INHERIT |                      H_DISK,      HATTR_DANGLING},
+
+        /* all others handles type behave as H_DISK */
+        {ARG_STARTUPINFO |                                       H_DISK,      HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+        {ARG_STD         |                                       H_DISK,      HATTR_NULL},
+
+        {ARG_STARTUPINFO |                                       H_DEVIL,     HATTR_NULL, .is_broken = HATTR_TYPE | FILE_TYPE_UNKNOWN},
+/*15*/  {ARG_STD         |                                       H_DEVIL,     HATTR_NULL},
+        {ARG_STARTUPINFO |                                       H_INVALID,   HATTR_NULL, .is_broken = HATTR_INVALID},
+        {ARG_STD         |                                       H_INVALID,   HATTR_NULL},
+        {ARG_STARTUPINFO |                                       H_NULL,      HATTR_NULL},
+        {ARG_STD         |                                       H_NULL,      HATTR_NULL},
     },
     detached_cui[] =
     {
@@ -3335,7 +3524,6 @@ static void test_StdHandleInheritance(void)
             STARTUPINFOA startup;
             HANDLE hstd[2] = {};
             BOOL needs_close;
-            unsigned startup_expected;
 
             winetest_push_context("%s[%u] ", tests[j].descr, i);
             needs_close = build_startupinfo( &startup, std_tests[i].args, hstd );
@@ -3346,33 +3534,49 @@ static void test_StdHandleInheritance(void)
             ok(ret, "Couldn't run child\n");
             reload_child_info(resfile);
 
-            startup_expected = (std_tests[i].args & ARG_STD) ? HATTR_INVALID : std_tests[i].expected;
-
-            todo_wine_if(std_tests[i].is_todo & 2)
+            if (std_tests[i].expected & HATTR_DANGLING)
             {
-            okChildHexInt("StartupInfoA", "hStdInputEncode", startup_expected, std_tests[i].is_broken);
-            okChildHexInt("StartupInfoA", "hStdOutputEncode", startup_expected, std_tests[i].is_broken);
+                /* The value of the handle (in parent) has been copied in STARTUPINFO fields (in child),
+                 * but the object hasn't been inherited from parent to child.
+                 * There's no reliable way to test that the object hasn't been inherited, as the
+                 * entry in the child's handle table is free and could have been reused before
+                 * this test occurs.
+                 * So simply test that the value is passed untouched.
+                 */
+                okChildHexInt("StartupInfoA", "hStdInput", (DWORD_PTR)((std_tests[i].args & ARG_STD) ? INVALID_HANDLE_VALUE : hstd[0]), std_tests[i].is_broken);
+                okChildHexInt("StartupInfoA", "hStdOutput", (DWORD_PTR)((std_tests[i].args & ARG_STD) ? INVALID_HANDLE_VALUE : hstd[1]), std_tests[i].is_broken);
+                if (!(std_tests[i].args & ARG_STD))
+                {
+                    okChildHexInt("StartupInfoW", "hStdInput", (DWORD_PTR)hstd[0], std_tests[i].is_broken);
+                    okChildHexInt("StartupInfoW", "hStdOutput", (DWORD_PTR)hstd[1], std_tests[i].is_broken);
+                }
+
+                okChildHexInt("TEB", "hStdInput", (DWORD_PTR)hstd[0], std_tests[i].is_broken);
+                okChildHexInt("TEB", "hStdOutput", (DWORD_PTR)hstd[1], std_tests[i].is_broken);
             }
-
-            startup_expected = (std_tests[i].args & ARG_STD) ? HATTR_UNTOUCHED : std_tests[i].expected;
-
-            todo_wine_if(std_tests[i].is_todo & 4)
+            else
             {
-            okChildHexInt("StartupInfoW", "hStdInputEncode", startup_expected, std_tests[i].is_broken);
-            okChildHexInt("StartupInfoW", "hStdOutputEncode", startup_expected, std_tests[i].is_broken);
-            }
+                unsigned startup_expected = (std_tests[i].args & ARG_STD) ? HATTR_INVALID : std_tests[i].expected;
 
-            todo_wine_if(std_tests[i].is_todo & 1)
-            {
-            okChildHexInt("TEB", "hStdInputEncode", std_tests[i].expected, std_tests[i].is_broken);
-            okChildHexInt("TEB", "hStdOutputEncode", std_tests[i].expected, std_tests[i].is_broken);
+                okChildHexInt("StartupInfoA", "hStdInputEncode", startup_expected, std_tests[i].is_broken);
+                okChildHexInt("StartupInfoA", "hStdOutputEncode", startup_expected, std_tests[i].is_broken);
+
+                startup_expected = (std_tests[i].args & ARG_STD) ? HATTR_UNTOUCHED : std_tests[i].expected;
+
+                okChildHexInt("StartupInfoW", "hStdInputEncode", startup_expected, std_tests[i].is_broken);
+                okChildHexInt("StartupInfoW", "hStdOutputEncode", startup_expected, std_tests[i].is_broken);
+
+                okChildHexInt("TEB", "hStdInputEncode", std_tests[i].expected, std_tests[i].is_broken);
+                okChildHexInt("TEB", "hStdOutputEncode", std_tests[i].expected, std_tests[i].is_broken);
             }
 
             release_memory();
             DeleteFileA(resfile);
             if (needs_close)
             {
+                SetHandleInformation(hstd[0], HANDLE_FLAG_PROTECT_FROM_CLOSE, 0);
                 CloseHandle(hstd[0]);
+                SetHandleInformation(hstd[1], HANDLE_FLAG_PROTECT_FROM_CLOSE, 0);
                 CloseHandle(hstd[1]);
             }
             winetest_pop_context();

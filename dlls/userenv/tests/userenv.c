@@ -296,6 +296,8 @@ static void test_get_profiles_dir(void)
      */
     ok(profiles_len - 1 == r, "expected %ld, got %d\n", profiles_len - 1, r);
     ok(!strcmp(buf, profiles_dir), "expected %s, got %s\n", profiles_dir, buf);
+    ok(strlen(buf) + 1 == cch, "String length is %Iu, but cch is %lu\n", strlen(buf), cch);
+    ok(strlen(buf) + 1 == r, "String length is %Iu, but returned count is %u\n", strlen(buf), r);
 
     HeapFree(GetProcessHeap(), 0, buf);
     HeapFree(GetProcessHeap(), 0, profiles_dir);
@@ -363,6 +365,14 @@ static void test_get_user_profile_dir(void)
     ok(error == ERROR_INVALID_PARAMETER, "expected ERROR_INVALID_PARAMETER, got %lu\n", error);
     ok(!len, "expected 0, got %lu\n", len);
 
+    len = SHRT_MAX;
+    SetLastError( 0xdeadbeef );
+    ret = GetUserProfileDirectoryA( token, NULL, &len );
+    error = GetLastError();
+    ok(!ret, "expected failure\n");
+    ok(error == ERROR_INVALID_PARAMETER, "expected ERROR_INVALID_PARAMETER, got %lu\n", error);
+    ok(len == SHRT_MAX, "expected SHRT_MAX, got %lu\n", len);
+
     len = 0;
     dirA = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, 32 );
     SetLastError( 0xdeadbeef );
@@ -414,6 +424,14 @@ static void test_get_user_profile_dir(void)
     ok(!ret, "expected failure\n");
     ok(error == ERROR_INSUFFICIENT_BUFFER, "expected ERROR_INSUFFICIENT_BUFFER, got %lu\n", error);
     ok(len, "expected len > 0\n");
+
+    len = SHRT_MAX;
+    SetLastError( 0xdeadbeef );
+    ret = GetUserProfileDirectoryW( token, NULL, &len );
+    error = GetLastError();
+    ok(!ret, "expected failure\n");
+    ok(error == ERROR_INSUFFICIENT_BUFFER, "expected ERROR_INSUFFICIENT_BUFFER, got %lu\n", error);
+    ok(len != SHRT_MAX, "expected not SHRT_MAX, got %lu\n", len);
 
     dirW = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, len * sizeof(WCHAR) );
     SetLastError( 0xdeadbeef );

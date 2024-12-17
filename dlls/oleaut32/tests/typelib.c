@@ -64,12 +64,12 @@
 
 #ifdef __i386__
 #define ARCH "x86"
+#elif defined __aarch64__ || defined__arm64ec__
+#define ARCH "arm64"
 #elif defined __x86_64__
 #define ARCH "amd64"
 #elif defined __arm__
 #define ARCH "arm"
-#elif defined __aarch64__
-#define ARCH "arm64"
 #else
 #define ARCH "none"
 #endif
@@ -278,6 +278,44 @@ static HRESULT WINAPI invoketest_testget(IInvokeTest *iface, ICollection **p)
     return S_OK;
 }
 
+static LONG WINAPI invoketest_get_testget2(IInvokeTest *iface, int *value)
+{
+    *value = 4;
+    return S_OK;
+}
+
+static int WINAPI invoketest_get_testget3(IInvokeTest *iface)
+{
+    return 4;
+}
+
+static int WINAPI invoketest_get_testget4(IInvokeTest *iface, int value)
+{
+    return 4;
+}
+
+static int WINAPI invoketest_get_testget5(IInvokeTest *iface, int *value1, int value2)
+{
+    return 4;
+}
+
+static int WINAPI invoketest_get_testget6(IInvokeTest *iface, int value1, int value2)
+{
+    return 4;
+}
+
+static void WINAPI invoketest_get_testget7(IInvokeTest *iface, int value1, int value2)
+{
+}
+
+static void WINAPI invoketest_get_testget8(IInvokeTest *iface, int* value)
+{
+}
+
+static void WINAPI invoketest_get_testput8(IInvokeTest *iface, int value)
+{
+}
+
 static const IInvokeTestVtbl invoketestvtbl = {
     invoketest_QueryInterface,
     invoketest_AddRef,
@@ -290,7 +328,15 @@ static const IInvokeTestVtbl invoketestvtbl = {
     invoketest_putref_testprop,
     invoketest_putref_testprop2,
     invoketest_testfunc,
-    invoketest_testget
+    invoketest_testget,
+    invoketest_get_testget2,
+    invoketest_get_testget3,
+    invoketest_get_testget4,
+    invoketest_get_testget5,
+    invoketest_get_testget6,
+    invoketest_get_testget7,
+    invoketest_get_testget8,
+    invoketest_get_testput8,
 };
 
 static IInvokeTest invoketest = { &invoketestvtbl };
@@ -850,7 +896,7 @@ static void test_TypeInfo(void)
     DISPPARAMS dispparams;
     GUID bogusguid = {0x806afb4f,0x13f7,0x42d2,{0x89,0x2c,0x6c,0x97,0xc3,0x6a,0x36,0xc1}};
     static const GUID moduleTestGetDllEntryGuid = {0xf073cd92,0xa199,0x11ea,{0xbb,0x37,0x02,0x42,0xac,0x13,0x00,0x02}};
-    VARIANT var, res, args[2];
+    VARIANT var, res, args[3];
     UINT count, i;
     TYPEKIND kind;
     const WCHAR *filename;
@@ -1177,6 +1223,150 @@ static void test_TypeInfo(void)
     hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 2, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
     ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx, %d\n", hr, i);
 
+    V_VT(&res) = VT_I4;
+    V_I4(&res) = 42;
+    V_VT(&args[0]) = VT_I4;
+    V_I4(&args[0]) = 1;
+    V_VT(&args[1]) = VT_I4;
+    V_I4(&args[1]) = 1;
+    V_VT(&args[2]) = VT_I4;
+    V_I4(&args[2]) = 1;
+    dispparams.cNamedArgs = 0;
+
+    /* call propget with DISPATCH_PROPERTYPUT (missing member id) */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 0xdeadbeef, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int) - 0 params */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 5, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int) - 1 param */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 5, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int) - 0 params - NULL result passed */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 5, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on on HRESULT func(out int) - 1 params - NULL result passed */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 5, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func() - 0 params */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 6, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func() - 1 params  */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 6, DISPATCH_PROPERTYPUT, &dispparams, &res, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func() - 0 params - NULL result passed */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 6, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func() - 1 param - NULL result passed */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 6, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int) - 0 param - NULL result passed  */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 7, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int) - 1 param - NULL result passed  */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 7, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int) - 2 params - NULL result passed  */
+    dispparams.cArgs = 2;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 7, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int) - 3 params - NULL result passed  */
+    dispparams.cArgs = 3;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 7, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int, int) - 0 param - NULL result passed  */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 8, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int, int) - 1 param - NULL result passed  */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 8, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int, int) - 2 params - NULL result passed  */
+    dispparams.cArgs = 2;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 8, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on HRESULT func(out int, int) - 3 params - NULL result passed  */
+    dispparams.cArgs = 3;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 8, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int, int) - 0 params - NULL result passed */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 9, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int, int) - 1 params - NULL result passed */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 9, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int, int) - 2 params - NULL result passed */
+    dispparams.cArgs = 2;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 9, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on int func(int, int) - 3 params - NULL result passed */
+    dispparams.cArgs = 3;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 9, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on void func(int, int) - 0 params - NULL result passed */
+    dispparams.cArgs = 0;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 10, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on void func(int, int) - 1 params - NULL result passed */
+    dispparams.cArgs = 1;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 10, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on void func(int, int) - 2 params - NULL result passed */
+    dispparams.cArgs = 2;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 10, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_MEMBERNOTFOUND, "got 0x%08lx\n", hr);
+
+    /* call propget with DISPATCH_PROPERTYPUT on void func(int, int) - 3 params - NULL result passed */
+    dispparams.cArgs = 3;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 10, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == DISP_E_BADPARAMCOUNT, "got 0x%08lx\n", hr);
+
+    /* If there's get and put, the put must work */
+    /* call propput with DISPATCH_PROPERTYPUT on int func(int) */
+    dispidMember = DISPID_PROPERTYPUT;
+    dispparams.cArgs = 1;
+    dispparams.cNamedArgs = 1;
+    dispparams.rgdispidNamedArgs = &dispidMember;
+    hr = ITypeInfo_Invoke(pTypeInfo, &invoketest, 11, DISPATCH_PROPERTYPUT, &dispparams, NULL, NULL, &i);
+    ok(hr == S_OK, "got 0x%08lx\n", hr);
+
     test_invoke_func(pTypeInfo);
 
     ITypeInfo_Release(pTypeInfo);
@@ -1188,7 +1378,11 @@ static int WINAPI int_func( int a0, int a1, int a2, int a3, int a4 )
 {
     ok( a0 == 1, "wrong arg0 %x\n", a0 );
     ok( a1 == -1, "wrong arg1 %x\n", a1 );
+#ifdef __arm__  /* parameters are extended on arm */
+    ok( a2 == 1234, "wrong arg2 %x\n", a2 );
+#else
     ok( a2 == (0x55550000 | 1234), "wrong arg2 %x\n", a2 );
+#endif
     ok( a3 == 0xdeadbeef, "wrong arg3 %x\n", a3 );
     ok( a4 == 0x555555fd, "wrong arg4 %x\n", a4 );
     return 4321;
@@ -1226,16 +1420,13 @@ static VARIANT WINAPI variant_func( int a0, BOOL a1, DECIMAL a2, VARIANT a3 )
 
 static int CDECL void_func( int a0, int a1 )
 {
-    if (is_win64)  /* VT_EMPTY is passed as real arg on win64 */
-    {
-        ok( a0 == 0x55555555, "wrong arg0 %x\n", a0 );
-        ok( a1 == 1111, "wrong arg1 %x\n", a1 );
-    }
-    else
-    {
-        ok( a0 == 1111, "wrong arg0 %x\n", a0 );
-        ok( a1 == 0, "wrong arg1 %x\n", a1 );
-    }
+#ifdef __i386__
+    ok( a0 == 1111, "wrong arg0 %x\n", a0 );
+    ok( a1 == 0, "wrong arg1 %x\n", a1 );
+#else  /* VT_EMPTY is passed as real arg on other platforms */
+    ok( a0 == 0x55555555, "wrong arg0 %x\n", a0 );
+    ok( a1 == 1111, "wrong arg1 %x\n", a1 );
+#endif
     return 12;
 }
 
@@ -1433,11 +1624,11 @@ static void test_DispCallFunc(void)
     res = DispCallFunc( NULL, (ULONG_PTR)void_func, CC_CDECL, VT_EMPTY, 5, types, pargs, &result );
     ok( res == S_OK, "DispCallFunc failed %lx\n", res );
     ok( V_VT(&result) == VT_EMPTY, "wrong result type %d\n", V_VT(&result) );
-    if (is_win64)
-        ok( V_UI4(&result) == 12, "wrong result %08lx\n", V_UI4(&result) );
-    else
-        ok( V_UI4(&result) == 0xcccccccc, "wrong result %08lx\n", V_UI4(&result) );
-
+#ifdef __i386__
+    ok( V_UI4(&result) == 0xcccccccc, "wrong result %08lx\n", V_UI4(&result) );
+#else
+    ok( V_UI4(&result) == 12, "wrong result %08lx\n", V_UI4(&result) );
+#endif
     memset( args, 0x55, sizeof(args) );
     types[0] = VT_I4;
     V_I4(&args[0]) = 3;

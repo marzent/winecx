@@ -22,6 +22,7 @@
 #include "dshow.h"
 #include "dmo.h"
 #include "dmodshow.h"
+#include "mferror.h"
 #include "wine/strmbase.h"
 #include "wine/test.h"
 
@@ -81,6 +82,8 @@ static unsigned int got_Flush, got_Discontinuity, got_ProcessInput, got_ProcessO
 static IMediaBuffer *testdmo_buffer;
 
 static int testmode;
+static HRESULT process_output_hr = S_OK;
+static HRESULT sink_receive_hr = S_OK;
 
 static HRESULT WINAPI dmo_inner_QueryInterface(IUnknown *iface, REFIID iid, void **out)
 {
@@ -391,33 +394,30 @@ static HRESULT WINAPI dmo_ProcessOutput(IMediaObject *iface, DWORD flags,
         buffers[0].dwStatus |= DMO_OUTPUT_DATA_BUFFERF_INCOMPLETE;
         return S_OK;
     }
-    else if (testmode == 5)
+    if (testmode == 5)
     {
         hr = IMediaBuffer_SetLength(buffers[0].pBuffer, 0);
         ok(hr == S_OK, "Got hr %#lx.\n", hr);
         IMediaBuffer_Release(testdmo_buffer);
         return S_FALSE;
     }
-    else
-    {
-        if (testmode == 7)
-            buffers[0].dwStatus |= DMO_OUTPUT_DATA_BUFFERF_SYNCPOINT;
-        else if (testmode == 8)
-            buffers[0].dwStatus = DMO_OUTPUT_DATA_BUFFERF_TIME;
-        else if (testmode == 9)
-            buffers[0].dwStatus = 0;
 
-        for (i = 0; i < 300; ++i)
-            data[i] = 111 - i;
-        hr = IMediaBuffer_SetLength(buffers[0].pBuffer, 300);
-        ok(hr == S_OK, "Got hr %#lx.\n", hr);
-        if (testdmo_buffer)
-            IMediaBuffer_Release(testdmo_buffer);
-        testdmo_buffer = NULL;
-        return S_OK;
-    }
+    if (testmode == 7)
+        buffers[0].dwStatus |= DMO_OUTPUT_DATA_BUFFERF_SYNCPOINT;
+    else if (testmode == 8)
+        buffers[0].dwStatus = DMO_OUTPUT_DATA_BUFFERF_TIME;
+    else if (testmode == 9)
+        buffers[0].dwStatus = 0;
 
-    return S_OK;
+    for (i = 0; i < 300; ++i)
+        data[i] = 111 - i;
+    hr = IMediaBuffer_SetLength(buffers[0].pBuffer, 300);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    if (testdmo_buffer)
+        IMediaBuffer_Release(testdmo_buffer);
+    testdmo_buffer = NULL;
+
+    return process_output_hr;
 }
 
 static HRESULT WINAPI dmo_Lock(IMediaObject *iface, LONG lock)
@@ -1122,6 +1122,7 @@ struct testfilter
     struct strmbase_sink sink;
     const AM_MEDIA_TYPE *sink_mt;
     unsigned int got_new_segment, got_eos, got_begin_flush, got_end_flush;
+    HANDLE event;
 };
 
 static inline struct testfilter *impl_from_strmbase_filter(struct strmbase_filter *iface)
@@ -1145,6 +1146,7 @@ static void testfilter_destroy(struct strmbase_filter *iface)
     strmbase_source_cleanup(&filter->source);
     strmbase_sink_cleanup(&filter->sink);
     strmbase_filter_cleanup(&filter->filter);
+    CloseHandle(filter->event);
 }
 
 static const struct strmbase_filter_ops testfilter_ops =
@@ -1199,6 +1201,7 @@ static HRESULT testsink_get_media_type(struct strmbase_pin *iface, unsigned int 
 
 static HRESULT WINAPI testsink_Receive(struct strmbase_sink *iface, IMediaSample *sample)
 {
+    struct testfilter *filter = impl_from_strmbase_filter(iface->pin.filter);
     REFERENCE_TIME start, stop;
     LONG len, i;
     HRESULT hr;
@@ -1257,7 +1260,10 @@ static HRESULT WINAPI testsink_Receive(struct strmbase_sink *iface, IMediaSample
     if (testmode == 10)
         testmode = 11;
 
-    return S_OK;
+    if (testmode == 13 && got_Receive > 1)
+        WaitForSingleObject(filter->event, INFINITE);
+
+    return sink_receive_hr;
 }
 
 static HRESULT testsink_new_segment(struct strmbase_sink *iface,
@@ -1311,6 +1317,7 @@ static void testfilter_init(struct testfilter *filter)
     strmbase_filter_init(&filter->filter, NULL, &clsid, &testfilter_ops);
     strmbase_source_init(&filter->source, &filter->filter, L"source", &testsource_ops);
     strmbase_sink_init(&filter->sink, &filter->filter, L"sink", &testsink_ops, NULL);
+    filter->event = CreateEventA(NULL, TRUE, FALSE, NULL);
 }
 
 static void test_sink_allocator(IMemInputPin *input)
@@ -1518,15 +1525,46 @@ static void test_filter_state(IMediaControl *control)
     ok(state == State_Stopped, "Got state %lu.\n", state);
 }
 
-static void test_sample_processing(IMediaControl *control, IMemInputPin *input,
-        struct testfilter *testsink)
+struct receive_proc_arg
 {
+    IMemInputPin *input_pin;
+    IMediaSample *sample;
+};
+
+static DWORD WINAPI receive_proc(void *arg)
+{
+    struct receive_proc_arg *proc_arg = arg;
+    HRESULT hr;
+
+    hr = IMemInputPin_Receive(proc_arg->input_pin, proc_arg->sample);
+    ok(hr == S_OK, "Receive returned %#lx.\n", hr);
+
+    return 0;
+}
+
+static DWORD WINAPI stop_filter_proc(void *arg)
+{
+    IBaseFilter *filter = arg;
+    HRESULT hr;
+
+    hr = IBaseFilter_Stop(filter);
+    ok(hr == S_OK, "Stop returned %#lx.\n", hr);
+
+    return 0;
+}
+
+static void test_sample_processing(IMediaControl *control, IMemInputPin *input,
+        struct testfilter *testsink, IBaseFilter *dmo_filter)
+{
+    struct receive_proc_arg receive_proc_arg;
+    HANDLE stop_thread, receive_thread;
     REFERENCE_TIME start, stop;
     IMemAllocator *allocator;
     IMediaSample *sample;
     LONG size, i;
     HRESULT hr;
     BYTE *data;
+    DWORD ret;
 
     hr = IMemInputPin_ReceiveCanBlock(input);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
@@ -1661,6 +1699,116 @@ static void test_sample_processing(IMediaControl *control, IMemInputPin *input,
     ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
     got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
 
+    /* Test receive with downstream input allocator decommitted. */
+    hr = IMemAllocator_Decommit(testsink->sink.pAllocator);
+    ok(hr == S_OK, "Decommit returned %#lx.\n", hr);
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == VFW_E_NOT_COMMITTED, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 0, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 0, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 0, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    hr = IMemAllocator_Commit(testsink->sink.pAllocator);
+    ok(hr == S_OK, "Commit returned %#lx.\n", hr);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    /* Test receive with filter stopped. */
+    hr = IBaseFilter_Stop(dmo_filter);
+    ok(hr == S_OK, "Stop returned %#lx.\n", hr);
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == VFW_E_WRONG_STATE, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 0, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 0, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 0, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 0, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    hr = IMediaControl_Run(control);
+    ok(hr == S_OK, "Run returned %#lx.\n", hr);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    /* Test stop filter during receiving. */
+    testmode = 13;
+    /* Call Receive() in new thread, it will be blocked
+     * by event waiting in testsink_Receive(). */
+    receive_proc_arg.input_pin = input;
+    receive_proc_arg.sample = sample;
+    receive_thread = CreateThread(NULL, 0, receive_proc, &receive_proc_arg, 0, NULL);
+    ok(!!receive_thread, "CreateThread returned NULL thread.\n");
+    ret = WaitForSingleObject(receive_thread, 200);
+    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %#lx.\n", ret);
+    /* Call Stop() in new thread, it will be blocked
+     * because Receive() is still processing. */
+    stop_thread = CreateThread(NULL, 0, stop_filter_proc, dmo_filter, 0, NULL);
+    ok(!!stop_thread, "CreateThread returned NULL thread.\n");
+    ret = WaitForSingleObject(stop_thread, 200);
+    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %#lx.\n", ret);
+    /* Signal event to end Receive(). */
+    SetEvent(testsink->event);
+    ret = WaitForSingleObject(receive_thread, 200);
+    ok(ret == WAIT_OBJECT_0, "WaitForSingleObject returned %#lx.\n", ret);
+    ret = WaitForSingleObject(stop_thread, 200);
+    ok(ret == WAIT_OBJECT_0, "WaitForSingleObject returned %#lx.\n", ret);
+    hr = IMediaControl_Pause(control);
+    ok(hr == S_OK, "Pause returned %#lx.\n", hr);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    testmode = 0xdeadbeef;
+
+    /* Test Receive if downstream Receive fails. */
+    sink_receive_hr = E_FAIL;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == E_FAIL, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 0, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 1, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 1, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    /* Test Receive if downstream Receive return S_FALSE. */
+    sink_receive_hr = S_FALSE;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == S_FALSE, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 0, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 1, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 1, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    sink_receive_hr = S_OK;
+
+    /* Test Receive if ProcessOutput return S_FALSE. */
+    process_output_hr = S_FALSE;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == S_OK, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 1, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 2, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 2, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    /* Test Receive if ProcessOutput fails. */
+    process_output_hr = E_FAIL;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == S_OK, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 1, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 2, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 0, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    /* Test Receive if ProcessOutput needs more inputs. */
+    process_output_hr = MF_E_TRANSFORM_NEED_MORE_INPUT;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == S_OK, "Receive returned %#lx.\n", hr);
+    ok(got_ProcessInput == 1, "Got %u calls to ProcessInput().\n", got_ProcessInput);
+    ok(got_ProcessOutput == 2, "Got %u calls to ProcessOutput().\n", got_ProcessOutput);
+    ok(got_Receive == 0, "Got %u calls to Receive().\n", got_Receive);
+    ok(got_Discontinuity == 1, "Got %u calls to Discontinuity().\n", got_Discontinuity);
+    got_ProcessInput = got_ProcessOutput = got_Receive = got_Discontinuity = 0;
+
+    process_output_hr = S_OK;
+
+    CloseHandle(stop_thread);
+    CloseHandle(receive_thread);
     hr = IMediaControl_Stop(control);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
     IMediaSample_Release(sample);
@@ -1732,7 +1880,7 @@ static void test_streaming_events(IMediaControl *control, IPin *sink, IMemInputP
     ok(testsink2->got_begin_flush == 1, "Got %u calls to IPin::BeginFlush().\n", testsink2->got_begin_flush);
 
     hr = IMemInputPin_Receive(input, sample);
-    todo_wine ok(hr == S_FALSE, "Got hr %#lx.\n", hr);
+    ok(hr == S_FALSE, "Got hr %#lx.\n", hr);
 
     hr = IPin_EndOfStream(sink);
     todo_wine ok(hr == S_FALSE, "Got hr %#lx.\n", hr);
@@ -1882,7 +2030,7 @@ static void test_connect_pin(void)
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
 
     test_filter_state(control);
-    test_sample_processing(control, meminput, &testsink);
+    test_sample_processing(control, meminput, &testsink, filter);
 
     /* Streaming event tests are more interesting if multiple source pins are
      * connected. */

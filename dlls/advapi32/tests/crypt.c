@@ -315,6 +315,14 @@ static void test_incorrect_api_usage(void)
     result = CryptGenKey(0, CALG_RC4, 0, &hKey);
     ok (!result && GetLastError() == ERROR_INVALID_PARAMETER, "%ld\n", GetLastError());
 
+    dwLen = 0;
+    SetLastError(0xdeadbeef);
+    result = CryptDecrypt(hKey, 0, FALSE, 0, &temp, &dwLen);
+    ok (result, "%lx\n", GetLastError());
+    dwLen = 0;
+    SetLastError(0xdeadbeef);
+    result = CryptDecrypt(hKey, 0, TRUE, 0, &temp, &dwLen);
+    ok (!result && GetLastError() == NTE_BAD_LEN, "%lx\n", GetLastError());
     dwLen = 1;
     result = CryptDecrypt(hKey, 0, TRUE, 0, &temp, &dwLen);
     ok (result, "%ld\n", GetLastError());
@@ -1260,10 +1268,10 @@ static void test_container_sd(void)
     ok(err == ERROR_INSUFFICIENT_BUFFER || broken(err == ERROR_INVALID_PARAMETER), "got %lu\n", err);
     ok(len, "expected len > 0\n");
 
-    sd = HeapAlloc(GetProcessHeap(), 0, len);
+    sd = malloc(len);
     ret = CryptGetProvParam(prov, PP_KEYSET_SEC_DESCR, (BYTE *)sd, &len, OWNER_SECURITY_INFORMATION);
     ok(ret, "got %lu\n", GetLastError());
-    HeapFree(GetProcessHeap(), 0, sd);
+    free(sd);
 
     ret = CryptReleaseContext(prov, 0);
     ok(ret, "got %lu\n", GetLastError());

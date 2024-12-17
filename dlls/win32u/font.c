@@ -85,6 +85,7 @@ struct gdi_font_face
     UINT          face_index;
     FONTSIGNATURE fs;
     UINT          ntmFlags;
+    UINT          weight;
     UINT          version;
     UINT          flags;                 /* ADDFONT flags */
     BOOL          scalable;
@@ -462,10 +463,6 @@ static const struct nls_update_font_list
 
 static pthread_mutex_t font_lock = PTHREAD_MUTEX_INITIALIZER;
 
-#ifndef WINE_FONT_DIR
-#define WINE_FONT_DIR "fonts"
-#endif
-
 #ifdef WORDS_BIGENDIAN
 #define GET_BE_WORD(x) (x)
 #define GET_BE_DWORD(x) (x)
@@ -476,20 +473,12 @@ static pthread_mutex_t font_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void get_fonts_data_dir_path( const WCHAR *file, WCHAR *path )
 {
-    const char *dir;
+    const char *dir = ntdll_get_build_dir();
     ULONG len = MAX_PATH;
 
-    if ((dir = ntdll_get_data_dir()))
-    {
-        wine_unix_to_nt_file_name( dir, path, &len );
-        asciiz_to_unicode( path + len - 1, "\\" WINE_FONT_DIR "\\" );
-    }
-    else if ((dir = ntdll_get_build_dir()))
-    {
-        wine_unix_to_nt_file_name( dir, path, &len );
-        asciiz_to_unicode( path + len - 1, "\\fonts\\" );
-    }
-
+    if (!dir) dir = ntdll_get_data_dir();
+    wine_unix_to_nt_file_name( dir, path, &len );
+    asciiz_to_unicode( path + len - 1, "\\fonts\\" );
     if (file) lstrcatW( path, file );
 }
 
@@ -514,6 +503,12 @@ HKEY reg_open_key( HKEY root, const WCHAR *name, ULONG name_len )
 
     if (NtOpenKeyEx( &ret, MAXIMUM_ALLOWED, &attr, 0 )) return 0;
     return ret;
+}
+
+HKEY reg_open_ascii_key( HKEY root, const char *name )
+{
+    WCHAR nameW[MAX_PATH];
+    return reg_open_key( root, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) );
 }
 
 /* wrapper for NtCreateKey that creates the key recursively if necessary */
@@ -565,10 +560,17 @@ HKEY reg_create_key( HKEY root, const WCHAR *name, ULONG name_len,
     return ret;
 }
 
+HKEY reg_create_ascii_key( HKEY root, const char *name, DWORD options,
+                           DWORD *disposition )
+{
+    WCHAR nameW[MAX_PATH];
+    return reg_create_key( root, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR),
+                           options, disposition );
+}
+
 HKEY reg_open_hkcu_key( const char *name )
 {
-    WCHAR nameW[128];
-    return reg_open_key( hkcu_key, nameW, asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) );
+    return reg_open_ascii_key( hkcu_key, name );
 }
 
 BOOL set_reg_value( HKEY hkey, const WCHAR *name, UINT type, const void *value, DWORD count )
@@ -1250,7 +1252,7 @@ static BOOL insert_face_in_family_list( struct gdi_font_face *face, struct gdi_f
 static struct gdi_font_face *create_face( struct gdi_font_family *family, const WCHAR *style,
                                           const WCHAR *fullname, const WCHAR *file,
                                           void *data_ptr, SIZE_T data_size, UINT index, FONTSIGNATURE fs,
-                                          DWORD ntmflags, DWORD version, DWORD flags,
+                                          DWORD ntmflags, DWORD weight, DWORD version, DWORD flags,
                                           const struct bitmap_font_size *size )
 {
     struct gdi_font_face *face = calloc( 1, sizeof(*face) );
@@ -1261,6 +1263,7 @@ static struct gdi_font_face *create_face( struct gdi_font_family *family, const 
     face->face_index = index;
     face->fs         = fs;
     face->ntmFlags   = ntmflags;
+    face->weight     = weight;
     face->version    = version;
     face->flags      = flags;
     face->data_ptr   = data_ptr;
@@ -1276,7 +1279,7 @@ static struct gdi_font_face *create_face( struct gdi_font_family *family, const 
 int add_gdi_face( const WCHAR *family_name, const WCHAR *second_name,
                   const WCHAR *style, const WCHAR *fullname, const WCHAR *file,
                   void *data_ptr, SIZE_T data_size, UINT index, FONTSIGNATURE fs,
-                  DWORD ntmflags, DWORD version, DWORD flags,
+                  DWORD ntmflags, DWORD weight, DWORD version, DWORD flags,
                   const struct bitmap_font_size *size )
 {
     struct gdi_font_face *face;
@@ -1287,7 +1290,7 @@ int add_gdi_face( const WCHAR *family_name, const WCHAR *second_name,
     else if (!(family = create_family( family_name, second_name ))) return ret;
 
     if ((face = create_face( family, style, fullname, file, data_ptr, data_size,
-                             index, fs, ntmflags, version, flags, size )))
+                             index, fs, ntmflags, weight, version, flags, size )))
     {
         if (flags & ADDFONT_ADD_TO_CACHE) add_face_to_cache( face );
         release_face( face );
@@ -1320,7 +1323,7 @@ int add_gdi_face( const WCHAR *family_name, const WCHAR *second_name,
         else if (!(family = create_family( vert_family, vert_second ))) return ret;
 
         if ((face = create_face( family, style, fullname, file, data_ptr, data_size,
-                                 index, fs, ntmflags, version, flags | ADDFONT_VERTICAL_FONT, size )))
+                                 index, fs, ntmflags, weight, version, flags | ADDFONT_VERTICAL_FONT, size )))
         {
             if (flags & ADDFONT_ADD_TO_CACHE) add_face_to_cache( face );
             release_face( face );
@@ -1338,6 +1341,7 @@ struct cached_face
     DWORD                   index;
     DWORD                   flags;
     DWORD                   ntmflags;
+    DWORD                   weight;
     DWORD                   version;
     struct bitmap_font_size size;
     FONTSIGNATURE           fs;
@@ -1365,8 +1369,8 @@ static void load_face_from_cache( HKEY hkey_family, struct gdi_font_family *fami
             ((DWORD *)cached)[info->DataLength / sizeof(DWORD)] = 0;
             if ((face = create_face( family, name, cached->full_name,
                                      cached->full_name + lstrlenW(cached->full_name) + 1,
-                                     NULL, 0, cached->index, cached->fs, cached->ntmflags, cached->version,
-                                     cached->flags, scalable ? NULL : &cached->size )))
+                                     NULL, 0, cached->index, cached->fs, cached->ntmflags, cached->weight,
+                                     cached->version, cached->flags, scalable ? NULL : &cached->size )))
             {
                 if (!scalable)
                     TRACE("Adding bitmap size h %d w %d size %d x_ppem %d y_ppem %d\n",
@@ -1446,7 +1450,7 @@ static void add_face_to_cache( struct gdi_font_face *face )
         WCHAR nameW[10];
         char name[10];
 
-        sprintf( name, "%d", face->size.y_ppem );
+        snprintf( name, sizeof(name), "%d", face->size.y_ppem );
         hkey_face = reg_create_key( hkey_family, nameW,
                                     asciiz_to_unicode( nameW, name ) - sizeof(WCHAR),
                                     REG_OPTION_VOLATILE, NULL );
@@ -1457,6 +1461,7 @@ static void add_face_to_cache( struct gdi_font_face *face )
     cached->index = face->face_index;
     cached->flags = face->flags;
     cached->ntmflags = face->ntmFlags;
+    cached->weight = face->weight;
     cached->version = face->version;
     cached->fs = face->fs;
     if (!face->scalable) cached->size = face->size;
@@ -1484,7 +1489,7 @@ static void remove_face_from_cache( struct gdi_font_face *face )
     {
         WCHAR nameW[10];
         char name[10];
-        sprintf( name, "%d", face->size.y_ppem );
+        snprintf( name, sizeof(name), "%d", face->size.y_ppem );
         if ((hkey = reg_open_key( hkey_family, nameW,
                                   asciiz_to_unicode( nameW, name ) - sizeof(WCHAR) )))
         {
@@ -2529,7 +2534,7 @@ static struct gdi_font *create_gdi_font( const struct gdi_font_face *face, const
     font->fs = face->fs;
     font->lf = *lf;
     font->fake_italic = (lf->lfItalic && !(face->ntmFlags & NTM_ITALIC));
-    font->fake_bold = (lf->lfWeight > 550 && !(face->ntmFlags & NTM_BOLD));
+    font->fake_bold = lf->lfWeight > 550 && !(face->ntmFlags & NTM_BOLD) && face->weight < 550;
     font->scalable = face->scalable;
     font->face_index = face->face_index;
     font->ntmFlags = face->ntmFlags;
@@ -2952,17 +2957,32 @@ static void create_child_font_list( struct gdi_font *font )
             add_child_font( font, entry->family_name );
     }
     /*
-     * if not SYMBOL or OEM then we also get all the fonts for Microsoft
-     * Sans Serif.  This is how asian windows get default fallbacks for fonts
+     * if not SYMBOL or OEM then we also get Microsoft Sans Serif
+     * and all its fonts. This is how asian windows get default
+     * fallbacks for fonts. We also include Tahoma and its fonts
+     * as a backup.
      */
-    if (ansi_cp.MaximumCharacterSize == 2 && font->charset != SYMBOL_CHARSET && font->charset != OEM_CHARSET &&
-        facename_compare( font_name, microsoft_sans_serifW, -1 ) != 0)
+    if (font->charset != SYMBOL_CHARSET && font->charset != OEM_CHARSET)
     {
-        if ((font_link = find_gdi_font_link( microsoft_sans_serifW )))
+        if (facename_compare( font_name, microsoft_sans_serifW, -1 ) != 0)
         {
-            TRACE("found entry in default fallback list\n");
-            LIST_FOR_EACH_ENTRY( entry, &font_link->links, struct gdi_font_link_entry, entry )
-                add_child_font( font, entry->family_name );
+            add_child_font( font, microsoft_sans_serifW );
+            if ((font_link = find_gdi_font_link( microsoft_sans_serifW )))
+            {
+                TRACE("found entry in default fallback list\n");
+                LIST_FOR_EACH_ENTRY( entry, &font_link->links, struct gdi_font_link_entry, entry )
+                    add_child_font( font, entry->family_name );
+            }
+        }
+        if (facename_compare( font_name, tahomaW, -1 ) != 0)
+        {
+            add_child_font( font, tahomaW );
+            if ((font_link = find_gdi_font_link( tahomaW )))
+            {
+                TRACE("found entry in default fallback list\n");
+                LIST_FOR_EACH_ENTRY( entry, &font_link->links, struct gdi_font_link_entry, entry )
+                    add_child_font( font, entry->family_name );
+            }
         }
     }
 }
@@ -3216,7 +3236,7 @@ static void update_codepage( UINT screen_dpi )
         RtlInitCodePageTable( NtCurrentTeb()->Peb->OemCodePageData, &oem_cp );
     else
         oem_cp = utf8_cp;
-    sprintf( cpbuf, "%u,%u", ansi_cp.CodePage, oem_cp.CodePage );
+    snprintf( cpbuf, sizeof(cpbuf), "%u,%u", ansi_cp.CodePage, oem_cp.CodePage );
     asciiz_to_unicode( cpbufW, cpbuf );
 
     if (query_reg_ascii_value( wine_fonts_key, "Codepages", info, sizeof(value_buffer) ))
@@ -4858,11 +4878,6 @@ const struct gdi_dc_funcs font_driver =
     NULL,                           /* pStrokeAndFillPath */
     NULL,                           /* pStrokePath */
     NULL,                           /* pUnrealizePalette */
-    NULL,                           /* pD3DKMTCheckVidPnExclusiveOwnership */
-    NULL,                           /* pD3DKMTCloseAdapter */
-    NULL,                           /* pD3DKMTOpenAdapterFromLuid */
-    NULL,                           /* pD3DKMTQueryVideoMemoryInfo */
-    NULL,                           /* pD3DKMTSetVidPnSourceOwner */
     GDI_PRIORITY_FONT_DRV           /* priority */
 };
 
@@ -6742,6 +6757,14 @@ static void update_external_font_keys(void)
         list_add_tail( &external_keys, &key->entry );
     }
 
+    LIST_FOR_EACH_ENTRY_SAFE( key, next, &external_keys, struct external_key, entry )
+    {
+        reg_delete_value( win9x_key, key->value );
+        reg_delete_value( winnt_key, key->value );
+        reg_delete_value( hkey, key->value );
+        list_remove( &key->entry );
+        free( key );
+    }
     WINE_RB_FOR_EACH_ENTRY( family, &family_name_tree, struct gdi_font_family, name_entry )
     {
         LIST_FOR_EACH_ENTRY( face, &family->faces, struct gdi_font_face, entry )
@@ -6767,14 +6790,6 @@ static void update_external_font_keys(void)
             set_reg_value( win9x_key, value, REG_SZ, file, len );
             set_reg_value( hkey, value, REG_SZ, file, len );
         }
-    }
-    LIST_FOR_EACH_ENTRY_SAFE( key, next, &external_keys, struct external_key, entry )
-    {
-        reg_delete_value( win9x_key, key->value );
-        reg_delete_value( winnt_key, key->value );
-        reg_delete_value( hkey, key->value );
-        list_remove( &key->entry );
-        free( key );
     }
     NtClose( win9x_key );
     NtClose( winnt_key );
@@ -6845,11 +6860,11 @@ static HKEY open_hkcu(void)
         return 0;
 
     sid = ((TOKEN_USER *)sid_data)->User.Sid;
-    len = sprintf( buffer, "\\Registry\\User\\S-%u-%u", (int)sid->Revision,
+    len = snprintf( buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", (int)sid->Revision,
             (int)MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5], sid->IdentifierAuthority.Value[4] ),
                            MAKEWORD( sid->IdentifierAuthority.Value[3], sid->IdentifierAuthority.Value[2] )));
     for (i = 0; i < sid->SubAuthorityCount; i++)
-        len += sprintf( buffer + len, "-%u", (int)sid->SubAuthority[i] );
+        len += snprintf( buffer + len, sizeof(buffer) - len, "-%u", (int)sid->SubAuthority[i] );
     ascii_to_unicode( bufferW, buffer, len + 1 );
 
     return reg_open_key( NULL, bufferW, len * sizeof(WCHAR) );
@@ -7162,9 +7177,10 @@ BOOL WINAPI NtGdiGetCharWidthInfo( HDC hdc, struct char_width_info *info )
 INT WINAPI DrawTextW( HDC hdc, const WCHAR *str, INT count, RECT *rect, UINT flags )
 {
     struct draw_text_params *params;
+    struct draw_text_result *result;
     ULONG ret_len, size;
-    void *ret_ptr;
-    int ret;
+    NTSTATUS status;
+    int ret = 0;
 
     if (count == -1) count = wcslen( str );
     size = FIELD_OFFSET( struct draw_text_params, str[count] );
@@ -7173,8 +7189,13 @@ INT WINAPI DrawTextW( HDC hdc, const WCHAR *str, INT count, RECT *rect, UINT fla
     params->rect = *rect;
     params->flags = flags;
     if (count) memcpy( params->str, str, count * sizeof(WCHAR) );
-    ret = KeUserModeCallback( NtUserDrawText, params, size, &ret_ptr, &ret_len );
-    if (ret_len == sizeof(*rect)) *rect = *(const RECT *)ret_ptr;
+
+    status = KeUserModeCallback( NtUserDrawText, params, size, (void **)&result, &ret_len );
+    if (!status && ret_len == sizeof(*result))
+    {
+        ret = result->height;
+        *rect = result->rect;
+    }
     free( params );
     return ret;
 }

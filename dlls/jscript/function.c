@@ -64,6 +64,19 @@ typedef struct {
 } BindFunction;
 
 typedef struct {
+    FunctionInstance function;
+    const WCHAR *name;
+    UINT32 id;
+    UINT32 iid;
+    UINT32 flags;
+} HostFunction;
+
+typedef struct {
+    FunctionInstance function;
+    IWineJSDispatchHost *host_iface;
+} HostConstructor;
+
+typedef struct {
     jsdisp_t jsdisp;
     jsval_t *buf;
     scope_chain_t *scope;
@@ -115,14 +128,18 @@ static void Arguments_destructor(jsdisp_t *jsdisp)
 
     if(arguments->scope)
         scope_release(arguments->scope);
-
-    free(arguments);
 }
 
-static unsigned Arguments_idx_length(jsdisp_t *jsdisp)
+static HRESULT Arguments_lookup_prop(jsdisp_t *jsdisp, const WCHAR *name, unsigned flags, struct property_info *desc)
 {
     ArgumentsInstance *arguments = arguments_from_jsdisp(jsdisp);
-    return arguments->argc;
+    return jsdisp_index_lookup(&arguments->jsdisp, name, arguments->argc, desc);
+}
+
+static HRESULT Arguments_next_prop(jsdisp_t *jsdisp, unsigned id, struct property_info *desc)
+{
+    ArgumentsInstance *arguments = arguments_from_jsdisp(jsdisp);
+    return jsdisp_next_index(&arguments->jsdisp, arguments->argc, id, desc);
 }
 
 static jsval_t *get_argument_ref(ArgumentsInstance *arguments, unsigned idx)
@@ -134,7 +151,7 @@ static jsval_t *get_argument_ref(ArgumentsInstance *arguments, unsigned idx)
     return arguments->scope->detached_vars->var + idx;
 }
 
-static HRESULT Arguments_idx_get(jsdisp_t *jsdisp, unsigned idx, jsval_t *r)
+static HRESULT Arguments_prop_get(jsdisp_t *jsdisp, unsigned idx, jsval_t *r)
 {
     ArgumentsInstance *arguments = arguments_from_jsdisp(jsdisp);
 
@@ -143,7 +160,7 @@ static HRESULT Arguments_idx_get(jsdisp_t *jsdisp, unsigned idx, jsval_t *r)
     return jsval_copy(*get_argument_ref(arguments, idx), r);
 }
 
-static HRESULT Arguments_idx_put(jsdisp_t *jsdisp, unsigned idx, jsval_t val)
+static HRESULT Arguments_prop_put(jsdisp_t *jsdisp, unsigned idx, jsval_t val)
 {
     ArgumentsInstance *arguments = arguments_from_jsdisp(jsdisp);
     jsval_t copy, *ref;
@@ -184,16 +201,59 @@ static HRESULT Arguments_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op 
     return S_OK;
 }
 
+static HRESULT Arguments_get_caller(script_ctx_t *ctx, jsdisp_t *jsthis, jsval_t *r)
+{
+    ArgumentsInstance *arguments = arguments_from_jsdisp(jsthis);
+    call_frame_t *frame;
+    HRESULT hres;
+
+    TRACE("\n");
+
+    for(frame = ctx->call_ctx; frame; frame = frame->prev_frame) {
+        if(frame->arguments_obj == &arguments->jsdisp) {
+            frame = frame->prev_frame;
+            if(!frame || !frame->function_instance)
+                break;
+            if(!frame->arguments_obj) {
+                hres = setup_arguments_object(ctx, frame);
+                if(FAILED(hres))
+                    return hres;
+            }
+            *r = jsval_obj(jsdisp_addref(frame->arguments_obj));
+            return S_OK;
+        }
+    }
+
+    *r = jsval_null();
+    return S_OK;
+}
+
+static const builtin_prop_t Arguments_props[] = {
+    {L"caller",              NULL, 0,                        Arguments_get_caller},
+};
+
 static const builtin_info_t Arguments_info = {
-    JSCLASS_ARGUMENTS,
-    Arguments_value,
-    0, NULL,
-    Arguments_destructor,
-    NULL,
-    Arguments_idx_length,
-    Arguments_idx_get,
-    Arguments_idx_put,
-    Arguments_gc_traverse
+    .class       = JSCLASS_ARGUMENTS,
+    .call        = Arguments_value,
+    .props_cnt   = ARRAY_SIZE(Arguments_props),
+    .props       = Arguments_props,
+    .destructor  = Arguments_destructor,
+    .lookup_prop = Arguments_lookup_prop,
+    .next_prop   = Arguments_next_prop,
+    .prop_get    = Arguments_prop_get,
+    .prop_put    = Arguments_prop_put,
+    .gc_traverse = Arguments_gc_traverse
+};
+
+static const builtin_info_t Arguments_ES5_info = {
+    .class       = JSCLASS_ARGUMENTS,
+    .call        = Arguments_value,
+    .destructor  = Arguments_destructor,
+    .lookup_prop = Arguments_lookup_prop,
+    .next_prop   = Arguments_next_prop,
+    .prop_get    = Arguments_prop_get,
+    .prop_put    = Arguments_prop_put,
+    .gc_traverse = Arguments_gc_traverse
 };
 
 HRESULT setup_arguments_object(script_ctx_t *ctx, call_frame_t *frame)
@@ -205,7 +265,7 @@ HRESULT setup_arguments_object(script_ctx_t *ctx, call_frame_t *frame)
     if(!args)
         return E_OUTOFMEMORY;
 
-    hres = init_dispex_from_constr(&args->jsdisp, ctx, &Arguments_info, ctx->object_constr);
+    hres = init_dispex_from_constr(&args->jsdisp, ctx, ctx->version < SCRIPTLANGUAGEVERSION_ES5 ? &Arguments_info : &Arguments_ES5_info, ctx->object_constr);
     if(FAILED(hres)) {
         free(args);
         return hres;
@@ -306,6 +366,30 @@ static HRESULT Function_get_length(script_ctx_t *ctx, jsdisp_t *jsthis, jsval_t 
     TRACE("%p\n", jsthis);
 
     *r = jsval_number(function_from_jsdisp(jsthis)->length);
+    return S_OK;
+}
+
+static HRESULT native_function_string(const WCHAR *name, jsstr_t **ret)
+{
+    DWORD name_len;
+    jsstr_t *str;
+    WCHAR *ptr;
+
+    static const WCHAR native_prefixW[] = L"\nfunction ";
+    static const WCHAR native_suffixW[] = L"() {\n    [native code]\n}\n";
+
+    name_len = name ? lstrlenW(name) : 0;
+    str = jsstr_alloc_buf(ARRAY_SIZE(native_prefixW) + ARRAY_SIZE(native_suffixW) + name_len - 2, &ptr);
+    if(!str)
+        return E_OUTOFMEMORY;
+
+    memcpy(ptr, native_prefixW, sizeof(native_prefixW));
+    ptr += ARRAY_SIZE(native_prefixW) - 1;
+    memcpy(ptr, name, name_len * sizeof(WCHAR));
+    ptr += name_len;
+    memcpy(ptr, native_suffixW, sizeof(native_suffixW));
+
+    *ret = str;
     return S_OK;
 }
 
@@ -582,7 +666,6 @@ static void Function_destructor(jsdisp_t *dispex)
 {
     FunctionInstance *function = function_from_jsdisp(dispex);
     function->vtbl->destructor(function);
-    free(function);
 }
 
 static HRESULT Function_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, jsdisp_t *dispex)
@@ -602,16 +685,12 @@ static const builtin_prop_t Function_props[] = {
 };
 
 static const builtin_info_t Function_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(Function_props),
-    Function_props,
-    Function_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    Function_gc_traverse
+    .class       = JSCLASS_FUNCTION,
+    .call        = Function_value,
+    .props_cnt   = ARRAY_SIZE(Function_props),
+    .props       = Function_props,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse
 };
 
 static const builtin_prop_t FunctionInst_props[] = {
@@ -621,16 +700,12 @@ static const builtin_prop_t FunctionInst_props[] = {
 };
 
 static const builtin_info_t FunctionInst_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(FunctionInst_props),
-    FunctionInst_props,
-    Function_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    Function_gc_traverse
+    .class       = JSCLASS_FUNCTION,
+    .call        = Function_value,
+    .props_cnt   = ARRAY_SIZE(FunctionInst_props),
+    .props       = FunctionInst_props,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse
 };
 
 static HRESULT create_function(script_ctx_t *ctx, const builtin_info_t *builtin_info, const function_vtbl_t *vtbl, size_t size,
@@ -675,26 +750,7 @@ static HRESULT NativeFunction_call(script_ctx_t *ctx, FunctionInstance *func, js
 static HRESULT NativeFunction_toString(FunctionInstance *func, jsstr_t **ret)
 {
     NativeFunction *function = (NativeFunction*)func;
-    DWORD name_len;
-    jsstr_t *str;
-    WCHAR *ptr;
-
-    static const WCHAR native_prefixW[] = L"\nfunction ";
-    static const WCHAR native_suffixW[] = L"() {\n    [native code]\n}\n";
-
-    name_len = function->name ? lstrlenW(function->name) : 0;
-    str = jsstr_alloc_buf(ARRAY_SIZE(native_prefixW) + ARRAY_SIZE(native_suffixW) + name_len - 2, &ptr);
-    if(!str)
-        return E_OUTOFMEMORY;
-
-    memcpy(ptr, native_prefixW, sizeof(native_prefixW));
-    ptr += ARRAY_SIZE(native_prefixW) - 1;
-    memcpy(ptr, function->name, name_len*sizeof(WCHAR));
-    ptr += name_len;
-    memcpy(ptr, native_suffixW, sizeof(native_suffixW));
-
-    *ret = str;
-    return S_OK;
+    return native_function_string(function->name, ret);
 }
 
 static function_code_t *NativeFunction_get_code(FunctionInstance *function)
@@ -808,16 +864,12 @@ static const builtin_prop_t InterpretedFunction_props[] = {
 };
 
 static const builtin_info_t InterpretedFunction_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(InterpretedFunction_props),
-    InterpretedFunction_props,
-    Function_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    Function_gc_traverse
+    .class       = JSCLASS_FUNCTION,
+    .call        = Function_value,
+    .props_cnt   = ARRAY_SIZE(InterpretedFunction_props),
+    .props       = InterpretedFunction_props,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse
 };
 
 static HRESULT InterpretedFunction_call(script_ctx_t *ctx, FunctionInstance *func, jsval_t vthis, unsigned flags,
@@ -923,6 +975,241 @@ HRESULT create_source_function(script_ctx_t *ctx, bytecode_t *code, function_cod
     return S_OK;
 }
 
+static const builtin_info_t HostFunction_info = {
+    .class       = JSCLASS_FUNCTION,
+    .call        = Function_value,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse
+};
+
+static HRESULT HostFunction_call(script_ctx_t *ctx, FunctionInstance *func, jsval_t vthis, unsigned flags,
+         unsigned argc, jsval_t *argv, jsval_t *r)
+{
+    HostFunction *function = (HostFunction*)func;
+    VARIANT buf[6], retv;
+    DISPPARAMS dp = { .cArgs = argc, .rgvarg = buf };
+    IWineJSDispatchHost *obj;
+    EXCEPINFO ei = { 0 };
+    IDispatch *this_obj;
+    HRESULT hres = S_OK;
+    unsigned i;
+
+    if(flags & DISPATCH_CONSTRUCT)
+        return E_UNEXPECTED;
+
+    if(is_object_instance(vthis))
+        this_obj = get_object(vthis);
+    else if(is_undefined(vthis) || is_null(vthis))
+        this_obj = lookup_global_host(ctx);
+    else
+        return E_UNEXPECTED;
+
+    obj = get_host_dispatch(this_obj);
+    if(!obj) {
+        TRACE("no host dispatch\n");
+        return E_UNEXPECTED;
+    }
+
+    if(argc > ARRAYSIZE(buf) && !(dp.rgvarg = malloc(argc * sizeof(*dp.rgvarg)))) {
+        IWineJSDispatchHost_Release(obj);
+        return E_OUTOFMEMORY;
+    }
+
+    for(i = 0; i < argc; i++) {
+        hres = jsval_to_variant(argv[i], &dp.rgvarg[dp.cArgs - i - 1]);
+        if(FAILED(hres))
+            break;
+    }
+
+    if(SUCCEEDED(hres)) {
+        V_VT(&retv) = VT_EMPTY;
+        hres = IWineJSDispatchHost_CallFunction(obj, function->id, function->iid, function->flags, &dp,
+                                                r ? &retv : NULL, &ei, &ctx->jscaller->IServiceProvider_iface);
+        if(hres == DISP_E_EXCEPTION)
+            handle_dispatch_exception(ctx, &ei);
+        if(SUCCEEDED(hres) && r) {
+            hres = variant_to_jsval(ctx, &retv, r);
+            VariantClear(&retv);
+        }
+    }
+
+    while(i--)
+        VariantClear(&dp.rgvarg[dp.cArgs - i - 1]);
+    if(dp.rgvarg != buf)
+        free(dp.rgvarg);
+    IWineJSDispatchHost_Release(obj);
+    return hres;
+}
+
+static HRESULT HostFunction_toString(FunctionInstance *func, jsstr_t **ret)
+{
+    HostFunction *function = (HostFunction*)func;
+    return native_function_string(function->name, ret);
+}
+
+static function_code_t *HostFunction_get_code(FunctionInstance *function)
+{
+    return NULL;
+}
+
+static void HostFunction_destructor(FunctionInstance *func)
+{
+}
+
+static HRESULT HostFunction_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, FunctionInstance *func)
+{
+    return S_OK;
+}
+
+static const function_vtbl_t HostFunctionVtbl = {
+    HostFunction_call,
+    HostFunction_toString,
+    HostFunction_get_code,
+    HostFunction_destructor,
+    HostFunction_gc_traverse
+};
+
+HRESULT create_host_function(script_ctx_t *ctx, const struct property_info *desc, DWORD flags, jsdisp_t **ret)
+{
+    HostFunction *function;
+    HRESULT hres;
+
+    if(!ctx->function_constr)
+        return E_UNEXPECTED;
+
+    hres = create_function(ctx, &HostFunction_info, &HostFunctionVtbl, sizeof(HostFunction), PROPF_METHOD,
+                           FALSE, NULL, (void**)&function);
+    if(FAILED(hres))
+        return hres;
+
+    function->name = desc->name;
+    function->id = desc->id;
+    function->iid = desc->iid;
+    function->flags = flags;
+    *ret = &function->function.dispex;
+    return S_OK;
+}
+
+static ULONG HostConstructor_addref(jsdisp_t *jsdisp)
+{
+    HostConstructor *constr = (HostConstructor*)jsdisp;
+    return IWineJSDispatchHost_AddRef(constr->host_iface);
+}
+
+static ULONG HostConstructor_release(jsdisp_t *jsdisp)
+{
+    HostConstructor *constr = (HostConstructor*)jsdisp;
+    return IWineJSDispatchHost_Release(constr->host_iface);
+}
+
+static HRESULT HostConstructor_lookup_prop(jsdisp_t *jsdisp, const WCHAR *name, unsigned flags, struct property_info *desc)
+{
+    HostConstructor *constr = (HostConstructor*)jsdisp;
+    HRESULT hres = IWineJSDispatchHost_LookupProperty(constr->host_iface, name, flags, desc);
+    assert(hres != S_OK || (desc->flags & PROPF_METHOD)); /* external properties are not allowed */
+    return hres;
+}
+
+static const builtin_info_t HostConstructor_info = {
+    .class       = JSCLASS_FUNCTION,
+    .addref      = HostConstructor_addref,
+    .release     = HostConstructor_release,
+    .call        = Function_value,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse,
+    .lookup_prop = HostConstructor_lookup_prop,
+};
+
+static HRESULT HostConstructor_call(script_ctx_t *ctx, FunctionInstance *func, jsval_t vthis, unsigned flags,
+         unsigned argc, jsval_t *argv, jsval_t *r)
+{
+    HostConstructor *function = (HostConstructor*)func;
+    VARIANT buf[6], ret;
+    DISPPARAMS dp = { .cArgs = argc, .rgvarg = buf };
+    EXCEPINFO ei = { 0 };
+    HRESULT hres = S_OK;
+    unsigned i;
+
+    flags &= ~DISPATCH_JSCRIPT_INTERNAL_MASK;
+    if(argc > ARRAYSIZE(buf) && !(dp.rgvarg = malloc(argc * sizeof(*dp.rgvarg))))
+        return E_OUTOFMEMORY;
+
+    for(i = 0; i < argc; i++) {
+        hres = jsval_to_variant(argv[i], &dp.rgvarg[dp.cArgs - i - 1]);
+        if(FAILED(hres))
+            break;
+    }
+
+    if(SUCCEEDED(hres)) {
+        V_VT(&ret) = VT_EMPTY;
+        hres = IWineJSDispatchHost_Construct(function->host_iface, ctx->lcid, flags, &dp, &ret, &ei,
+                                             &ctx->jscaller->IServiceProvider_iface);
+        if(hres == DISP_E_EXCEPTION)
+            handle_dispatch_exception(ctx, &ei);
+        if(SUCCEEDED(hres) && r) {
+            hres = variant_to_jsval(ctx, &ret, r);
+            VariantClear(&ret);
+        }
+    }
+
+    while(i--)
+        VariantClear(&dp.rgvarg[dp.cArgs - i - 1]);
+    if(dp.rgvarg != buf)
+        free(dp.rgvarg);
+    return hres;
+}
+
+static HRESULT HostConstructor_toString(FunctionInstance *function, jsstr_t **ret)
+{
+    *ret = jsstr_alloc(L"\nfunction() {\n    [native code]\n}\n");
+    return *ret ? S_OK : E_OUTOFMEMORY;
+}
+
+static function_code_t *HostConstructor_get_code(FunctionInstance *function)
+{
+    return NULL;
+}
+
+static void HostConstructor_destructor(FunctionInstance *func)
+{
+}
+
+static HRESULT HostConstructor_gc_traverse(struct gc_ctx *gc_ctx, enum gc_traverse_op op, FunctionInstance *func)
+{
+    return S_OK;
+}
+
+static const function_vtbl_t HostConstructorVtbl = {
+    HostConstructor_call,
+    HostConstructor_toString,
+    HostConstructor_get_code,
+    HostConstructor_destructor,
+    HostConstructor_gc_traverse
+};
+
+HRESULT init_host_constructor(script_ctx_t *ctx, IWineJSDispatchHost *host_constr, IWineJSDispatch *prototype,
+                              IWineJSDispatch **ret)
+{
+    HostConstructor *function;
+    HRESULT hres;
+
+    hres = create_function(ctx, &HostConstructor_info, &HostConstructorVtbl, sizeof(*function), PROPF_METHOD,
+                           FALSE, NULL, (void**)&function);
+    if(FAILED(hres))
+        return hres;
+    function->host_iface = host_constr;
+
+    hres = jsdisp_define_data_property(&function->function.dispex, L"prototype", PROPF_WRITABLE | PROPF_CONFIGURABLE,
+                                       jsval_disp((IDispatch *)prototype));
+    if(FAILED(hres)) {
+        IWineJSDispatch_Free(&function->function.dispex.IWineJSDispatch_iface);
+        return hres;
+    }
+
+    *ret = &function->function.dispex.IWineJSDispatch_iface;
+    return S_OK;
+}
+
 static HRESULT BindFunction_get_arguments(script_ctx_t *ctx, jsdisp_t *jsthis, jsval_t *r)
 {
     return JS_E_INVALID_ACTION;
@@ -940,16 +1227,12 @@ static const builtin_prop_t BindFunction_props[] = {
 };
 
 static const builtin_info_t BindFunction_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(BindFunction_props),
-    BindFunction_props,
-    Function_destructor,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    Function_gc_traverse
+    .class       = JSCLASS_FUNCTION,
+    .call        = Function_value,
+    .props_cnt   = ARRAY_SIZE(BindFunction_props),
+    .props       = BindFunction_props,
+    .destructor  = Function_destructor,
+    .gc_traverse = Function_gc_traverse
 };
 
 static HRESULT BindFunction_call(script_ctx_t *ctx, FunctionInstance *func, jsval_t vthis, unsigned flags,

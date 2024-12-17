@@ -1180,14 +1180,14 @@ HRESULT __RPC_STUB IDBAsynchStatus_GetStatus_Stub(IDBAsynchStatus* This, HCHAPTE
     return hr;
 }
 
-HRESULT CALLBACK IRowsetNotify_OnRowChange_Proxy(IRowsetNotify* This, IRowset *rowset, DBCOUNTITEM rows, HROW *hrows, DBREASON reason,
+HRESULT CALLBACK IRowsetNotify_OnRowChange_Proxy(IRowsetNotify* This, IRowset *rowset, DBCOUNTITEM rows, const HROW *hrows, DBREASON reason,
                                                  DBEVENTPHASE phase, BOOL cantdeny)
 {
     TRACE("(%p)->(%p %Id %p %ld %ld %d)\n", This, rowset, rows, hrows, reason, phase, cantdeny);
     return IRowsetNotify_RemoteOnRowChange_Proxy(This, rowset, rows, hrows, reason, phase, cantdeny);
 }
 
-HRESULT __RPC_STUB IRowsetNotify_OnRowChange_Stub(IRowsetNotify* This, IRowset *rowset, DBCOUNTITEM rows, HROW *hrows, DBREASON reason,
+HRESULT __RPC_STUB IRowsetNotify_OnRowChange_Stub(IRowsetNotify* This, IRowset *rowset, DBCOUNTITEM rows, const HROW *hrows, DBREASON reason,
                                                   DBEVENTPHASE phase, BOOL cantdeny)
 {
     TRACE("(%p)->(%p %Id %p %ld %ld %d)\n", This, rowset, rows, hrows, reason, phase, cantdeny);
@@ -1808,5 +1808,18 @@ HRESULT __RPC_STUB ITransactionObject_GetTransactionObject_Stub(ITransactionObje
     ULONG level, ITransaction **transaction, IErrorInfo **info)
 {
     FIXME("(%p)->(%ld, %p, %p): stub\n", This, level, transaction, info);
+    return E_NOTIMPL;
+}
+
+HRESULT CALLBACK IRowsetIdentity_IsSameRow_Proxy(IRowsetIdentity* This, HROW hThisRow, HROW hThatRow)
+{
+    FIXME("(%p)->(%Id, %Id): stub\n", This, hThisRow, hThatRow);
+    return E_NOTIMPL;
+}
+
+HRESULT __RPC_STUB IRowsetIdentity_IsSameRow_Stub(IRowsetIdentity* This, HROW hThisRow,
+    HROW hThatRow, IErrorInfo **error_info)
+{
+    FIXME("(%p)->(%Id, %Id, %p): stub\n", This, hThisRow, hThatRow, error_info);
     return E_NOTIMPL;
 }

@@ -1858,7 +1858,7 @@ BOOL WINAPI ImmGetConversionStatus( HIMC himc, DWORD *conversion, DWORD *sentenc
  */
 HWND WINAPI ImmGetDefaultIMEWnd(HWND hWnd)
 {
-    return NtUserGetDefaultImeWindow(hWnd);
+    return NtUserQueryWindow( hWnd, WindowDefaultImeWindow );
 }
 
 /***********************************************************************
@@ -2539,6 +2539,9 @@ BOOL WINAPI ImmSetCompositionStringA(
         return FALSE;
 
     if (!(ime = imc_select_ime( data ))) return FALSE;
+    if (!lpComp) dwCompLen = 0;
+    if (!lpRead) dwReadLen = 0;
+
     if (!ime_is_unicode( ime )) return ime->pImeSetCompositionString( hIMC, dwIndex, lpComp, dwCompLen, lpRead, dwReadLen );
 
     comp_len = MultiByteToWideChar(CP_ACP, 0, lpComp, dwCompLen, NULL, 0);
@@ -2596,6 +2599,9 @@ BOOL WINAPI ImmSetCompositionStringW(
         return FALSE;
 
     if (!(ime = imc_select_ime( data ))) return FALSE;
+    if (!lpComp) dwCompLen = 0;
+    if (!lpRead) dwReadLen = 0;
+
     if (ime_is_unicode( ime )) return ime->pImeSetCompositionString( hIMC, dwIndex, lpComp, dwCompLen, lpRead, dwReadLen );
 
     comp_len = WideCharToMultiByte(CP_ACP, 0, lpComp, dwCompLen, NULL, 0, NULL,
@@ -2631,6 +2637,7 @@ BOOL WINAPI ImmSetCompositionStringW(
 BOOL WINAPI ImmSetCompositionWindow( HIMC himc, COMPOSITIONFORM *composition )
 {
     INPUTCONTEXT *ctx;
+    RECT rect;
 
     TRACE( "himc %p, composition %s\n", himc, debugstr_composition( composition ) );
 
@@ -2642,6 +2649,14 @@ BOOL WINAPI ImmSetCompositionWindow( HIMC himc, COMPOSITIONFORM *composition )
 
     ImmNotifyIME( himc, NI_CONTEXTUPDATED, 0, IMC_SETCOMPOSITIONWINDOW );
     SendMessageW( ctx->hWnd, WM_IME_NOTIFY, IMN_SETCOMPOSITIONWINDOW, 0 );
+
+    if (composition->dwStyle & (CFS_RECT | CFS_POINT | CFS_FORCE_POSITION))
+    {
+        if (composition->dwStyle & CFS_RECT) rect = composition->rcArea;
+        else SetRect( &rect, composition->ptCurrentPos.x, composition->ptCurrentPos.y,
+                      composition->ptCurrentPos.x + 1, composition->ptCurrentPos.y + 1 );
+        NtUserCallTwoParam( (ULONG_PTR)ctx->hWnd, (ULONG_PTR)&rect, NtUserCallTwoParam_SetIMECompositionRect );
+    }
 
     ImmUnlockIMC( himc );
 
@@ -3099,7 +3114,7 @@ BOOL WINAPI ImmTranslateMessage( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
     if ((vkey = data->vkey) == VK_PROCESSKEY) return FALSE;
     data->vkey = VK_PROCESSKEY;
     GetKeyboardState( state );
-    scan = lparam >> 0x10;
+    scan = (lparam >> 0x10) & 0xffff;
 
     if (ime->info.fdwProperty & IME_PROP_KBD_CHAR_FIRST)
     {
@@ -3315,4 +3330,14 @@ LRESULT WINAPI __wine_ime_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
         return DefWindowProcA(hwnd, msg, wparam, lparam);
     else
         return DefWindowProcW(hwnd, msg, wparam, lparam);
+}
+
+/***********************************************************************
+ *      CtfImmIsCiceroEnabled (IMM32.@)
+ */
+BOOL WINAPI CtfImmIsCiceroEnabled(void)
+{
+    FIXME("(): stub\n");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
 }

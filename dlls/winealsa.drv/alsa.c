@@ -810,36 +810,6 @@ static NTSTATUS alsa_create_stream(void *args)
 
     params->result = S_OK;
 
-    if (params->share == AUDCLNT_SHAREMODE_SHARED) {
-        params->period = def_period;
-        if (params->duration < 3 * params->period)
-            params->duration = 3 * params->period;
-    } else {
-        if (fmtex->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-           (fmtex->dwChannelMask == 0 || fmtex->dwChannelMask & SPEAKER_RESERVED))
-            params->result = AUDCLNT_E_UNSUPPORTED_FORMAT;
-        else {
-            if (!params->period)
-                params->period = def_period;
-            if (params->period < min_period || params->period > 5000000)
-                params->result = AUDCLNT_E_INVALID_DEVICE_PERIOD;
-            else if (params->duration > 20000000) /* The smaller the period, the lower this limit. */
-                params->result = AUDCLNT_E_BUFFER_SIZE_ERROR;
-            else if (params->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) {
-                if (params->duration != params->period)
-                    params->result = AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL;
-
-                FIXME("EXCLUSIVE mode with EVENTCALLBACK\n");
-
-                params->result = AUDCLNT_E_DEVICE_IN_USE;
-            } else if (params->duration < 8 * params->period)
-                params->duration = 8 * params->period; /* May grow above 2s. */
-        }
-    }
-
-    if (FAILED(params->result))
-        return STATUS_SUCCESS;
-
     stream = calloc(1, sizeof(*stream));
     if(!stream){
         params->result = E_OUTOFMEMORY;
@@ -2014,7 +1984,7 @@ exit:
     if(params->result == S_FALSE && !params->fmt_out)
         params->result = AUDCLNT_E_UNSUPPORTED_FORMAT;
 
-    if(params->result == S_FALSE && params->fmt_out) {
+    if(params->result == S_FALSE) {
         closest->Format.nBlockAlign = closest->Format.nChannels * closest->Format.wBitsPerSample / 8;
         closest->Format.nAvgBytesPerSec = closest->Format.nBlockAlign * closest->Format.nSamplesPerSec;
         if(closest->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
@@ -2153,7 +2123,7 @@ static NTSTATUS alsa_get_device_period(void *args)
     if (params->def_period)
         *params->def_period = def_period;
     if (params->min_period)
-        *params->min_period = def_period;
+        *params->min_period = min_period;
 
     params->result = S_OK;
 
@@ -2521,6 +2491,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     alsa_get_capture_buffer,
     alsa_release_capture_buffer,
     alsa_is_format_supported,
+    alsa_not_implemented,
     alsa_get_mix_format,
     alsa_get_device_period,
     alsa_get_buffer_size,
@@ -2531,6 +2502,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     alsa_get_position,
     alsa_set_volumes,
     alsa_set_event_handle,
+    alsa_not_implemented,
     alsa_not_implemented,
     alsa_is_started,
     alsa_get_prop_value,
@@ -2977,6 +2949,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     alsa_wow64_get_capture_buffer,
     alsa_release_capture_buffer,
     alsa_wow64_is_format_supported,
+    alsa_not_implemented,
     alsa_wow64_get_mix_format,
     alsa_wow64_get_device_period,
     alsa_wow64_get_buffer_size,
@@ -2987,6 +2960,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     alsa_wow64_get_position,
     alsa_wow64_set_volumes,
     alsa_wow64_set_event_handle,
+    alsa_not_implemented,
     alsa_not_implemented,
     alsa_is_started,
     alsa_wow64_get_prop_value,

@@ -36,7 +36,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(scroll);
 #define SCROLL_MIN_RECT  4
 
 /* Minimum size of the thumb in pixels */
-#define SCROLL_MIN_THUMB 8
+#define SCROLL_MIN_THUMB 17
 
 /* Overlap between arrows and thumb */
 #define SCROLL_ARROW_THUMB_OVERLAP 0
@@ -61,6 +61,9 @@ static struct SCROLL_TRACKING_INFO g_tracking_info;
 
 /* Is the moving thumb being displayed? */
 static BOOL scroll_moving_thumb = FALSE;
+
+/* is there currently a running timer for scrolling delay ?*/
+static BOOL scroll_timer_running = FALSE;
 
 /* data for window that has (one or two) scroll bars */
 struct win_scroll_bar_info
@@ -193,7 +196,7 @@ static BOOL get_scroll_bar_rect( HWND hwnd, int bar, RECT *rect, int *arrow_size
     switch(bar)
     {
     case SB_HORZ:
-        get_window_rects( hwnd, COORDS_WINDOW, NULL, rect, get_thread_dpi() );
+        get_client_rect_rel( hwnd, COORDS_WINDOW, rect, get_thread_dpi() );
         rect->top = rect->bottom;
         rect->bottom += get_system_metrics( SM_CYHSCROLL );
         if (win->dwStyle & WS_VSCROLL) rect->right++;
@@ -201,7 +204,7 @@ static BOOL get_scroll_bar_rect( HWND hwnd, int bar, RECT *rect, int *arrow_size
         break;
 
     case SB_VERT:
-        get_window_rects( hwnd, COORDS_WINDOW, NULL, rect, get_thread_dpi() );
+        get_client_rect_rel( hwnd, COORDS_WINDOW, rect, get_thread_dpi() );
         if (win->dwExStyle & WS_EX_LEFTSCROLLBAR)
         {
             rect->right = rect->left;
@@ -217,7 +220,7 @@ static BOOL get_scroll_bar_rect( HWND hwnd, int bar, RECT *rect, int *arrow_size
         break;
 
     case SB_CTL:
-        get_client_rect( hwnd, rect );
+        get_client_rect( hwnd, rect, get_thread_dpi() );
         vertical = (win->dwStyle & SBS_VERT) != 0;
         break;
 
@@ -309,7 +312,7 @@ static void draw_scroll_bar( HWND hwnd, HDC hdc, int bar, enum SCROLL_HITTEST hi
 
     if (bar == SB_CTL && get_window_long( hwnd, GWL_STYLE ) & (SBS_SIZEGRIP | SBS_SIZEBOX))
     {
-        get_client_rect( hwnd, &params.rect );
+        get_client_rect( hwnd, &params.rect, get_thread_dpi() );
         params.arrow_size = 0;
         params.thumb_pos = 0;
         params.thumb_size = 0;
@@ -512,6 +515,25 @@ static POINT clip_scroll_pos( RECT *rect, POINT pt )
     return pt;
 }
 
+void update_scroll_timer(HWND hwnd, HWND owner_hwnd, HWND ctl_hwnd, enum SCROLL_HITTEST hittest, UINT msg, UINT msg_send, BOOL vertical )
+{
+    if (hittest == g_tracking_info.hit_test)
+    {
+        if (!scroll_timer_running || msg == WM_LBUTTONDOWN || msg == WM_SYSTIMER)
+        {
+            send_message( owner_hwnd, vertical ? WM_VSCROLL : WM_HSCROLL, msg_send, (LPARAM)ctl_hwnd );
+            scroll_timer_running = TRUE;
+            NtUserSetSystemTimer( hwnd, SCROLL_TIMER,
+                    msg == WM_LBUTTONDOWN ? SCROLL_FIRST_DELAY : SCROLL_REPEAT_DELAY );
+        }
+    }
+    else
+    {
+        scroll_timer_running = FALSE;
+        NtUserKillSystemTimer( hwnd, SCROLL_TIMER );
+    }
+}
+
 /***********************************************************************
  *           handle_scroll_event
  *
@@ -558,7 +580,7 @@ void handle_scroll_event( HWND hwnd, int bar, UINT msg, POINT pt )
             g_tracking_info.hit_test = hittest = SCROLL_THUMB;
             break;
         case WM_MOUSEMOVE:
-            get_client_rect( get_parent( get_parent( hwnd )), &rect );
+            get_client_rect( get_parent( get_parent( hwnd )), &rect, get_thread_dpi() );
             prev_pt = pt;
             break;
         case WM_LBUTTONUP:
@@ -681,33 +703,12 @@ void handle_scroll_event( HWND hwnd, int bar, UINT msg, POINT pt )
 
     case SCROLL_TOP_ARROW:
         draw_scroll_bar( hwnd, hdc, bar, hittest, &g_tracking_info, TRUE, FALSE );
-        if (hittest == g_tracking_info.hit_test)
-        {
-            if ((msg == WM_LBUTTONDOWN) || (msg == WM_SYSTIMER))
-            {
-                send_message( owner_hwnd, vertical ? WM_VSCROLL : WM_HSCROLL,
-                              SB_LINEUP, (LPARAM)ctl_hwnd );
-            }
-
-            NtUserSetSystemTimer( hwnd, SCROLL_TIMER,
-                                  msg == WM_LBUTTONDOWN ? SCROLL_FIRST_DELAY : SCROLL_REPEAT_DELAY );
-        }
-        else NtUserKillSystemTimer( hwnd, SCROLL_TIMER );
+        update_scroll_timer( hwnd, owner_hwnd, ctl_hwnd, hittest, msg, SB_LINEUP, vertical );
         break;
 
     case SCROLL_TOP_RECT:
         draw_scroll_bar( hwnd, hdc, bar, hittest, &g_tracking_info, FALSE, TRUE );
-        if (hittest == g_tracking_info.hit_test)
-        {
-            if (msg == WM_LBUTTONDOWN || msg == WM_SYSTIMER)
-            {
-                send_message( owner_hwnd, vertical ? WM_VSCROLL : WM_HSCROLL,
-                              SB_PAGEUP, (LPARAM)ctl_hwnd );
-            }
-            NtUserSetSystemTimer( hwnd, SCROLL_TIMER,
-                                  msg == WM_LBUTTONDOWN ? SCROLL_FIRST_DELAY : SCROLL_REPEAT_DELAY );
-        }
-        else NtUserKillSystemTimer( hwnd, SCROLL_TIMER );
+        update_scroll_timer( hwnd, owner_hwnd, ctl_hwnd, hittest, msg, SB_PAGEUP, vertical );
         break;
 
     case SCROLL_THUMB:
@@ -755,33 +756,12 @@ void handle_scroll_event( HWND hwnd, int bar, UINT msg, POINT pt )
 
     case SCROLL_BOTTOM_RECT:
         draw_scroll_bar( hwnd, hdc, bar, hittest, &g_tracking_info, FALSE, TRUE );
-        if (hittest == g_tracking_info.hit_test)
-        {
-            if (msg == WM_LBUTTONDOWN || msg == WM_SYSTIMER)
-            {
-                send_message( owner_hwnd, vertical ? WM_VSCROLL : WM_HSCROLL,
-                              SB_PAGEDOWN, (LPARAM)ctl_hwnd );
-            }
-            NtUserSetSystemTimer( hwnd, SCROLL_TIMER,
-                                  msg == WM_LBUTTONDOWN ? SCROLL_FIRST_DELAY : SCROLL_REPEAT_DELAY );
-        }
-        else NtUserKillSystemTimer( hwnd, SCROLL_TIMER );
+        update_scroll_timer( hwnd, owner_hwnd, ctl_hwnd, hittest, msg, SB_PAGEDOWN, vertical );
         break;
 
     case SCROLL_BOTTOM_ARROW:
         draw_scroll_bar( hwnd, hdc, bar, hittest, &g_tracking_info, TRUE, FALSE );
-        if (hittest == g_tracking_info.hit_test)
-        {
-            if (msg == WM_LBUTTONDOWN || msg == WM_SYSTIMER)
-            {
-                send_message( owner_hwnd, vertical ? WM_VSCROLL : WM_HSCROLL,
-                              SB_LINEDOWN, (LPARAM)ctl_hwnd );
-            }
-
-            NtUserSetSystemTimer( hwnd, SCROLL_TIMER,
-                                  msg == WM_LBUTTONDOWN ? SCROLL_FIRST_DELAY : SCROLL_REPEAT_DELAY );
-        }
-        else NtUserKillSystemTimer( hwnd, SCROLL_TIMER );
+        update_scroll_timer( hwnd, owner_hwnd, ctl_hwnd, hittest, msg, SB_LINEDOWN, vertical );
         break;
     }
 
@@ -816,6 +796,7 @@ void handle_scroll_event( HWND hwnd, int bar, UINT msg, POINT pt )
         /* Terminate tracking */
         g_tracking_info.win = 0;
         scroll_moving_thumb = FALSE;
+        scroll_timer_running = FALSE;
         hittest = SCROLL_NOWHERE;
         draw_scroll_bar( hwnd, hdc, bar, hittest, &g_tracking_info, TRUE, TRUE );
     }
@@ -836,7 +817,7 @@ void track_scroll_bar( HWND hwnd, int scrollbar, POINT pt )
 
     if (scrollbar != SB_CTL)
     {
-        get_window_rects( hwnd, COORDS_CLIENT, &rect, NULL, get_thread_dpi() );
+        get_window_rect_rel( hwnd, COORDS_CLIENT, &rect, get_thread_dpi() );
         screen_to_client( hwnd, &pt );
         pt.x -= rect.left;
         pt.y -= rect.top;
@@ -1043,6 +1024,24 @@ done:
             refresh_scroll_bar( hwnd, bar, TRUE, TRUE );
         else if (action & SA_SSI_REPAINT_ARROWS)
             refresh_scroll_bar( hwnd, bar, TRUE, FALSE );
+
+        if (redraw)
+        {
+            switch (bar)
+            {
+                case SB_CTL:
+                    NtUserNotifyWinEvent( EVENT_OBJECT_VALUECHANGE, hwnd, OBJID_CLIENT, 0 );
+                    break;
+                case SB_HORZ:
+                    if (get_window_long( hwnd, GWL_STYLE ) & WS_HSCROLL)
+                        NtUserNotifyWinEvent( EVENT_OBJECT_VALUECHANGE, hwnd, OBJID_HSCROLL, 0 );
+                    break;
+                case SB_VERT:
+                    if (get_window_long( hwnd, GWL_STYLE ) & WS_VSCROLL)
+                        NtUserNotifyWinEvent( EVENT_OBJECT_VALUECHANGE, hwnd, OBJID_VSCROLL, 0 );
+                    break;
+            }
+        }
     }
 
     return ret; /* Return current position */

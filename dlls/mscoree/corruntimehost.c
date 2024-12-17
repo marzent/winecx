@@ -814,8 +814,12 @@ static ULONG WINAPI CLRRuntimeHost_Release(ICLRRuntimeHost* iface)
 
 static HRESULT WINAPI CLRRuntimeHost_Start(ICLRRuntimeHost* iface)
 {
-    FIXME("(%p)\n", iface);
-    return E_NOTIMPL;
+    RuntimeHost *This = impl_from_ICLRRuntimeHost( iface );
+    MonoDomain *dummy;
+
+    TRACE("%p\n", This);
+
+    return RuntimeHost_GetDefaultDomain(This, NULL, &dummy);
 }
 
 static HRESULT WINAPI CLRRuntimeHost_Stop(ICLRRuntimeHost* iface)
@@ -1592,7 +1596,7 @@ HRESULT RuntimeHost_Construct(CLRRuntimeInfo *runtime_version, RuntimeHost** res
 
     This->ref = 1;
     This->version = runtime_version;
-    InitializeCriticalSection(&This->lock);
+    InitializeCriticalSectionEx(&This->lock, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     This->lock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": RuntimeHost.lock");
 
     *result = This;
@@ -1734,8 +1738,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
     WCHAR codebase[MAX_PATH + 8];
     WCHAR classname[350], subkeyName[256];
     WCHAR filename[MAX_PATH];
-
-    DWORD dwBufLen = 350;
+    DWORD dwBufLen;
 
     lstrcpyW(path, wszCLSIDSlash);
     StringFromGUID2(clsid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
@@ -1754,7 +1757,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             HRESULT (WINAPI *pDllGetClassObject)(REFCLSID,REFIID,LPVOID*);
             IClassFactory *classfactory;
 
-            dwBufLen = ARRAY_SIZE( filename );
+            dwBufLen = sizeof( filename );
             res = RegGetValueW( subkey, NULL, NULL, RRF_RT_REG_SZ, NULL, filename, &dwBufLen );
 
             RegCloseKey( subkey );
@@ -1792,6 +1795,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             goto cleanup;
         }
 
+        dwBufLen = sizeof( classname );
         res = RegGetValueW( key, NULL, L"Class", RRF_RT_REG_SZ, NULL, classname, &dwBufLen);
         if(res != ERROR_SUCCESS)
         {
@@ -1802,7 +1806,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
 
         TRACE("classname (%s)\n", debugstr_w(classname));
 
-        dwBufLen = MAX_PATH + 8;
+        dwBufLen = sizeof( codebase );
         res = RegGetValueW( key, NULL, L"CodeBase", RRF_RT_REG_SZ, NULL, codebase, &dwBufLen);
         if(res == ERROR_SUCCESS)
         {
@@ -1812,7 +1816,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
 
             lstrcpyW(filename, codebase + offset);
 
-            file = CreateFileW(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
+            file = CreateFileW(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
         }
 
         if (file != INVALID_HANDLE_VALUE)
@@ -1837,7 +1841,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
                 res = RegOpenKeyExW(key, subkeyName, 0, KEY_READ, &subkey);
                 if (res != ERROR_SUCCESS)
                     goto cleanup;
-                dwBufLen = MAX_PATH + 8;
+                dwBufLen = sizeof( assemblyname );
                 res = RegGetValueW(subkey, NULL, L"Assembly", RRF_RT_REG_SZ, NULL, assemblyname, &dwBufLen);
                 RegCloseKey(subkey);
                 if (res != ERROR_SUCCESS)
@@ -1845,7 +1849,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             }
             else
             {
-                dwBufLen = MAX_PATH + 8;
+                dwBufLen = sizeof( assemblyname );
                 res = RegGetValueW(key, NULL, L"Assembly", RRF_RT_REG_SZ, NULL, assemblyname, &dwBufLen);
                 if (res != ERROR_SUCCESS)
                     goto cleanup;

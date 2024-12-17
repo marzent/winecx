@@ -87,6 +87,8 @@ static const struct vkd3d_format vkd3d_formats[] =
     {DXGI_FORMAT_R8_SNORM,              VK_FORMAT_R8_SNORM,                 1,  1, 1,  1, COLOR, 1},
     {DXGI_FORMAT_R8_SINT,               VK_FORMAT_R8_SINT,                  1,  1, 1,  1, COLOR, 1, SINT},
     {DXGI_FORMAT_A8_UNORM,              VK_FORMAT_R8_UNORM,                 1,  1, 1,  1, COLOR, 1},
+    {DXGI_FORMAT_B5G6R5_UNORM,          VK_FORMAT_R5G6B5_UNORM_PACK16,      2,  1, 1,  1, COLOR, 1},
+    {DXGI_FORMAT_B5G5R5A1_UNORM,        VK_FORMAT_A1R5G5B5_UNORM_PACK16,    2,  1, 1,  1, COLOR, 1},
     {DXGI_FORMAT_B8G8R8A8_UNORM,        VK_FORMAT_B8G8R8A8_UNORM,           4,  1, 1,  1, COLOR, 1},
     {DXGI_FORMAT_B8G8R8X8_UNORM,        VK_FORMAT_B8G8R8A8_UNORM,           4,  1, 1,  1, COLOR, 1},
     {DXGI_FORMAT_B8G8R8A8_TYPELESS,     VK_FORMAT_B8G8R8A8_UNORM,           4,  1, 1,  1, COLOR, 1, TYPELESS},
@@ -115,6 +117,9 @@ static const struct vkd3d_format vkd3d_formats[] =
     {DXGI_FORMAT_BC7_UNORM,             VK_FORMAT_BC7_UNORM_BLOCK,          1,  4, 4, 16, COLOR, 1},
     {DXGI_FORMAT_BC7_UNORM_SRGB,        VK_FORMAT_BC7_SRGB_BLOCK,           1,  4, 4, 16, COLOR, 1},
 };
+
+static const struct vkd3d_format format_b4g4r4a4 =
+    {DXGI_FORMAT_B4G4R4A4_UNORM,        VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT, 2,  1, 1,  1, COLOR, 1};
 
 /* Each depth/stencil format is only compatible with itself in Vulkan. */
 static const struct vkd3d_format vkd3d_depth_stencil_formats[] =
@@ -326,7 +331,7 @@ static HRESULT vkd3d_init_format_compatibility_lists(struct d3d12_device *device
 
         if (j >= current_list->format_count)
         {
-            assert(current_list->format_count < VKD3D_MAX_COMPATIBLE_FORMAT_COUNT);
+            VKD3D_ASSERT(current_list->format_count < VKD3D_MAX_COMPATIBLE_FORMAT_COUNT);
             current_list->vk_formats[current_list->format_count++] = vk_format;
         }
     }
@@ -422,7 +427,7 @@ static const struct vkd3d_format *vkd3d_get_depth_stencil_format(const struct d3
     const struct vkd3d_format *formats;
     unsigned int i;
 
-    assert(device);
+    VKD3D_ASSERT(device);
     formats = device->depth_stencil_formats;
 
     for (i = 0; i < ARRAY_SIZE(vkd3d_depth_stencil_formats); ++i)
@@ -448,6 +453,11 @@ const struct vkd3d_format *vkd3d_get_format(const struct d3d12_device *device,
         if (vkd3d_formats[i].dxgi_format == dxgi_format)
             return &vkd3d_formats[i];
     }
+
+    /* Do not check VkPhysicalDevice4444FormatsFeaturesEXT because apps
+     * should query format support, which returns more detailed info. */
+    if (dxgi_format == format_b4g4r4a4.dxgi_format && device->vk_info.EXT_4444_formats)
+        return &format_b4g4r4a4;
 
     return NULL;
 }
@@ -539,6 +549,7 @@ bool is_valid_feature_level(D3D_FEATURE_LEVEL feature_level)
 {
     static const D3D_FEATURE_LEVEL valid_feature_levels[] =
     {
+        D3D_FEATURE_LEVEL_12_2,
         D3D_FEATURE_LEVEL_12_1,
         D3D_FEATURE_LEVEL_12_0,
         D3D_FEATURE_LEVEL_11_1,
@@ -548,6 +559,7 @@ bool is_valid_feature_level(D3D_FEATURE_LEVEL feature_level)
         D3D_FEATURE_LEVEL_9_3,
         D3D_FEATURE_LEVEL_9_2,
         D3D_FEATURE_LEVEL_9_1,
+        D3D_FEATURE_LEVEL_1_0_CORE,
     };
     unsigned int i;
 
@@ -630,6 +642,11 @@ HRESULT return_interface(void *iface, REFIID iface_iid,
     return hr;
 }
 
+const char *debug_cpu_handle(D3D12_CPU_DESCRIPTOR_HANDLE handle)
+{
+    return vkd3d_dbg_sprintf("{%#"PRIxPTR"}", (uintptr_t)handle.ptr);
+}
+
 const char *debug_d3d12_box(const D3D12_BOX *box)
 {
     if (!box)
@@ -671,6 +688,11 @@ const char *debug_d3d12_shader_component_mapping(unsigned int mapping)
             debug_d3d12_shader_component(D3D12_DECODE_SHADER_4_COMPONENT_MAPPING(3, mapping)));
 }
 
+const char *debug_gpu_handle(D3D12_GPU_DESCRIPTOR_HANDLE handle)
+{
+    return vkd3d_dbg_sprintf("{%#"PRIx64"}", handle.ptr);
+}
+
 const char *debug_vk_extent_3d(VkExtent3D extent)
 {
     return vkd3d_dbg_sprintf("(%u, %u, %u)",
@@ -681,7 +703,7 @@ const char *debug_vk_extent_3d(VkExtent3D extent)
 
 const char *debug_vk_queue_flags(VkQueueFlags flags)
 {
-    char buffer[120];
+    char buffer[191];
 
     buffer[0] = '\0';
 #define FLAG_TO_STR(f) if (flags & f) { strcat(buffer, " | "#f); flags &= ~f; }
@@ -689,6 +711,11 @@ const char *debug_vk_queue_flags(VkQueueFlags flags)
     FLAG_TO_STR(VK_QUEUE_COMPUTE_BIT)
     FLAG_TO_STR(VK_QUEUE_TRANSFER_BIT)
     FLAG_TO_STR(VK_QUEUE_SPARSE_BINDING_BIT)
+    FLAG_TO_STR(VK_QUEUE_PROTECTED_BIT)
+#undef FLAG_TO_STR
+#define FLAG_TO_STR(f, n) if (flags & f) { strcat(buffer, " | "#n); flags &= ~f; }
+    FLAG_TO_STR(0x20, VK_QUEUE_VIDEO_DECODE_BIT_KHR)
+    FLAG_TO_STR(0x40, VK_QUEUE_VIDEO_ENCODE_BIT_KHR)
 #undef FLAG_TO_STR
     if (flags)
         FIXME("Unrecognized flag(s) %#x.\n", flags);
@@ -727,10 +754,8 @@ const char *debug_vk_memory_property_flags(VkMemoryPropertyFlags flags)
     FLAG_TO_STR(VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
     FLAG_TO_STR(VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
     FLAG_TO_STR(VK_MEMORY_PROPERTY_PROTECTED_BIT)
-#undef FLAG_TO_STR
-#define FLAG_TO_STR(f, n) if (flags & f) { strcat(buffer, " | "#n); flags &= ~f; }
-    FLAG_TO_STR(0x40, VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
-    FLAG_TO_STR(0x80, VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD)
+    FLAG_TO_STR(VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD)
+    FLAG_TO_STR(VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD)
 #undef FLAG_TO_STR
     if (flags)
         FIXME("Unrecognized flag(s) %#x.\n", flags);
@@ -874,6 +899,30 @@ bool vkd3d_get_program_name(char program_name[PATH_MAX])
     strncpy(program_name, name, PATH_MAX);
     program_name[PATH_MAX - 1] = '\0';
     free(real_path);
+    return true;
+}
+
+#elif defined(WIN32)
+
+bool vkd3d_get_program_name(char program_name[PATH_MAX])
+{
+    char buffer[MAX_PATH];
+    char *p, *name;
+    size_t len;
+
+    *program_name = '\0';
+    len = GetModuleFileNameA(NULL, buffer, ARRAY_SIZE(buffer));
+    if (!(len && len < MAX_PATH))
+        return false;
+
+    name = buffer;
+    if ((p = strrchr(name, '/')))
+        name = p + 1;
+    if ((p = strrchr(name, '\\')))
+        name = p + 1;
+
+    len = strlen(name) + 1;
+    memcpy(program_name, name, len);
     return true;
 }
 

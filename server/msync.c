@@ -611,8 +611,6 @@ const struct object_ops msync_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
-    NULL,                      /* get_esync_fd */
-    msync_get_msync_idx,       /* get_msync_idx */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -626,7 +624,9 @@ const struct object_ops msync_ops =
     no_open_file,              /* open_file */
     no_kernel_obj_list,        /* get_kernel_obj_list */
     no_close_handle,           /* close_handle */
-    msync_destroy              /* destroy */
+    msync_destroy,             /* destroy */
+    NULL,                      /* get_esync_fd */
+    msync_get_msync_idx,       /* get_msync_idx */
 };
 
 static void msync_dump( struct object *obj, int verbose )

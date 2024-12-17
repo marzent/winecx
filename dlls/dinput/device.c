@@ -812,6 +812,7 @@ static HRESULT check_property( struct dinput_device *impl, const GUID *guid, con
     case (DWORD_PTR)DIPROP_LOGICALRANGE:
     case (DWORD_PTR)DIPROP_PHYSICALRANGE:
     case (DWORD_PTR)DIPROP_APPDATA:
+    case (DWORD_PTR)DIPROP_SCANCODE:
         if (impl->dinput->dwVersion < 0x0800) return DIERR_UNSUPPORTED;
         break;
     }
@@ -885,10 +886,10 @@ static HRESULT check_property( struct dinput_device *impl, const GUID *guid, con
         break;
 
     case (DWORD_PTR)DIPROP_KEYNAME:
+    case (DWORD_PTR)DIPROP_SCANCODE:
         if (header->dwHow == DIPH_DEVICE) return DIERR_INVALIDPARAM;
         break;
 
-    case (DWORD_PTR)DIPROP_SCANCODE:
     case (DWORD_PTR)DIPROP_APPDATA:
         if (header->dwHow == DIPH_DEVICE) return DIERR_UNSUPPORTED;
         break;
@@ -899,7 +900,7 @@ static HRESULT check_property( struct dinput_device *impl, const GUID *guid, con
         switch (LOWORD( guid ))
         {
         case (DWORD_PTR)DIPROP_AUTOCENTER:
-            if (impl->status == STATUS_ACQUIRED && !is_exclusively_acquired( impl )) return DIERR_ACQUIRED;
+            if (impl->status == STATUS_ACQUIRED) return DIERR_ACQUIRED;
             break;
         case (DWORD_PTR)DIPROP_AXISMODE:
         case (DWORD_PTR)DIPROP_BUFFERSIZE:
@@ -1061,6 +1062,12 @@ static BOOL get_object_property( struct dinput_device *device, UINT index, struc
         value->uData = properties->app_data;
         return DIENUM_STOP;
     }
+    case (DWORD_PTR)DIPROP_SCANCODE:
+    {
+        DIPROPDWORD *value = (DIPROPDWORD *)params->header;
+        value->dwData = properties->scan_code;
+        return DI_OK;
+    }
     }
 
     return DIENUM_STOP;
@@ -1097,6 +1104,7 @@ static HRESULT dinput_device_get_property( IDirectInputDevice8W *iface, const GU
     case (DWORD_PTR)DIPROP_KEYNAME:
     case (DWORD_PTR)DIPROP_CALIBRATIONMODE:
     case (DWORD_PTR)DIPROP_APPDATA:
+    case (DWORD_PTR)DIPROP_SCANCODE:
         hr = impl->vtbl->enum_objects( iface, &filter, object_mask, get_object_property, &params );
         if (FAILED(hr)) return hr;
         if (hr == DIENUM_CONTINUE) return DIERR_NOTFOUND;
@@ -1290,8 +1298,6 @@ static HRESULT dinput_device_set_property( IDirectInputDevice8W *iface, const GU
     {
         const DIPROPDWORD *value = (const DIPROPDWORD *)header;
         if (!(impl->caps.dwFlags & DIDC_FORCEFEEDBACK)) return DIERR_UNSUPPORTED;
-
-        FIXME( "DIPROP_AUTOCENTER stub!\n" );
         impl->autocenter = value->dwData;
         return DI_OK;
     }
@@ -2131,8 +2137,9 @@ void dinput_device_init( struct dinput_device *device, const struct dinput_devic
     device->caps.dwSize = sizeof(DIDEVCAPS);
     device->caps.dwFlags = DIDC_ATTACHED | DIDC_EMULATED;
     device->device_gain = 10000;
+    device->autocenter = DIPROPAUTOCENTER_ON;
     device->force_feedback_state = DIGFFS_STOPPED | DIGFFS_EMPTY;
-    InitializeCriticalSection( &device->crit );
+    InitializeCriticalSectionEx( &device->crit, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
     dinput_internal_addref( (device->dinput = dinput) );
     device->vtbl = vtbl;
 

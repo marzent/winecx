@@ -27,6 +27,7 @@
 #include <windef.h>
 #include <winbase.h>
 #include <winternl.h>
+#include <setjmp.h>
 
 #include "wine/test.h"
 
@@ -3108,16 +3109,34 @@ static void test_apc_deadlock(void)
     CloseHandle(pi.hProcess);
 }
 
+static jmp_buf bad_cs_jmpbuf;
+
+static LONG WINAPI bad_cs_handler( EXCEPTION_POINTERS *eptr )
+{
+    EXCEPTION_RECORD *rec = eptr->ExceptionRecord;
+
+    ok(!rec->NumberParameters, "got %lu.\n", rec->NumberParameters);
+    ok(rec->ExceptionFlags == EXCEPTION_NONCONTINUABLE
+            || rec->ExceptionFlags == (EXCEPTION_NONCONTINUABLE | EXCEPTION_SOFTWARE_ORIGINATE),
+            "got %#lx.\n", rec->ExceptionFlags);
+    longjmp(bad_cs_jmpbuf, rec->ExceptionCode);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 static void test_crit_section(void)
 {
+    void *vectored_handler;
     CRITICAL_SECTION cs;
+    int exc_code;
+    HANDLE old;
     BOOL ret;
 
     /* Win8+ does not initialize debug info, one has to use RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO
        to override that. */
     memset(&cs, 0, sizeof(cs));
     InitializeCriticalSection(&cs);
-    ok(cs.DebugInfo != NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+    ok(cs.DebugInfo == (void *)(ULONG_PTR)-1 || broken(!!cs.DebugInfo) /* before Win8 */,
+            "Unexpected debug info pointer %p.\n", cs.DebugInfo);
     DeleteCriticalSection(&cs);
     ok(cs.DebugInfo == NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
 
@@ -3128,9 +3147,38 @@ static void test_crit_section(void)
     }
 
     memset(&cs, 0, sizeof(cs));
+    ret = pInitializeCriticalSectionEx(&cs, 0, 0);
+    ok(ret, "Failed to initialize critical section.\n");
+    ok(cs.DebugInfo == (void *)(ULONG_PTR)-1  || broken(!!cs.DebugInfo) /* before Win8 */,
+            "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+    DeleteCriticalSection(&cs);
+    ok(cs.DebugInfo == NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+
+    memset(&cs, 0, sizeof(cs));
     ret = pInitializeCriticalSectionEx(&cs, 0, CRITICAL_SECTION_NO_DEBUG_INFO);
     ok(ret, "Failed to initialize critical section.\n");
     ok(cs.DebugInfo == (void *)(ULONG_PTR)-1, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+    DeleteCriticalSection(&cs);
+    ok(cs.DebugInfo == NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+
+    memset(&cs, 0, sizeof(cs));
+    ret = pInitializeCriticalSectionEx(&cs, 0, 0);
+    ok(ret, "Failed to initialize critical section.\n");
+    ok(cs.DebugInfo == (void *)(ULONG_PTR)-1 || broken(!!cs.DebugInfo) /* before Win8 */,
+            "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+    DeleteCriticalSection(&cs);
+    ok(cs.DebugInfo == NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+
+    memset(&cs, 0, sizeof(cs));
+    ret = pInitializeCriticalSectionEx(&cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
+    ok(ret || broken(GetLastError() == ERROR_INVALID_PARAMETER) /* before Win8 */,
+            "Failed to initialize critical section, error %lu.\n", GetLastError());
+    if (!ret)
+    {
+        ret = pInitializeCriticalSectionEx(&cs, 0, 0);
+        ok(ret, "Failed to initialize critical section.\n");
+    }
+    ok(cs.DebugInfo && cs.DebugInfo != (void *)(ULONG_PTR)-1, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
 
     ret = TryEnterCriticalSection(&cs);
     ok(ret, "Failed to enter critical section.\n");
@@ -3144,6 +3192,21 @@ static void test_crit_section(void)
 
     DeleteCriticalSection(&cs);
     ok(cs.DebugInfo == NULL, "Unexpected debug info pointer %p.\n", cs.DebugInfo);
+
+    ret = pInitializeCriticalSectionEx(&cs, 0, 0);
+    ok(ret, "got error %lu.\n", GetLastError());
+    old = cs.LockSemaphore;
+    cs.LockSemaphore = (HANDLE)0xdeadbeef;
+
+    cs.LockCount = 0;
+    vectored_handler = AddVectoredExceptionHandler(TRUE, bad_cs_handler);
+    if (!(exc_code = setjmp(bad_cs_jmpbuf)))
+        EnterCriticalSection(&cs);
+    ok(cs.LockCount, "got %ld.\n", cs.LockCount);
+    ok(exc_code == STATUS_INVALID_HANDLE, "got %#x.\n", exc_code);
+    RemoveVectoredExceptionHandler(vectored_handler);
+    cs.LockSemaphore = old;
+    DeleteCriticalSection(&cs);
 }
 
 static DWORD WINAPI thread_proc(LPVOID unused)

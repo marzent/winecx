@@ -36,6 +36,7 @@
 #include "atsvc.h"
 #include "lmapibuf.h"
 #include "lmbrowsr.h"
+#include "lmremutl.h"
 #include "lmshare.h"
 #include "lmwksta.h"
 #include "netbios.h"
@@ -344,74 +345,6 @@ NET_API_STATUS WINAPI NetUseGetInfo(LMSTR server, LMSTR name, DWORD level, LPBYT
     FIXME("stub (%p, %p, %ld, %p)\n", server, name, level, bufptr);
     return ERROR_NOT_SUPPORTED;
 
-}
-
-/************************************************************
- *                NetApiBufferAllocate  (NETAPI32.@)
- */
-NET_API_STATUS WINAPI NetApiBufferAllocate(DWORD ByteCount, LPVOID* Buffer)
-{
-    TRACE("(%ld, %p)\n", ByteCount, Buffer);
-
-    if (Buffer == NULL) return ERROR_INVALID_PARAMETER;
-    *Buffer = HeapAlloc(GetProcessHeap(), 0, ByteCount);
-    if (*Buffer)
-        return NERR_Success;
-    else
-        return GetLastError();
-}
-
-/************************************************************
- *                NetApiBufferFree  (NETAPI32.@)
- */
-NET_API_STATUS WINAPI NetApiBufferFree(LPVOID Buffer)
-{
-    TRACE("(%p)\n", Buffer);
-    MIDL_user_free(Buffer);
-    return NERR_Success;
-}
-
-/************************************************************
- *                NetApiBufferReallocate  (NETAPI32.@)
- */
-NET_API_STATUS WINAPI NetApiBufferReallocate(LPVOID OldBuffer, DWORD NewByteCount,
-                                             LPVOID* NewBuffer)
-{
-    TRACE("(%p, %ld, %p)\n", OldBuffer, NewByteCount, NewBuffer);
-    if (NewByteCount)
-    {
-        if (OldBuffer)
-            *NewBuffer = HeapReAlloc(GetProcessHeap(), 0, OldBuffer, NewByteCount);
-        else
-            *NewBuffer = HeapAlloc(GetProcessHeap(), 0, NewByteCount);
-	return *NewBuffer ? NERR_Success : GetLastError();
-    }
-    else
-    {
-	if (!HeapFree(GetProcessHeap(), 0, OldBuffer)) return GetLastError();
-	*NewBuffer = 0;
-	return NERR_Success;
-    }
-}
-
-/************************************************************
- *                NetApiBufferSize  (NETAPI32.@)
- */
-NET_API_STATUS WINAPI NetApiBufferSize(LPVOID Buffer, LPDWORD ByteCount)
-{
-    DWORD dw;
-
-    TRACE("(%p, %p)\n", Buffer, ByteCount);
-    if (Buffer == NULL)
-        return ERROR_INVALID_PARAMETER;
-    dw = HeapSize(GetProcessHeap(), 0, Buffer);
-    TRACE("size: %ld\n", dw);
-    if (dw != 0xFFFFFFFF)
-        *ByteCount = dw;
-    else
-        *ByteCount = 0;
-
-    return NERR_Success;
 }
 
 /************************************************************
@@ -2585,6 +2518,17 @@ NET_API_STATUS WINAPI NetLocalGroupSetMembers(
 }
 
 /************************************************************
+ *                NetRemoteTOD (NETAPI32.@)
+ */
+NET_API_STATUS NET_API_FUNCTION NetRemoteTOD(
+    LPCWSTR servername,
+    LPBYTE *buf)
+{
+    FIXME("(%s %p) stub!\n", debugstr_w(servername), buf);
+    return ERROR_NO_BROWSER_SERVERS_FOUND;
+}
+
+/************************************************************
  *                DavGetHTTPFromUNCPath (NETAPI32.@)
  */
 DWORD WINAPI DavGetHTTPFromUNCPath(const WCHAR *unc_path, WCHAR *buf, DWORD *buflen)
@@ -2801,4 +2745,18 @@ handle_t __RPC_USER ATSVC_HANDLE_bind(ATSVC_HANDLE str)
 void __RPC_USER ATSVC_HANDLE_unbind(ATSVC_HANDLE ServerName, handle_t rpc_handle)
 {
     RpcBindingFree(&rpc_handle);
+}
+
+/************************************************************
+ *  NetGetAadJoinInformation (NETAPI32.@)
+ */
+HRESULT WINAPI NetGetAadJoinInformation(LPCWSTR tenant_id, PDSREG_JOIN_INFO *join_info)
+{
+    FIXME("(%s, %p): stub\n", debugstr_w(tenant_id), join_info);
+    return ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+void NET_API_FUNCTION NetFreeAadJoinInformation(DSREG_JOIN_INFO *join_info)
+{
+    FIXME("%p): stub\n", join_info);
 }

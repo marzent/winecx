@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use XML::LibXML;
+use File::Basename;
 
 # This script is called thus :
 #
@@ -149,6 +150,7 @@ my %manual_win_functions =
      "wglChoosePixelFormat" => 1,
      "wglCreateLayerContext" => 1,
      "wglDescribeLayerPlane" => 1,
+     "wglDescribePixelFormat" => 1,
      "wglGetCurrentContext" => 1,
      "wglGetCurrentDC" => 1,
      "wglGetDefaultProcAddress" => 1,
@@ -176,10 +178,13 @@ my %manual_win_thunks =
      "glUnmapBufferARB" => 1,
      "glUnmapNamedBuffer" => 1,
      "glUnmapNamedBufferEXT" => 1,
+     "wglChoosePixelFormatARB" => 1,
      "wglGetCurrentReadDCARB" => 1,
      "wglGetExtensionsStringARB" => 1,
      "wglGetExtensionsStringEXT" => 1,
      "wglGetPixelFormat" => 1,
+     "wglGetPixelFormatAttribfvARB" => 1,
+     "wglGetPixelFormatAttribivARB" => 1,
      "wglGetProcAddress" => 1,
      "wglQueryCurrentRendererStringWINE" => 1,
      "wglQueryRendererStringWINE" => 1,
@@ -624,10 +629,12 @@ if ($version eq "1.0") {
 #
 my $url="https://raw.githubusercontent.com/KhronosGroup/OpenGL-Registry";
 my $commit="03e1bfb87c4664d34dc7822fb591841eec747094";
+my $cache = ($ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache") . "/wine";
 
--f "gl-$commit.xml" || system "wget", "-O", "gl-$commit.xml", "$url/$commit/xml/gl.xml" || die "cannot download gl.xml";
--f "wgl-$commit.xml" || system "wget", "-O", "wgl-$commit.xml", "$url/$commit/xml/wgl.xml" || die "cannot download wgl.xml";
-
+system "mkdir", "-p", $cache;
+-f "$cache/gl-$commit.xml" || system "wget", "-q", "-O", "$cache/gl-$commit.xml", "$url/$commit/xml/gl.xml" || die "cannot download gl.xml";
+-f "$cache/wgl-$commit.xml" || system "wget", "-q", "-O", "$cache/wgl-$commit.xml", "$url/$commit/xml/wgl.xml" || die "cannot download wgl.xml";
+chdir(dirname($0));
 
 #
 # Then, create the list of all OpenGL functions using the registry
@@ -849,8 +856,8 @@ sub parse_file($)
     }
 }
 
-parse_file( "gl-$commit.xml" );
-parse_file( "wgl-$commit.xml" );
+parse_file( "$cache/gl-$commit.xml" );
+parse_file( "$cache/wgl-$commit.xml" );
 parse_file( "winegl.xml" );
 
 #
@@ -882,6 +889,36 @@ printf HEADER "#define WINE_WGL_DRIVER_VERSION %u\n\n", $wgl_version + 1;
 print HEADER "struct wgl_context;\n";
 print HEADER "struct wgl_pbuffer;\n\n";
 
+print HEADER "struct wgl_pixel_format\n";
+print HEADER "{\n";
+print HEADER "    PIXELFORMATDESCRIPTOR pfd;\n";
+print HEADER "    int swap_method;\n";
+print HEADER "    int transparent;\n";
+print HEADER "    int pixel_type;\n";
+print HEADER "    int draw_to_pbuffer;\n";
+print HEADER "    int max_pbuffer_pixels;\n";
+print HEADER "    int max_pbuffer_width;\n";
+print HEADER "    int max_pbuffer_height;\n";
+print HEADER "    int transparent_red_value;\n";
+print HEADER "    int transparent_red_value_valid;\n";
+print HEADER "    int transparent_green_value;\n";
+print HEADER "    int transparent_green_value_valid;\n";
+print HEADER "    int transparent_blue_value;\n";
+print HEADER "    int transparent_blue_value_valid;\n";
+print HEADER "    int transparent_alpha_value;\n";
+print HEADER "    int transparent_alpha_value_valid;\n";
+print HEADER "    int transparent_index_value;\n";
+print HEADER "    int transparent_index_value_valid;\n";
+print HEADER "    int sample_buffers;\n";
+print HEADER "    int samples;\n";
+print HEADER "    int bind_to_texture_rgb;\n";
+print HEADER "    int bind_to_texture_rgba;\n";
+print HEADER "    int bind_to_texture_rectangle_rgb;\n";
+print HEADER "    int bind_to_texture_rectangle_rgba;\n";
+print HEADER "    int framebuffer_srgb_capable;\n";
+print HEADER "    int float_components;\n";
+print HEADER "};\n\n";
+
 print HEADER "struct opengl_funcs\n{\n";
 print HEADER "    struct\n    {\n";
 foreach (sort keys %wgl_functions)
@@ -891,6 +928,7 @@ foreach (sort keys %wgl_functions)
     my $func_ret = get_func_ret( $wgl_functions{$_}, 1 );
     printf HEADER "        %-10s (WINE_GLAPI *p_$_)($decl_args);\n", $func_ret;
 }
+printf HEADER "        %-10s (WINE_GLAPI *p_get_pixel_formats)( struct wgl_pixel_format *formats, UINT max_formats, UINT *num_formats, UINT *num_onscreen_formats );\n", "void";
 print HEADER "    } wgl;\n\n";
 
 print HEADER "    struct\n    {\n";
@@ -994,9 +1032,15 @@ print OUT "#define WIN32_NO_STATUS\n";
 print OUT "#include \"windef.h\"\n";
 print OUT "#include \"winbase.h\"\n";
 print OUT "#include \"winternl.h\"\n";
-print OUT "#include \"wingdi.h\"\n\n";
+print OUT "#include \"wingdi.h\"\n";
+print OUT "#include \"ntuser.h\"\n\n";
 print OUT "#include \"wine/wgl.h\"\n";
 print OUT "#include \"wine/unixlib.h\"\n\n";
+
+print OUT "struct process_attach_params\n";
+print OUT "{\n";
+print OUT "    UINT64 call_gl_debug_message_callback;\n";
+print OUT "};\n\n";
 
 foreach (sort keys %wgl_functions)
 {
@@ -1014,10 +1058,22 @@ foreach (sort keys %ext_functions)
     print OUT generate_func_params($_, $ext_functions{$_});
 }
 
+print OUT "struct get_pixel_formats_params\n";
+print OUT "{\n";
+print OUT "    TEB *teb;\n";
+print OUT "    HDC hdc;\n";
+print OUT "    struct wgl_pixel_format *formats;\n";
+print OUT "    unsigned int max_formats;\n";
+print OUT "    unsigned int num_formats;\n";
+print OUT "    unsigned int num_onscreen_formats;\n";
+print OUT "};\n\n";
+
 print OUT "enum unix_funcs\n";
 print OUT "{\n";
+print OUT "    unix_process_attach,\n";
 print OUT "    unix_thread_attach,\n";
 print OUT "    unix_process_detach,\n";
+print OUT "    unix_get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1033,20 +1089,20 @@ foreach (sort keys %ext_functions)
     next if defined $manual_win_functions{$_};
     printf OUT "    unix_%s,\n", $_;
 }
+print OUT "    funcs_count\n";
 print OUT "};\n\n";
 
-print OUT "typedef void (WINAPI *gl_debug_cb)(GLenum, GLenum, GLuint, GLenum, GLsizei, const GLchar *, const void *);\n";
-print OUT "struct wine_gl_debug_message_params\n";
+print OUT "struct gl_debug_message_callback_params\n";
 print OUT "{\n";
-print OUT "    gl_debug_cb user_callback;\n";
-print OUT "    const void *user_data;\n";
-print OUT "\n";
-print OUT "    GLenum source;\n";
-print OUT "    GLenum type;\n";
-print OUT "    GLuint id;\n";
-print OUT "    GLenum severity;\n";
-print OUT "    GLsizei length;\n";
-print OUT "    const GLchar *message;\n";
+print OUT "    struct dispatch_callback_params dispatch;\n";
+print OUT "    UINT64 debug_callback; /* client pointer */\n";
+print OUT "    UINT64 debug_user; /* client pointer */\n";
+print OUT "    UINT32 source;\n";
+print OUT "    UINT32 type;\n";
+print OUT "    UINT32 id;\n";
+print OUT "    UINT32 severity;\n";
+print OUT "    UINT32 length;\n";
+print OUT "    char message[1];\n";
 print OUT "};\n\n";
 
 print OUT "#define UNIX_CALL( func, params ) WINE_UNIX_CALL( unix_ ## func, params )\n\n";
@@ -1139,8 +1195,10 @@ print OUT "#ifdef _WIN64\n";
 print OUT "WINE_DEFAULT_DEBUG_CHANNEL(opengl);\n";
 print OUT "#endif\n\n";
 
+print OUT "extern NTSTATUS process_attach( void *args );\n";
 print OUT "extern NTSTATUS thread_attach( void *args );\n";
 print OUT "extern NTSTATUS process_detach( void *args );\n";
+print OUT "extern NTSTATUS get_pixel_formats( void *args );\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1185,30 +1243,33 @@ foreach (sort keys %ext_functions)
 
 print OUT "const unixlib_entry_t __wine_unix_call_funcs[] =\n";
 print OUT "{\n";
-print OUT "    &thread_attach,\n";
-print OUT "    &process_detach,\n";
+print OUT "    process_attach,\n";
+print OUT "    thread_attach,\n";
+print OUT "    process_detach,\n";
+print OUT "    get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
-    printf OUT "    &wgl_%s,\n", $_;
+    printf OUT "    wgl_%s,\n", $_;
 }
 foreach (sort keys %norm_functions)
 {
     next if defined $manual_win_functions{$_};
-    printf OUT "    &gl_%s,\n", $_;
+    printf OUT "    gl_%s,\n", $_;
 }
 foreach (sort keys %ext_functions)
 {
     next if defined $manual_win_functions{$_};
-    printf OUT "    &ext_%s,\n", $_;
+    printf OUT "    ext_%s,\n", $_;
 }
-print OUT "};\n";
-print OUT "\n";
+print OUT "};\n\n";
+print OUT "C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);\n\n";
 
 print OUT "#ifdef _WIN64\n\n";
 print OUT "typedef ULONG PTR32;\n\n";
 print OUT "extern NTSTATUS wow64_thread_attach( void *args );\n";
-print OUT "extern NTSTATUS wow64_process_detach( void *args );\n\n";
+print OUT "extern NTSTATUS wow64_process_detach( void *args );\n";
+print OUT "extern NTSTATUS wow64_get_pixel_formats( void *args );\n\n";
 
 foreach (sort keys %wgl_functions)
 {
@@ -1250,8 +1311,10 @@ foreach (sort keys %ext_functions)
 
 print OUT "\nconst unixlib_entry_t __wine_unix_call_wow64_funcs[] =\n";
 print OUT "{\n";
+print OUT "    process_attach,\n";
 print OUT "    wow64_thread_attach,\n";
 print OUT "    wow64_process_detach,\n";
+print OUT "    wow64_get_pixel_formats,\n";
 foreach (sort keys %wgl_functions)
 {
     next if defined $manual_win_functions{$_};
@@ -1268,6 +1331,7 @@ foreach (sort keys %ext_functions)
     printf OUT "    wow64_ext_%s,\n", $_;
 }
 print OUT "};\n\n";
+print OUT "C_ASSERT(ARRAYSIZE(__wine_unix_call_wow64_funcs) == funcs_count);\n\n";
 
 print OUT "#endif\n\n";
 

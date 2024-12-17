@@ -34,76 +34,170 @@
 /* msdn specified max for Win XP */
 #define MAXSTRING 8192
 
+/* Data structure to express a redirection */
+typedef struct _CMD_REDIRECTION
+{
+    enum CMD_REDIRECTION_KIND {REDIR_READ_FROM, REDIR_WRITE_TO, REDIR_WRITE_APPEND, REDIR_WRITE_CLONE} kind;
+    unsigned short fd;
+    struct _CMD_REDIRECTION *next;
+    union
+    {
+        unsigned short clone; /* only if kind is REDIR_WRITE_CLONE */
+        WCHAR file[1];        /* only if kind is READ_FROM, WRITE or WRITE_APPEND */
+    };
+} CMD_REDIRECTION;
+
 /* Data structure to hold commands delimiters/separators */
 
-typedef enum _CMDdelimiters {
-  CMD_NONE,        /* End of line or single & */
-  CMD_ONFAILURE,   /* ||                      */
-  CMD_ONSUCCESS,   /* &&                      */
-  CMD_PIPE         /* Single |                */
-} CMD_DELIMITERS;
+typedef enum _CMD_OPERATOR
+{
+    CMD_SINGLE,      /* single command          */
+    CMD_CONCAT,      /* &                       */
+    CMD_ONFAILURE,   /* ||                      */
+    CMD_ONSUCCESS,   /* &&                      */
+    CMD_PIPE,        /* Single |                */
+    CMD_IF,          /* IF command              */
+    CMD_FOR,         /* FOR command             */
+} CMD_OPERATOR;
 
 /* Data structure to hold commands to be processed */
 
-typedef struct _CMD_LIST {
-  WCHAR              *command;     /* Command string to execute                */
-  WCHAR              *redirects;   /* Redirects in place                       */
-  struct _CMD_LIST   *nextcommand; /* Next command string to execute           */
-  CMD_DELIMITERS      prevDelim;   /* Previous delimiter                       */
-  int                 bracketDepth;/* How deep bracketing have we got to       */
-  WCHAR               pipeFile[MAX_PATH]; /* Where to get input from for pipes */
-} CMD_LIST;
+enum cond_operator {CMD_IF_ERRORLEVEL, CMD_IF_EXIST, CMD_IF_DEFINED,
+                    CMD_IF_BINOP_EQUAL /* == */, CMD_IF_BINOP_LSS, CMD_IF_BINOP_LEQ, CMD_IF_BINOP_EQU,
+                    CMD_IF_BINOP_NEQ, CMD_IF_BINOP_GEQ, CMD_IF_BINOP_GTR};
+typedef struct _CMD_IF_CONDITION
+{
+    unsigned case_insensitive : 1,
+             negated : 1,
+             op;
+    union
+    {
+        /* CMD_IF_ERRORLEVEL, CMD_IF_EXIST, CMD_IF_DEFINED */
+        const WCHAR *operand;
+        /* CMD_BINOP_EQUAL, CMD_BINOP_LSS, CMD_BINOP_LEQ, CMD_BINOP_EQU, CMD_BINOP_NEQ, CMD_BINOP_GEQ, CMD_BINOP_GTR */
+        struct
+        {
+            const WCHAR *left;
+            const WCHAR *right;
+        };
+    };
+} CMD_IF_CONDITION;
 
-void WCMD_assoc (const WCHAR *, BOOL);
-void WCMD_batch (WCHAR *, WCHAR *, BOOL, WCHAR *, HANDLE);
-void WCMD_call (WCHAR *command);
-void WCMD_change_tty (void);
-void WCMD_choice (const WCHAR *);
-void WCMD_clear_screen (void);
-void WCMD_color (void);
-void WCMD_copy (WCHAR *);
-void WCMD_create_dir (WCHAR *);
-BOOL WCMD_delete (WCHAR *);
-void WCMD_directory (WCHAR *);
-void WCMD_echo (const WCHAR *);
-void WCMD_endlocal (void);
+#define CMD_FOR_FLAG_TREE_RECURSE (1u << 0)
+#define CMD_FOR_FLAG_TREE_INCLUDE_FILES (1u << 1)
+#define CMD_FOR_FLAG_TREE_INCLUDE_DIRECTORIES (1u << 2)
+
+typedef struct _CMD_FOR_CONTROL
+{
+    enum for_control_operator {CMD_FOR_FILETREE, CMD_FOR_FILE_SET /* /F */,
+                               CMD_FOR_NUMBERS /* /L */} operator;
+    unsigned flags;               /* |-ed CMD_FOR_FLAG_* */
+    unsigned variable_index;
+    const WCHAR *set;
+    union
+    {
+        const WCHAR *root_dir;    /* for CMD_FOR_FILETREE */
+        struct                    /* for CMD_FOR_FILE_SET */
+        {
+            WCHAR eol;
+            BOOL use_backq;
+            int num_lines_to_skip;
+            const WCHAR *delims;
+            const WCHAR *tokens;
+        };
+    };
+} CMD_FOR_CONTROL;
+
+typedef struct _CMD_NODE
+{
+    CMD_OPERATOR      op;            /* operator */
+    CMD_REDIRECTION  *redirects;     /* Redirections */
+    union
+    {
+        WCHAR        *command;       /* CMD_SINGLE */
+        struct                       /* binary operator (CMD_CONCAT, ONFAILURE, ONSUCCESS, PIPE) */
+        {
+            struct _CMD_NODE *left;
+            struct _CMD_NODE *right;
+        };
+        struct                       /* CMD_IF */
+        {
+            CMD_IF_CONDITION  condition;
+            struct _CMD_NODE *then_block;
+            struct _CMD_NODE *else_block;
+        };
+        struct                       /* CMD_FOR */
+        {
+            CMD_FOR_CONTROL   for_ctrl;
+            struct _CMD_NODE *do_block;
+        };
+    };
+} CMD_NODE;
+
+struct _DIRECTORY_STACK;
+void WCMD_add_dirstowalk(struct _DIRECTORY_STACK *dirsToWalk);
+struct _DIRECTORY_STACK *WCMD_dir_stack_create(const WCHAR *dir, const WCHAR *file);
+struct _DIRECTORY_STACK *WCMD_dir_stack_free(struct _DIRECTORY_STACK *dir);
+
+/* The return code:
+ * - some of them are directly mapped to kernel32's errors
+ * - some others are cmd.exe specific
+ * - ABORTED if used to break out of FOR/IF blocks (to handle GOTO, EXIT commands)
+ */
+typedef int RETURN_CODE;
+#define RETURN_CODE_SYNTAX_ERROR         255
+#define RETURN_CODE_CANT_LAUNCH          9009
+#define RETURN_CODE_ABORTED              (-999999)
+
+BOOL WCMD_print_volume_information(const WCHAR *);
+
+RETURN_CODE WCMD_assoc(const WCHAR *, BOOL);
+RETURN_CODE WCMD_call(WCHAR *command);
+RETURN_CODE WCMD_choice(WCHAR *);
+RETURN_CODE WCMD_clear_screen(void);
+RETURN_CODE WCMD_color(void);
+RETURN_CODE WCMD_copy(WCHAR *);
+RETURN_CODE WCMD_create_dir(WCHAR *);
+RETURN_CODE WCMD_delete(WCHAR *);
+RETURN_CODE WCMD_directory(WCHAR *);
+RETURN_CODE WCMD_echo(const WCHAR *);
+RETURN_CODE WCMD_endlocal(void);
 void WCMD_enter_paged_mode(const WCHAR *);
-void WCMD_exit (CMD_LIST **cmdList);
-void WCMD_for (WCHAR *, CMD_LIST **cmdList);
+RETURN_CODE WCMD_exit(void);
 BOOL WCMD_get_fullpath(const WCHAR *, SIZE_T, WCHAR *, WCHAR **);
-void WCMD_give_help (const WCHAR *args);
-void WCMD_goto (CMD_LIST **cmdList);
-void WCMD_if (WCHAR *, CMD_LIST **cmdList);
+RETURN_CODE WCMD_give_help(WCHAR *args);
+RETURN_CODE WCMD_goto(void);
+RETURN_CODE WCMD_label(void);
 void WCMD_leave_paged_mode(void);
-void WCMD_more (WCHAR *);
-void WCMD_move (void);
+RETURN_CODE WCMD_more(WCHAR *);
+RETURN_CODE WCMD_move (void);
 WCHAR* WINAPIV WCMD_format_string (const WCHAR *format, ...);
 void WINAPIV WCMD_output (const WCHAR *format, ...);
 void WINAPIV WCMD_output_stderr (const WCHAR *format, ...);
 void WCMD_output_asis (const WCHAR *message);
 void WCMD_output_asis_stderr (const WCHAR *message);
-void WCMD_pause (void);
-void WCMD_popd (void);
+RETURN_CODE WCMD_pause(void);
+RETURN_CODE WCMD_popd(void);
 void WCMD_print_error (void);
-void WCMD_pushd (const WCHAR *args);
-void WCMD_remove_dir (WCHAR *command);
-void WCMD_rename (void);
-void WCMD_run_program (WCHAR *command, BOOL called);
-void WCMD_setlocal (const WCHAR *args);
-void WCMD_setshow_date (void);
-void WCMD_setshow_default (const WCHAR *args);
-void WCMD_setshow_env (WCHAR *command);
-void WCMD_setshow_path (const WCHAR *args);
-void WCMD_setshow_prompt (void);
-void WCMD_setshow_time (void);
-void WCMD_shift (const WCHAR *args);
-void WCMD_start (WCHAR *args);
-void WCMD_title (const WCHAR *);
-void WCMD_type (WCHAR *);
-void WCMD_verify (const WCHAR *args);
-void WCMD_version (void);
-int  WCMD_volume (BOOL set_label, const WCHAR *args);
-void WCMD_mklink(WCHAR *args);
+RETURN_CODE WCMD_pushd(const WCHAR *args);
+RETURN_CODE WCMD_remove_dir(WCHAR *command);
+RETURN_CODE WCMD_rename(void);
+RETURN_CODE WCMD_setlocal(WCHAR *args);
+RETURN_CODE WCMD_setshow_date(void);
+RETURN_CODE WCMD_setshow_default(const WCHAR *args);
+RETURN_CODE WCMD_setshow_env(WCHAR *command);
+RETURN_CODE WCMD_setshow_path(const WCHAR *args);
+RETURN_CODE WCMD_setshow_prompt(void);
+RETURN_CODE WCMD_setshow_time(void);
+RETURN_CODE WCMD_shift(const WCHAR *args);
+RETURN_CODE WCMD_start(WCHAR *args);
+RETURN_CODE WCMD_title(const WCHAR *);
+RETURN_CODE WCMD_type(WCHAR *);
+RETURN_CODE WCMD_verify(void);
+RETURN_CODE WCMD_version(void);
+RETURN_CODE WCMD_volume(void);
+RETURN_CODE WCMD_mklink(WCHAR *args);
+RETURN_CODE WCMD_change_drive(WCHAR drive);
 
 WCHAR *WCMD_fgets (WCHAR *buf, DWORD n, HANDLE stream);
 WCHAR *WCMD_parameter (WCHAR *s, int n, WCHAR **start, BOOL raw, BOOL wholecmdline);
@@ -115,16 +209,28 @@ void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute);
 
 WCHAR *WCMD_strip_quotes(WCHAR *cmd);
 WCHAR *WCMD_LoadMessage(UINT id);
-void WCMD_strsubstW(WCHAR *start, const WCHAR* next, const WCHAR* insert, int len);
+WCHAR *WCMD_strsubstW(WCHAR *start, const WCHAR* next, const WCHAR* insert, int len);
 BOOL WCMD_ReadFile(const HANDLE hIn, WCHAR *intoBuf, const DWORD maxChars, LPDWORD charsRead);
 
-WCHAR    *WCMD_ReadAndParseLine(const WCHAR *initialcmd, CMD_LIST **output, HANDLE readFrom);
-CMD_LIST *WCMD_process_commands(CMD_LIST *thisCmd, BOOL oneBracket, BOOL retrycall);
-void      WCMD_free_commands(CMD_LIST *cmds);
-void      WCMD_execute (const WCHAR *orig_command, const WCHAR *redirects,
-                        CMD_LIST **cmdList, BOOL retrycall);
+enum read_parse_line {RPL_SUCCESS, RPL_EOF, RPL_SYNTAXERROR};
+enum read_parse_line WCMD_ReadAndParseLine(const WCHAR *initialcmd, CMD_NODE **output);
+void      node_dispose_tree(CMD_NODE *cmds);
+RETURN_CODE node_execute(CMD_NODE *node);
 
-void *xalloc(size_t) __WINE_ALLOC_SIZE(1) __WINE_DEALLOC(free) __WINE_MALLOC;
+RETURN_CODE WCMD_call_batch(const WCHAR *, WCHAR *);
+RETURN_CODE WCMD_call_command(WCHAR *command);
+RETURN_CODE WCMD_run_builtin_command(int cmd_index, WCHAR *cmd);
+
+BOOL WCMD_find_label(HANDLE h, const WCHAR*, LARGE_INTEGER *pos);
+void WCMD_set_label_end(WCHAR *string);
+
+void *xrealloc(void *, size_t) __WINE_ALLOC_SIZE(2) __WINE_DEALLOC(free);
+
+static inline void *xalloc(size_t sz) __WINE_MALLOC;
+static inline void *xalloc(size_t sz)
+{
+    return xrealloc(NULL, sz);
+}
 
 static inline WCHAR *xstrdupW(const WCHAR *str)
 {
@@ -150,28 +256,29 @@ int evaluate_if_condition(WCHAR *p, WCHAR **command, int *test, int *negate);
 
 /* Data structure to hold context when executing batch files */
 
-typedef struct _BATCH_CONTEXT {
-  WCHAR *command;	/* The command which invoked the batch file */
-  HANDLE h;             /* Handle to the open batch file */
-  WCHAR *batchfileW;    /* Name of same */
-  int shift_count[10];	/* Offset in terms of shifts for %0 - %9 */
-  struct _BATCH_CONTEXT *prev_context; /* Pointer to the previous context block */
-  BOOL  skip_rest;      /* Skip the rest of the batch program and exit */
-  CMD_LIST *toExecute;  /* Commands left to be executed */
+typedef struct _BATCH_CONTEXT
+{
+    WCHAR *command;	  /* The command which invoked the batch file */
+    LARGE_INTEGER file_position;
+    WCHAR *batchfileW;    /* Name of same */
+    int shift_count[10];  /* Offset in terms of shifts for %0 - %9 */
+    struct _BATCH_CONTEXT *prev_context; /* Pointer to the previous context block */
+    BOOL  skip_rest;      /* Skip the rest of the batch program and exit */
 } BATCH_CONTEXT;
 
 /* Data structure to handle building lists during recursive calls */
 
 struct env_stack
 {
-  struct env_stack *next;
-  union {
-    int    stackdepth;       /* Only used for pushd and popd */
-    WCHAR   cwd;             /* Only used for set/endlocal   */
-  } u;
-  WCHAR *strings;
-  HANDLE batchhandle;        /* Used to ensure set/endlocals stay in scope */
-  BOOL delayedsubst;         /* Is delayed substitution in effect */
+    BATCH_CONTEXT *context;
+    struct env_stack *next;
+    union
+    {
+        int     stackdepth;   /* Only used for pushd and popd */
+        WCHAR   cwd;          /* Only used for set/endlocal   */
+    } u;
+    WCHAR *strings;
+    BOOL delayedsubst;        /* Is delayed substitution in effect */
 };
 
 /* Data structure to save setlocal and pushd information */
@@ -183,15 +290,28 @@ typedef struct _DIRECTORY_STACK
   WCHAR  *fileName;
 } DIRECTORY_STACK;
 
-/* Data structure to for loop variables during for body execution, bearing
-   in mind that for loops can be nested                                    */
-#define MAX_FOR_VARIABLES 52
-#define FOR_VAR_IDX(c) (((c)>='a'&&(c)<='z')?((c)-'a'):\
-                        ((c)>='A'&&(c)<='Z')?(26+(c)-'A'):-1)
+static inline const char *debugstr_for_var(WCHAR ch)
+{
+    static char tmp[16];
+    if (iswprint(ch))
+        sprintf(tmp, "%%%lc", ch);
+    else
+        sprintf(tmp, "%%[%x]", ch);
+    return tmp;
+}
 
-typedef struct _FOR_CONTEXT {
-  WCHAR *variable[MAX_FOR_VARIABLES];	/* a-z then A-Z */
+typedef struct _FOR_CONTEXT
+{
+    struct _FOR_CONTEXT *previous;
+    WCHAR *variable[128];
 } FOR_CONTEXT;
+
+extern FOR_CONTEXT *forloopcontext;
+static inline BOOL for_var_is_valid(WCHAR ch) {return ch && ch < ARRAY_SIZE(forloopcontext->variable);}
+
+void WCMD_save_for_loop_context(BOOL reset);
+void WCMD_restore_for_loop_context(void);
+void WCMD_set_for_loop_variable(unsigned varidx, const WCHAR *value);
 
 /*
  * Global variables quals, param1, param2 contain the current qualifiers
@@ -199,12 +319,21 @@ typedef struct _FOR_CONTEXT {
  * variables and batch parameters substitution already done.
  */
 extern WCHAR quals[MAXSTRING], param1[MAXSTRING], param2[MAXSTRING];
-extern DWORD errorlevel;
+extern int errorlevel;
 extern BATCH_CONTEXT *context;
-extern FOR_CONTEXT forloopcontext;
 extern BOOL delayedsubst;
 
-#endif /* !RC_INVOKED */
+static inline BOOL WCMD_is_in_context(const WCHAR *ext)
+{
+    size_t c_len, e_len;
+    if (!context) return FALSE;
+    if (!ext) return TRUE;
+    c_len = wcslen(context->batchfileW);
+    e_len = wcslen(ext);
+    return (c_len > e_len) && !wcsicmp(&context->batchfileW[c_len - e_len], ext);
+}
+
+ #endif /* !RC_INVOKED */
 
 /*
  *	Serial nos of builtin commands. These constants must be in step with
@@ -220,7 +349,7 @@ extern BOOL delayedsubst;
 #define WCMD_CHDIR     2
 #define WCMD_CLS       3
 #define WCMD_COPY      4
-#define WCMD_CTTY      5
+/* no longer used slot */
 #define WCMD_DATE      6
 #define WCMD_DEL       7
 #define WCMD_DIR       8
@@ -262,9 +391,10 @@ extern BOOL delayedsubst;
 #define WCMD_MORE     43
 #define WCMD_CHOICE   44
 #define WCMD_MKLINK   45
+#define WCMD_CHGDRIVE 46
 
 /* Must be last in list */
-#define WCMD_EXIT     46
+#define WCMD_EXIT     47
 
 /* Some standard messages */
 extern WCHAR anykey[];
@@ -301,7 +431,6 @@ extern WCHAR version_string[];
 #define WCMD_ARGERR           1027
 #define WCMD_VOLUMESERIALNO   1028
 #define WCMD_VOLUMEPROMPT     1029
-#define WCMD_NOPATH           1030
 #define WCMD_ANYKEY           1031
 #define WCMD_CONSTITLE        1032
 #define WCMD_VERSION          1033
@@ -318,3 +447,6 @@ extern WCHAR version_string[];
 #define WCMD_BADPAREN         1044
 #define WCMD_BADHEXOCT        1045
 #define WCMD_FILENAMETOOLONG  1046
+#define WCMD_BADTOKEN         1047
+#define WCMD_ENDOFLINE        1048
+#define WCMD_ENDOFFILE        1049

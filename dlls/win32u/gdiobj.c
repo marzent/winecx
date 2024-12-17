@@ -743,7 +743,7 @@ HGDIOBJ alloc_gdi_handle( struct gdi_obj_header *obj, DWORD type, const struct g
     entry->Object  = (UINT_PTR)obj;
     entry->ExtType = type >> NTGDI_HANDLE_TYPE_SHIFT;
     entry->Type    = entry->ExtType & 0x1f;
-    if (++entry->Generation == 0xff) entry->Generation = 1;
+    if (++entry->Generation == 0x80) entry->Generation = 1;
     ret = entry_to_handle( entry );
     pthread_mutex_unlock( &gdi_lock );
     TRACE( "allocated %s %p %u/%u\n", gdi_obj_type(type), ret,
@@ -969,7 +969,10 @@ HANDLE WINAPI NtGdiGetDCObject( HDC hdc, UINT type )
     case NTGDI_OBJ_BRUSH:  ret = dc->hBrush; break;
     case NTGDI_OBJ_PAL:    ret = dc->hPalette; break;
     case NTGDI_OBJ_FONT:   ret = dc->hFont; break;
-    case NTGDI_OBJ_SURF:   ret = dc->hBitmap; break;
+    case NTGDI_OBJ_SURF:
+        /* Update bitmap for display device contexts */
+        if (dc->is_display) dc->hBitmap = get_display_bitmap();
+        ret = dc->hBitmap; break;
     default:
         FIXME( "(%p, %d): unknown type.\n", hdc, type );
         break;

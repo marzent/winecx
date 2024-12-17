@@ -74,6 +74,7 @@ struct ScriptHost {
     IActiveScriptSiteUIControl     IActiveScriptSiteUIControl_iface;
     IActiveScriptSiteDebug         IActiveScriptSiteDebug_iface;
     IServiceProvider               IServiceProvider_iface;
+    IOleCommandTarget              IOleCommandTarget_iface;
 
     LONG ref;
 
@@ -84,6 +85,7 @@ struct ScriptHost {
     SCRIPTSTATE script_state;
 
     HTMLInnerWindow *window;
+    IWineJSDispatch *script_jsdisp;
 
     GUID guid;
     struct list entry;
@@ -198,6 +200,32 @@ static BOOL init_script_engine(ScriptHost *script_host, IActiveScript *script)
         return FALSE;
     }
 
+    if(compat_mode >= COMPAT_MODE_IE9 && IsEqualGUID(&CLSID_JScript, &script_host->guid)) {
+        IWineJScript *jscript;
+        hres = IActiveScript_QueryInterface(script, &IID_IWineJScript, (void **)&jscript);
+        if(SUCCEEDED(hres)) {
+            DispatchEx *prototype;
+
+            assert(!script_host->window->jscript);
+            assert(!script_host->window->event_target.dispex.jsdisp);
+            script_host->window->jscript = jscript;
+
+            hres = get_prototype(script_host->window, PROT_Window, &prototype);
+            if(SUCCEEDED(hres))
+                hres = IWineJScript_InitHostObject(jscript,
+                                                   &script_host->window->event_target.dispex.IWineJSDispatchHost_iface,
+                                                   prototype->jsdisp, object_descriptors[PROT_Window]->js_flags,
+                                                   &script_host->window->event_target.dispex.jsdisp);
+            if(FAILED(hres))
+                ERR("Could not initialize script global: %08lx\n", hres);
+
+            /* make sure that script global is fully initialized */
+            dispex_compat_mode(&script_host->window->event_target.dispex);
+        }else {
+            ERR("Could not get IWineJScript, don't use native jscript.dll\n");
+        }
+    }
+
     hres = IActiveScript_AddNamedItem(script, L"window",
             SCRIPTITEM_ISVISIBLE|SCRIPTITEM_ISSOURCE|SCRIPTITEM_GLOBALMEMBERS);
     if(SUCCEEDED(hres)) {
@@ -227,6 +255,18 @@ static BOOL init_script_engine(ScriptHost *script_host, IActiveScript *script)
             }
             if(is_second_init)
                 set_script_prop(first_host->script, SCRIPTPROP_ABBREVIATE_GLOBALNAME_RESOLUTION, &var);
+        }
+
+        if(IsEqualGUID(&script_host->guid, &CLSID_JScript)) {
+            IDispatch *script_disp;
+
+            hres = IActiveScript_GetScriptDispatch(script, NULL, &script_disp);
+            if(FAILED(hres))
+                WARN("GetScriptDispatch failed: %08lx\n", hres);
+            else {
+                IDispatch_QueryInterface(script_disp, &IID_IWineJSDispatch, (void**)&script_host->script_jsdisp);
+                IDispatch_Release(script_disp);
+            }
         }
     }else {
        WARN("AddNamedItem failed: %08lx\n", hres);
@@ -261,6 +301,8 @@ static void release_script_engine(ScriptHost *This)
         unlink_ref(&This->parse);
     }
 
+    if(This->script_jsdisp)
+        IWineJSDispatch_Release(This->script_jsdisp);
     IActiveScript_Release(This->script);
     This->script = NULL;
     This->script_state = SCRIPTSTATE_UNINITIALIZED;
@@ -308,6 +350,9 @@ static HRESULT WINAPI ActiveScriptSite_QueryInterface(IActiveScriptSite *iface, 
     }else if(IsEqualGUID(&IID_IServiceProvider, riid)) {
         TRACE("(%p)->(IID_IServiceProvider %p)\n", This, ppv);
         *ppv = &This->IServiceProvider_iface;
+    }else if(IsEqualGUID(&IID_IOleCommandTarget, riid)) {
+        TRACE("(%p)->(IID_IOleCommandTarget %p)\n", This, ppv);
+        *ppv = &This->IOleCommandTarget_iface;
     }else if(IsEqualGUID(&IID_ICanHandleException, riid)) {
         TRACE("(%p)->(IID_ICanHandleException not supported %p)\n", This, ppv);
         return E_NOINTERFACE;
@@ -377,8 +422,10 @@ static HRESULT WINAPI ActiveScriptSite_GetItemInfo(IActiveScriptSite *iface, LPC
     if(!This->window || !This->window->base.outer_window)
         return E_FAIL;
 
-    /* FIXME: Return proxy object */
-    *ppiunkItem = (IUnknown*)&This->window->base.outer_window->base.IHTMLWindow2_iface;
+    if(dispex_compat_mode(&This->window->event_target.dispex) >= COMPAT_MODE_IE9)
+        *ppiunkItem = (IUnknown*)This->window->event_target.dispex.jsdisp;
+    else
+        *ppiunkItem = (IUnknown*)&This->window->base.outer_window->base.IHTMLWindow2_iface;
     IUnknown_AddRef(*ppiunkItem);
 
     return S_OK;
@@ -675,27 +722,10 @@ static HRESULT WINAPI ASServiceProvider_QueryService(IServiceProvider *iface, RE
 {
     ScriptHost *This = impl_from_IServiceProvider(iface);
 
-    if(IsEqualGUID(&SID_SInternetHostSecurityManager, guidService)) {
-        TRACE("(%p)->(SID_SInternetHostSecurityManager)\n", This);
+    if(!This->window || !This->window->doc)
+        return E_NOINTERFACE;
 
-        if(!This->window || !This->window->doc)
-            return E_NOINTERFACE;
-
-        return IInternetHostSecurityManager_QueryInterface(&This->window->doc->IInternetHostSecurityManager_iface,
-                riid, ppv);
-    }
-
-    if(IsEqualGUID(&SID_SContainerDispatch, guidService)) {
-        TRACE("(%p)->(SID_SContainerDispatch)\n", This);
-
-        if(!This->window || !This->window->doc)
-            return E_NOINTERFACE;
-
-        return IHTMLDocument2_QueryInterface(&This->window->doc->IHTMLDocument2_iface, riid, ppv);
-    }
-
-    FIXME("(%p)->(%s %s %p)\n", This, debugstr_guid(guidService), debugstr_guid(riid), ppv);
-    return E_NOINTERFACE;
+    return IServiceProvider_QueryService(&This->window->doc->IServiceProvider_iface, guidService, riid, ppv);
 }
 
 static const IServiceProviderVtbl ASServiceProviderVtbl = {
@@ -703,6 +733,82 @@ static const IServiceProviderVtbl ASServiceProviderVtbl = {
     ASServiceProvider_AddRef,
     ASServiceProvider_Release,
     ASServiceProvider_QueryService
+};
+
+static inline ScriptHost *impl_from_IOleCommandTarget(IOleCommandTarget *iface)
+{
+    return CONTAINING_RECORD(iface, ScriptHost, IOleCommandTarget_iface);
+}
+
+static HRESULT WINAPI OleCommandTarget_QueryInterface(IOleCommandTarget *iface, REFIID riid, void **ppv)
+{
+    ScriptHost *This = impl_from_IOleCommandTarget(iface);
+    return IActiveScriptSite_QueryInterface(&This->IActiveScriptSite_iface, riid, ppv);
+}
+
+static ULONG WINAPI OleCommandTarget_AddRef(IOleCommandTarget *iface)
+{
+    ScriptHost *This = impl_from_IOleCommandTarget(iface);
+    return IActiveScriptSite_AddRef(&This->IActiveScriptSite_iface);
+}
+
+static ULONG WINAPI OleCommandTarget_Release(IOleCommandTarget *iface)
+{
+    ScriptHost *This = impl_from_IOleCommandTarget(iface);
+    return IActiveScriptSite_Release(&This->IActiveScriptSite_iface);
+}
+
+static HRESULT WINAPI OleCommandTarget_QueryStatus(IOleCommandTarget *iface, const GUID *pguidCmdGroup,
+        ULONG cCmds, OLECMD prgCmds[], OLECMDTEXT *pCmdText)
+{
+    ScriptHost *This = impl_from_IOleCommandTarget(iface);
+
+    FIXME("(%p)->(%s %ld %p %p)\n", This, debugstr_guid(pguidCmdGroup), cCmds, prgCmds, pCmdText);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI OleCommandTarget_Exec(IOleCommandTarget *iface, const GUID *pguidCmdGroup,
+        DWORD nCmdID, DWORD nCmdexecopt, VARIANT *pvaIn, VARIANT *pvaOut)
+{
+    ScriptHost *This = impl_from_IOleCommandTarget(iface);
+
+    TRACE("(%p)->(%s %ld %ld %s %p)\n", This, debugstr_guid(pguidCmdGroup), nCmdID, nCmdexecopt, wine_dbgstr_variant(pvaIn), pvaOut);
+
+    if(!pguidCmdGroup) {
+        FIXME("Unsupported pguidCmdGroup %s\n", debugstr_guid(pguidCmdGroup));
+        return OLECMDERR_E_UNKNOWNGROUP;
+    }
+
+    if(IsEqualGUID(&CGID_ScriptSite, pguidCmdGroup)) {
+        switch(nCmdID) {
+        case CMDID_SCRIPTSITE_SECURITY_WINDOW:
+            if(!This->window || !This->window->base.outer_window) {
+                FIXME("No window\n");
+                return E_FAIL;
+            }
+            V_VT(pvaOut) = VT_DISPATCH;
+            V_DISPATCH(pvaOut) = (IDispatch*)&This->window->base.outer_window->base.IHTMLWindow2_iface;
+            IDispatch_AddRef(V_DISPATCH(pvaOut));
+            break;
+
+        default:
+            FIXME("Unsupported nCmdID %ld of CGID_ScriptSite group\n", nCmdID);
+            return OLECMDERR_E_NOTSUPPORTED;
+        }
+        return S_OK;
+    }
+
+    FIXME("Unsupported pguidCmdGroup %s\n", debugstr_guid(pguidCmdGroup));
+    return OLECMDERR_E_UNKNOWNGROUP;
+}
+
+static const IOleCommandTargetVtbl OleCommandTargetVtbl = {
+    OleCommandTarget_QueryInterface,
+    OleCommandTarget_AddRef,
+    OleCommandTarget_Release,
+    OleCommandTarget_QueryStatus,
+    OleCommandTarget_Exec
 };
 
 static ScriptHost *create_script_host(HTMLInnerWindow *window, const GUID *guid)
@@ -721,6 +827,7 @@ static ScriptHost *create_script_host(HTMLInnerWindow *window, const GUID *guid)
     ret->IActiveScriptSiteUIControl_iface.lpVtbl = &ActiveScriptSiteUIControlVtbl;
     ret->IActiveScriptSiteDebug_iface.lpVtbl = &ActiveScriptSiteDebugVtbl;
     ret->IServiceProvider_iface.lpVtbl = &ASServiceProviderVtbl;
+    ret->IOleCommandTarget_iface.lpVtbl = &OleCommandTargetVtbl;
     ret->ref = 1;
     ret->window = window;
     ret->script_state = SCRIPTSTATE_UNINITIALIZED;
@@ -1324,6 +1431,13 @@ static ScriptHost *get_script_host(HTMLInnerWindow *window, const GUID *guid)
     return create_script_host(window, guid);
 }
 
+void initialize_script_global(HTMLInnerWindow *script_global)
+{
+    if(!script_global->base.outer_window)
+        return;
+    get_script_host(script_global, &CLSID_JScript);
+}
+
 static ScriptHost *get_elem_script_host(HTMLInnerWindow *window, HTMLScriptElement *script_elem)
 {
     GUID guid;
@@ -1474,6 +1588,21 @@ IDispatch *get_script_disp(ScriptHost *script_host)
     return disp;
 }
 
+IWineJSDispatch *get_script_jsdisp(ScriptHost *script_host)
+{
+    return script_host->script_jsdisp;
+}
+
+IActiveScriptSite *get_first_script_site(HTMLInnerWindow *window)
+{
+    if(list_empty(&window->script_hosts)) {
+        ScriptHost *script_host = create_script_host(window, &CLSID_JScript);
+        if(!script_host)
+            return NULL;
+    }
+    return &LIST_ENTRY(list_head(&window->script_hosts), ScriptHost, entry)->IActiveScriptSite_iface;
+}
+
 static EventTarget *find_event_target(HTMLDocumentNode *doc, HTMLScriptElement *script_elem)
 {
     EventTarget *event_target = NULL;
@@ -1499,7 +1628,7 @@ static EventTarget *find_event_target(HTMLDocumentNode *doc, HTMLScriptElement *
     }else if(!wcscmp(target_id, L"window")) {
         if(doc->window) {
             event_target = &doc->window->event_target;
-            IDispatchEx_AddRef(&event_target->dispex.IDispatchEx_iface);
+            IWineJSDispatchHost_AddRef(&event_target->dispex.IWineJSDispatchHost_iface);
         }
     }else {
         HTMLElement *target_elem;
@@ -1657,14 +1786,14 @@ void bind_event_scripts(HTMLDocumentNode *doc)
         if(event_disp) {
             event_target = find_event_target(doc, script_elem);
             if(event_target) {
-                hres = IDispatchEx_QueryInterface(&event_target->dispex.IDispatchEx_iface, &IID_HTMLPluginContainer,
+                hres = IWineJSDispatchHost_QueryInterface(&event_target->dispex.IWineJSDispatchHost_iface, &IID_HTMLPluginContainer,
                         (void**)&plugin_container);
                 if(SUCCEEDED(hres))
                     bind_activex_event(doc, plugin_container, event, event_disp);
                 else
                     bind_target_event(doc, event_target, event, event_disp);
 
-                IDispatchEx_Release(&event_target->dispex.IDispatchEx_iface);
+                IWineJSDispatchHost_Release(&event_target->dispex.IWineJSDispatchHost_iface);
                 if(plugin_container)
                     node_release(&plugin_container->element.node);
             }
@@ -1679,12 +1808,16 @@ void bind_event_scripts(HTMLDocumentNode *doc)
     nsIDOMNodeList_Release(node_list);
 }
 
-BOOL find_global_prop(HTMLInnerWindow *window, BSTR name, DWORD flags, ScriptHost **ret_host, DISPID *ret_id)
+BOOL find_global_prop(HTMLInnerWindow *window, const WCHAR *name, DWORD flags, ScriptHost **ret_host, DISPID *ret_id)
 {
     IDispatchEx *dispex;
     IDispatch *disp;
     ScriptHost *iter;
+    BSTR str;
     HRESULT hres;
+
+    if(!(str = SysAllocString(name)))
+        return E_OUTOFMEMORY;
 
     LIST_FOR_EACH_ENTRY(iter, &window->script_hosts, ScriptHost, entry) {
         disp = get_script_disp(iter);
@@ -1693,7 +1826,7 @@ BOOL find_global_prop(HTMLInnerWindow *window, BSTR name, DWORD flags, ScriptHos
 
         hres = IDispatch_QueryInterface(disp, &IID_IDispatchEx, (void**)&dispex);
         if(SUCCEEDED(hres)) {
-            hres = IDispatchEx_GetDispID(dispex, name, flags & (~fdexNameEnsure), ret_id);
+            hres = IDispatchEx_GetDispID(dispex, str, flags & (~fdexNameEnsure), ret_id);
             IDispatchEx_Release(dispex);
         }else {
             FIXME("No IDispatchEx\n");
@@ -1702,12 +1835,56 @@ BOOL find_global_prop(HTMLInnerWindow *window, BSTR name, DWORD flags, ScriptHos
 
         IDispatch_Release(disp);
         if(SUCCEEDED(hres)) {
+            SysFreeString(str);
             *ret_host = iter;
             return TRUE;
         }
     }
 
+    SysFreeString(str);
     return FALSE;
+}
+
+HRESULT global_prop_still_exists(HTMLInnerWindow *window, global_prop_t *prop)
+{
+    HRESULT hres;
+
+    switch(prop->type) {
+    case GLOBAL_SCRIPTVAR: {
+        DWORD properties;
+
+        if(!prop->script_host->script)
+            return E_UNEXPECTED;
+        if(!prop->script_host->script_jsdisp)
+            return S_OK;
+        return IWineJSDispatch_GetMemberProperties(prop->script_host->script_jsdisp, prop->id, 0, &properties);
+    }
+    case GLOBAL_ELEMENTVAR: {
+        IHTMLElement *elem;
+
+        hres = IHTMLDocument3_getElementById(&window->doc->IHTMLDocument3_iface, prop->name, &elem);
+        if(FAILED(hres))
+            return hres;
+
+        if(!elem)
+            return DISP_E_MEMBERNOTFOUND;
+        IHTMLElement_Release(elem);
+        return S_OK;
+    }
+    case GLOBAL_FRAMEVAR: {
+        HTMLOuterWindow *frame;
+
+        hres = get_frame_by_name(window->base.outer_window, prop->name, FALSE, &frame);
+        if(FAILED(hres))
+            return hres;
+
+        return frame ? S_OK : DISP_E_MEMBERNOTFOUND;
+    }
+    default:
+        break;
+    }
+
+    return S_OK;
 }
 
 static BOOL is_jscript_available(void)

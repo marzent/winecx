@@ -63,12 +63,19 @@
 #ifdef HAVE_MACH_MACH_H
 # include <mach/mach.h>
 #endif
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#else
+extern char **environ;
+#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
 #include "windef.h"
 #include "winternl.h"
 #include "winioctl.h"
+#include "ddk/ntddk.h"
 #include "unix_private.h"
 #include "wine/condrv.h"
 #include "wine/server.h"
@@ -85,7 +92,6 @@ static UINT process_error_mode;
 enum { /* must match definitions in Mac app code (WineLoader.m) */
     REQUEST_LOAD_WINE = 0x52c17355,
     RESPONSE_SUCCESS,
-    REQUEST_LOAD_WINE_64BIT,
 };
 
 static BOOL write_data(int sock, const void *buffer, size_t length)
@@ -163,7 +169,7 @@ static BOOL has_key_value( const WCHAR *exenameW, const WCHAR *keyname, BOOL *ex
 
 static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMETERS *params,
                               int wineserversocket, int stdin_fd, int stdout_fd, char *winedebug,
-                              const pe_image_info_t *pe_info, const char* wineloader)
+                              const struct pe_image_info *pe_info, const char* wineloader)
 {
     /* HKCU\Software\CrossOver\SuppressAltLoader */
     /* FIXME: root hardcoded for now */
@@ -215,6 +221,14 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
         int len;
         WCHAR *exenameW;
         BOOL exists;
+
+        /* CW Hack 23741: Suppress the alt loader for a Rockstar launcher
+         * process with name too generic to put in the registry. */
+        if (strstr(argv[1], "\\Rockstar Games\\Launcher\\Launcher.exe"))
+        {
+            TRACE("alternative loader suppressed for Rockstar Launcher.exe\n");
+            goto failed;
+        }
 
         exename = argv[1];
         if ((p = strrchr(exename, '/'))) exename = p + 1;
@@ -280,10 +294,7 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
         goto failed;
     }
 
-    if (pe_info->machine == IMAGE_FILE_MACHINE_AMD64 || pe_info->machine == IMAGE_FILE_MACHINE_ARM64)
-        request_type = REQUEST_LOAD_WINE_64BIT;
-    else
-        request_type = REQUEST_LOAD_WINE;
+    request_type = REQUEST_LOAD_WINE;
     if (!write_data(sock, &request_type, sizeof(request_type)))
     {
         WARN("failed to write request type\n");
@@ -297,7 +308,7 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
     }
 
     length = 0;
-    for (elem = main_envp; *elem; elem++) {
+    for (elem = environ; *elem; elem++) {
         // Skip a preexisting WINELOADER if we have a replacement
         if (wineloader && !strncmp(*elem, "WINELOADER=", 11))
             continue;
@@ -313,7 +324,7 @@ static BOOL send_to_cx_loader(const char *loader, const RTL_USER_PROCESS_PARAMET
         goto failed;
     }
 
-    for (elem = main_envp; *elem; elem++)
+    for (elem = environ; *elem; elem++)
     {
         // Skip a preexisting WINELOADER if we have a replacement
         if (wineloader && !strncmp(*elem, "WINELOADER=", 11))
@@ -539,7 +550,7 @@ static char **build_argv( const UNICODE_STRING *cmdline, int reserved )
 /***********************************************************************
  *           get_so_file_info
  */
-static BOOL get_so_file_info( int fd, pe_image_info_t *info )
+static BOOL get_so_file_info( int fd, struct pe_image_info *info )
 {
     union
     {
@@ -639,7 +650,7 @@ static BOOL get_so_file_info( int fd, pe_image_info_t *info )
 /***********************************************************************
  *           get_pe_file_info
  */
-static unsigned int get_pe_file_info( OBJECT_ATTRIBUTES *attr, HANDLE *handle, pe_image_info_t *info )
+static unsigned int get_pe_file_info( OBJECT_ATTRIBUTES *attr, HANDLE *handle, struct pe_image_info *info )
 {
     unsigned int status;
     HANDLE mapping;
@@ -812,7 +823,7 @@ static BOOL is_unix_console_handle( HANDLE handle )
  *           spawn_process
  */
 static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int socketfd,
-                               int unixdir, char *winedebug, const pe_image_info_t *pe_info )
+                               int unixdir, char *winedebug, const struct pe_image_info *pe_info )
 {
     int is_child_64bit = (pe_info->machine == IMAGE_FILE_MACHINE_AMD64 || pe_info->machine == IMAGE_FILE_MACHINE_ARM64);
     NTSTATUS status = STATUS_SUCCESS;
@@ -846,7 +857,7 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
             if ((peb->ProcessParameters && params->ProcessGroupId != peb->ProcessParameters->ProcessGroupId) ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC_NO_WINDOW ||
-                (params->hStdInput == INVALID_HANDLE_VALUE && params->hStdOutput == INVALID_HANDLE_VALUE))
+                params->ConsoleHandle == NULL)
             {
                 setsid();
                 set_stdio_fd( -1, -1 );  /* close stdin and stdout */
@@ -873,6 +884,44 @@ static NTSTATUS spawn_process( const RTL_USER_PROCESS_PARAMETERS *params, int so
             }
             else
                 image_path_name_a = argv[2];
+
+            /* CW Hack 24067: Promote PE ROSETTA_ADVERTISE_AVX into the Unix environment. */
+#ifdef __APPLE__
+            {
+                static const WCHAR ROSETTA_ADVERTISE_AVX[] = {'R','O','S','E','T','T','A','_','A','D','V','E','R','T','I','S','E','_','A','V','X','=',0};
+                WCHAR *ptr = params->Environment;
+                while (*ptr)
+                {
+                    if (!wcsncmp( ptr, ROSETTA_ADVERTISE_AVX, ARRAY_SIZE( ROSETTA_ADVERTISE_AVX ) - 1 ))
+                    {
+                        DWORD len = wcslen(ptr) * 3 + 1;
+                        char *mb_str = malloc(len);
+                        if (mb_str)
+                        {
+                            ntdll_wcstoumbs( ptr, wcslen(ptr) + 1, mb_str, len, FALSE );
+                            putenv(mb_str);
+                        }
+                        break;
+                    }
+                    ptr += wcslen(ptr) + 1;
+                }
+            }
+#endif
+
+        /* CW Hack 24560: Don't advertise Vulkan extensions for Path of Exile 2 */
+#ifdef __APPLE__
+        {
+            static const WCHAR pathofexilesteamW[] = {'\\','P','a','t','h',' ','o','f',' ','E','x','i','l','e',' ','2','\\','P','a','t','h','O','f','E','x','i','l','e','S','t','e','a','m','.','e','x','e',0};
+            USHORT path_len = params->ImagePathName.Length / sizeof(WCHAR);
+
+            if (path_len >= ARRAY_SIZE(pathofexilesteamW) &&
+                !wcsicmp( params->ImagePathName.Buffer + path_len - ARRAY_SIZE(pathofexilesteamW) + 1, pathofexilesteamW ))
+            {
+                FIXME( "HACK: setting MVK_CONFIG_ADVERTISE_EXTENSIONS=0\n" );
+                setenv( "MVK_CONFIG_ADVERTISE_EXTENSIONS", "0", 1 );
+            }
+        }
+#endif
 
             exec_wineloader( argv, socketfd, pe_info, image_path_name_a );
             _exit(1);
@@ -1037,7 +1086,7 @@ static NTSTATUS fork_and_exec( OBJECT_ATTRIBUTES *attr, int unixdir,
             if ((peb->ProcessParameters && params->ProcessGroupId != peb->ProcessParameters->ProcessGroupId) ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC ||
                 params->ConsoleHandle == CONSOLE_HANDLE_ALLOC_NO_WINDOW ||
-                (params->hStdInput == INVALID_HANDLE_VALUE && params->hStdOutput == INVALID_HANDLE_VALUE))
+                params->ConsoleHandle == NULL)
             {
                 setsid();
                 set_stdio_fd( -1, -1 );  /* close stdin and stdout */
@@ -1138,10 +1187,10 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
     struct object_attributes *objattr;
     data_size_t attr_len;
     char *winedebug = NULL;
-    startup_info_t *startup_info = NULL;
+    struct startup_info_data *startup_info = NULL;
     ULONG startup_info_size, env_size;
     int unixdir, socketfd[2] = { -1, -1 };
-    pe_image_info_t pe_info;
+    struct pe_image_info pe_info;
     CLIENT_ID id;
     USHORT machine = 0;
     HANDLE parent = 0, debug = 0, token = 0;
@@ -1215,7 +1264,12 @@ NTSTATUS WINAPI NtCreateUserProcess( HANDLE *process_handle_ptr, HANDLE *thread_
         }
         goto done;
     }
-    if (!machine) machine = pe_info.machine;
+    if (!machine)
+    {
+        machine = pe_info.machine;
+        if (is_arm64ec() && pe_info.is_hybrid && machine == IMAGE_FILE_MACHINE_ARM64)
+            machine = main_image_info.Machine;
+    }
     if (!(startup_info = create_startup_info( attr.ObjectName, process_flags, params, &pe_info, &startup_info_size )))
         goto done;
     env_size = get_env_size( params, &winedebug );
@@ -1532,7 +1586,6 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
 
     switch (class)
     {
-    UNIMPLEMENTED_INFO_CLASS(ProcessQuotaLimits);
     UNIMPLEMENTED_INFO_CLASS(ProcessBasePriority);
     UNIMPLEMENTED_INFO_CLASS(ProcessRaisePriority);
     UNIMPLEMENTED_INFO_CLASS(ProcessExceptionPort);
@@ -1939,7 +1992,7 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
         {
             if (info)
             {
-                pe_image_info_t pe_info;
+                struct pe_image_info pe_info;
 
                 SERVER_START_REQ( get_process_info )
                 {
@@ -1988,6 +2041,35 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
         else ret = STATUS_INVALID_PARAMETER;
         break;
 
+    case ProcessQuotaLimits:
+        {
+            QUOTA_LIMITS qlimits;
+
+            FIXME( "ProcessQuotaLimits (%p,%p,0x%08x,%p) stub\n", handle, info, (int)size, ret_len );
+
+            len = sizeof(QUOTA_LIMITS);
+            if (size == len)
+            {
+                if (!handle) ret = STATUS_INVALID_HANDLE;
+                else
+                {
+                    /* FIXME: SetProcessWorkingSetSize can also set the quota values.
+                                Quota Limits should be stored inside the process. */
+                    qlimits.PagedPoolLimit = (SIZE_T)-1;
+                    qlimits.NonPagedPoolLimit = (SIZE_T)-1;
+                    /* Default minimum working set size is 204800 bytes (50 Pages) */
+                    qlimits.MinimumWorkingSetSize = 204800;
+                    /* Default maximum working set size is 1413120 bytes (345 Pages) */
+                    qlimits.MaximumWorkingSetSize = 1413120;
+                    qlimits.PagefileLimit = (SIZE_T)-1;
+                    qlimits.TimeLimit.QuadPart = -1;
+                    memcpy(info, &qlimits, len);
+                }
+            }
+            else ret = STATUS_INFO_LENGTH_MISMATCH;
+            break;
+        }
+
     default:
         FIXME("(%p,info_class=%d,%p,0x%08x,%p) Unknown information class\n",
               handle, class, info, (int)size, ret_len );
@@ -1999,6 +2081,68 @@ NTSTATUS WINAPI NtQueryInformationProcess( HANDLE handle, PROCESSINFOCLASS class
     return ret;
 }
 
+#ifndef _WIN64
+
+/**********************************************************************
+ *           NtWow64QueryInformationProcess64  (NTDLL.@)
+ */
+NTSTATUS WINAPI NtWow64QueryInformationProcess64( HANDLE handle, PROCESSINFOCLASS class, void *info,
+                                                  ULONG size, ULONG *ret_len )
+{
+    NTSTATUS ret;
+    ULONG len = 0;
+
+    TRACE( "(%p,0x%08x,%p,0x%08x,%p)\n", handle, class, info, (int)size, ret_len );
+
+    switch (class)
+    {
+    case ProcessBasicInformation:
+        {
+            PROCESS_BASIC_INFORMATION64 pbi;
+            const ULONG_PTR affinity_mask = get_system_affinity_mask();
+
+            if (size >= sizeof(PROCESS_BASIC_INFORMATION64))
+            {
+                if (!info) ret = STATUS_ACCESS_VIOLATION;
+                else
+                {
+                    SERVER_START_REQ(get_process_info)
+                    {
+                        req->handle = wine_server_obj_handle( handle );
+                        if ((ret = wine_server_call( req )) == STATUS_SUCCESS)
+                        {
+                            pbi.ExitStatus = reply->exit_code;
+                            pbi.PebBaseAddress = (ULONG)wine_server_get_ptr( reply->peb );
+                            pbi.AffinityMask = reply->affinity & affinity_mask;
+                            pbi.BasePriority = reply->priority;
+                            pbi.UniqueProcessId = reply->pid;
+                            pbi.InheritedFromUniqueProcessId = reply->ppid;
+                        }
+                    }
+                    SERVER_END_REQ;
+
+                    memcpy( info, &pbi, sizeof(PROCESS_BASIC_INFORMATION64) );
+                    len = sizeof(PROCESS_BASIC_INFORMATION64);
+                }
+                if (size > sizeof(PROCESS_BASIC_INFORMATION64)) ret = STATUS_INFO_LENGTH_MISMATCH;
+            }
+            else
+            {
+                len = sizeof(PROCESS_BASIC_INFORMATION64);
+                ret = STATUS_INFO_LENGTH_MISMATCH;
+            }
+        }
+        break;
+
+    default:
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (ret_len) *ret_len = len;
+    return ret;
+}
+
+#endif
 
 /**********************************************************************
  *           NtSetInformationProcess  (NTDLL.@)
@@ -2009,6 +2153,23 @@ NTSTATUS WINAPI NtSetInformationProcess( HANDLE handle, PROCESSINFOCLASS class, 
 
     switch (class)
     {
+    case ProcessAccessToken:
+    {
+        const PROCESS_ACCESS_TOKEN *token = info;
+
+        if (size != sizeof(PROCESS_ACCESS_TOKEN)) return STATUS_INFO_LENGTH_MISMATCH;
+
+        SERVER_START_REQ( set_process_info )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            req->token = wine_server_obj_handle( token->Token );
+            req->mask = SET_PROCESS_INFO_TOKEN;
+            ret = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        break;
+    }
+
     case ProcessDefaultHardErrorMode:
         if (size != sizeof(UINT)) return STATUS_INVALID_PARAMETER;
         process_error_mode = *(UINT *)info;
@@ -2076,11 +2237,18 @@ NTSTATUS WINAPI NtSetInformationProcess( HANDLE handle, PROCESSINFOCLASS class, 
     case ProcessInstrumentationCallback:
     {
         PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION *instr = info;
+        void *callback;
 
-        FIXME( "ProcessInstrumentationCallback stub.\n" );
-
-        if (size < sizeof(*instr)) return STATUS_INFO_LENGTH_MISMATCH;
+        if (size < sizeof(callback)) return STATUS_INFO_LENGTH_MISMATCH;
+        if (size >= sizeof(PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION)) callback = instr->Callback;
+        else                                                              callback = *(void **)info;
         ret = STATUS_SUCCESS;
+        if (handle != GetCurrentProcess())
+        {
+            FIXME( "Setting ProcessInstrumentationCallback is not yet supported for other process.\n" );
+            break;
+        }
+        set_process_instrumentation_callback( callback );
         break;
     }
 
@@ -2104,6 +2272,22 @@ NTSTATUS WINAPI NtSetInformationProcess( HANDLE handle, PROCESSINFOCLASS class, 
             stack->StackBase = addr;
         }
         break;
+    }
+
+    case ProcessManageWritesToExecutableMemory:
+    {
+#ifdef __aarch64__
+        const MANAGE_WRITES_TO_EXECUTABLE_MEMORY *mem = info;
+
+        if (size != sizeof(*mem)) return STATUS_INFO_LENGTH_MISMATCH;
+        if (handle != GetCurrentProcess()) return STATUS_NOT_SUPPORTED;
+        if (mem->Version != 2) return STATUS_REVISION_MISMATCH;
+        if (mem->ThreadAllowWrites) return STATUS_INVALID_PARAMETER;
+        virtual_enable_write_exceptions( mem->ProcessEnableWriteExceptions );
+        break;
+#else
+        return STATUS_NOT_SUPPORTED;
+#endif
     }
 
     case ProcessWineMakeProcessSystem:
@@ -2130,6 +2314,19 @@ NTSTATUS WINAPI NtSetInformationProcess( HANDLE handle, PROCESSINFOCLASS class, 
         }
         SERVER_END_REQ;
         return ret;
+
+    case ProcessWineGrantAdminToken:
+        SERVER_START_REQ( grant_process_admin_token )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            ret = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        break;
+
+    case ProcessPowerThrottlingState:
+        FIXME( "ProcessPowerThrottlingState - stub\n" );
+        return STATUS_SUCCESS;
 
     default:
         FIXME( "(%p,0x%08x,%p,0x%08x) stub\n", handle, class, info, (int)size );

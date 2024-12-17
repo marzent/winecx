@@ -64,6 +64,27 @@ static void test_formats(void)
     ok(fmt->nAvgBytesPerSec == 192000, "Wrong avg bytes per sec, expected 192000 got %lu\n", fmt->nAvgBytesPerSec);
     ok(fmt->cbSize == 0, "Wrong cbSize for simple format, expected 0, got %hu\n", fmt->cbSize);
 
+    hr = ISpatialAudioClient_IsAudioObjectFormatSupported(sac, NULL);
+    ok(hr == E_POINTER, "Got %#lx.\n", hr);
+
+    memcpy(&format, fmt, sizeof(format));
+    hr = ISpatialAudioClient_IsAudioObjectFormatSupported(sac, &format);
+    ok(hr == S_OK, "Got %#lx.\n", hr);
+
+    format.nBlockAlign *= 2;
+    hr = ISpatialAudioClient_IsAudioObjectFormatSupported(sac, &format);
+    todo_wine ok(hr == S_OK, "Got %#lx.\n", hr);
+
+    memcpy(&format, fmt, sizeof(format));
+    format.wBitsPerSample *= 2;
+    hr = ISpatialAudioClient_IsAudioObjectFormatSupported(sac, &format);
+    ok(hr == E_INVALIDARG, "Got %#lx.\n", hr);
+
+    memcpy(&format, fmt, sizeof(format));
+    format.nChannels = 2;
+    hr = ISpatialAudioClient_IsAudioObjectFormatSupported(sac, &format);
+    ok(hr == E_INVALIDARG, "Got %#lx.\n", hr);
+
     memcpy(&format, fmt, sizeof(format));
 
     IAudioFormatEnumerator_Release(afe);
@@ -327,8 +348,8 @@ static void test_audio_object_buffers(void)
         hr = ISpatialAudioObject_GetBuffer(sao[i], &buffer, &buffer_length);
         ok(hr == S_OK, "Expected to be able to get buffers for audio object: 0x%08lx\n", hr);
         ok(buffer != NULL, "Expected to get a non-NULL buffer\n");
-        ok(buffer_length == frame_count * format.wBitsPerSample / 8, "Expected buffer length to be sample_size * frame_count = %hu but got %u\n",
-                frame_count * format.wBitsPerSample / 8, buffer_length);
+        ok(buffer_length == frame_count * format.wBitsPerSample / 8, "Expected buffer length to be sample_size * frame_count = %u but got %u\n",
+           frame_count * format.wBitsPerSample / 8, buffer_length);
         ok(is_buffer_zeroed(buffer, buffer_length), "Expected audio object's buffer to be zeroed\n");
     }
 
@@ -361,7 +382,7 @@ static void test_audio_object_buffers(void)
             ok(hr == S_OK, "Expected to be able to get buffers for audio object: 0x%08lx, i %d\n", hr, i);
             ok(buffer != NULL, "Expected to get a non-NULL buffer\n");
             ok(buffer_length == frame_count * format.wBitsPerSample / 8,
-                    "Expected buffer length to be sample_size * frame_count = %hu but got %u\n",
+                    "Expected buffer length to be sample_size * frame_count = %u but got %u\n",
                     frame_count * format.wBitsPerSample / 8, buffer_length);
 
             /* Enable to hear the test sound. */
@@ -397,7 +418,7 @@ static void test_audio_object_buffers(void)
         hr = ISpatialAudioObject_GetBuffer(sao[i], &buffer, &buffer_length);
         ok(hr == S_OK, "Expected to be able to get buffers for audio object: 0x%08lx\n", hr);
         ok(buffer != NULL, "Expected to get a non-NULL buffer\n");
-        ok(buffer_length == frame_count * format.wBitsPerSample / 8, "Expected buffer length to be sample_size * frame_count = %hu but got %u\n",
+        ok(buffer_length == frame_count * format.wBitsPerSample / 8, "Expected buffer length to be sample_size * frame_count = %u but got %u\n",
                 frame_count * format.wBitsPerSample / 8, buffer_length);
         ok(is_buffer_zeroed(buffer, buffer_length), "Expected audio object's buffer to be zeroed\n");
     }

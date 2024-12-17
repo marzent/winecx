@@ -37,7 +37,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(seh);
 WINE_DECLARE_DEBUG_CHANNEL(relay);
-WINE_DECLARE_DEBUG_CHANNEL(threadname);
 
 struct x86_thread_data
 {
@@ -107,16 +106,6 @@ DEFINE_SYSCALL_HELPER32()
 
 
 /*******************************************************************
- *         is_valid_frame
- */
-static inline BOOL is_valid_frame( void *frame )
-{
-    if ((ULONG_PTR)frame & 3) return FALSE;
-    return (frame >= NtCurrentTeb()->Tib.StackLimit &&
-            (void **)frame < (void **)NtCurrentTeb()->Tib.StackBase - 1);
-}
-
-/*******************************************************************
  *         raise_handler
  *
  * Handler for exceptions happening inside a handler.
@@ -124,7 +113,7 @@ static inline BOOL is_valid_frame( void *frame )
 static DWORD raise_handler( EXCEPTION_RECORD *rec, EXCEPTION_REGISTRATION_RECORD *frame,
                             CONTEXT *context, EXCEPTION_REGISTRATION_RECORD **dispatcher )
 {
-    if (rec->ExceptionFlags & (EH_UNWINDING | EH_EXIT_UNWIND))
+    if (rec->ExceptionFlags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND))
         return ExceptionContinueSearch;
     /* We shouldn't get here so we store faulty frame in dispatcher */
     *dispatcher = ((EXC_NESTED_FRAME*)frame)->prevFrame;
@@ -140,7 +129,7 @@ static DWORD raise_handler( EXCEPTION_RECORD *rec, EXCEPTION_REGISTRATION_RECORD
 static DWORD unwind_handler( EXCEPTION_RECORD *rec, EXCEPTION_REGISTRATION_RECORD *frame,
                              CONTEXT *context, EXCEPTION_REGISTRATION_RECORD **dispatcher )
 {
-    if (!(rec->ExceptionFlags & (EH_UNWINDING | EH_EXIT_UNWIND)))
+    if (!(rec->ExceptionFlags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND)))
         return ExceptionContinueSearch;
     /* We shouldn't get here so we store faulty frame in dispatcher */
     *dispatcher = ((EXC_NESTED_FRAME*)frame)->prevFrame;
@@ -149,11 +138,11 @@ static DWORD unwind_handler( EXCEPTION_RECORD *rec, EXCEPTION_REGISTRATION_RECOR
 
 
 /**********************************************************************
- *           call_stack_handlers
+ *           call_seh_handlers
  *
- * Call the stack handlers chain.
+ * Call the SEH handlers chain.
  */
-static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
+NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
 {
     EXCEPTION_REGISTRATION_RECORD *frame, *dispatch, *nested_frame;
     DWORD res;
@@ -163,9 +152,9 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
     while (frame != (EXCEPTION_REGISTRATION_RECORD*)~0UL)
     {
         /* Check frame address */
-        if (!is_valid_frame( frame ))
+        if (!is_valid_frame( (ULONG_PTR)frame ))
         {
-            rec->ExceptionFlags |= EH_STACK_INVALID;
+            rec->ExceptionFlags |= EXCEPTION_STACK_INVALID;
             break;
         }
 
@@ -179,19 +168,19 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
         {
             /* no longer nested */
             nested_frame = NULL;
-            rec->ExceptionFlags &= ~EH_NESTED_CALL;
+            rec->ExceptionFlags &= ~EXCEPTION_NESTED_CALL;
         }
 
         switch(res)
         {
         case ExceptionContinueExecution:
-            if (!(rec->ExceptionFlags & EH_NONCONTINUABLE)) return STATUS_SUCCESS;
+            if (!(rec->ExceptionFlags & EXCEPTION_NONCONTINUABLE)) return STATUS_SUCCESS;
             return STATUS_NONCONTINUABLE_EXCEPTION;
         case ExceptionContinueSearch:
             break;
         case ExceptionNestedException:
             if (nested_frame < dispatch) nested_frame = dispatch;
-            rec->ExceptionFlags |= EH_NESTED_CALL;
+            rec->ExceptionFlags |= EXCEPTION_NESTED_CALL;
             break;
         default:
             return STATUS_INVALID_DISPOSITION;
@@ -205,70 +194,6 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
 /*******************************************************************
  *		KiUserExceptionDispatcher (NTDLL.@)
  */
-NTSTATUS WINAPI dispatch_exception( EXCEPTION_RECORD *rec, CONTEXT *context )
-{
-    NTSTATUS status;
-    DWORD c;
-
-    TRACE( "code=%lx flags=%lx addr=%p ip=%08lx\n",
-           rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress, context->Eip );
-    for (c = 0; c < rec->NumberParameters; c++)
-        TRACE( " info[%ld]=%08Ix\n", c, rec->ExceptionInformation[c] );
-
-    if (rec->ExceptionCode == EXCEPTION_WINE_STUB)
-    {
-        if (rec->ExceptionInformation[1] >> 16)
-            MESSAGE( "wine: Call from %p to unimplemented function %s.%s, aborting\n",
-                     rec->ExceptionAddress,
-                     (char*)rec->ExceptionInformation[0], (char*)rec->ExceptionInformation[1] );
-        else
-            MESSAGE( "wine: Call from %p to unimplemented function %s.%Id, aborting\n",
-                     rec->ExceptionAddress,
-                     (char*)rec->ExceptionInformation[0], rec->ExceptionInformation[1] );
-    }
-    else if (rec->ExceptionCode == EXCEPTION_WINE_NAME_THREAD && rec->ExceptionInformation[0] == 0x1000)
-    {
-        if ((DWORD)rec->ExceptionInformation[2] == -1 || (DWORD)rec->ExceptionInformation[2] == GetCurrentThreadId())
-            WARN_(threadname)( "Thread renamed to %s\n", debugstr_a((char *)rec->ExceptionInformation[1]) );
-        else
-            WARN_(threadname)( "Thread ID %04lx renamed to %s\n", (DWORD)rec->ExceptionInformation[2],
-                               debugstr_a((char *)rec->ExceptionInformation[1]) );
-
-        set_native_thread_name((DWORD)rec->ExceptionInformation[2], (char *)rec->ExceptionInformation[1]);
-    }
-    else if (rec->ExceptionCode == DBG_PRINTEXCEPTION_C)
-    {
-        WARN( "%s\n", debugstr_an((char *)rec->ExceptionInformation[1], rec->ExceptionInformation[0] - 1) );
-    }
-    else if (rec->ExceptionCode == DBG_PRINTEXCEPTION_WIDE_C)
-    {
-        WARN( "%s\n", debugstr_wn((WCHAR *)rec->ExceptionInformation[1], rec->ExceptionInformation[0] - 1) );
-    }
-    else
-    {
-        if (rec->ExceptionCode == STATUS_ASSERTION_FAILURE)
-            ERR( "%s exception (code=%lx) raised\n", debugstr_exception_code(rec->ExceptionCode), rec->ExceptionCode );
-        else
-            WARN( "%s exception (code=%lx) raised\n", debugstr_exception_code(rec->ExceptionCode), rec->ExceptionCode );
-
-        TRACE(" eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx\n",
-              context->Eax, context->Ebx, context->Ecx,
-              context->Edx, context->Esi, context->Edi );
-        TRACE(" ebp=%08lx esp=%08lx cs=%04lx ss=%04lx ds=%04lx es=%04lx fs=%04lx gs=%04lx flags=%08lx\n",
-              context->Ebp, context->Esp, context->SegCs, context->SegSs, context->SegDs,
-              context->SegEs, context->SegFs, context->SegGs, context->EFlags );
-    }
-
-    if (call_vectored_handlers( rec, context ) == EXCEPTION_CONTINUE_EXECUTION)
-        NtContinue( context, FALSE );
-
-    if ((status = call_stack_handlers( rec, context )) == STATUS_SUCCESS)
-        NtContinue( context, FALSE );
-
-    if (status != STATUS_UNHANDLED_EXCEPTION) RtlRaiseStatus( status );
-    return NtRaiseException( rec, context, FALSE );
-}
-
 __ASM_STDCALL_FUNC( KiUserExceptionDispatcher, 8,
                     "pushl 4(%esp)\n\t"
                     "pushl 4(%esp)\n\t"
@@ -294,21 +219,9 @@ __ASM_STDCALL_FUNC( KiUserApcDispatcher, 20,
  */
 void WINAPI KiUserCallbackDispatcher( ULONG id, void *args, ULONG len )
 {
-    NTSTATUS status;
-
-    __TRY
-    {
-        NTSTATUS (WINAPI *func)(void *, ULONG) = ((void **)NtCurrentTeb()->Peb->KernelCallbackTable)[id];
-        status = NtCallbackReturn( NULL, 0, func( args, len ));
-    }
-    __EXCEPT_ALL
-    {
-        ERR_(seh)( "ignoring exception\n" );
-        status = NtCallbackReturn( 0, 0, 0 );
-    }
-    __ENDTRY
-
-    RtlRaiseStatus( status );
+    NTSTATUS status = dispatch_user_callback( args, len, id );
+    status = NtCallbackReturn( NULL, 0, status );
+    for (;;) RtlRaiseStatus( status );
 }
 
 
@@ -428,14 +341,10 @@ void WINAPI __regs_RtlUnwind( EXCEPTION_REGISTRATION_RECORD* pEndFrame, PVOID ta
         pRecord = &record;
     }
 
-    pRecord->ExceptionFlags |= EH_UNWINDING | (pEndFrame ? 0 : EH_EXIT_UNWIND);
+    pRecord->ExceptionFlags |= EXCEPTION_UNWINDING | (pEndFrame ? 0 : EXCEPTION_EXIT_UNWIND);
 
     TRACE( "code=%lx flags=%lx\n", pRecord->ExceptionCode, pRecord->ExceptionFlags );
-    TRACE( "eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx\n",
-           context->Eax, context->Ebx, context->Ecx, context->Edx, context->Esi, context->Edi );
-    TRACE( "ebp=%08lx esp=%08lx eip=%08lx cs=%04x ds=%04x fs=%04x gs=%04x flags=%08lx\n",
-           context->Ebp, context->Esp, context->Eip, LOWORD(context->SegCs), LOWORD(context->SegDs),
-           LOWORD(context->SegFs), LOWORD(context->SegGs), context->EFlags );
+    TRACE_CONTEXT( context );
 
     /* get chain of exception frames */
     frame = NtCurrentTeb()->Tib.ExceptionList;
@@ -445,7 +354,7 @@ void WINAPI __regs_RtlUnwind( EXCEPTION_REGISTRATION_RECORD* pEndFrame, PVOID ta
         if (pEndFrame && (frame > pEndFrame))
             raise_status( STATUS_INVALID_UNWIND_TARGET, pRecord );
 
-        if (!is_valid_frame( frame )) raise_status( STATUS_BAD_STACK, pRecord );
+        if (!is_valid_frame( (ULONG_PTR)frame )) raise_status( STATUS_BAD_STACK, pRecord );
 
         /* Call handler */
         TRACE( "calling handler at %p code=%lx flags=%lx\n",
@@ -543,32 +452,44 @@ __ASM_STDCALL_FUNC( RtlRaiseException, 4,
 
 
 /*************************************************************************
- *		RtlCaptureStackBackTrace (NTDLL.@)
+ *		RtlGetNativeSystemInformation (NTDLL.@)
  */
-USHORT WINAPI RtlCaptureStackBackTrace( ULONG skip, ULONG count, PVOID *buffer, ULONG *hash )
+NTSTATUS WINAPI RtlGetNativeSystemInformation( SYSTEM_INFORMATION_CLASS class,
+                                               void *info, ULONG size, ULONG *ret_size )
+{
+    return NtWow64GetNativeSystemInformation( class, info, size, ret_size );
+}
+
+
+/***********************************************************************
+ *           RtlIsProcessorFeaturePresent [NTDLL.@]
+ */
+BOOLEAN WINAPI RtlIsProcessorFeaturePresent( UINT feature )
+{
+    return NtWow64IsProcessorFeaturePresent( feature );
+}
+
+
+/*************************************************************************
+ *		RtlWalkFrameChain (NTDLL.@)
+ */
+ULONG WINAPI RtlWalkFrameChain( void **buffer, ULONG count, ULONG flags )
 {
     CONTEXT context;
-    ULONG i;
     ULONG *frame;
+    ULONG i, skip = flags >> 8, pos = 0;
 
     RtlCaptureContext( &context );
-    if (hash) *hash = 0;
-    frame = (ULONG *)context.Ebp;
-
-    while (skip--)
-    {
-        if (!is_valid_frame( frame )) return 0;
-        frame = (ULONG *)*frame;
-    }
 
     for (i = 0; i < count; i++)
     {
-        if (!is_valid_frame( frame )) break;
-        buffer[i] = (void *)frame[1];
-        if (hash) *hash += frame[1];
-        frame = (ULONG *)*frame;
+        if (!is_valid_frame( context.Ebp )) break;
+        if (i >= skip) buffer[pos++] = (void *)context.Eip;
+        frame = (ULONG *)context.Ebp;
+        context.Ebp = frame[0];
+        context.Eip = frame[1];
     }
-    return i;
+    return pos;
 }
 
 
@@ -641,6 +562,44 @@ void WINAPI LdrInitializeThunk( CONTEXT *context, ULONG_PTR unk2, ULONG_PTR unk3
 }
 
 
+/***********************************************************************
+ *           process_breakpoint
+ */
+void WINAPI process_breakpoint(void)
+{
+    __TRY
+    {
+        __asm__ volatile("int $3");
+    }
+    __EXCEPT_ALL
+    {
+        /* do nothing */
+    }
+    __ENDTRY
+}
+
+
+/***********************************************************************
+ *		DbgUiRemoteBreakin   (NTDLL.@)
+ */
+void WINAPI DbgUiRemoteBreakin( void *arg )
+{
+    if (NtCurrentTeb()->Peb->BeingDebugged)
+    {
+        __TRY
+        {
+            DbgBreakPoint();
+        }
+        __EXCEPT_ALL
+        {
+            /* do nothing */
+        }
+        __ENDTRY
+    }
+    RtlExitUserThread( STATUS_SUCCESS );
+}
+
+
 /**********************************************************************
  *		DbgBreakPoint   (NTDLL.@)
  */
@@ -658,7 +617,7 @@ __ASM_STDCALL_FUNC( DbgUserBreakPoint, 0, "int $3; ret"
 /**********************************************************************
  *           NtCurrentTeb   (NTDLL.@)
  */
-__ASM_STDCALL_FUNC( NtCurrentTeb, 0, ".byte 0x64\n\tmovl 0x18,%eax\n\tret" )
+__ASM_STDCALL_FUNC( NtCurrentTeb, 0, "movl %fs:0x18,%eax\n\tret" )
 
 
 /**************************************************************************
@@ -724,20 +683,16 @@ __ASM_GLOBAL_FUNC(call_exception_handler,
                   "subl $12,%esp\n\t"
                   "pushl 12(%ebp)\n\t"      /* make any exceptions in this... */
                   "pushl %edx\n\t"          /* handler be handled by... */
-                  ".byte 0x64\n\t"
-                  "pushl (0)\n\t"           /* nested_handler (passed in edx). */
-                  ".byte 0x64\n\t"
-                  "movl %esp,(0)\n\t"       /* push the new exception frame onto the exception stack. */
+                  "pushl %fs:0\n\t"         /* nested_handler (passed in edx). */
+                  "movl %esp,%fs:0\n\t"     /* push the new exception frame onto the exception stack. */
                   "pushl 20(%ebp)\n\t"
                   "pushl 16(%ebp)\n\t"
                   "pushl 12(%ebp)\n\t"
                   "pushl 8(%ebp)\n\t"
                   "movl 24(%ebp), %ecx\n\t" /* (*1) */
                   "call *%ecx\n\t"          /* call handler. (*2) */
-                  ".byte 0x64\n\t"
-                  "movl (0), %esp\n\t"      /* restore previous... (*3) */
-                  ".byte 0x64\n\t"
-                  "popl (0)\n\t"            /* exception frame. */
+                  "movl %fs:0, %esp\n\t"    /* restore previous... (*3) */
+                  "popl %fs:0\n\t"          /* exception frame. */
                   "movl %ebp, %esp\n\t"     /* restore saved stack, in case it was corrupted */
                   "popl %ebp\n\t"
                    __ASM_CFI(".cfi_def_cfa %esp,4\n\t")

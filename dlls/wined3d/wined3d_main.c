@@ -117,7 +117,6 @@ struct wined3d_settings wined3d_settings =
 {
     .cs_multithreaded = WINED3D_CSMT_ENABLE,
     .max_gl_version = MAKEDWORD_VERSION(4, 4),
-    .offscreen_rendering_mode = ORM_FBO,
     .pci_vendor_id = PCI_VENDOR_NONE,
     .pci_device_id = PCI_DEVICE_NONE,
     .multisample_textures = TRUE,
@@ -152,7 +151,7 @@ struct wined3d * CDECL wined3d_create(uint32_t flags)
     struct wined3d *object;
     HRESULT hr;
 
-    if (!(object = heap_alloc_zero(FIELD_OFFSET(struct wined3d, adapters[1]))))
+    if (!(object = calloc(1, FIELD_OFFSET(struct wined3d, adapters[1]))))
     {
         ERR("Failed to allocate wined3d object memory.\n");
         return NULL;
@@ -164,7 +163,7 @@ struct wined3d * CDECL wined3d_create(uint32_t flags)
     if (FAILED(hr = wined3d_init(object, flags)))
     {
         WARN("Failed to initialize wined3d object, hr %#lx.\n", hr);
-        heap_free(object);
+        free(object);
         return NULL;
     }
 
@@ -365,52 +364,17 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
         }
         if (!get_config_key(hkey, appkey, env, "shader_backend", buffer, size))
         {
+            if (!stricmp(buffer, "glsl-vkd3d"))
+            {
+                ERR_(winediag)("Using the vkd3d-shader GLSL shader backend.\n");
+                wined3d_settings.shader_backend = WINED3D_SHADER_BACKEND_GLSL_VKD3D;
+            }
             if (!stricmp(buffer, "glsl"))
             {
                 ERR_(winediag)("Using the GLSL shader backend.\n");
                 wined3d_settings.shader_backend = WINED3D_SHADER_BACKEND_GLSL;
             }
-            else if (!stricmp(buffer, "arb"))
-            {
-                ERR_(winediag)("Using the ARB shader backend.\n");
-                wined3d_settings.shader_backend = WINED3D_SHADER_BACKEND_ARB;
-            }
-            else if (!stricmp(buffer, "none"))
-            {
-                ERR_(winediag)("Disabling shader backends.\n");
-                wined3d_settings.shader_backend = WINED3D_SHADER_BACKEND_NONE;
-            }
         }
-        if (wined3d_settings.shader_backend == WINED3D_SHADER_BACKEND_ARB
-                || wined3d_settings.shader_backend == WINED3D_SHADER_BACKEND_NONE)
-        {
-            ERR_(winediag)("The GLSL shader backend has been disabled. You get to keep all the pieces if it breaks.\n");
-            TRACE("Use of GL Shading Language disabled.\n");
-        }
-        if ( !get_config_key( hkey, appkey, env, "hl2_disable_glsl", buffer, size) )
-        {
-            /* This allows disabling GLSL for single HL2 mods(they all use hl2.exe).
-             * It is important that this key is evaluated *after* the UseGLS one,
-             * otherwise the useGLSL key may overwrite decisions made here
-             */
-            char *token;
-            LPSTR cmdline;
-            cmdline = GetCommandLineA();
-            TRACE("Checking command line for disabling GLSL per HL2 mod\n");
-            token = strtok(buffer, ";");
-            while(token) {
-                TRACE("Looking for \"%s\"\n", token);
-                if(strstr(cmdline, token)) {
-                    TRACE("Disabling GLSL for this HL2 mod\n");
-                    wined3d_settings.shader_backend = WINED3D_SHADER_BACKEND_ARB;
-                    break;
-                }
-                token = strtok(NULL, ";");
-            }
-        }
-        if (!get_config_key(hkey, appkey, env, "OffscreenRenderingMode", buffer, size)
-                && !strcmp(buffer,"backbuffer"))
-            wined3d_settings.offscreen_rendering_mode = ORM_BACKBUFFER;
         if (!get_config_key_dword(hkey, appkey, env, "VideoPciDeviceID", &tmpvalue))
         {
             int pci_device_id = tmpvalue;
@@ -458,7 +422,7 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
         {
             size_t len = strlen(buffer) + 1;
 
-            if (!(wined3d_settings.logo = heap_alloc(len)))
+            if (!(wined3d_settings.logo = malloc(len)))
                 ERR("Failed to allocate logo path memory.\n");
             else
                 memcpy(wined3d_settings.logo, buffer, len);
@@ -521,6 +485,11 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
             TRACE("Forcing all constant buffers to be write-mappable.\n");
             wined3d_settings.cb_access_map_w = TRUE;
         }
+        if (!get_config_key_dword(hkey, appkey, env, "ffp_hlsl", &tmpvalue))
+        {
+            ERR_(winediag)("Using the HLSL-based FFP backend.\n");
+            wined3d_settings.ffp_hlsl = tmpvalue;
+        }
     }
 
     if (appkey) RegCloseKey( appkey );
@@ -569,17 +538,17 @@ static BOOL wined3d_dll_destroy(HINSTANCE hInstDLL)
          * these entries. */
         WARN("Leftover wndproc table entry %p.\n", &wndproc_table.entries[i]);
     }
-    heap_free(wndproc_table.entries);
+    free(wndproc_table.entries);
 
-    heap_free(swapchain_state_table.states);
+    free(swapchain_state_table.states);
     for (i = 0; i < swapchain_state_table.hook_count; ++i)
     {
         WARN("Leftover swapchain state hook %p.\n", &swapchain_state_table.hooks[i]);
         UnhookWindowsHookEx(swapchain_state_table.hooks[i].hook);
     }
-    heap_free(swapchain_state_table.hooks);
+    free(swapchain_state_table.hooks);
 
-    heap_free(wined3d_settings.logo);
+    free(wined3d_settings.logo);
     UnregisterClassA(WINED3D_OPENGL_WINDOW_CLASS_NAME, hInstDLL);
 
     DeleteCriticalSection(&wined3d_command_cs);

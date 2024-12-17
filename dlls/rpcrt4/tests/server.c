@@ -68,6 +68,20 @@ static hyper (__cdecl *sum_hyper)(hyper x, hyper y);
 static int (__cdecl *sum_hyper_int)(hyper x, hyper y);
 static int (__cdecl *sum_char_hyper)(signed char x, hyper y);
 static void (__cdecl *square_out)(int x, int *y);
+static int (__cdecl *sum_chars)(int a, chars_t x, chars_t y);
+static int (__cdecl *sum_ints)(int a, ints_t x, ints_t y);
+static int (__cdecl *sum_flts)(int a, flts_t x, flts_t y);
+static int (__cdecl *sum_dbls)(int a, dbls_t x, dbls_t y);
+static int (__cdecl *sum_iiff)(int x0, int y0, float x1, float y1);
+static int (__cdecl *sum_ifif)(int x0, float y0, int x1, float y1);
+static int (__cdecl *sum_iidd)(int x0, int y0, double x1, double y1);
+static int (__cdecl *sum_idid)(int x0, double y0, int x1, double y1);
+static int (__cdecl *sum_ififififififif)(int x0, float y0, int x1, float y1, int x2, float y2, int x3, float y3, int x4, float y4, int x5, float y5, int x6, float y6);
+static int (__cdecl *sum_ididididididid)(int x0, double y0, int x1, double y1, int x2, double y2, int x3, double y3, int x4, double y4, int x5, double y5, int x6, double y6);
+static int (__cdecl *sum_idfdifdfifdfidifdidf)(int x0, double y0, float z0, double y1, int x1, float z1, double y2, float z2, int x2, float z3, double y3, float z4, int x3, double y4, int x4, float z5, double y5, int x5, double y6, float z6);
+static int (__cdecl *sum_ididididididididididid)(int x0, double y0, int x1, double y1, int x2, double y2, int x3, double y3, int x4, double y4, int x5, double y5, int x6, double y6, int x7, double y7, int x8, double y8);
+static int (__cdecl *sum_iidiidiidiidiidiidiidiidiidiidiid)(int x0, int x1, double y0, int x2, int x3, double y1, int x4, int x5, double y2, int x6, int x7, double y3, int x8, int x9, double y4, int x10, int x11, double y5, int x12, int x13, double y6, int x14, int x15, double y7, int x16, int x17, double y8);
+static int (__cdecl *sum_iyiy)(int x0, hyper y0, int x1, hyper y1);
 static void (__cdecl *square_ref)(int *x);
 static int (__cdecl *str_length)(const char *s);
 static int (__cdecl *str_t_length)(str_t s);
@@ -162,6 +176,20 @@ static void (__cdecl *test_I_RpcBindingInqLocalClientPID)(unsigned int protseq, 
     X(sum_hyper) \
     X(sum_hyper_int) \
     X(sum_char_hyper) \
+    X(sum_chars) \
+    X(sum_ints) \
+    X(sum_flts) \
+    X(sum_dbls) \
+    X(sum_iiff) \
+    X(sum_ifif) \
+    X(sum_iidd) \
+    X(sum_idid) \
+    X(sum_ififififififif) \
+    X(sum_ididididididid) \
+    X(sum_idfdifdfifdfidifdidf) \
+    X(sum_ididididididididididid) \
+    X(sum_iidiidiidiidiidiidiidiidiidiidiid) \
+    X(sum_iyiy) \
     X(square_out) \
     X(square_ref) \
     X(str_length) \
@@ -249,12 +277,8 @@ static void (__cdecl *test_I_RpcBindingInqLocalClientPID)(unsigned int protseq, 
 /* type check statements generated in header file */
 fnprintf *p_printf = printf;
 
-static BOOL is_interp;
-
 static void set_interp_interface(void)
 {
-    is_interp = TRUE;
-
 #define X(name) name = interp_##name;
     SERVER_FUNCTIONS
 #undef X
@@ -262,8 +286,6 @@ static void set_interp_interface(void)
 
 static void set_mixed_interface(void)
 {
-    is_interp = FALSE;
-
 #define X(name) name = mixed_##name;
     SERVER_FUNCTIONS
 #undef X
@@ -285,21 +307,13 @@ static void InitFunctionPointers(void)
 void __RPC_FAR *__RPC_USER
 midl_user_allocate(SIZE_T n)
 {
-  return HeapAlloc(GetProcessHeap(), 0, n);
+  return malloc(n);
 }
 
 void __RPC_USER
 midl_user_free(void __RPC_FAR *p)
 {
-  HeapFree(GetProcessHeap(), 0, p);
-}
-
-static char *
-xstrdup(const char *s)
-{
-  char *d = HeapAlloc(GetProcessHeap(), 0, strlen(s) + 1);
-  strcpy(d, s);
-  return d;
+  free(p);
 }
 
 int __cdecl s_int_return(void)
@@ -350,6 +364,76 @@ int __cdecl s_sum_hyper_int(hyper x, hyper y)
 int __cdecl s_sum_char_hyper(signed char x, hyper y)
 {
     return x + y;
+}
+
+int __cdecl s_sum_chars(int a, chars_t x, chars_t y)
+{
+    return a * (x.a + x.b + x.c + x.d + x.e + y.a + y.b + y.c + y.d + y.e);
+}
+
+int __cdecl s_sum_ints(int a, ints_t x, ints_t y)
+{
+    return a * (x.i + x.j + y.i + y.j);
+}
+
+int __cdecl s_sum_flts(int a, flts_t x, flts_t y)
+{
+    return a * (x.i + x.f + y.i + y.f);
+}
+
+int __cdecl s_sum_dbls(int a, dbls_t x, dbls_t y)
+{
+    return a * (x.i + x.d + y.i + y.d);
+}
+
+int __cdecl s_sum_iiff(int x0, int y0, float x1, float y1)
+{
+    return x0 + y0 + x1 + y1;
+}
+
+int __cdecl s_sum_ifif(int x0, float y0, int x1, float y1)
+{
+    return x0 + y0 + x1 + y1;
+}
+
+int __cdecl s_sum_iidd(int x0, int y0, double x1, double y1)
+{
+    return x0 + y0 + x1 + y1;
+}
+
+int __cdecl s_sum_idid(int x0, double y0, int x1, double y1)
+{
+    return x0 + y0 + x1 + y1;
+}
+
+int __cdecl s_sum_ififififififif(int x0, float y0, int x1, float y1, int x2, float y2, int x3, float y3, int x4, float y4, int x5, float y5, int x6, float y6)
+{
+    return x0 + y0 + x1 + y1 + x2 + y2 + x3 + y3 + x4 + y4 + x5 + y5 + x6 + y6;
+}
+
+int __cdecl s_sum_ididididididid(int x0, double y0, int x1, double y1, int x2, double y2, int x3, double y3, int x4, double y4, int x5, double y5, int x6, double y6)
+{
+    return x0 + y0 + x1 + y1 + x2 + y2 + x3 + y3 + x4 + y4 + x5 + y5 + x6 + y6;
+}
+
+int __cdecl s_sum_idfdifdfifdfidifdidf(int x0, double y0, float z0, double y1, int x1, float z1, double y2, float z2, int x2, float z3, double y3, float z4, int x3, double y4, int x4, float z5, double y5, int x5, double y6, float z6)
+{
+    return x0 + y0 + z0 + x1 + y1 + z1 + x2 + y2 + z2 + x3 + y3 + z3 + x4 + y4 + z4 + x5 + y5 + z5 + y6 + z6;
+}
+
+int __cdecl s_sum_ididididididididididid(int x0, double y0, int x1, double y1, int x2, double y2, int x3, double y3, int x4, double y4, int x5, double y5, int x6, double y6, int x7, double y7, int x8, double y8)
+{
+    return x0 + y0 + x1 + y1 + x2 + y2 + x3 + y3 + x4 + y4 + x5 + y5 + x6 + y6 + x7 + y7 + x8 + y8;
+}
+
+int __cdecl s_sum_iidiidiidiidiidiidiidiidiidiidiid(int x0, int x1, double y0, int x2, int x3, double y1, int x4, int x5, double y2, int x6, int x7, double y3, int x8, int x9, double y4, int x10, int x11, double y5, int x12, int x13, double y6, int x14, int x15, double y7, int x16, int x17, double y8)
+{
+    return x0 + x1 + y0 + x2 + x3 + y1 + x4 + x5 + y2 + x6 + x7 + y3 + x8 + x9 + y4 + x10 + x11 + y5 + x12 + x13 + y6 + x14 + x15 + y7 + x16 + x17 + y8;
+}
+
+int __cdecl s_sum_iyiy(int x0, hyper y0, int x1, hyper y1)
+{
+    return x0 + y0 + x1 + y1;
 }
 
 void __cdecl s_square_out(int x, int *y)
@@ -801,7 +885,7 @@ void __cdecl s_get_a_bstr(bstr_t *b)
 {
   bstr_t bstr;
   short str[] = {5, 'W', 'i', 'n', 'e', 0};
-  bstr = HeapAlloc(GetProcessHeap(), 0, sizeof(str));
+  bstr = malloc(sizeof(str));
   memcpy(bstr, str, sizeof(str));
   *b = bstr + 1;
 }
@@ -1285,6 +1369,10 @@ basic_tests(void)
   str_t str;
   se_t se;
   renum_t re;
+  chars_t cs1 = { 2, 4, 6, 8, 10 }, cs2 = { -1, -2, -3, -4, -5 };
+  ints_t is1 = { 2, 4 }, is2 = { 5, 8 };
+  flts_t fs1 = { 3, 5.5 }, fs2 = { 8, 2.3 };
+  dbls_t ds1 = { 9, -2.5 }, ds2 = { 2, -4.2 };
 
   ok(int_return() == INT_CODE, "RPC int_return\n");
 
@@ -1305,6 +1393,35 @@ basic_tests(void)
   ok(x == 0x12120000, "RPC hyper_int got 0x%x\n", x);
   x = sum_char_hyper( 12, ((hyper)0x42424242 << 32) | 0x33334444 );
   ok(x == 0x33334450, "RPC char_hyper got 0x%x\n", x);
+  x = sum_chars( 4, cs1, cs2 );
+  ok(x == 60, "got %d\n", x);
+  x = sum_ints( 2, is1, is2 );
+  ok(x == 38, "got %d\n", x);
+  x = sum_flts( 3, fs1, fs2 );
+  ok(x == 56, "got %d\n", x);
+  x = sum_dbls( 7, ds1, ds2 );
+  ok(x == 30, "got %d\n", x);
+  x = sum_iiff( 12, 23, 3.4, 4.7 );
+  ok(x == 43, "got %d\n", x);
+  x = sum_ifif( 12, 11.2, 23, 34.5 );
+  ok(x == 80, "got %d\n", x);
+  x = sum_iidd( 6, 5, 4.3, 2.1 );
+  ok(x == 17, "got %d\n", x);
+  x = sum_idid( 55, 44.55, 33, 22.44 );
+  ok(x == 154, "got %d\n", x);
+  x = sum_ififififififif( 1, 2.1, 3, 4.2, 5, 6.3, 7, 8.4, 9, 10.5, 11, 12.2, 13, 14.9 );
+  ok(x == 107, "got %d\n", x);
+  x = sum_ididididididid( -1, -2.1, -3, -4, -5, -6.7, -8, -9.1, -11, -12.3, -13, -14.2, -15, -16.3 );
+  ok(x == -120, "got %d\n", x);
+  x = sum_idfdifdfifdfidifdidf( 2, 1.2, 2.1, 2.3, 4, 3.2, 4.5, 5.5, -3, -2.2, -4.4, -5.5, 6, 6.4, -3, 8.1, 9.2, 7, -10.3, 12.4 );
+  ok(x == 45, "got %d\n", x);
+  x = sum_ididididididididididid( 2, 3, 4, 5, 6, 7, 8, 9, -1, -2, -3, -4, -5, -6, -7, -8, -9, 5 );
+  ok(x == 4, "got %d\n", x);
+  x = sum_iidiidiidiidiidiidiidiidiidiidiid( 11, 22, 33.1, 44, 55, 66.1, 77, 88, 99.1, 111, 222, 333.1, 444,
+                                             555, 666.1, 777, 888, 999.1, 1, 2, 3.1, 4, 5, 6.1, 7, 8, 9.1 );
+  ok(x == 5535, "got %d\n", x);
+  x = sum_iyiy( 1, 1234567890, 2, -1234567800 );
+  ok(x == 93, "got %d\n", x);
 
   x = 0;
   square_out(11, &x);
@@ -1404,11 +1521,9 @@ basic_tests(void)
 
   check_null(NULL);
 
-  if (!is_interp || sizeof(void*) != 8) { /* broken in widl for win64 */
   str = get_filename();
   ok(!strcmp(str, __FILE__), "get_filename() returned %s instead of %s\n", str, __FILE__);
   midl_user_free(str);
-  }
 
   x = echo_ranged_int(0,0,0);
   ok(x == 0, "echo_ranged_int() returned %d instead of 0\n", x);
@@ -1490,7 +1605,7 @@ union_tests(void)
 static test_list_t *
 null_list(void)
 {
-  test_list_t *n = HeapAlloc(GetProcessHeap(), 0, sizeof *n);
+  test_list_t *n = malloc(sizeof *n);
   n->t = TL_NULL;
   n->u.x = 0;
   return n;
@@ -1499,7 +1614,7 @@ null_list(void)
 static test_list_t *
 make_list(test_list_t *tail)
 {
-  test_list_t *n = HeapAlloc(GetProcessHeap(), 0, sizeof *n);
+  test_list_t *n = malloc(sizeof *n);
   n->t = TL_LIST;
   n->u.tail = tail;
   return n;
@@ -1510,7 +1625,7 @@ free_list(test_list_t *list)
 {
   if (list->t == TL_LIST)
     free_list(list->u.tail);
-  HeapFree(GetProcessHeap(), 0, list);
+  free(list);
 }
 
 ULONG __RPC_USER
@@ -1532,7 +1647,7 @@ puint_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, puint_t *p)
 {
   int n;
   memcpy(&n, buffer, sizeof n);
-  *p = HeapAlloc(GetProcessHeap(), 0, 10);
+  *p = malloc(10);
   sprintf(*p, "%d", n);
   return buffer + sizeof n;
 }
@@ -1540,7 +1655,7 @@ puint_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, puint_t *p)
 void __RPC_USER
 puint_t_UserFree(ULONG *flags, puint_t *p)
 {
-  HeapFree(GetProcessHeap(), 0, *p);
+  free(*p);
 }
 
 ULONG __RPC_USER
@@ -1563,7 +1678,7 @@ us_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, us_t *pus)
 {
   struct wire_us wus;
   memcpy(&wus, buffer, sizeof wus);
-  pus->x = HeapAlloc(GetProcessHeap(), 0, 10);
+  pus->x = malloc(10);
   sprintf(pus->x, "%d", wus.x);
   return buffer + sizeof wus;
 }
@@ -1571,7 +1686,7 @@ us_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, us_t *pus)
 void __RPC_USER
 us_t_UserFree(ULONG *flags, us_t *pus)
 {
-  HeapFree(GetProcessHeap(), 0, pus->x);
+  free(pus->x);
 }
 
 ULONG __RPC_USER
@@ -1593,7 +1708,7 @@ unsigned char * __RPC_USER
 bstr_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, bstr_t *b)
 {
   wire_bstr_t wb = (wire_bstr_t) buffer;
-  short *data = HeapAlloc(GetProcessHeap(), 0, (wb->n + 1) * sizeof *data);
+  short *data = malloc((wb->n + 1) * sizeof *data);
   data[0] = wb->n;
   memcpy(&data[1], wb->data, wb->n * sizeof data[1]);
   *b = &data[1];
@@ -1603,7 +1718,7 @@ bstr_t_UserUnmarshal(ULONG *flags, unsigned char *buffer, bstr_t *b)
 void __RPC_USER
 bstr_t_UserFree(ULONG *flags, bstr_t *b)
 {
-  HeapFree(GetProcessHeap(), 0, &((*b)[-1]));
+  free(&((*b)[-1]));
 }
 
 static void
@@ -1627,29 +1742,29 @@ pointer_tests(void)
   ok(test_list_length(list) == 3, "RPC test_list_length\n");
   ok(square_puint(p1) == 121, "RPC square_puint\n");
   pus.n = 4;
-  pus.ps = HeapAlloc(GetProcessHeap(), 0, pus.n * sizeof pus.ps[0]);
-  pus.ps[0] = xstrdup("5");
-  pus.ps[1] = xstrdup("6");
-  pus.ps[2] = xstrdup("7");
-  pus.ps[3] = xstrdup("8");
+  pus.ps = malloc(pus.n * sizeof pus.ps[0]);
+  pus.ps[0] = strdup("5");
+  pus.ps[1] = strdup("6");
+  pus.ps[2] = strdup("7");
+  pus.ps[3] = strdup("8");
   ok(sum_puints(&pus) == 26, "RPC sum_puints\n");
-  HeapFree(GetProcessHeap(), 0, pus.ps[0]);
-  HeapFree(GetProcessHeap(), 0, pus.ps[1]);
-  HeapFree(GetProcessHeap(), 0, pus.ps[2]);
-  HeapFree(GetProcessHeap(), 0, pus.ps[3]);
-  HeapFree(GetProcessHeap(), 0, pus.ps);
+  free(pus.ps[0]);
+  free(pus.ps[1]);
+  free(pus.ps[2]);
+  free(pus.ps[3]);
+  free(pus.ps);
   cpus.n = 4;
-  cpus.ps = HeapAlloc(GetProcessHeap(), 0, cpus.n * sizeof cpus.ps[0]);
-  cpus.ps[0] = xstrdup("5");
-  cpus.ps[1] = xstrdup("6");
-  cpus.ps[2] = xstrdup("7");
-  cpus.ps[3] = xstrdup("8");
+  cpus.ps = malloc(cpus.n * sizeof cpus.ps[0]);
+  cpus.ps[0] = strdup("5");
+  cpus.ps[1] = strdup("6");
+  cpus.ps[2] = strdup("7");
+  cpus.ps[3] = strdup("8");
   ok(sum_cpuints(&cpus) == 26, "RPC sum_puints\n");
-  HeapFree(GetProcessHeap(), 0, cpus.ps[0]);
-  HeapFree(GetProcessHeap(), 0, cpus.ps[1]);
-  HeapFree(GetProcessHeap(), 0, cpus.ps[2]);
-  HeapFree(GetProcessHeap(), 0, cpus.ps[3]);
-  HeapFree(GetProcessHeap(), 0, cpus.ps);
+  free(cpus.ps[0]);
+  free(cpus.ps[1]);
+  free(cpus.ps[2]);
+  free(cpus.ps[3]);
+  free(cpus.ps);
   ok(square_test_us(&tus) == 121, "RPC square_test_us\n");
 
   pa[0] = &a[0];
@@ -1668,8 +1783,8 @@ pointer_tests(void)
   get_a_bstr(&bstr);
   s_get_a_bstr(&bstr2);
   ok(!lstrcmpW((LPCWSTR)bstr, (LPCWSTR)bstr2), "bstr mismatch\n");
-  HeapFree(GetProcessHeap(), 0, bstr - 1);
-  HeapFree(GetProcessHeap(), 0, bstr2 - 1);
+  free(bstr - 1);
+  free(bstr2 - 1);
 
   free_list(list);
 
@@ -1680,13 +1795,12 @@ pointer_tests(void)
       wstr_array_t namesw;
 
       name.size = 10;
-      name.name = buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, name.size);
+      name.name = buffer = calloc(1, name.size);
       get_name(&name);
       ok(name.name == buffer, "[in,out] pointer should have stayed as %p but instead changed to %p\n", name.name, buffer);
       ok(!strcmp(name.name, "Jeremy Wh"), "name didn't unmarshall properly, expected \"Jeremy Wh\", but got \"%s\"\n", name.name);
-      HeapFree(GetProcessHeap(), 0, name.name);
+      free(name.name);
 
-      if (!is_interp) { /* broken in widl */
       n = -1;
       names = NULL;
       get_names(&n, &names);
@@ -1706,13 +1820,10 @@ pointer_tests(void)
       MIDL_user_free(namesw[0]);
       MIDL_user_free(namesw[1]);
       MIDL_user_free(namesw);
-      }
   }
 
-  if (!is_interp) { /* broken in widl */
   pa2 = a;
   ok(sum_pcarr2(4, &pa2) == 10, "RPC sum_pcarr2\n");
-  }
 
   s123 = get_s123();
   ok(s123->f1 == 1 && s123->f2 == 2 && s123->f3 == 3, "RPC get_s123\n");
@@ -1803,7 +1914,7 @@ array_tests(void)
   ok(sum_var_array(&c[2], 0) == 0, "RPC sum_conf_array\n");
 
   ok(dot_two_vectors(vs) == -4, "RPC dot_two_vectors\n");
-  cs = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(cs_t, ca[5]));
+  cs = malloc(FIELD_OFFSET(cs_t, ca[5]));
   cs->n = 5;
   cs->ca[0] = 3;
   cs->ca[1] = 5;
@@ -1811,7 +1922,7 @@ array_tests(void)
   cs->ca[3] = -1;
   cs->ca[4] = -4;
   ok(sum_cs(cs) == 1, "RPC sum_cs\n");
-  HeapFree(GetProcessHeap(), 0, cs);
+  free(cs);
 
   n = 5;
   cps.pn = &n;
@@ -1847,21 +1958,21 @@ array_tests(void)
   ok(sum_toplev_conf_cond(c, 5, 6, 1) == 10, "RPC sum_toplev_conf_cond\n");
   ok(sum_toplev_conf_cond(c, 5, 6, 0) == 15, "RPC sum_toplev_conf_cond\n");
 
-  dc = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(doub_carr_t, a[2]));
+  dc = malloc(FIELD_OFFSET(doub_carr_t, a[2]));
   dc->n = 2;
-  dc->a[0] = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(doub_carr_1_t, a[3]));
+  dc->a[0] = malloc(sizeof(doub_carr_1_t) + 3);
   dc->a[0]->n = 3;
   dc->a[0]->a[0] = 5;
   dc->a[0]->a[1] = 1;
   dc->a[0]->a[2] = 8;
-  dc->a[1] = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(doub_carr_1_t, a[2]));
+  dc->a[1] = malloc(sizeof(doub_carr_1_t) + 2);
   dc->a[1]->n = 2;
   dc->a[1]->a[0] = 2;
   dc->a[1]->a[1] = 3;
   ok(sum_doub_carr(dc) == 19, "RPC sum_doub_carr\n");
-  HeapFree(GetProcessHeap(), 0, dc->a[0]);
-  HeapFree(GetProcessHeap(), 0, dc->a[1]);
-  HeapFree(GetProcessHeap(), 0, dc);
+  free(dc->a[0]);
+  free(dc->a[1]);
+  free(dc);
 
   dc = NULL;
   make_pyramid_doub_carr(4, &dc);
@@ -1871,7 +1982,7 @@ array_tests(void)
   ok(sum_L1_norms(2, vs) == 21, "RPC sum_L1_norms\n");
 
   memset(api, 0, sizeof(api));
-  pi = HeapAlloc(GetProcessHeap(), 0, sizeof(*pi));
+  pi = malloc(sizeof(*pi));
   *pi = -1;
   api[0].pi = pi;
   get_numbers(1, 1, api);
@@ -1880,25 +1991,25 @@ array_tests(void)
 
   if (!old_windows_version)
   {
-      ns = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, FIELD_OFFSET(numbers_struct_t, numbers[5]));
+      ns = calloc(1, FIELD_OFFSET(numbers_struct_t, numbers[5]));
       ns->length = 5;
       ns->size = 5;
       ns->numbers[0].pi = pi;
       get_numbers_struct(&ns);
       ok(ns->numbers[0].pi == pi, "RPC conformant varying struct embedded pointer changed from %p to %p\n", pi, ns->numbers[0].pi);
       ok(*ns->numbers[0].pi == 5, "pi unmarshalled incorrectly %d\n", *ns->numbers[0].pi);
-      HeapFree(GetProcessHeap(), 0, ns);
+      free(ns);
   }
-  HeapFree(GetProcessHeap(), 0, pi);
+  free(pi);
 
-  pi = HeapAlloc(GetProcessHeap(), 0, 5 * sizeof(*pi));
+  pi = malloc(5 * sizeof(*pi));
   pi[0] = 3;  rpi[0] = &pi[0];
   pi[1] = 5;  rpi[1] = &pi[1];
   pi[2] = -2; rpi[2] = &pi[2];
   pi[3] = -1; rpi[3] = &pi[3];
   pi[4] = -4; rpi[4] = &pi[4];
   ok(sum_complex_array(5, rpi) == 1, "RPC sum_complex_array\n");
-  HeapFree(GetProcessHeap(), 0, pi);
+  free(pi);
 
   ok(sum_ptr_array(ptr_array) == 3, "RPC sum_ptr_array\n");
   ok(sum_array_ptr(&array) == 7, "RPC sum_array_ptr\n");
@@ -1956,11 +2067,11 @@ void __cdecl s_authinfo_test(unsigned int protseq, int secure)
             char *spn;
 
             len = WideCharToMultiByte(CP_ACP, 0, (const WCHAR *)privs, -1, NULL, 0, NULL, NULL);
-            spn = HeapAlloc( GetProcessHeap(), 0, len );
+            spn = malloc(len);
             WideCharToMultiByte(CP_ACP, 0, (const WCHAR *)privs, -1, spn, len, NULL, NULL);
 
             ok(!strcmp(domain_and_user, spn), "expected %s got %s\n", domain_and_user, spn);
-            HeapFree( GetProcessHeap(), 0, spn );
+            free(spn);
         }
         ok(level == RPC_C_AUTHN_LEVEL_PKT_PRIVACY, "level unchanged\n");
         ok(authnsvc == RPC_C_AUTHN_WINNT, "authnsvc unchanged\n");
@@ -2709,7 +2820,7 @@ START_TEST(server)
   set_mixed_interface();
 
   ok(!GetUserNameExA(NameSamCompatible, NULL, &size), "GetUserNameExA\n");
-  domain_and_user = HeapAlloc(GetProcessHeap(), 0, size);
+  domain_and_user = malloc(size);
   ok(GetUserNameExA(NameSamCompatible, domain_and_user, &size), "GetUserNameExA\n");
 
   argc = winetest_get_mainargs(&argv);
@@ -2775,5 +2886,5 @@ START_TEST(server)
     if (firewall_disabled) set_firewall(APP_REMOVE);
   }
 
-  HeapFree(GetProcessHeap(), 0, domain_and_user);
+  free(domain_and_user);
 }

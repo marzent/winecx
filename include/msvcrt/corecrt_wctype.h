@@ -24,10 +24,12 @@ extern "C" {
 #define _LEADBYTE     0x8000
 #define _ALPHA       (0x0100|_UPPER|_LOWER)  /* (C1_ALPHA|_UPPER|_LOWER) */
 
+_ACRTIMP const unsigned short* __cdecl __pctype_func(void);
 _ACRTIMP int     __cdecl _isleadbyte_l(int,_locale_t);
 _ACRTIMP int     __cdecl _iswalnum_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswalpha_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswblank_l(wint_t,_locale_t);
+_ACRTIMP int     __cdecl _iswcntrl_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswctype_l(wint_t,wctype_t,_locale_t);
 _ACRTIMP int     __cdecl _iswdigit_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswgraph_l(wint_t,_locale_t);
@@ -36,6 +38,7 @@ _ACRTIMP int     __cdecl _iswprint_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswpunct_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswspace_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl _iswupper_l(wint_t,_locale_t);
+_ACRTIMP int     __cdecl _iswxdigit_l(wint_t,_locale_t);
 _ACRTIMP wint_t  __cdecl _towlower_l(wint_t,_locale_t);
 _ACRTIMP wint_t  __cdecl _towupper_l(wint_t,_locale_t);
 _ACRTIMP int     __cdecl is_wctype(wint_t,wctype_t);

@@ -156,12 +156,12 @@ static HRESULT DSOUND_WaveFormat(DirectSoundDevice *device, IAudioClient *client
         WAVEFORMATEXTENSIBLE *wfe;
 
         /* Convert to WAVEFORMATEXTENSIBLE */
-        w = malloc(sizeof(WAVEFORMATEXTENSIBLE));
-        wfe = (WAVEFORMATEXTENSIBLE*)w;
+        wfe = malloc(sizeof(*wfe));
         if (!wfe)
             return DSERR_OUTOFMEMORY;
 
         wfe->Format = *wi;
+        w = &wfe->Format;
         w->wFormatTag = WAVE_FORMAT_EXTENSIBLE;
         w->cbSize = sizeof(*wfe) - sizeof(*w);
         w->nBlockAlign = w->nChannels * w->wBitsPerSample / 8;
@@ -464,6 +464,9 @@ HRESULT primarybuffer_SetFormat(DirectSoundDevice *device, LPCWAVEFORMATEX passe
 		if(passed_fmtex->Samples.wValidBitsPerSample > passed_fmtex->Format.wBitsPerSample)
 			return DSERR_INVALIDPARAM;
 	}
+
+        if (passed_fmt->nChannels > 2 && passed_fmt->wFormatTag != WAVE_FORMAT_EXTENSIBLE)
+            return DSERR_ALLOCATED;
 
 	/* **** */
 	AcquireSRWLockExclusive(&device->buffer_list_lock);

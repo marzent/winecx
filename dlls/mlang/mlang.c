@@ -44,6 +44,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(mlang);
 
 #include "initguid.h"
 
+static INIT_ONCE font_link_global_init_once = INIT_ONCE_STATIC_INIT;
+static IUnknown *font_link_global = NULL;
+
 static HRESULT MultiLanguage_create(IUnknown *pUnkOuter, LPVOID *ppObj);
 static HRESULT MLangConvertCharset_create(IUnknown *outer, void **obj);
 static HRESULT EnumRfc1766_create(LANGID LangId, IEnumRfc1766 **ppEnum);
@@ -1308,19 +1311,60 @@ HRESULT WINAPI Rfc1766ToLcidA(LCID *lcid, LPCSTR rfc1766A)
     return Rfc1766ToLcidW(lcid, rfc1766W);
 }
 
+struct map_font_enum_data
+{
+    HDC hdc;
+    LOGFONTW src_lf;
+    HFONT font;
+    UINT charset;
+    DWORD mask;
+};
+
+static INT CALLBACK map_font_enum_proc(const LOGFONTW *lf, const TEXTMETRICW *ntm, DWORD type, LPARAM lParam)
+{
+    HFONT new_font, old_font;
+    FONTSIGNATURE fs;
+    UINT charset;
+    struct map_font_enum_data *data = (struct map_font_enum_data *)lParam;
+
+    data->src_lf.lfCharSet = lf->lfCharSet;
+    wcscpy(data->src_lf.lfFaceName, lf->lfFaceName);
+
+    new_font = CreateFontIndirectW(&data->src_lf);
+    if (new_font == NULL) return 1;
+
+    old_font = SelectObject(data->hdc, new_font);
+    charset = GetTextCharsetInfo(data->hdc, &fs, 0);
+    SelectObject(data->hdc, old_font);
+
+    /* check that the font directly supports the codepage as well (not just through a child font) */
+    if (charset == data->charset && fs.fsCsb[0] & data->mask)
+    {
+        data->font = new_font;
+        return 0;
+    }
+    DeleteObject(new_font);
+    return 1;
+}
+
 static HRESULT map_font(HDC hdc, DWORD codepages, HFONT src_font, HFONT *dst_font)
 {
     struct font_list *font_list_entry;
     CHARSETINFO charset_info;
-    HFONT new_font, old_font;
     LOGFONTW font_attr;
     DWORD mask, Csb[2];
     BOOL found_cached;
-    UINT charset;
     BOOL ret;
     UINT i;
+    struct map_font_enum_data enum_data;
 
     if (hdc == NULL || src_font == NULL) return E_FAIL;
+
+    enum_data.hdc = hdc;
+    enum_data.font = NULL;
+
+    GetObjectW(src_font, sizeof(enum_data.src_lf), &enum_data.src_lf);
+    enum_data.src_lf.lfWidth = 0;
 
     for (i = 0; i < 32; i++)
     {
@@ -1348,36 +1392,33 @@ static HRESULT map_font(HDC hdc, DWORD codepages, HFONT src_font, HFONT *dst_fon
             LeaveCriticalSection(&font_cache_critical);
             if (found_cached) return S_OK;
 
-            GetObjectW(src_font, sizeof(font_attr), &font_attr);
             font_attr.lfCharSet = (BYTE)charset_info.ciCharset;
-            font_attr.lfWidth = 0;
             font_attr.lfFaceName[0] = 0;
-            new_font = CreateFontIndirectW(&font_attr);
-            if (new_font == NULL) continue;
+            font_attr.lfPitchAndFamily = 0;
 
-            old_font = SelectObject(hdc, new_font);
-            charset = GetTextCharset(hdc);
-            SelectObject(hdc, old_font);
-            if (charset == charset_info.ciCharset)
+            enum_data.charset = charset_info.ciCharset;
+            enum_data.mask = mask;
+
+            if (!EnumFontFamiliesExW(hdc, &font_attr, map_font_enum_proc, (LPARAM)&enum_data, 0))
             {
                 font_list_entry = malloc(sizeof(*font_list_entry));
                 if (font_list_entry == NULL) return E_OUTOFMEMORY;
 
                 font_list_entry->base_font = src_font;
-                font_list_entry->font = new_font;
-                font_list_entry->charset = charset;
+                font_list_entry->font = enum_data.font;
+                font_list_entry->charset = enum_data.charset;
 
                 EnterCriticalSection(&font_cache_critical);
                 list_add_tail(&font_cache, &font_list_entry->list_entry);
                 LeaveCriticalSection(&font_cache_critical);
 
                 if (dst_font != NULL)
-                    *dst_font = new_font;
+                    *dst_font = enum_data.font;
                 return S_OK;
             }
         }
     }
-
+    WARN("couldn't create an appropriate mapped font...\n");
     return E_FAIL;
 }
 
@@ -3296,10 +3337,10 @@ static HRESULT WINAPI fnIMLangFontLink2_GetCharCodePages( IMLangFontLink2* iface
     for (i = 0; i < ARRAY_SIZE(mlang_data) - 1 /* skip unicode codepages */; i++)
     {
         BOOL used_dc;
-        CHAR buf;
+        CHAR buf[2];
 
         WideCharToMultiByte(mlang_data[i].family_codepage, WC_NO_BEST_FIT_CHARS,
-            &ch_src, 1, &buf, 1, NULL, &used_dc);
+            &ch_src, 1, buf, 2, NULL, &used_dc);
 
         /* If default char is not used, current codepage include the given symbol */
         if (!used_dc)
@@ -3333,23 +3374,20 @@ static HRESULT WINAPI fnIMLangFontLink2_GetStrCodePages( IMLangFontLink2* iface,
 
     for (i = 0; i < src_len; i++)
     {
-        DWORD cp, next_cp = 0;
+        DWORD cp = 0;
         HRESULT ret;
 
         ret = IMLangFontLink2_GetCharCodePages(iface, src[i], &cp);
-        if (i + 1 < src_len)
-            ret = IMLangFontLink2_GetCharCodePages(iface, src[i + 1], &next_cp);
         if (ret != S_OK) return E_FAIL;
 
         if (!cps) cps = cp;
-        else if ((cps & cp) != 0) cps &= cp;
+        else if ((cps & cp) != 0 &&
+                 !((priority_cp & cps) ^ (priority_cp & cp))) cps &= cp;
         else
         {
             i--;
             break;
         }
-
-        if ((priority_cp & cps) && !(priority_cp & next_cp)) break;
     }
 
     if (codepages) *codepages = cps;
@@ -3433,7 +3471,10 @@ static HRESULT WINAPI fnIMLangFontLink2_GetFontCodePages(IMLangFontLink2 *iface,
 
     TRACE("(%p)->(%p %p %p)\n", This, hdc, hfont, codepages);
 
+    if (codepages) *codepages = 0;
+
     old_font = SelectObject(hdc, hfont);
+    if (!old_font) return E_FAIL;
     GetTextCharsetInfo(hdc, &fontsig, 0);
     SelectObject(hdc, old_font);
 
@@ -3882,11 +3923,22 @@ HRESULT WINAPI DllCanUnloadNow(void)
     return dll_count == 0 ? S_OK : S_FALSE;
 }
 
-HRESULT WINAPI GetGlobalFontLinkObject(void **unknown)
+static BOOL WINAPI allocate_font_link_cb(PINIT_ONCE init_once, PVOID args, PVOID *context)
 {
-    if (!unknown) return E_INVALIDARG;
+    return SUCCEEDED(MultiLanguage_create(NULL, (void**)&font_link_global));
+}
 
-    FIXME("%p: stub\n", unknown);
+HRESULT WINAPI GetGlobalFontLinkObject(IMLangFontLink **obj)
+{
+    TRACE("%p\n", obj);
 
-    return S_FALSE;
+    if (!obj) return E_INVALIDARG;
+
+    if (!InitOnceExecuteOnce(&font_link_global_init_once, allocate_font_link_cb, NULL, NULL))
+    {
+        ERR("Failed to create global font link object.\n");
+        return E_FAIL;
+    }
+
+    return IUnknown_QueryInterface(font_link_global, &IID_IMLangFontLink, (void**)obj);
 }

@@ -30,7 +30,6 @@
 #include "mfapi.h"
 #include "mferror.h"
 #include "mfidl.h"
-#include "mmdeviceapi.h"
 #include "uuids.h"
 #include "wmcodecdsp.h"
 #include "nserror.h"
@@ -40,6 +39,8 @@
 #include "wine/test.h"
 
 #include "initguid.h"
+#include "mmdeviceapi.h"
+#include "devpkey.h"
 #include "evr9.h"
 
 #define DEFINE_EXPECT(func) \
@@ -80,6 +81,9 @@ extern GUID DMOVideoFormat_RGB32;
 HRESULT (WINAPI *pMFCreateSampleCopierMFT)(IMFTransform **copier);
 HRESULT (WINAPI *pMFGetTopoNodeCurrentType)(IMFTopologyNode *node, DWORD stream, BOOL output, IMFMediaType **type);
 HRESULT (WINAPI *pMFCreateDXGIDeviceManager)(UINT *token, IMFDXGIDeviceManager **manager);
+HRESULT (WINAPI *pMFCreateVideoSampleAllocatorEx)(REFIID riid, void **obj);
+HRESULT (WINAPI *pMFCreateMediaBufferFromMediaType)(IMFMediaType *media_type, LONGLONG duration, DWORD min_length,
+        DWORD min_alignment, IMFMediaBuffer **buffer);
 BOOL has_video_processor;
 
 static BOOL is_vista(void)
@@ -417,909 +421,6 @@ static IMFMediaSource *create_test_source(IMFPresentationDescriptor *pd)
     IMFPresentationDescriptor_AddRef((source->pd = pd));
 
     return &source->IMFMediaSource_iface;
-}
-
-static HRESULT WINAPI test_unk_QueryInterface(IUnknown *iface, REFIID riid, void **obj)
-{
-    if (IsEqualIID(riid, &IID_IUnknown))
-    {
-        *obj = iface;
-        IUnknown_AddRef(iface);
-        return S_OK;
-    }
-
-    *obj = NULL;
-    return E_NOINTERFACE;
-}
-
-static ULONG WINAPI test_unk_AddRef(IUnknown *iface)
-{
-    return 2;
-}
-
-static ULONG WINAPI test_unk_Release(IUnknown *iface)
-{
-    return 1;
-}
-
-static const IUnknownVtbl test_unk_vtbl =
-{
-    test_unk_QueryInterface,
-    test_unk_AddRef,
-    test_unk_Release,
-};
-
-static void test_topology(void)
-{
-    IMFMediaType *mediatype, *mediatype2, *mediatype3;
-    IMFCollection *collection, *collection2;
-    IUnknown test_unk2 = { &test_unk_vtbl };
-    IUnknown test_unk = { &test_unk_vtbl };
-    IMFTopologyNode *node, *node2, *node3;
-    IMFTopology *topology, *topology2;
-    DWORD size, io_count, index;
-    MF_TOPOLOGY_TYPE node_type;
-    IUnknown *object;
-    WORD node_count;
-    UINT32 count;
-    HRESULT hr;
-    TOPOID id;
-    LONG ref;
-
-    hr = MFCreateTopology(NULL);
-    ok(hr == E_POINTER, "got %#lx\n", hr);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-    hr = IMFTopology_GetTopologyID(topology, &id);
-    ok(hr == S_OK, "Failed to get id, hr %#lx.\n", hr);
-    ok(id == 1, "Unexpected id.\n");
-
-    hr = MFCreateTopology(&topology2);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-    hr = IMFTopology_GetTopologyID(topology2, &id);
-    ok(hr == S_OK, "Failed to get id, hr %#lx.\n", hr);
-    ok(id == 2, "Unexpected id.\n");
-
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-    hr = IMFTopology_GetTopologyID(topology, &id);
-    ok(hr == S_OK, "Failed to get id, hr %#lx.\n", hr);
-    ok(id == 3, "Unexpected id.\n");
-
-    ref = IMFTopology_Release(topology2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* No attributes by default. */
-    for (node_type = MF_TOPOLOGY_OUTPUT_NODE; node_type < MF_TOPOLOGY_TEE_NODE; ++node_type)
-    {
-        hr = MFCreateTopologyNode(node_type, &node);
-        ok(hr == S_OK, "Failed to create a node for type %d, hr %#lx.\n", node_type, hr);
-        hr = IMFTopologyNode_GetCount(node, &count);
-        ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-        ok(!count, "Unexpected attribute count %u.\n", count);
-        ref = IMFTopologyNode_Release(node);
-        ok(ref == 0, "Release returned %ld\n", ref);
-    }
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetTopoNodeID(node, &id);
-    ok(hr == S_OK, "Failed to get node id, hr %#lx.\n", hr);
-    ok(((id >> 32) == GetCurrentProcessId()) && !!(id & 0xffff), "Unexpected node id %s.\n", wine_dbgstr_longlong(id));
-
-    hr = IMFTopologyNode_SetTopoNodeID(node2, id);
-    ok(hr == S_OK, "Failed to set node id, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeCount(topology, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    node_count = 1;
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 0, "Unexpected node count %u.\n", node_count);
-
-    /* Same id, different nodes. */
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    node_count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count %u.\n", node_count);
-
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = IMFTopology_GetNodeByID(topology, id, &node2);
-    ok(hr == S_OK, "Failed to get a node, hr %#lx.\n", hr);
-    ok(node2 == node, "Unexpected node.\n");
-    IMFTopologyNode_Release(node2);
-
-    /* Change node id, add it again. */
-    hr = IMFTopologyNode_SetTopoNodeID(node, ++id);
-    ok(hr == S_OK, "Failed to set node id, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeByID(topology, id, &node2);
-    ok(hr == S_OK, "Failed to get a node, hr %#lx.\n", hr);
-    ok(node2 == node, "Unexpected node.\n");
-    IMFTopologyNode_Release(node2);
-
-    hr = IMFTopology_GetNodeByID(topology, id + 1, &node2);
-    ok(hr == MF_E_NOT_FOUND, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == E_INVALIDARG, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNode(topology, 0, &node2);
-    ok(hr == S_OK, "Failed to get a node, hr %#lx.\n", hr);
-    ok(node2 == node, "Unexpected node.\n");
-    IMFTopologyNode_Release(node2);
-
-    hr = IMFTopology_GetNode(topology, 1, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNode(topology, 1, &node2);
-    ok(hr == MF_E_INVALIDINDEX, "Failed to get a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNode(topology, -2, &node2);
-    ok(hr == MF_E_INVALIDINDEX, "Failed to get a node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 1, "Release returned %ld\n", ref);
-
-    node_count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 2, "Unexpected node count %u.\n", node_count);
-
-    /* Remove with detached node, existing id. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-    hr = IMFTopologyNode_SetTopoNodeID(node2, id);
-    ok(hr == S_OK, "Failed to set node id, hr %#lx.\n", hr);
-    hr = IMFTopology_RemoveNode(topology, node2);
-    ok(hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = IMFTopology_RemoveNode(topology, node);
-    ok(hr == S_OK, "Failed to remove a node, hr %#lx.\n", hr);
-
-    node_count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count %u.\n", node_count);
-
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    node_count = 1;
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 0, "Unexpected node count %u.\n", node_count);
-
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetTopoNodeID(node, 123);
-    ok(hr == S_OK, "Failed to set node id, hr %#lx.\n", hr);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Change id for attached node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetTopoNodeID(node, &id);
-    ok(hr == S_OK, "Failed to get node id, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetTopoNodeID(node2, id);
-    ok(hr == S_OK, "Failed to get node id, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeByID(topology, id, &node3);
-    ok(hr == S_OK, "Failed to get a node, hr %#lx.\n", hr);
-    ok(node3 == node, "Unexpected node.\n");
-    IMFTopologyNode_Release(node3);
-
-    /* Source/output collections. */
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, &collection);
-    ok(hr == S_OK, "Failed to get source node collection, hr %#lx.\n", hr);
-    ok(!!collection, "Unexpected object pointer.\n");
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, &collection2);
-    ok(hr == S_OK, "Failed to get source node collection, hr %#lx.\n", hr);
-    ok(!!collection2, "Unexpected object pointer.\n");
-    ok(collection2 != collection, "Expected cloned collection.\n");
-
-    hr = IMFCollection_GetElementCount(collection, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(!size, "Unexpected item count.\n");
-
-    EXPECT_REF(collection, 1);
-    hr = IMFCollection_AddElement(collection, (IUnknown *)collection);
-    ok(hr == S_OK, "Failed to add element, hr %#lx.\n", hr);
-    EXPECT_REF(collection, 2);
-
-    hr = IMFCollection_GetElementCount(collection, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(size == 1, "Unexpected item count.\n");
-
-    /* Empty collection to stop referencing itself */
-    hr = IMFCollection_RemoveAllElements(collection);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-
-    hr = IMFCollection_GetElementCount(collection2, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(!size, "Unexpected item count.\n");
-
-    ref = IMFCollection_Release(collection2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFCollection_Release(collection);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Add some nodes. */
-    hr = IMFTopology_GetSourceNodeCollection(topology, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetOutputNodeCollection(topology, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    IMFTopologyNode_Release(node);
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, &collection);
-    ok(hr == S_OK, "Failed to get source node collection, hr %#lx.\n", hr);
-    ok(!!collection, "Unexpected object pointer.\n");
-    hr = IMFCollection_GetElementCount(collection, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(size == 1, "Unexpected item count.\n");
-    ref = IMFCollection_Release(collection);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    IMFTopologyNode_Release(node);
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, &collection);
-    ok(hr == S_OK, "Failed to get source node collection, hr %#lx.\n", hr);
-    ok(!!collection, "Unexpected object pointer.\n");
-    hr = IMFCollection_GetElementCount(collection, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(size == 1, "Unexpected item count.\n");
-    ref = IMFCollection_Release(collection);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TRANSFORM_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    IMFTopologyNode_Release(node);
-
-    hr = IMFTopology_GetSourceNodeCollection(topology, &collection);
-    ok(hr == S_OK, "Failed to get source node collection, hr %#lx.\n", hr);
-    ok(!!collection, "Unexpected object pointer.\n");
-    hr = IMFCollection_GetElementCount(collection, &size);
-    ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-    ok(size == 1, "Unexpected item count.\n");
-    ref = IMFCollection_Release(collection);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    /* Associated object. */
-    hr = IMFTopologyNode_SetObject(node, NULL);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetObject(node, NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    object = (void *)0xdeadbeef;
-    hr = IMFTopologyNode_GetObject(node, &object);
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
-    ok(!object, "Unexpected object %p.\n", object);
-
-    hr = IMFTopologyNode_SetObject(node, &test_unk);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetObject(node, &object);
-    ok(hr == S_OK, "Failed to get object, hr %#lx.\n", hr);
-    ok(object == &test_unk, "Unexpected object %p.\n", object);
-    IUnknown_Release(object);
-
-    hr = IMFTopologyNode_SetObject(node, &test_unk2);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetCount(node, &count);
-    ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-    ok(count == 0, "Unexpected attribute count %u.\n", count);
-
-    hr = IMFTopologyNode_SetGUID(node, &MF_TOPONODE_TRANSFORM_OBJECTID, &MF_TOPONODE_TRANSFORM_OBJECTID);
-    ok(hr == S_OK, "Failed to set attribute, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetObject(node, NULL);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    object = (void *)0xdeadbeef;
-    hr = IMFTopologyNode_GetObject(node, &object);
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
-    ok(!object, "Unexpected object %p.\n", object);
-
-    hr = IMFTopologyNode_GetCount(node, &count);
-    ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-    ok(count == 1, "Unexpected attribute count %u.\n", count);
-
-    /* Preferred stream types. */
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get input count, hr %#lx.\n", hr);
-    ok(io_count == 0, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype);
-    ok(hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&mediatype);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
-    ok(hr == S_OK, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(mediatype2 == mediatype, "Unexpected mediatype instance.\n");
-    IMFMediaType_Release(mediatype2);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 0, NULL);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
-    ok(!mediatype2, "Unexpected mediatype instance.\n");
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get input count, hr %#lx.\n", hr);
-    ok(io_count == 2, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get input count, hr %#lx.\n", hr);
-    ok(io_count == 0, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_SetOutputPrefType(node, 0, mediatype);
-    ok(hr == E_NOTIMPL, "Unexpected hr %#lx.\n", hr);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 1, "Release returned %ld\n", ref);
-
-    /* Source node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
-    ok(hr == E_NOTIMPL, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetOutputPrefType(node, 2, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
-    ok(hr == E_FAIL, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(!mediatype2, "Unexpected mediatype instance.\n");
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 3, "Unexpected count %lu.\n", io_count);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Tee node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
-    ok(hr == S_OK, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(mediatype2 == mediatype, "Unexpected mediatype instance.\n");
-    IMFMediaType_Release(mediatype2);
-
-    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
-    ok(hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 0, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
-    ok(hr == MF_E_INVALIDTYPE, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 3, mediatype);
-    ok(hr == MF_E_INVALIDTYPE, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetOutputPrefType(node, 4, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&mediatype2);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    /* Changing output type does not change input type. */
-    hr = IMFTopologyNode_SetOutputPrefType(node, 4, mediatype2);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype3);
-    ok(hr == S_OK, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(mediatype3 == mediatype, "Unexpected mediatype instance.\n");
-    IMFMediaType_Release(mediatype3);
-
-    IMFMediaType_Release(mediatype2);
-
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 0, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 5, "Unexpected count %lu.\n", io_count);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Transform node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TRANSFORM_NODE, &node);
-    ok(hr == S_OK, "Failed to create a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(node, 3, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get input count, hr %#lx.\n", hr);
-    ok(io_count == 4, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_SetOutputPrefType(node, 4, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 4, "Unexpected count %lu.\n", io_count);
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 5, "Unexpected count %lu.\n", io_count);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    IMFMediaType_Release(mediatype);
-
-    hr = IMFTopology_GetOutputNodeCollection(topology, &collection);
-    ok(hr == S_OK || broken(hr == E_FAIL) /* before Win8 */, "Failed to get output node collection, hr %#lx.\n", hr);
-    if (SUCCEEDED(hr))
-    {
-        ok(!!collection, "Unexpected object pointer.\n");
-        hr = IMFCollection_GetElementCount(collection, &size);
-        ok(hr == S_OK, "Failed to get item count, hr %#lx.\n", hr);
-        ok(size == 1, "Unexpected item count.\n");
-        ref = IMFCollection_Release(collection);
-        ok(ref == 0, "Release returned %ld\n", ref);
-    }
-
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Connect nodes. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 1);
-    EXPECT_REF(node2, 1);
-
-    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 2);
-    EXPECT_REF(node2, 2);
-
-    IMFTopologyNode_Release(node);
-
-    EXPECT_REF(node, 1);
-    EXPECT_REF(node2, 2);
-
-    IMFTopologyNode_Release(node2);
-
-    EXPECT_REF(node, 1);
-    EXPECT_REF(node2, 1);
-
-    hr = IMFTopologyNode_GetNodeType(node2, &node_type);
-    ok(hr == S_OK, "Failed to get node type, hr %#lx.\n", hr);
-
-    IMFTopologyNode_Release(node);
-
-    /* Connect within topology. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 2);
-    EXPECT_REF(node2, 2);
-
-    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 3);
-    EXPECT_REF(node2, 3);
-
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 1);
-    EXPECT_REF(node2, 1);
-
-    /* Removing connected node breaks connection. */
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopology_RemoveNode(topology, node);
-    ok(hr == S_OK, "Failed to remove a node, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 1);
-    EXPECT_REF(node2, 2);
-
-    hr = IMFTopologyNode_GetOutput(node, 0, &node3, &index);
-    ok(hr == MF_E_NOT_FOUND, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopology_RemoveNode(topology, node2);
-    ok(hr == S_OK, "Failed to remove a node, hr %#lx.\n", hr);
-
-    EXPECT_REF(node, 2);
-    EXPECT_REF(node2, 1);
-
-    IMFTopologyNode_Release(node);
-    IMFTopologyNode_Release(node2);
-
-    /* Cloning nodes of different types. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_CloneFrom(node, node2);
-    ok(hr == MF_E_INVALIDREQUEST, "Unexpected hr %#lx.\n", hr);
-
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Cloning preferred types. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&mediatype);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetOutputPrefType(node2, 0, mediatype);
-    ok(hr == S_OK, "Failed to set preferred type, hr %#lx.\n", hr);
-
-    /* Vista checks for additional attributes. */
-    hr = IMFTopologyNode_CloneFrom(node, node2);
-    ok(hr == S_OK || broken(hr == MF_E_ATTRIBUTENOTFOUND) /* Vista */, "Failed to clone a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
-    ok(hr == S_OK, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(mediatype == mediatype2, "Unexpected media type.\n");
-
-    IMFMediaType_Release(mediatype2);
-
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    IMFMediaType_Release(mediatype);
-
-    /* Existing preferred types are not cleared. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 1, "Unexpected output count.\n");
-
-    hr = IMFTopologyNode_CloneFrom(node, node2);
-    ok(hr == S_OK || broken(hr == MF_E_ATTRIBUTENOTFOUND) /* Vista */, "Failed to clone a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputCount(node, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 1, "Unexpected output count.\n");
-
-    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
-    ok(hr == S_OK, "Failed to get preferred type, hr %#lx.\n", hr);
-    ok(!!mediatype2, "Unexpected media type.\n");
-    IMFMediaType_Release(mediatype2);
-
-    hr = IMFTopologyNode_CloneFrom(node2, node);
-    ok(hr == S_OK || broken(hr == MF_E_ATTRIBUTENOTFOUND) /* Vista */, "Failed to clone a node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputCount(node2, &io_count);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(io_count == 1, "Unexpected output count.\n");
-
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Add one node, connect to another that hasn't been added. */
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count.\n");
-
-    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 0);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count.\n");
-
-    /* Add same node to different topologies. */
-    hr = IMFTopology_Clear(topology);
-    ok(hr == S_OK, "Failed to clear topology, hr %#lx.\n", hr);
-
-    hr = MFCreateTopology(&topology2);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    EXPECT_REF(node, 2);
-
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count.\n");
-
-    hr = IMFTopology_GetNodeCount(topology2, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 0, "Unexpected node count.\n");
-
-    hr = IMFTopology_AddNode(topology2, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    EXPECT_REF(node, 3);
-
-    hr = IMFTopology_GetNodeCount(topology, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count.\n");
-
-    hr = IMFTopology_GetNodeCount(topology2, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 1, "Unexpected node count.\n");
-
-    ref = IMFTopology_Release(topology2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    /* Try cloning a topology without all outputs connected */
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    hr = MFCreateTopology(&topology2);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TRANSFORM_NODE, &node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    EXPECT_REF(node, 2);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, node2);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-    EXPECT_REF(node, 2);
-
-    hr = IMFTopologyNode_ConnectOutput(node, 1, node2, 0);
-    ok(hr == S_OK, "Failed to connect output, hr %#lx.\n", hr);
-
-    hr = IMFTopology_CloneFrom(topology2, topology);
-    ok(hr == S_OK, "Failed to clone from topology, hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeCount(topology2, &node_count);
-    ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-    ok(node_count == 2, "Unexpected node count %u.\n", node_count);
-
-    hr = IMFTopology_GetNode(topology2, 0, &node3);
-    ok(hr == S_OK, "Failed to get node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputCount(node3, &size);
-    ok(hr == S_OK, "Failed to get output count, hr %#lx.\n", hr);
-    ok(size == 2, "Unexpected output count %lu.\n", size);
-
-    IMFTopologyNode_Release(node3);
-
-    ref = IMFTopology_Release(topology2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    ref = IMFTopologyNode_Release(node2);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-}
-
-static void test_topology_tee_node(void)
-{
-    IMFTopologyNode *src_node, *tee_node;
-    IMFMediaType *mediatype, *mediatype2;
-    IMFTopology *topology;
-    DWORD count;
-    HRESULT hr;
-    LONG ref;
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&mediatype);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &tee_node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &src_node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetInputPrefType(tee_node, 0, mediatype);
-    ok(hr == S_OK, "Failed to set type, hr %#lx.\n", hr);
-
-    /* Even though tee node has only one input and source has only one output,
-       it's possible to connect to higher inputs/outputs. */
-
-    /* SRC(0) -> TEE(0) */
-    hr = IMFTopologyNode_ConnectOutput(src_node, 0, tee_node, 0);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(tee_node, &count);
-    ok(hr == S_OK, "Failed to get count, hr %#lx.\n", hr);
-    ok(count == 1, "Unexpected count %lu.\n", count);
-
-    hr = IMFTopologyNode_GetInputPrefType(tee_node, 0, &mediatype2);
-    ok(hr == S_OK, "Failed to get type, hr %#lx.\n", hr);
-    ok(mediatype2 == mediatype, "Unexpected type.\n");
-    IMFMediaType_Release(mediatype2);
-
-    /* SRC(0) -> TEE(1) */
-    hr = IMFTopologyNode_ConnectOutput(src_node, 0, tee_node, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetInputCount(tee_node, &count);
-    ok(hr == S_OK, "Failed to get count, hr %#lx.\n", hr);
-    ok(count == 2, "Unexpected count %lu.\n", count);
-
-    hr = IMFTopologyNode_SetInputPrefType(tee_node, 1, mediatype);
-    ok(hr == MF_E_INVALIDTYPE, "Unexpected hr %#lx.\n", hr);
-
-    /* SRC(1) -> TEE(1) */
-    hr = IMFTopologyNode_ConnectOutput(src_node, 1, tee_node, 1);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetOutputCount(src_node, &count);
-    ok(hr == S_OK, "Failed to get count, hr %#lx.\n", hr);
-    ok(count == 2, "Unexpected count %lu.\n", count);
-
-    EXPECT_REF(src_node, 2);
-    EXPECT_REF(tee_node, 2);
-    hr = IMFTopologyNode_DisconnectOutput(src_node, 1);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    ref = IMFTopologyNode_Release(src_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(tee_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    ref = IMFMediaType_Release(mediatype);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
 }
 
 static HRESULT WINAPI test_getservice_QI(IMFGetService *iface, REFIID riid, void **obj)
@@ -1728,8 +829,12 @@ static const struct test_media_sink test_media_sink = {.IMFMediaSink_iface.lpVtb
 struct test_stream_sink
 {
     IMFStreamSink IMFStreamSink_iface;
+    IMFGetService IMFGetService_iface;
     IMFMediaTypeHandler *handler;
     IMFMediaSink *media_sink;
+
+    IMFAttributes *attributes;
+    IUnknown *device_manager;
 };
 
 static struct test_stream_sink *impl_from_IMFStreamSink(IMFStreamSink *iface)
@@ -1739,11 +844,26 @@ static struct test_stream_sink *impl_from_IMFStreamSink(IMFStreamSink *iface)
 
 static HRESULT WINAPI test_stream_sink_QueryInterface(IMFStreamSink *iface, REFIID riid, void **obj)
 {
+    struct test_stream_sink *impl = impl_from_IMFStreamSink(iface);
+
     if (IsEqualIID(riid, &IID_IMFStreamSink)
             || IsEqualIID(riid, &IID_IMFMediaEventGenerator)
             || IsEqualIID(riid, &IID_IUnknown))
     {
         IMFStreamSink_AddRef((*obj = iface));
+        return S_OK;
+    }
+
+    if (IsEqualIID(riid, &IID_IMFAttributes) && impl->attributes)
+    {
+        IMFAttributes_AddRef((*obj = impl->attributes));
+        return S_OK;
+    }
+
+    if (IsEqualIID(riid, &IID_IMFGetService))
+    {
+        *obj = &impl->IMFGetService_iface;
+        IMFGetService_AddRef(&impl->IMFGetService_iface);
         return S_OK;
     }
 
@@ -1858,7 +978,52 @@ static const IMFStreamSinkVtbl test_stream_sink_vtbl =
     test_stream_sink_Flush,
 };
 
-static const struct test_stream_sink test_stream_sink = {.IMFStreamSink_iface.lpVtbl = &test_stream_sink_vtbl};
+static struct test_stream_sink *impl_from_IMFGetService(IMFGetService *iface)
+{
+    return CONTAINING_RECORD(iface, struct test_stream_sink, IMFGetService_iface);
+}
+
+static HRESULT WINAPI test_stream_sink_get_service_QueryInterface(IMFGetService *iface, REFIID riid, void **obj)
+{
+    struct test_stream_sink *stream = impl_from_IMFGetService(iface);
+    return IMFStreamSink_QueryInterface(&stream->IMFStreamSink_iface, riid, obj);
+}
+
+static ULONG WINAPI test_stream_sink_get_service_AddRef(IMFGetService *iface)
+{
+    struct test_stream_sink *stream = impl_from_IMFGetService(iface);
+    return IMFStreamSink_AddRef(&stream->IMFStreamSink_iface);
+}
+
+static ULONG WINAPI test_stream_sink_get_service_Release(IMFGetService *iface)
+{
+    struct test_stream_sink *stream = impl_from_IMFGetService(iface);
+    return IMFStreamSink_Release(&stream->IMFStreamSink_iface);
+}
+
+static HRESULT WINAPI test_stream_sink_get_service_GetService(IMFGetService *iface, REFGUID service, REFIID riid, void **obj)
+{
+    struct test_stream_sink *stream = impl_from_IMFGetService(iface);
+
+    if (IsEqualGUID(service, &MR_VIDEO_ACCELERATION_SERVICE) && stream->device_manager)
+        return IUnknown_QueryInterface(stream->device_manager, riid, obj);
+
+    return E_NOINTERFACE;
+}
+
+static const IMFGetServiceVtbl test_stream_sink_get_service_vtbl =
+{
+    test_stream_sink_get_service_QueryInterface,
+    test_stream_sink_get_service_AddRef,
+    test_stream_sink_get_service_Release,
+    test_stream_sink_get_service_GetService,
+};
+
+static const struct test_stream_sink test_stream_sink =
+{
+    .IMFStreamSink_iface.lpVtbl = &test_stream_sink_vtbl,
+    .IMFGetService_iface.lpVtbl = &test_stream_sink_get_service_vtbl,
+};
 
 struct test_callback
 {
@@ -2075,6 +1240,7 @@ static IMFMediaSource *create_media_source(const WCHAR *name, const WCHAR *mime)
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
     hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
             &obj_type, (IUnknown **)&source);
+    todo_wine_if(hr == MF_E_UNEXPECTED) /* Gitlab CI Debian runner */
     ok(hr == S_OK || broken(hr == MF_E_UNSUPPORTED_BYTESTREAM_TYPE), "Unexpected hr %#lx.\n", hr);
     IMFSourceResolver_Release(resolver);
     IMFByteStream_Release(stream);
@@ -2084,6 +1250,626 @@ static IMFMediaSource *create_media_source(const WCHAR *name, const WCHAR *mime)
 
     ok(obj_type == MF_OBJECT_MEDIASOURCE, "got %d\n", obj_type);
     return source;
+}
+
+enum object_state
+{
+    SOURCE_START,
+    SOURCE_PAUSE,
+    SOURCE_STOP,
+    SOURCE_SHUTDOWN,
+    SINK_ON_CLOCK_START,
+    SINK_ON_CLOCK_PAUSE,
+    SINK_ON_CLOCK_STOP,
+    SINK_ON_CLOCK_RESTART,
+    SINK_ON_CLOCK_SETRATE,
+};
+
+#define MAX_OBJECT_STATE 1024
+
+struct object_state_record
+{
+    enum object_state states[MAX_OBJECT_STATE];
+    unsigned int state_count;
+};
+static struct object_state_record actual_object_state_record;
+
+#define add_object_state(a, b) _add_object_state(__LINE__, a, b)
+static void _add_object_state(int line, struct object_state_record *record, enum object_state state)
+{
+    ok_(__FILE__, line)(record->state_count < MAX_OBJECT_STATE, "exceeded state_count maximum %d.\n", MAX_OBJECT_STATE);
+    if (record->state_count < MAX_OBJECT_STATE)
+        record->states[record->state_count++] = state;
+}
+
+#define compare_object_states(a, b) _compare_object_states(__LINE__, a, b)
+static void _compare_object_states(int line, const struct object_state_record *r1,
+        const struct object_state_record *r2)
+{
+    ok_(__FILE__, line)(r1->state_count == r2->state_count, "State count not equal.\n");
+    if (r1->state_count == r2->state_count)
+        ok_(__FILE__, line)(!memcmp(r1->states, r2->states, sizeof(enum object_state) * r1->state_count), "Got different states.\n");
+}
+
+enum source_state
+{
+    SOURCE_STOPPED,
+    SOURCE_RUNNING,
+    SOURCE_PAUSED,
+};
+
+struct test_media_stream
+{
+    IMFMediaStream IMFMediaStream_iface;
+    IMFMediaEventQueue *event_queue;
+    IMFStreamDescriptor *sd;
+    IMFMediaSource *source;
+    LONGLONG sample_duration;
+    LONGLONG sample_time;
+    BOOL is_new;
+    LONG refcount;
+};
+
+static struct test_media_stream *impl_from_IMFMediaStream(IMFMediaStream *iface)
+{
+    return CONTAINING_RECORD(iface, struct test_media_stream, IMFMediaStream_iface);
+}
+
+static HRESULT WINAPI test_media_stream_QueryInterface(IMFMediaStream *iface, REFIID riid, void **out)
+{
+    if (IsEqualIID(riid, &IID_IMFMediaStream)
+            || IsEqualIID(riid, &IID_IMFMediaEventGenerator)
+            || IsEqualIID(riid, &IID_IUnknown))
+    {
+        *out = iface;
+    }
+    else
+    {
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    IMFMediaStream_AddRef(iface);
+    return S_OK;
+}
+
+static ULONG WINAPI test_media_stream_AddRef(IMFMediaStream *iface)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    return InterlockedIncrement(&stream->refcount);
+}
+
+static ULONG WINAPI test_media_stream_Release(IMFMediaStream *iface)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    ULONG refcount = InterlockedDecrement(&stream->refcount);
+
+    if (!refcount)
+    {
+        IMFMediaEventQueue_Release(stream->event_queue);
+        free(stream);
+    }
+
+    return refcount;
+}
+
+static HRESULT WINAPI test_media_stream_GetEvent(IMFMediaStream *iface, DWORD flags, IMFMediaEvent **event)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    return IMFMediaEventQueue_GetEvent(stream->event_queue, flags, event);
+}
+
+static HRESULT WINAPI test_media_stream_BeginGetEvent(IMFMediaStream *iface, IMFAsyncCallback *callback, IUnknown *state)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    return IMFMediaEventQueue_BeginGetEvent(stream->event_queue, callback, state);
+}
+
+static HRESULT WINAPI test_media_stream_EndGetEvent(IMFMediaStream *iface, IMFAsyncResult *result, IMFMediaEvent **event)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    return IMFMediaEventQueue_EndGetEvent(stream->event_queue, result, event);
+}
+
+static HRESULT WINAPI test_media_stream_QueueEvent(IMFMediaStream *iface, MediaEventType event_type, REFGUID ext_type,
+        HRESULT hr, const PROPVARIANT *value)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    return IMFMediaEventQueue_QueueEventParamVar(stream->event_queue, event_type, ext_type, hr, value);
+}
+
+static HRESULT WINAPI test_media_stream_GetMediaSource(IMFMediaStream *iface, IMFMediaSource **source)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+
+    *source = stream->source;
+    IMFMediaSource_AddRef(*source);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI test_media_stream_GetStreamDescriptor(IMFMediaStream *iface, IMFStreamDescriptor **sd)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+
+    *sd = stream->sd;
+    IMFStreamDescriptor_AddRef(*sd);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI test_media_stream_RequestSample(IMFMediaStream *iface, IUnknown *token)
+{
+    struct test_media_stream *stream = impl_from_IMFMediaStream(iface);
+    IMFMediaBuffer *buffer;
+    IMFSample *sample;
+    HRESULT hr;
+
+    hr = MFCreateSample(&sample);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    if (stream->sample_duration)
+    {
+        hr = IMFSample_SetSampleDuration(sample, stream->sample_duration);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        hr = IMFSample_SetSampleTime(sample, stream->sample_time);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        stream->sample_time += stream->sample_duration;
+    }
+    else
+    {
+        hr = IMFSample_SetSampleTime(sample, 123);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        hr = IMFSample_SetSampleDuration(sample, 1);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    }
+
+    if (token)
+        IMFSample_SetUnknown(sample, &MFSampleExtension_Token, token);
+
+    /* Reader expects buffers, empty samples are considered an error. */
+    hr = MFCreateMemoryBuffer(8, &buffer);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFSample_AddBuffer(sample, buffer);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFMediaBuffer_Release(buffer);
+
+    hr = IMFMediaEventQueue_QueueEventParamUnk(stream->event_queue, MEMediaSample, &GUID_NULL, S_OK,
+            (IUnknown *)sample);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFSample_Release(sample);
+
+    return S_OK;
+}
+
+static const IMFMediaStreamVtbl test_media_stream_vtbl =
+{
+    test_media_stream_QueryInterface,
+    test_media_stream_AddRef,
+    test_media_stream_Release,
+    test_media_stream_GetEvent,
+    test_media_stream_BeginGetEvent,
+    test_media_stream_EndGetEvent,
+    test_media_stream_QueueEvent,
+    test_media_stream_GetMediaSource,
+    test_media_stream_GetStreamDescriptor,
+    test_media_stream_RequestSample,
+};
+
+#define TEST_SOURCE_NUM_STREAMS 3
+
+struct test_seek_source
+{
+    IMFMediaSource IMFMediaSource_iface;
+    IMFMediaEventQueue *event_queue;
+    IMFPresentationDescriptor *pd;
+    struct test_media_stream *streams[TEST_SOURCE_NUM_STREAMS];
+    enum source_state state;
+    unsigned stream_count;
+    CRITICAL_SECTION cs;
+    BOOL seekable;
+    LONG refcount;
+};
+
+static struct test_seek_source *impl_test_seek_source_from_IMFMediaSource(IMFMediaSource *iface)
+{
+    return CONTAINING_RECORD(iface, struct test_seek_source, IMFMediaSource_iface);
+}
+
+static HRESULT WINAPI test_seek_source_QueryInterface(IMFMediaSource *iface, REFIID riid, void **out)
+{
+    if (IsEqualIID(riid, &IID_IMFMediaSource)
+            || IsEqualIID(riid, &IID_IMFMediaEventGenerator)
+            || IsEqualIID(riid, &IID_IUnknown))
+    {
+        *out = iface;
+    }
+    else
+    {
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    IMFMediaSource_AddRef(iface);
+    return S_OK;
+}
+
+static ULONG WINAPI test_seek_source_AddRef(IMFMediaSource *iface)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    return InterlockedIncrement(&source->refcount);
+}
+
+static ULONG WINAPI test_seek_source_Release(IMFMediaSource *iface)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    ULONG refcount = InterlockedDecrement(&source->refcount);
+
+    if (!refcount)
+    {
+        IMFMediaEventQueue_Release(source->event_queue);
+        free(source);
+    }
+
+    return refcount;
+}
+
+static HRESULT WINAPI test_seek_source_GetEvent(IMFMediaSource *iface, DWORD flags, IMFMediaEvent **event)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    return IMFMediaEventQueue_GetEvent(source->event_queue, flags, event);
+}
+
+static HRESULT WINAPI test_seek_source_BeginGetEvent(IMFMediaSource *iface, IMFAsyncCallback *callback, IUnknown *state)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    return IMFMediaEventQueue_BeginGetEvent(source->event_queue, callback, state);
+}
+
+static HRESULT WINAPI test_seek_source_EndGetEvent(IMFMediaSource *iface, IMFAsyncResult *result, IMFMediaEvent **event)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    return IMFMediaEventQueue_EndGetEvent(source->event_queue, result, event);
+}
+
+static HRESULT WINAPI test_seek_source_QueueEvent(IMFMediaSource *iface, MediaEventType event_type, REFGUID ext_type,
+        HRESULT hr, const PROPVARIANT *value)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    return IMFMediaEventQueue_QueueEventParamVar(source->event_queue, event_type, ext_type, hr, value);
+}
+
+static HRESULT WINAPI test_seek_source_GetCharacteristics(IMFMediaSource *iface, DWORD *flags)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+
+    if (source->seekable)
+        *flags = MFMEDIASOURCE_CAN_PAUSE | MFMEDIASOURCE_CAN_SEEK;
+    else
+        *flags = MFMEDIASOURCE_CAN_PAUSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI test_seek_source_CreatePresentationDescriptor(IMFMediaSource *iface, IMFPresentationDescriptor **pd)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    IMFStreamDescriptor *sds[ARRAY_SIZE(source->streams)];
+    IMFMediaType *media_type;
+    HRESULT hr = S_OK;
+    int i;
+
+    EnterCriticalSection(&source->cs);
+
+    if (source->pd)
+    {
+        *pd = source->pd;
+        IMFPresentationDescriptor_AddRef(*pd);
+    }
+    else
+    {
+        for (i = 0; i < source->stream_count; ++i)
+        {
+            hr = MFCreateMediaType(&media_type);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+            hr = IMFMediaType_SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            hr = IMFMediaType_SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            hr = IMFMediaType_SetUINT64(media_type, &MF_MT_FRAME_SIZE, (UINT64)640 << 32 | 480);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+            hr = MFCreateStreamDescriptor(i, 1, &media_type, &sds[i]);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+            IMFMediaType_Release(media_type);
+        }
+
+        hr = MFCreatePresentationDescriptor(source->stream_count, sds, &source->pd);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFPresentationDescriptor_SetUINT64(source->pd, &MF_PD_DURATION, 10 * 10000000);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFPresentationDescriptor_SelectStream(source->pd, 0);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        for (i = 0; i < source->stream_count; ++i)
+            IMFStreamDescriptor_Release(sds[i]);
+
+        *pd = source->pd;
+        IMFPresentationDescriptor_AddRef(*pd);
+    }
+
+    LeaveCriticalSection(&source->cs);
+
+    return hr;
+}
+
+static BOOL is_stream_selected(IMFPresentationDescriptor *pd, DWORD index)
+{
+    IMFStreamDescriptor *sd;
+    BOOL selected = FALSE;
+
+    if (SUCCEEDED(IMFPresentationDescriptor_GetStreamDescriptorByIndex(pd, index, &selected, &sd)))
+        IMFStreamDescriptor_Release(sd);
+
+    return selected;
+}
+
+static HRESULT WINAPI test_seek_source_Start(IMFMediaSource *iface, IMFPresentationDescriptor *pd, const GUID *time_format,
+        const PROPVARIANT *start_position)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    MediaEventType event_type;
+    PROPVARIANT var;
+    HRESULT hr;
+    int i;
+
+    add_object_state(&actual_object_state_record, SOURCE_START);
+
+    ok(time_format && IsEqualGUID(time_format, &GUID_NULL), "Unexpected time format %s.\n",
+            wine_dbgstr_guid(time_format));
+    ok(start_position && (start_position->vt == VT_I8 || start_position->vt == VT_EMPTY),
+            "Unexpected position type.\n");
+
+    /* This is what makes IMFMediaSession::Start() seeking fail, not the lacking of MFMEDIASOURCE_CAN_SEEK.
+     * Without this, IMFMediaSession::Start() seeking succeeds even with the missing MFMEDIASOURCE_CAN_SEEK.
+     * If this is check is not here, the first IMFMediaSession::Start() call to a non-zero position
+     * succeeds somehow on Windows 10, then all following seeks fails and no MESessionStarted events */
+    if (!source->seekable && start_position && start_position->vt == VT_I8 && start_position->hVal.QuadPart)
+        return E_FAIL;
+
+    EnterCriticalSection(&source->cs);
+
+    event_type = source->state != SOURCE_STOPPED ? MESourceSeeked : MESourceStarted;
+    hr = IMFMediaEventQueue_QueueEventParamVar(source->event_queue, event_type, &GUID_NULL, S_OK, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    for (i = 0; i < source->stream_count; ++i)
+    {
+        if (!is_stream_selected(pd, i))
+            continue;
+
+        var.vt = VT_UNKNOWN;
+        var.punkVal = (IUnknown *)&source->streams[i]->IMFMediaStream_iface;
+        event_type = source->streams[i]->is_new ? MENewStream : MEUpdatedStream;
+        source->streams[i]->is_new = FALSE;
+        hr = IMFMediaEventQueue_QueueEventParamVar(source->event_queue, event_type, &GUID_NULL, S_OK, &var);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        event_type = source->state != SOURCE_STOPPED ? MEStreamSeeked : MEStreamStarted;
+        hr = IMFMediaEventQueue_QueueEventParamVar(source->streams[i]->event_queue, event_type, &GUID_NULL,
+                S_OK, NULL);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    }
+
+    source->state = SOURCE_RUNNING;
+
+    LeaveCriticalSection(&source->cs);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI test_seek_source_Stop(IMFMediaSource *iface)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    MediaEventType event_type;
+    HRESULT hr;
+    int i;
+
+    add_object_state(&actual_object_state_record, SOURCE_STOP);
+
+    EnterCriticalSection(&source->cs);
+
+    event_type = MESourceStopped;
+    hr = IMFMediaEventQueue_QueueEventParamVar(source->event_queue, event_type, &GUID_NULL, S_OK, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    for (i = 0; i < source->stream_count; ++i)
+    {
+        if (!is_stream_selected(source->pd, i))
+            continue;
+
+        event_type = MEStreamStopped;
+        hr = IMFMediaEventQueue_QueueEventParamVar(source->streams[i]->event_queue, event_type, &GUID_NULL,
+                S_OK, NULL);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    }
+
+    source->state = SOURCE_STOPPED;
+
+    LeaveCriticalSection(&source->cs);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI test_seek_source_Pause(IMFMediaSource *iface)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    MediaEventType event_type;
+    HRESULT hr;
+    int i;
+
+    add_object_state(&actual_object_state_record, SOURCE_PAUSE);
+
+    EnterCriticalSection(&source->cs);
+
+    event_type = MESourcePaused;
+    hr = IMFMediaEventQueue_QueueEventParamVar(source->event_queue, event_type, &GUID_NULL, S_OK, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    for (i = 0; i < source->stream_count; ++i)
+    {
+        if (!is_stream_selected(source->pd, i))
+            continue;
+
+        event_type = MEStreamPaused;
+        hr = IMFMediaEventQueue_QueueEventParamVar(source->streams[i]->event_queue, event_type, &GUID_NULL,
+                S_OK, NULL);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    }
+
+    source->state = SOURCE_PAUSED;
+    LeaveCriticalSection(&source->cs);
+
+    return S_OK;
+}
+
+static HRESULT WINAPI test_seek_source_Shutdown(IMFMediaSource *iface)
+{
+    struct test_seek_source *source = impl_test_seek_source_from_IMFMediaSource(iface);
+    HRESULT hr;
+
+    add_object_state(&actual_object_state_record, SOURCE_SHUTDOWN);
+
+    hr = IMFMediaEventQueue_Shutdown(source->event_queue);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    return S_OK;
+}
+
+static const IMFMediaSourceVtbl test_seek_source_vtbl =
+{
+    test_seek_source_QueryInterface,
+    test_seek_source_AddRef,
+    test_seek_source_Release,
+    test_seek_source_GetEvent,
+    test_seek_source_BeginGetEvent,
+    test_seek_source_EndGetEvent,
+    test_seek_source_QueueEvent,
+    test_seek_source_GetCharacteristics,
+    test_seek_source_CreatePresentationDescriptor,
+    test_seek_source_Start,
+    test_seek_source_Stop,
+    test_seek_source_Pause,
+    test_seek_source_Shutdown,
+};
+
+static HRESULT WINAPI test_seek_clock_sink_QueryInterface(IMFClockStateSink *iface, REFIID riid, void **obj)
+{
+    if (IsEqualIID(riid, &IID_IMFClockStateSink) ||
+        IsEqualIID(riid, &IID_IUnknown))
+    {
+        *obj = iface;
+        IMFClockStateSink_AddRef(iface);
+        return S_OK;
+    }
+
+    *obj = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI test_seek_clock_sink_AddRef(IMFClockStateSink *iface)
+{
+   return 2;
+}
+
+static ULONG WINAPI test_seek_clock_sink_Release(IMFClockStateSink *iface)
+{
+   return 1;
+}
+
+static HRESULT WINAPI test_seek_clock_sink_OnClockStart(IMFClockStateSink *iface, MFTIME system_time, LONGLONG offset)
+{
+   add_object_state(&actual_object_state_record, SINK_ON_CLOCK_START);
+   return S_OK;
+}
+
+static HRESULT WINAPI test_seek_clock_sink_OnClockStop(IMFClockStateSink *iface, MFTIME system_time)
+{
+   add_object_state(&actual_object_state_record, SINK_ON_CLOCK_STOP);
+   return S_OK;
+}
+
+static HRESULT WINAPI test_seek_clock_sink_OnClockPause(IMFClockStateSink *iface, MFTIME system_time)
+{
+   add_object_state(&actual_object_state_record, SINK_ON_CLOCK_PAUSE);
+   return S_OK;
+}
+
+static HRESULT WINAPI test_seek_clock_sink_OnClockRestart(IMFClockStateSink *iface, MFTIME system_time)
+{
+   add_object_state(&actual_object_state_record, SINK_ON_CLOCK_RESTART);
+   return S_OK;
+}
+
+static HRESULT WINAPI test_seek_clock_sink_OnClockSetRate(IMFClockStateSink *iface, MFTIME system_time, float rate)
+{
+   add_object_state(&actual_object_state_record, SINK_ON_CLOCK_SETRATE);
+   return S_OK;
+}
+
+static const IMFClockStateSinkVtbl test_seek_clock_sink_vtbl =
+{
+   test_seek_clock_sink_QueryInterface,
+   test_seek_clock_sink_AddRef,
+   test_seek_clock_sink_Release,
+   test_seek_clock_sink_OnClockStart,
+   test_seek_clock_sink_OnClockStop,
+   test_seek_clock_sink_OnClockPause,
+   test_seek_clock_sink_OnClockRestart,
+   test_seek_clock_sink_OnClockSetRate,
+};
+
+static struct test_media_stream *create_test_stream(DWORD stream_index, IMFMediaSource *source)
+{
+    struct test_media_stream *stream;
+    IMFPresentationDescriptor *pd;
+    BOOL selected;
+    HRESULT hr;
+
+    stream = calloc(1, sizeof(*stream));
+    stream->IMFMediaStream_iface.lpVtbl = &test_media_stream_vtbl;
+    stream->refcount = 1;
+    hr = MFCreateEventQueue(&stream->event_queue);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    stream->source = source;
+    IMFMediaSource_AddRef(stream->source);
+    stream->is_new = TRUE;
+
+    IMFMediaSource_CreatePresentationDescriptor(source, &pd);
+    IMFPresentationDescriptor_GetStreamDescriptorByIndex(pd, stream_index, &selected, &stream->sd);
+    IMFPresentationDescriptor_Release(pd);
+
+    return stream;
+}
+
+static IMFMediaSource *create_test_seek_source(BOOL seekable)
+{
+    struct test_seek_source *source;
+    int i;
+
+    source = calloc(1, sizeof(*source));
+    source->IMFMediaSource_iface.lpVtbl = &test_seek_source_vtbl;
+    source->refcount = 1;
+    source->stream_count = 1;
+    source->seekable = seekable;
+    MFCreateEventQueue(&source->event_queue);
+    InitializeCriticalSection(&source->cs);
+    for (i = 0; i < source->stream_count; ++i)
+        source->streams[i] = create_test_stream(i, &source->IMFMediaSource_iface);
+
+    return &source->IMFMediaSource_iface;
 }
 
 static void test_media_session_events(void)
@@ -2887,27 +2673,27 @@ static ULONG WINAPI test_grabber_callback_Release(IMFSampleGrabberSinkCallback *
 
 static HRESULT WINAPI test_grabber_callback_OnClockStart(IMFSampleGrabberSinkCallback *iface, MFTIME time, LONGLONG offset)
 {
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static HRESULT WINAPI test_grabber_callback_OnClockStop(IMFSampleGrabberSinkCallback *iface, MFTIME time)
 {
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static HRESULT WINAPI test_grabber_callback_OnClockPause(IMFSampleGrabberSinkCallback *iface, MFTIME time)
 {
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static HRESULT WINAPI test_grabber_callback_OnClockRestart(IMFSampleGrabberSinkCallback *iface, MFTIME time)
 {
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static HRESULT WINAPI test_grabber_callback_OnClockSetRate(IMFSampleGrabberSinkCallback *iface, MFTIME time, float rate)
 {
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static HRESULT WINAPI test_grabber_callback_OnSetPresentationClock(IMFSampleGrabberSinkCallback *iface,
@@ -2979,917 +2765,6 @@ static IMFSampleGrabberSinkCallback *create_test_grabber_callback(void)
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
     return &grabber->IMFSampleGrabberSinkCallback_iface;
-}
-
-enum loader_test_flags
-{
-    LOADER_EXPECTED_DECODER = 0x1,
-    LOADER_EXPECTED_CONVERTER = 0x2,
-    LOADER_TODO = 0x4,
-    LOADER_NEEDS_VIDEO_PROCESSOR = 0x8,
-    LOADER_SET_ENUMERATE_SOURCE_TYPES = 0x10,
-    LOADER_NO_CURRENT_OUTPUT = 0x20,
-    LOADER_SET_INVALID_INPUT = 0x40,
-    LOADER_SET_MEDIA_TYPES = 0x80,
-    LOADER_ADD_RESAMPLER_MFT = 0x100,
-};
-
-static void test_topology_loader(void)
-{
-    static const media_type_desc audio_float_44100 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_Float),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 1),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 4),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 44100),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 4 * 44100),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 4 * 8),
-    };
-    static const media_type_desc audio_pcm_44100 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_PCM),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 1),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 44100),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 44100),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 1),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 8),
-    };
-    static const media_type_desc audio_pcm_48000 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_PCM),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 1),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 48000),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 1),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 8),
-    };
-    static const media_type_desc audio_pcm_48000_resampler =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_PCM),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 2),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 192000),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 4),
-        ATTR_UINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, 1),
-        ATTR_UINT32(MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1),
-    };
-    static const media_type_desc audio_float_48000 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_Float),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 2),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 8 * 48000),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 8),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 32),
-    };
-    static const media_type_desc audio_mp3_44100 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_MP3),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 2),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 44100),
-        ATTR_UINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 16000),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 1),
-    };
-    static const media_type_desc audio_pcm_44100_incomplete =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-        ATTR_GUID(MF_MT_SUBTYPE, MFAudioFormat_PCM),
-        ATTR_UINT32(MF_MT_AUDIO_NUM_CHANNELS, 1),
-        ATTR_UINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 44100),
-        ATTR_UINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 1),
-        ATTR_UINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 8),
-    };
-    static const media_type_desc video_i420_1280 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_I420),
-        ATTR_RATIO(MF_MT_FRAME_SIZE, 1280, 720),
-    };
-    static const media_type_desc video_color_convert_1280_rgb32 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-        ATTR_GUID(MF_MT_SUBTYPE, DMOVideoFormat_RGB32),
-        ATTR_RATIO(MF_MT_FRAME_SIZE, 1280, 720),
-    };
-    static const media_type_desc video_video_processor_1280_rgb32 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
-        ATTR_RATIO(MF_MT_FRAME_SIZE, 1280, 720),
-    };
-    static const media_type_desc video_video_processor_rgb32 =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
-    };
-    static const media_type_desc video_dummy =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-    };
-
-    const struct loader_test
-    {
-        const media_type_desc *input_type;
-        const media_type_desc *output_type;
-        const media_type_desc *current_input;
-        MF_CONNECT_METHOD source_method;
-        MF_CONNECT_METHOD sink_method;
-        HRESULT expected_result;
-        unsigned int flags;
-    }
-    loader_tests[] =
-    {
-        {
-            /* PCM -> PCM, same enumerated type, no current type */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .expected_result = S_OK,
-        },
-        {
-            /* PCM -> PCM, same enumerated type, incomplete current type */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_44100_incomplete,
-            .expected_result = MF_E_INVALIDMEDIATYPE,
-            .flags = LOADER_TODO,
-        },
-        {
-            /* PCM -> PCM, same enumerated bps, different current bps */
-            .input_type = &audio_pcm_48000, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_44100,
-            .expected_result = MF_E_INVALIDMEDIATYPE,
-        },
-        {
-            /* PCM -> PCM, same enumerated bps, different current bps, force enumerate */
-            .input_type = &audio_pcm_48000, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_44100,
-            .expected_result = S_OK,
-            .flags = LOADER_SET_ENUMERATE_SOURCE_TYPES,
-        },
-
-        {
-            /* PCM -> PCM, incomplete enumerated type, same current type */
-            .input_type = &audio_pcm_44100_incomplete, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_44100,
-            .expected_result = S_OK,
-        },
-        {
-            /* PCM -> PCM, incomplete enumerated type, same current type, force enumerate */
-            .input_type = &audio_pcm_44100_incomplete, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_44100,
-            .expected_result = MF_E_NO_MORE_TYPES,
-            .flags = LOADER_SET_ENUMERATE_SOURCE_TYPES | LOADER_TODO,
-        },
-
-        {
-            /* PCM -> PCM, different enumerated bps, no current type */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .expected_result = MF_E_INVALIDMEDIATYPE,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, same current bps */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_48000,
-            .expected_result = S_OK,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, same current bps, force enumerate */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_pcm_48000,
-            .expected_result = MF_E_NO_MORE_TYPES,
-            .flags = LOADER_SET_ENUMERATE_SOURCE_TYPES,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, no current type, sink allow converter */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_ALLOW_CONVERTER, .source_method = MF_CONNECT_DIRECT,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, same current type, sink allow converter, force enumerate */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_ALLOW_CONVERTER, .source_method = -1,
-            .current_input = &audio_pcm_48000,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER | LOADER_SET_ENUMERATE_SOURCE_TYPES,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, no current type, sink allow decoder */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_ALLOW_DECODER, .source_method = MF_CONNECT_DIRECT,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, no current type, default methods */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* PCM -> PCM, different enumerated bps, no current type, source allow converter */
-            .input_type = &audio_pcm_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = MF_CONNECT_ALLOW_CONVERTER,
-            .expected_result = MF_E_INVALIDMEDIATYPE,
-        },
-
-        {
-            /* Float -> PCM, refuse input type, add converter */
-            .input_type = &audio_float_44100, .output_type = &audio_pcm_48000, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .expected_result = MF_E_NO_MORE_TYPES,
-            .flags = LOADER_SET_INVALID_INPUT | LOADER_ADD_RESAMPLER_MFT | LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* Float -> PCM, refuse input type, add converter, allow resampler output type */
-            .input_type = &audio_float_44100, .output_type = &audio_pcm_48000_resampler, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_SET_INVALID_INPUT | LOADER_ADD_RESAMPLER_MFT | LOADER_EXPECTED_CONVERTER,
-        },
-
-        {
-            /* MP3 -> PCM */
-            .input_type = &audio_mp3_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_mp3_44100,
-            .expected_result = MF_E_INVALIDMEDIATYPE,
-        },
-        {
-            /* MP3 -> PCM, force enumerate */
-            .input_type = &audio_mp3_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_DIRECT, .source_method = -1,
-            .current_input = &audio_mp3_44100,
-            .expected_result = MF_E_NO_MORE_TYPES,
-            .flags = LOADER_SET_ENUMERATE_SOURCE_TYPES,
-        },
-        {
-            /* MP3 -> PCM */
-            .input_type = &audio_mp3_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_ALLOW_CONVERTER, .source_method = -1,
-            .current_input = &audio_mp3_44100,
-            .expected_result = MF_E_TRANSFORM_NOT_POSSIBLE_FOR_CURRENT_MEDIATYPE_COMBINATION,
-            .flags = LOADER_TODO,
-        },
-        {
-            /* MP3 -> PCM */
-            .input_type = &audio_mp3_44100, .output_type = &audio_pcm_44100, .sink_method = MF_CONNECT_ALLOW_DECODER, .source_method = -1,
-            .current_input = &audio_mp3_44100,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_DECODER | LOADER_TODO,
-        },
-        {
-            /* MP3 -> PCM, need both decoder and converter */
-            .input_type = &audio_mp3_44100, .output_type = &audio_float_48000, .sink_method = MF_CONNECT_ALLOW_DECODER, .source_method = -1,
-            .current_input = &audio_mp3_44100,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_DECODER | LOADER_EXPECTED_CONVERTER | LOADER_TODO,
-        },
-
-        {
-            /* I420 -> RGB32, Color Convert media type */
-            .input_type = &video_i420_1280, .output_type = &video_color_convert_1280_rgb32, .sink_method = -1, .source_method = -1,
-            .expected_result = MF_E_TOPO_CODEC_NOT_FOUND,
-            .flags = LOADER_NEEDS_VIDEO_PROCESSOR | LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* I420 -> RGB32, Video Processor media type */
-            .input_type = &video_i420_1280, .output_type = &video_video_processor_1280_rgb32, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* I420 -> RGB32, Video Processor media type without frame size */
-            .input_type = &video_i420_1280, .output_type = &video_video_processor_rgb32, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* RGB32 -> Any Video, no current output type */
-            .input_type = &video_i420_1280, .output_type = &video_dummy, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_NO_CURRENT_OUTPUT,
-        },
-        {
-            /* RGB32 -> Any Video, no current output type, refuse input type */
-            .input_type = &video_i420_1280, .output_type = &video_dummy, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_NO_CURRENT_OUTPUT | LOADER_SET_INVALID_INPUT | LOADER_EXPECTED_CONVERTER,
-        },
-        {
-            /* RGB32 -> Any Video, no current output type, refuse input type */
-            .input_type = &video_i420_1280, .output_type = &video_video_processor_rgb32, .sink_method = -1, .source_method = -1,
-            .expected_result = S_OK,
-            .flags = LOADER_NO_CURRENT_OUTPUT | LOADER_SET_INVALID_INPUT | LOADER_SET_MEDIA_TYPES | LOADER_EXPECTED_CONVERTER,
-        },
-    };
-
-    IMFTopologyNode *src_node, *sink_node, *src_node2, *sink_node2, *mft_node;
-    IMFSampleGrabberSinkCallback *grabber_callback = create_test_grabber_callback();
-    struct test_stream_sink stream_sink = test_stream_sink;
-    IMFMediaType *media_type, *input_type, *output_type;
-    IMFTopology *topology, *topology2, *full_topology;
-    struct test_handler handler = test_handler;
-    IMFPresentationDescriptor *pd;
-    unsigned int i, count, value;
-    IMFActivate *sink_activate;
-    MF_TOPOLOGY_TYPE node_type;
-    IMFStreamDescriptor *sd;
-    IMFTransform *transform;
-    IMFMediaSource *source;
-    IMFTopoLoader *loader;
-    IUnknown *node_object;
-    WORD node_count;
-    TOPOID node_id;
-    DWORD index;
-    HRESULT hr;
-    BOOL ret;
-    LONG ref;
-
-    stream_sink.handler = &handler.IMFMediaTypeHandler_iface;
-
-    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
-    ok(hr == S_OK, "Startup failure, hr %#lx.\n", hr);
-
-    hr = MFCreateTopoLoader(NULL);
-    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopoLoader(&loader);
-    ok(hr == S_OK, "Failed to create topology loader, hr %#lx.\n", hr);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Failed to create topology, hr %#lx.\n", hr);
-
-    /* Empty topology */
-    hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-    todo_wine_if(hr == S_OK)
-    ok(hr == MF_E_TOPO_UNSUPPORTED, "Unexpected hr %#lx.\n", hr);
-    if (hr == S_OK) IMFTopology_Release(full_topology);
-
-    /* Add source node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &src_node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&media_type);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-    hr = IMFMediaType_SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Audio);
-    ok(hr == S_OK, "Failed to set attribute, hr %#lx.\n", hr);
-    hr = IMFMediaType_SetGUID(media_type, &MF_MT_SUBTYPE, &MFAudioFormat_PCM);
-    ok(hr == S_OK, "Failed to set attribute, hr %#lx.\n", hr);
-
-    /* When a decoder is involved, windows requires this attribute to be present */
-    create_descriptors(1, &media_type, NULL, &pd, &sd);
-    IMFMediaType_Release(media_type);
-
-    source = create_test_source(pd);
-
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_SOURCE, (IUnknown *)source);
-    ok(hr == S_OK, "Failed to set node source, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_STREAM_DESCRIPTOR, (IUnknown *)sd);
-    ok(hr == S_OK, "Failed to set node sd, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_PRESENTATION_DESCRIPTOR, (IUnknown *)pd);
-    ok(hr == S_OK, "Failed to set node pd, hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, src_node);
-    ok(hr == S_OK, "Failed to add a node, hr %#lx.\n", hr);
-
-    /* Source node only. */
-    hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-    ok(hr == MF_E_TOPO_UNSUPPORTED, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &sink_node);
-    ok(hr == S_OK, "Failed to create output node, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&media_type);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    hr = IMFMediaType_SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Audio);
-    ok(hr == S_OK, "Failed to set attribute, hr %#lx.\n", hr);
-    hr = IMFMediaType_SetGUID(media_type, &MF_MT_SUBTYPE, &MFAudioFormat_PCM);
-    ok(hr == S_OK, "Failed to set attribute, hr %#lx.\n", hr);
-
-    hr = MFCreateSampleGrabberSinkActivate(media_type, grabber_callback, &sink_activate);
-    ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetObject(sink_node, (IUnknown *)sink_activate);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    IMFMediaType_Release(media_type);
-
-    hr = IMFTopology_AddNode(topology, sink_node);
-    ok(hr == S_OK, "Failed to add sink node, hr %#lx.\n", hr);
-
-    hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-    todo_wine_if(hr == MF_E_TOPO_SINK_ACTIVATES_UNSUPPORTED)
-    ok(hr == MF_E_TOPO_UNSUPPORTED, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_ConnectOutput(src_node, 0, sink_node, 0);
-    ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-
-    /* Sink was not resolved. */
-    hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-    ok(hr == MF_E_TOPO_SINK_ACTIVATES_UNSUPPORTED, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetObject(sink_node, NULL);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-
-    hr = IMFActivate_ShutdownObject(sink_activate);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ref = IMFActivate_Release(sink_activate);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_SOURCE, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_STREAM_DESCRIPTOR, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_PRESENTATION_DESCRIPTOR, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ref = IMFMediaSource_Release(source);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFPresentationDescriptor_Release(pd);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFStreamDescriptor_Release(sd);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-
-    hr = MFCreateMediaType(&input_type);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&output_type);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-
-    for (i = 0; i < ARRAY_SIZE(loader_tests); ++i)
-    {
-        const struct loader_test *test = &loader_tests[i];
-
-        winetest_push_context("%u", i);
-
-        init_media_type(input_type, *test->input_type, -1);
-        init_media_type(output_type, *test->output_type, -1);
-
-        handler.set_current_count = 0;
-        if (test->flags & LOADER_NO_CURRENT_OUTPUT)
-            handler.current_type = NULL;
-        else
-            IMFMediaType_AddRef((handler.current_type = output_type));
-
-        if (test->flags & LOADER_SET_INVALID_INPUT)
-            handler.invalid_type = input_type;
-        else
-            handler.invalid_type = NULL;
-
-        handler.enum_count = 0;
-        if (test->flags & LOADER_SET_MEDIA_TYPES)
-        {
-            handler.media_types_count = 1;
-            handler.media_types = &output_type;
-        }
-        else
-        {
-            handler.media_types_count = 0;
-            handler.media_types = NULL;
-        }
-
-        if (test->flags & LOADER_ADD_RESAMPLER_MFT)
-        {
-            hr = IMFTopology_Clear(topology);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopology_AddNode(topology, src_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopology_AddNode(topology, sink_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            hr = MFCreateTopologyNode(MF_TOPOLOGY_TRANSFORM_NODE, &mft_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            hr = CoCreateInstance(&CLSID_CResamplerMediaObject, NULL, CLSCTX_INPROC_SERVER, &IID_IMFTransform, (void **)&transform);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopologyNode_SetGUID(mft_node, &MF_TOPONODE_TRANSFORM_OBJECTID, &CLSID_CResamplerMediaObject);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopologyNode_SetObject(mft_node, (IUnknown *)transform);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            IMFTransform_Release(transform);
-
-            hr = IMFTopology_AddNode(topology, mft_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopologyNode_ConnectOutput(src_node, 0, mft_node, 0);
-            ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-            hr = IMFTopologyNode_ConnectOutput(mft_node, 0, sink_node, 0);
-            ok(hr == S_OK, "Failed to connect nodes, hr %#lx.\n", hr);
-            IMFTopologyNode_Release(mft_node);
-        }
-        else
-        {
-            hr = IMFTopology_Clear(topology);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopology_AddNode(topology, src_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopology_AddNode(topology, sink_node);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopologyNode_ConnectOutput(src_node, 0, sink_node, 0);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        }
-
-        create_descriptors(1, &input_type, test->current_input, &pd, &sd);
-
-        source = create_test_source(pd);
-
-        init_source_node(source, test->source_method, src_node, pd, sd);
-        init_sink_node(&stream_sink.IMFStreamSink_iface, test->sink_method, sink_node);
-
-        hr = IMFTopology_GetCount(topology, &count);
-        ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-        ok(!count, "Unexpected count %u.\n", count);
-
-        if (test->flags & LOADER_SET_ENUMERATE_SOURCE_TYPES)
-            IMFTopology_SetUINT32(topology, &MF_TOPOLOGY_ENUMERATE_SOURCE_TYPES, 1);
-        hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-        IMFTopology_DeleteItem(topology, &MF_TOPOLOGY_ENUMERATE_SOURCE_TYPES);
-
-        if (test->flags & LOADER_NEEDS_VIDEO_PROCESSOR && !has_video_processor)
-            ok(hr == MF_E_INVALIDMEDIATYPE || hr == MF_E_TOPO_CODEC_NOT_FOUND,
-                    "Unexpected hr %#lx\n", hr);
-        else
-        {
-            todo_wine_if(test->flags & LOADER_TODO)
-            ok(hr == test->expected_result, "Unexpected hr %#lx\n", hr);
-            ok(full_topology != topology, "Unexpected instance.\n");
-        }
-
-        if (test->expected_result != hr)
-        {
-            if (hr != S_OK) ref = 0;
-            else ref = IMFTopology_Release(full_topology);
-            ok(ref == 0, "Release returned %ld\n", ref);
-        }
-        else if (test->expected_result == S_OK)
-        {
-            hr = IMFTopology_GetCount(full_topology, &count);
-            ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-            todo_wine
-            ok(count == (test->flags & LOADER_SET_ENUMERATE_SOURCE_TYPES ? 2 : 1),
-                    "Unexpected count %u.\n", count);
-
-            value = 0xdeadbeef;
-            hr = IMFTopology_GetUINT32(full_topology, &MF_TOPOLOGY_RESOLUTION_STATUS, &value);
-todo_wine {
-            ok(hr == S_OK, "Failed to get attribute, hr %#lx.\n", hr);
-            ok(value == MF_TOPOLOGY_RESOLUTION_SUCCEEDED, "Unexpected value %#x.\n", value);
-}
-            count = 2;
-            if (test->flags & LOADER_EXPECTED_DECODER)
-                count++;
-            if (test->flags & LOADER_EXPECTED_CONVERTER)
-                count++;
-
-            hr = IMFTopology_GetNodeCount(full_topology, &node_count);
-            ok(hr == S_OK, "Failed to get node count, hr %#lx.\n", hr);
-            todo_wine_if(test->flags & LOADER_EXPECTED_DECODER)
-            ok(node_count == count, "Unexpected node count %u.\n", node_count);
-
-            hr = IMFTopologyNode_GetTopoNodeID(src_node, &node_id);
-            ok(hr == S_OK, "Failed to get source node id, hr %#lx.\n", hr);
-
-            hr = IMFTopology_GetNodeByID(full_topology, node_id, &src_node2);
-            ok(hr == S_OK, "Failed to get source in resolved topology, hr %#lx.\n", hr);
-
-            hr = IMFTopologyNode_GetTopoNodeID(sink_node, &node_id);
-            ok(hr == S_OK, "Failed to get sink node id, hr %#lx.\n", hr);
-
-            hr = IMFTopology_GetNodeByID(full_topology, node_id, &sink_node2);
-            ok(hr == S_OK, "Failed to get sink in resolved topology, hr %#lx.\n", hr);
-
-            if (test->flags & (LOADER_EXPECTED_DECODER | LOADER_EXPECTED_CONVERTER))
-            {
-                hr = IMFTopologyNode_GetOutput(src_node2, 0, &mft_node, &index);
-                ok(hr == S_OK, "Failed to get transform node in resolved topology, hr %#lx.\n", hr);
-                ok(!index, "Unexpected stream index %lu.\n", index);
-
-                hr = IMFTopologyNode_GetNodeType(mft_node, &node_type);
-                ok(hr == S_OK, "Failed to get transform node type in resolved topology, hr %#lx.\n", hr);
-                ok(node_type == MF_TOPOLOGY_TRANSFORM_NODE, "Unexpected node type %u.\n", node_type);
-
-                hr = IMFTopologyNode_GetObject(mft_node, &node_object);
-                ok(hr == S_OK, "Failed to get object of transform node, hr %#lx.\n", hr);
-
-                if (test->flags & LOADER_EXPECTED_DECODER)
-                {
-                    value = 0;
-                    hr = IMFTopologyNode_GetUINT32(mft_node, &MF_TOPONODE_DECODER, &value);
-                    ok(hr == S_OK, "Failed to get attribute, hr %#lx.\n", hr);
-                    ok(value == 1, "Unexpected value.\n");
-                }
-
-                hr = IMFTopologyNode_GetItem(mft_node, &MF_TOPONODE_TRANSFORM_OBJECTID, NULL);
-                ok(hr == S_OK, "Failed to get attribute, hr %#lx.\n", hr);
-
-                hr = IUnknown_QueryInterface(node_object, &IID_IMFTransform, (void **)&transform);
-                ok(hr == S_OK, "Failed to get IMFTransform from transform node's object, hr %#lx.\n", hr);
-                IUnknown_Release(node_object);
-
-                hr = IMFTransform_GetInputCurrentType(transform, 0, &media_type);
-                ok(hr == S_OK, "Failed to get transform input type, hr %#lx.\n", hr);
-
-                hr = IMFMediaType_Compare(input_type, (IMFAttributes *)media_type, MF_ATTRIBUTES_MATCH_OUR_ITEMS, &ret);
-                ok(hr == S_OK, "Failed to compare media types, hr %#lx.\n", hr);
-                ok(ret, "Input type of first transform doesn't match source node type.\n");
-
-                IMFTopologyNode_Release(mft_node);
-                IMFMediaType_Release(media_type);
-                IMFTransform_Release(transform);
-
-                hr = IMFTopologyNode_GetInput(sink_node2, 0, &mft_node, &index);
-                ok(hr == S_OK, "Failed to get transform node in resolved topology, hr %#lx.\n", hr);
-                ok(!index, "Unexpected stream index %lu.\n", index);
-
-                hr = IMFTopologyNode_GetNodeType(mft_node, &node_type);
-                ok(hr == S_OK, "Failed to get transform node type in resolved topology, hr %#lx.\n", hr);
-                ok(node_type == MF_TOPOLOGY_TRANSFORM_NODE, "Unexpected node type %u.\n", node_type);
-
-                hr = IMFTopologyNode_GetItem(mft_node, &MF_TOPONODE_TRANSFORM_OBJECTID, NULL);
-                ok(hr == S_OK, "Failed to get attribute, hr %#lx.\n", hr);
-
-                hr = IMFTopologyNode_GetObject(mft_node, &node_object);
-                ok(hr == S_OK, "Failed to get object of transform node, hr %#lx.\n", hr);
-
-                hr = IUnknown_QueryInterface(node_object, &IID_IMFTransform, (void**) &transform);
-                ok(hr == S_OK, "Failed to get IMFTransform from transform node's object, hr %#lx.\n", hr);
-                IUnknown_Release(node_object);
-
-                hr = IMFTransform_GetOutputCurrentType(transform, 0, &media_type);
-                ok(hr == S_OK, "Failed to get transform output type, hr %#lx.\n", hr);
-                hr = IMFMediaType_Compare(output_type, (IMFAttributes *)media_type, MF_ATTRIBUTES_MATCH_OUR_ITEMS, &ret);
-                ok(hr == S_OK, "Failed to compare media types, hr %#lx.\n", hr);
-                ok(ret, "Output type of last transform doesn't match sink node type.\n");
-                IMFMediaType_Release(media_type);
-
-                hr = IMFTransform_GetInputCurrentType(transform, 0, &media_type);
-                ok(hr == S_OK, "Failed to get transform input type, hr %#lx.\n", hr);
-                if ((test->flags & (LOADER_EXPECTED_CONVERTER | LOADER_EXPECTED_DECODER)) != (LOADER_EXPECTED_CONVERTER | LOADER_EXPECTED_DECODER))
-                {
-                    hr = IMFMediaType_Compare(input_type, (IMFAttributes *)media_type, MF_ATTRIBUTES_MATCH_OUR_ITEMS, &ret);
-                    ok(hr == S_OK, "Failed to compare media types, hr %#lx.\n", hr);
-                    ok(ret, "Input type of transform doesn't match source node type.\n");
-                }
-                IMFMediaType_Release(media_type);
-
-                IMFTopologyNode_Release(mft_node);
-                IMFTransform_Release(transform);
-            }
-
-            IMFTopologyNode_Release(src_node2);
-            IMFTopologyNode_Release(sink_node2);
-
-            hr = IMFTopology_SetUINT32(full_topology, &IID_IMFTopology, 123);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            hr = IMFTopoLoader_Load(loader, full_topology, &topology2, NULL);
-            ok(hr == S_OK, "Failed to resolve topology, hr %#lx.\n", hr);
-            ok(full_topology != topology2, "Unexpected instance.\n");
-            hr = IMFTopology_GetUINT32(topology2, &IID_IMFTopology, &value);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            ref = IMFTopology_Release(topology2);
-            ok(ref == 0, "Release returned %ld\n", ref);
-            ref = IMFTopology_Release(full_topology);
-            ok(ref == 0, "Release returned %ld\n", ref);
-        }
-
-        hr = IMFTopology_GetCount(topology, &count);
-        ok(hr == S_OK, "Failed to get attribute count, hr %#lx.\n", hr);
-        ok(!count, "Unexpected count %u.\n", count);
-
-        if (test->flags & LOADER_SET_MEDIA_TYPES)
-            ok(handler.enum_count, "got %lu GetMediaTypeByIndex\n", handler.enum_count);
-        else
-            ok(!handler.enum_count, "got %lu GetMediaTypeByIndex\n", handler.enum_count);
-        ok(!handler.set_current_count, "got %lu SetCurrentMediaType\n", handler.set_current_count);
-
-        if (handler.current_type)
-            IMFMediaType_Release(handler.current_type);
-        handler.current_type = NULL;
-
-        hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_SOURCE, NULL);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_STREAM_DESCRIPTOR, NULL);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        hr = IMFTopologyNode_SetUnknown(src_node, &MF_TOPONODE_PRESENTATION_DESCRIPTOR, NULL);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        ref = IMFMediaSource_Release(source);
-        ok(ref == 0, "Release returned %ld\n", ref);
-        ref = IMFPresentationDescriptor_Release(pd);
-        ok(ref == 0, "Release returned %ld\n", ref);
-        ref = IMFStreamDescriptor_Release(sd);
-        ok(ref == 0, "Release returned %ld\n", ref);
-
-        winetest_pop_context();
-    }
-
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopoLoader_Release(loader);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(src_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(sink_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    ref = IMFMediaType_Release(input_type);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFMediaType_Release(output_type);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = MFShutdown();
-    ok(hr == S_OK, "Shutdown failure, hr %#lx.\n", hr);
-
-    IMFSampleGrabberSinkCallback_Release(grabber_callback);
-}
-
-static void test_topology_loader_evr(void)
-{
-    static const media_type_desc media_type_desc =
-    {
-        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
-        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
-        ATTR_RATIO(MF_MT_FRAME_SIZE, 640, 480),
-        ATTR_UINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE),
-        {0},
-    };
-    IMFTopologyNode *node, *source_node, *evr_node;
-    IMFTopology *topology, *full_topology;
-    IMFPresentationDescriptor *pd;
-    IMFMediaTypeHandler *handler;
-    unsigned int i, count, value;
-    IMFStreamSink *stream_sink;
-    IMFMediaType *media_type;
-    IMFStreamDescriptor *sd;
-    IMFActivate *activate;
-    IMFTopoLoader *loader;
-    IMFMediaSink *sink;
-    WORD node_count;
-    UINT64 value64;
-    HWND window;
-    HRESULT hr;
-    LONG ref;
-
-    hr = CoInitialize(NULL);
-    ok(hr == S_OK, "Failed to initialize, hr %#lx.\n", hr);
-
-    hr = MFCreateTopoLoader(&loader);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    /* Source node. */
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &source_node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = MFCreateMediaType(&media_type);
-    ok(hr == S_OK, "Failed to create media type, hr %#lx.\n", hr);
-    init_media_type(media_type, media_type_desc, -1);
-
-    create_descriptors(1, &media_type, &media_type_desc, &pd, &sd);
-    init_source_node(NULL, -1, source_node, pd, sd);
-    IMFPresentationDescriptor_Release(pd);
-    IMFStreamDescriptor_Release(sd);
-
-    /* EVR sink node. */
-    window = create_window();
-
-    hr = MFCreateVideoRendererActivate(window, &activate);
-    ok(hr == S_OK, "Failed to create activate object, hr %#lx.\n", hr);
-
-    hr = IMFActivate_ActivateObject(activate, &IID_IMFMediaSink, (void **)&sink);
-    if (FAILED(hr))
-    {
-        skip("Failed to create an EVR sink, skipping tests.\n");
-        DestroyWindow(window);
-        IMFActivate_Release(activate);
-        return;
-    }
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFMediaSink_GetStreamSinkById(sink, 0, &stream_sink);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &evr_node);
-    ok(hr == S_OK, "Failed to create topology node, hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetObject(evr_node, (IUnknown *)stream_sink);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFStreamSink_GetMediaTypeHandler(stream_sink, &handler);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFMediaTypeHandler_SetCurrentMediaType(handler, media_type);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    IMFMediaTypeHandler_Release(handler);
-
-    IMFStreamSink_Release(stream_sink);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_AddNode(topology, source_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, evr_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopologyNode_ConnectOutput(source_node, 0, evr_node, 0);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_SetUINT32(evr_node, &MF_TOPONODE_CONNECT_METHOD, MF_CONNECT_DIRECT);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopologyNode_GetCount(evr_node, &count);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(count == 1, "Unexpected attribute count %u.\n", count);
-
-    hr = IMFTopoLoader_Load(loader, topology, &full_topology, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFTopology_GetNodeCount(full_topology, &node_count);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(node_count == 3, "Unexpected node count %u.\n", node_count);
-
-    for (i = 0; i < node_count; ++i)
-    {
-        MF_TOPOLOGY_TYPE node_type;
-
-        hr = IMFTopology_GetNode(full_topology, i, &node);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-        hr = IMFTopologyNode_GetNodeType(node, &node_type);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-        switch (node_type)
-        {
-        case MF_TOPOLOGY_OUTPUT_NODE:
-        {
-            value = 1;
-            hr = IMFTopologyNode_GetUINT32(node, &MF_TOPONODE_STREAMID, &value);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            ok(!value, "Unexpected stream id %u.\n", value);
-            break;
-        }
-        case MF_TOPOLOGY_TRANSFORM_NODE:
-        {
-            IMFAttributes *attrs;
-            IMFTransform *copier;
-            IUnknown *obj;
-
-            hr = IMFTopologyNode_GetObject(node, (IUnknown **)&obj);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            hr = IUnknown_QueryInterface(obj, &IID_IMFTransform, (void **)&copier);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            hr = IMFTransform_GetAttributes(copier, &attrs);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-            value = 0xdeadbeef;
-            hr = IMFAttributes_GetUINT32(attrs, &MFT_SUPPORT_DYNAMIC_FORMAT_CHANGE, &value);
-            ok(value == 1, "Unexpected dynamic state support state %u.\n", value);
-
-            IMFAttributes_Release(attrs);
-            IMFTransform_Release(copier);
-            IUnknown_Release(obj);
-            break;
-        }
-        case MF_TOPOLOGY_SOURCESTREAM_NODE:
-        {
-            value64 = 1;
-            hr = IMFTopologyNode_GetUINT64(node, &MF_TOPONODE_MEDIASTART, &value64);
-            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-            ok(!value64, "Unexpected value.\n");
-            break;
-        }
-        default:
-           ok(0, "Got unexpected node type %u.\n", node_type);
-           break;
-        }
-
-        IMFTopologyNode_Release(node);
-    }
-
-    ref = IMFTopology_Release(full_topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopoLoader_Release(loader);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopology_Release(topology);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(source_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFTopologyNode_Release(evr_node);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    hr = IMFActivate_ShutdownObject(activate);
-    ok(hr == S_OK, "Failed to shut down, hr %#lx.\n", hr);
-    ref = IMFActivate_Release(activate);
-    ok(ref == 0, "Release returned %ld\n", ref);
-    ref = IMFMediaSink_Release(sink);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    ref = IMFMediaType_Release(media_type);
-    ok(ref == 0, "Release returned %ld\n", ref);
-
-    DestroyWindow(window);
-
-    CoUninitialize();
 }
 
 static HRESULT WINAPI testshutdown_QueryInterface(IMFShutdown *iface, REFIID riid, void **obj)
@@ -4936,6 +3811,53 @@ static void test_sample_grabber_is_mediatype_supported(void)
     IMFSampleGrabberSinkCallback_Release(grabber_callback);
 }
 
+/* create a test topology with the specified source and sink, and return duration if required */
+static IMFTopology *create_test_topology(IMFMediaSource *source, IMFActivate *sink_activate, UINT64 *duration)
+{
+    IMFTopologyNode *src_node, *sink_node;
+    IMFPresentationDescriptor *pd;
+    IMFTopology *topology = NULL;
+    IMFStreamDescriptor *sd;
+    BOOL selected;
+    HRESULT hr;
+
+    hr = MFCreateTopology(&topology);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &sink_node);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &src_node);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFTopology_AddNode(topology, sink_node);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFTopology_AddNode(topology, src_node);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFTopologyNode_ConnectOutput(src_node, 0, sink_node, 0);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSource_CreatePresentationDescriptor(source, &pd);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFPresentationDescriptor_GetStreamDescriptorByIndex(pd, 0, &selected, &sd);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(selected, "got selected %u.\n", !!selected);
+    if (duration)
+    {
+        hr = IMFPresentationDescriptor_GetUINT64(pd, &MF_PD_DURATION, duration);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    }
+    init_source_node(source, -1, src_node, pd, sd);
+    hr = IMFTopologyNode_SetObject(sink_node, (IUnknown *)sink_activate);
+    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
+    hr = IMFTopologyNode_SetUINT32(sink_node, &MF_TOPONODE_CONNECT_METHOD, MF_CONNECT_ALLOW_DECODER);
+    ok(hr == S_OK, "Failed to set connect method, hr %#lx.\n", hr);
+    hr = IMFTopology_SetUINT32(topology, &MF_TOPOLOGY_ENUMERATE_SOURCE_TYPES, TRUE);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    IMFStreamDescriptor_Release(sd);
+    IMFPresentationDescriptor_Release(pd);
+    IMFTopologyNode_Release(src_node);
+    IMFTopologyNode_Release(sink_node);
+    return topology;
+}
+
 static void test_sample_grabber_orientation(GUID subtype)
 {
     media_type_desc video_rgb32_desc =
@@ -4945,17 +3867,13 @@ static void test_sample_grabber_orientation(GUID subtype)
     };
 
     struct test_grabber_callback *grabber_callback;
-    IMFTopologyNode *src_node, *sink_node;
-    IMFPresentationDescriptor *pd;
     IMFAsyncCallback *callback;
     IMFActivate *sink_activate;
     IMFMediaType *output_type;
     IMFMediaSession *session;
-    IMFStreamDescriptor *sd;
     IMFMediaSource *source;
     IMFTopology *topology;
     PROPVARIANT propvar;
-    BOOL selected;
     HRESULT hr;
     DWORD res;
 
@@ -4979,30 +3897,6 @@ static void test_sample_grabber_orientation(GUID subtype)
     hr = MFCreateMediaSession(NULL, &session);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &sink_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &src_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = MFCreateTopology(&topology);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, sink_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopology_AddNode(topology, src_node);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFTopologyNode_ConnectOutput(src_node, 0, sink_node, 0);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IMFMediaSource_CreatePresentationDescriptor(source, &pd);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IMFPresentationDescriptor_GetStreamDescriptorByIndex(pd, 0, &selected, &sd);
-    ok(selected, "got selected %u.\n", !!selected);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    init_source_node(source, -1, src_node, pd, sd);
-    IMFTopologyNode_Release(src_node);
-    IMFPresentationDescriptor_Release(pd);
-    IMFStreamDescriptor_Release(sd);
-
     hr = MFCreateMediaType(&output_type);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
     init_media_type(output_type, video_rgb32_desc, -1);
@@ -5010,15 +3904,7 @@ static void test_sample_grabber_orientation(GUID subtype)
     ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
     IMFMediaType_Release(output_type);
 
-    hr = IMFTopologyNode_SetObject(sink_node, (IUnknown *)sink_activate);
-    ok(hr == S_OK, "Failed to set object, hr %#lx.\n", hr);
-    hr = IMFTopologyNode_SetUINT32(sink_node, &MF_TOPONODE_CONNECT_METHOD, MF_CONNECT_ALLOW_DECODER);
-    ok(hr == S_OK, "Failed to set connect method, hr %#lx.\n", hr);
-    IMFTopologyNode_Release(sink_node);
-
-    hr = IMFTopology_SetUINT32(topology, &MF_TOPOLOGY_ENUMERATE_SOURCE_TYPES, TRUE);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
+    topology = create_test_topology(source, sink_activate, NULL);
     hr = IMFMediaSession_SetTopology(session, 0, topology);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
     IMFTopology_Release(topology);
@@ -5036,7 +3922,9 @@ static void test_sample_grabber_orientation(GUID subtype)
     {
         const struct buffer_desc buffer_desc_rgb32 =
         {
-            .length = 64 * 64 * 4, .compare = compare_rgb32, .dump = dump_rgb32, .rect = {.right = 64, .bottom = 64},
+            .length = 64 * 64 * 4,
+            .compare = compare_rgb32, .compare_rect = {.right = 64, .bottom = 64},
+            .dump = dump_rgb32, .size = {.cx = 64, .cy = 64},
         };
         const struct sample_desc sample_desc_rgb32 =
         {
@@ -5048,7 +3936,9 @@ static void test_sample_grabber_orientation(GUID subtype)
     {
         const struct buffer_desc buffer_desc_nv12 =
         {
-            .length = 64 * 64 * 3 / 2, .compare = compare_nv12, .dump = dump_nv12, .rect = {.right = 64, .bottom = 64},
+            .length = 64 * 64 * 3 / 2,
+            .compare = compare_nv12, .compare_rect = {.right = 64, .bottom = 64},
+            .dump = dump_nv12, .size = {.cx = 64, .cy = 64},
         };
         const struct sample_desc sample_desc_nv12 =
         {
@@ -5675,7 +4565,6 @@ if (SUCCEEDED(hr))
     check_sar_rate_support(sink);
 
     ref = IMFMediaSink_Release(sink);
-    todo_wine
     ok(ref == 0, "Release returned %ld\n", ref);
 
     /* Activation */
@@ -5799,7 +4688,12 @@ static void test_evr(void)
     ok(hr == S_OK, "Startup failure, hr %#lx.\n", hr);
 
     hr = MFCreateVideoRenderer(&IID_IMFVideoRenderer, (void **)&video_renderer);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    if (FAILED(hr))
+    {
+        skip("Failed to create video renderer object, skipping tests.\n");
+        MFShutdown();
+        return;
+    }
 
     hr = IMFVideoRenderer_InitializeRenderer(video_renderer, NULL, NULL);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
@@ -6836,6 +5730,8 @@ void init_functions(void)
 
     mod = GetModuleHandleA("mfplat.dll");
     X(MFCreateDXGIDeviceManager);
+    X(MFCreateVideoSampleAllocatorEx);
+    X(MFCreateMediaBufferFromMediaType);
 #undef X
 
     hr = CoInitialize(NULL);
@@ -7217,6 +6113,692 @@ static void test_MFCreateSequencerSegmentOffset(void)
     PropVariantClear(&propvar);
 }
 
+static void test_media_session_Start(void)
+{
+    static const struct object_state_record expected_object_state_records[] =
+    {
+        {{SOURCE_START, SINK_ON_CLOCK_START}, 2},
+        {{SOURCE_STOP, SOURCE_START, SINK_ON_CLOCK_START}, 3},
+        {{SOURCE_STOP, SOURCE_START, SINK_ON_CLOCK_START}, 3},
+    };
+    media_type_desc video_rgb32_desc =
+    {
+        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
+        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
+    };
+    static const MFTIME allowed_error = 5000000;
+    IMFClockStateSink test_seek_clock_sink = {&test_seek_clock_sink_vtbl};
+    struct test_grabber_callback *grabber_callback;
+    IMFPresentationClock *presentation_clock;
+    enum source_state initial_state;
+    IMFActivate *sink_activate;
+    IMFAsyncCallback *callback;
+    IMFMediaType *output_type;
+    IMFMediaSession *session;
+    IMFMediaSource *source;
+    IMFTopology *topology;
+    MFTIME time, old_time;
+    PROPVARIANT propvar;
+    IMFClock *clock;
+    UINT64 duration;
+    DWORD caps;
+    HRESULT hr;
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    ok(hr == S_OK, "Failed to start up, hr %#lx.\n", hr);
+
+    if (!(source = create_media_source(L"test.mp4", L"video/mp4")))
+    {
+        todo_wine /* Gitlab CI Debian runner */
+        win_skip("MP4 media source is not supported, skipping tests.\n");
+        MFShutdown();
+        return;
+    }
+
+    grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+    hr = MFCreateMediaType(&output_type);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    init_media_type(output_type, video_rgb32_desc, -1);
+    hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+    ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+    IMFMediaType_Release(output_type);
+
+    hr = MFCreateMediaSession(NULL, &session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    topology = create_test_topology(source, sink_activate, &duration);
+    hr = IMFMediaSession_SetTopology(session, 0, topology);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFTopology_Release(topology);
+
+    hr = IMFMediaSession_GetClock(session, &clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFClock_QueryInterface(clock, &IID_IMFPresentationClock, (void **)&presentation_clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFClock_Release(clock);
+
+    propvar.vt = VT_EMPTY;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    callback = create_test_callback(TRUE);
+    hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    /* Seek to 1s */
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(llabs(time - 10000000) <= allowed_error, "Unexpected time %I64d.\n", time);
+
+    /* Seek to beyond duration */
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = duration + 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == MF_E_INVALID_POSITION, "Unexpected hr %#lx.\n", hr);
+
+    /* Seek to negative position */
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = -10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(llabs(time - (-10000000)) <= allowed_error, "Unexpected time %I64d.\n", time);
+
+    /* Seek backwards to 0s */
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 0;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(llabs(time) <= allowed_error, "Unexpected time %I64d.\n", time);
+
+    /* Seek to 1s while in paused state */
+    hr = IMFMediaSession_Pause(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionPaused, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(llabs(time - 10000000) <= allowed_error, "Unexpected time %I64d.\n", time);
+    old_time = time;
+
+    /* Expected the presentation clock is running */
+    Sleep(100);
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(time > old_time, "Unexpected time %I64d.\n", time);
+
+    hr = IMFMediaSession_Stop(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSession_Close(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionClosed, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    /* Media session is shut down */
+    hr = IMFMediaSource_Shutdown(source);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSession_Shutdown(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, NULL);
+    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
+
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
+
+    propvar.vt = VT_EMPTY;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
+
+    IMFPresentationClock_Release(presentation_clock);
+    IMFMediaSource_Release(source);
+    IMFAsyncCallback_Release(callback);
+    /* sometimes briefly leaking */
+    IMFMediaSession_Release(session);
+    IMFActivate_ShutdownObject(sink_activate);
+    IMFActivate_Release(sink_activate);
+    IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+
+    /* Unseekable media source */
+    source = create_test_seek_source(FALSE);
+    hr = IMFMediaSource_GetCharacteristics(source, &caps);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok((caps & MFMEDIASOURCE_CAN_SEEK) == 0, "Got unexpected caps %#lx.\n", caps);
+    grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+    hr = MFCreateMediaType(&output_type);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    init_media_type(output_type, video_rgb32_desc, -1);
+    hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+    ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+    IMFMediaType_Release(output_type);
+
+    hr = MFCreateMediaSession(NULL, &session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    topology = create_test_topology(source, sink_activate, &duration);
+    hr = IMFMediaSession_SetTopology(session, 0, topology);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFTopology_Release(topology);
+
+    hr = IMFMediaSession_GetClock(session, &clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFClock_QueryInterface(clock, &IID_IMFPresentationClock, (void **)&presentation_clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFClock_Release(clock);
+
+    propvar.vt = VT_EMPTY;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    callback = create_test_callback(TRUE);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IMFMediaSession_GetSessionCapabilities(session, &caps);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok((caps & MFSESSIONCAP_SEEK) == 0, "Got unexpected caps %#lx\n", caps);
+
+    /* Seek to 1s */
+    propvar.vt = VT_I8;
+    propvar.hVal.QuadPart = 10000000;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionStarted, 1000, &propvar);
+    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
+    hr = IMFPresentationClock_GetTime(presentation_clock, &time);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(llabs(time) <= allowed_error, "Unexpected time %I64d.\n", time);
+
+    hr = IMFMediaSession_Stop(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSession_Close(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event(session, callback, MESessionClosed, 1000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSession_Shutdown(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSource_Shutdown(source);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    IMFPresentationClock_Release(presentation_clock);
+    IMFAsyncCallback_Release(callback);
+    IMFMediaSession_Release(session);
+    IMFMediaSource_Release(source);
+    IMFActivate_ShutdownObject(sink_activate);
+    IMFActivate_Release(sink_activate);
+    IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+
+    /* Test object state transitions */
+    for (initial_state = SOURCE_STOPPED; initial_state <= SOURCE_PAUSED; initial_state++)
+    {
+        winetest_push_context("Test %d", initial_state);
+
+        source = create_test_seek_source(TRUE);
+        callback = create_test_callback(TRUE);
+
+        grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+        hr = MFCreateMediaType(&output_type);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        init_media_type(output_type, video_rgb32_desc, -1);
+        hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+        ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+        IMFMediaType_Release(output_type);
+
+        hr = MFCreateMediaSession(NULL, &session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        topology = create_test_topology(source, sink_activate, &duration);
+        hr = IMFMediaSession_SetTopology(session, 0, topology);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        IMFTopology_Release(topology);
+
+        hr = IMFMediaSession_GetClock(session, &clock);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFClock_QueryInterface(clock, &IID_IMFPresentationClock, (void **)&presentation_clock);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFPresentationClock_AddClockStateSink(presentation_clock, &test_seek_clock_sink);
+        ok(hr == S_OK, "Failed to add a sink, hr %#lx.\n", hr);
+        IMFClock_Release(clock);
+
+        if (initial_state == SOURCE_RUNNING || initial_state == SOURCE_PAUSED)
+        {
+            propvar.vt = VT_EMPTY;
+            hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        }
+        if (initial_state == SOURCE_PAUSED)
+        {
+            hr = IMFMediaSession_Pause(session);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            hr = wait_media_event(session, callback, MESessionPaused, 5000, &propvar);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        }
+
+        /* Seek to 1s */
+        memset(&actual_object_state_record, 0, sizeof(actual_object_state_record));
+
+        propvar.vt = VT_I8;
+        propvar.hVal.QuadPart = 10000000;
+        hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        todo_wine_if(initial_state == SOURCE_PAUSED)
+        compare_object_states(&actual_object_state_record, &expected_object_state_records[initial_state]);
+
+        hr = IMFMediaSession_Stop(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFMediaSession_Close(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFMediaSession_Shutdown(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFMediaSource_Shutdown(source);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        IMFPresentationClock_RemoveClockStateSink(presentation_clock, &test_seek_clock_sink);
+        IMFPresentationClock_Release(presentation_clock);
+        IMFAsyncCallback_Release(callback);
+        IMFMediaSession_Release(session);
+        IMFMediaSource_Release(source);
+        IMFActivate_ShutdownObject(sink_activate);
+        IMFActivate_Release(sink_activate);
+        IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+        winetest_pop_context();
+    }
+
+    hr = MFShutdown();
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+}
+
+static void test_media_session_source_shutdown(void)
+{
+    media_type_desc video_rgb32_desc =
+    {
+        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
+        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
+    };
+    struct test_grabber_callback *grabber_callback;
+    IMFActivate *sink_activate;
+    IMFAsyncCallback *callback;
+    IMFMediaType *output_type;
+    IMFMediaSession *session;
+    IMFMediaSource *source;
+    IMFTopology *topology;
+    PROPVARIANT propvar;
+    UINT64 duration;
+    HRESULT hr;
+    enum
+    {
+        TEST_START,
+        TEST_RESTART,
+        TEST_PAUSE,
+        TEST_STOP,
+        TEST_CLOSE,
+    } shutdown_point;
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    ok(hr == S_OK, "Failed to start up, hr %#lx.\n", hr);
+
+    /* These tests don't cover asynchronous shutdown, which is difficult to consistently test. */
+
+    for (shutdown_point = TEST_START; shutdown_point <= TEST_CLOSE; ++shutdown_point)
+    {
+        winetest_push_context("Test %d", shutdown_point);
+
+        if (!(source = create_media_source(L"test.mp4", L"video/mp4")))
+        {
+            todo_wine /* Gitlab CI Debian runner */
+            win_skip("MP4 media source is not supported, skipping tests.\n");
+            MFShutdown();
+            winetest_pop_context();
+            return;
+        }
+
+        grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+        hr = MFCreateMediaType(&output_type);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        init_media_type(output_type, video_rgb32_desc, -1);
+        hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+        ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+        IMFMediaType_Release(output_type);
+
+        hr = MFCreateMediaSession(NULL, &session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        topology = create_test_topology(source, sink_activate, &duration);
+        hr = IMFMediaSession_SetTopology(session, 0, topology);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        IMFTopology_Release(topology);
+
+        callback = create_test_callback(TRUE);
+
+        propvar.vt = VT_EMPTY;
+        hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+        if (shutdown_point == TEST_START)
+            IMFMediaSource_Shutdown(source);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+        ok(hr == (shutdown_point == TEST_START ? MF_E_INVALIDREQUEST : S_OK), "Unexpected hr %#lx.\n", hr);
+
+        switch (shutdown_point)
+        {
+            case TEST_RESTART:
+                /* Seek to 1s */
+                propvar.vt = VT_I8;
+                propvar.hVal.QuadPart = 10000000;
+                hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+                IMFMediaSource_Shutdown(source);
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+                /* Windows always returns S_OK here. These four tests in Wine can return
+                 * S_OK from the event if the timing is right, but it's not common. */
+                todo_wine
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                break;
+            case TEST_PAUSE:
+                hr = IMFMediaSession_Pause(session);
+                IMFMediaSource_Shutdown(source);
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                hr = wait_media_event(session, callback, MESessionPaused, 1000, &propvar);
+                /* Windows has not been observed to emit PAUSEWHILESTOPPED here, but this could
+                 * be a matter of async command timing, and this error is not exactly wrong. */
+                ok(hr == S_OK || hr == MF_E_SESSION_PAUSEWHILESTOPPED || hr == MF_E_SHUTDOWN,
+                        "Unexpected hr %#lx.\n", hr);
+                break;
+            case TEST_STOP:
+                hr = IMFMediaSession_Stop(session);
+                IMFMediaSource_Shutdown(source);
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                hr = wait_media_event(session, callback, MESessionStopped, 1000, &propvar);
+                ok(hr == S_OK || hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
+                break;
+            case TEST_CLOSE:
+                hr = IMFMediaSession_Close(session);
+                IMFMediaSource_Shutdown(source);
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                hr = wait_media_event(session, callback, MESessionClosed, 1000, &propvar);
+                ok(hr == S_OK || hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
+            default:
+                break;
+        }
+
+        if (shutdown_point == TEST_CLOSE)
+            goto done;
+
+        IMFMediaSource_Release(source);
+
+        IMFActivate_ShutdownObject(sink_activate);
+        IMFActivate_Release(sink_activate);
+        IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+
+        /* Re-use the session. For shutdown after Start(), the session can be re-used in native
+         * Windows but waits may still return MF_E_SHUTDOWN. The other tests can cause timeouts
+         * on close. Clearing topologies has no effect on these errors. */
+
+        grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+        hr = MFCreateMediaType(&output_type);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        init_media_type(output_type, video_rgb32_desc, -1);
+        hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+        ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+        IMFMediaType_Release(output_type);
+
+        source = create_media_source(L"test.mp4", L"video/mp4");
+        ok(!!source, "Failed to create source.\n");
+
+        topology = create_test_topology(source, sink_activate, &duration);
+        hr = IMFMediaSession_SetTopology(session, 0, topology);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        IMFTopology_Release(topology);
+
+        propvar.vt = VT_EMPTY;
+        hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = wait_media_event_until_blocking(session, callback, MESessionStarted, 5000, &propvar);
+        ok(hr == MF_E_INVALIDREQUEST || hr == MF_E_SHUTDOWN || hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        hr = IMFMediaSession_Stop(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = wait_media_event_until_blocking(session, callback, MESessionStopped, 1000, &propvar);
+        ok(hr == MF_E_INVALIDREQUEST || hr == MF_E_SHUTDOWN || hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IMFMediaSession_Close(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = wait_media_event_until_blocking(session, callback, MESessionClosed, 1000, &propvar);
+        if (shutdown_point >= TEST_PAUSE)
+            ok(hr == MF_E_SHUTDOWN || hr == S_OK || hr == WAIT_TIMEOUT, "Unexpected hr %#lx.\n", hr);
+        else
+            ok(hr == MF_E_SHUTDOWN || hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+done:
+        hr = IMFMediaSession_Shutdown(session);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+        IMFMediaSource_Release(source);
+        IMFAsyncCallback_Release(callback);
+        IMFMediaSession_Release(session);
+        IMFActivate_ShutdownObject(sink_activate);
+        IMFActivate_Release(sink_activate);
+        IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+
+        winetest_pop_context();
+    }
+
+    hr = MFShutdown();
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+}
+
+static void test_MFEnumDeviceSources(void)
+{
+    static const WCHAR devinterface_audio_capture_wstr[] = L"{2eef81be-33fa-4800-9670-1cd474972c3f}";
+    static const WCHAR mmdev_path_prefix[] = L"\\\\?\\SWD#MMDEVAPI#";
+    IMMDeviceEnumerator *devenum;
+    IMMDeviceCollection *devices;
+    UINT32 i, count, count2;
+    IMFActivate **sources;
+    IMFAttributes *attrs;
+    IMMDevice *device;
+    HRESULT hr;
+    GUID guid;
+
+    hr = MFCreateAttributes(&attrs, 3);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    sources = (void *)0xdeadbeef;
+    count = 0xdeadbeef;
+    hr = MFEnumDeviceSources(attrs, &sources, &count);
+    ok(hr == MF_E_ATTRIBUTENOTFOUND, "got %#lx.\n", hr);
+    ok(count == 0xdeadbeef, "got %#x.\n", count);
+    ok(sources == (void *)0xdeadbeef, "got %p.\n", sources);
+
+    hr = CoInitialize(NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IMFAttributes_SetGUID(attrs, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = MFEnumDeviceSources(attrs, &sources, &count);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+
+    hr = IMFAttributes_SetGUID(attrs, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_GUID);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    /* Some random guid. */
+    hr = IMFAttributes_SetUINT32(attrs, &CLSID_MMDeviceEnumerator, 1);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = MFEnumDeviceSources(attrs, &sources, &count);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER, &IID_IMMDeviceEnumerator, (void **)&devenum);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IMMDeviceEnumerator_EnumAudioEndpoints(devenum, eCapture, DEVICE_STATE_ACTIVE, &devices);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IMMDeviceCollection_GetCount(devices, &count2);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(count2 == count, "got %u, %u.\n", count, count2);
+
+    for (i = 0; i < count; ++i)
+    {
+        WCHAR str[512], expect_str[512], *device_id;
+        IMFActivate *source = sources[i];
+        IPropertyStore *ps;
+        PROPVARIANT pv;
+
+        hr = IMMDeviceCollection_Item(devices, i, &device);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+
+        hr = IMFActivate_GetString(source, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ENDPOINT_ID, str, sizeof(str), NULL);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        hr = IMMDevice_GetId(device, &device_id);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        ok(!wcscmp(str, device_id), "got %s, %s.\n", debugstr_w(str), debugstr_w(device_id));
+
+        hr = IMFActivate_GetString(source, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_SYMBOLIC_LINK, str, sizeof(str), NULL);
+        todo_wine ok(hr == S_OK || broken(hr == MF_E_ATTRIBUTENOTFOUND) /* Win7 */, "got %#lx.\n", hr);
+        if (hr == S_OK)
+        {
+            swprintf(expect_str, ARRAY_SIZE(expect_str), L"%s%s#%s", mmdev_path_prefix, device_id, devinterface_audio_capture_wstr);
+            ok(!wcscmp(str, expect_str), "got %s, expected %s.\n", debugstr_w(str), debugstr_w(expect_str));
+        }
+
+        hr = IMFActivate_GetGUID(source, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, &guid);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        ok(IsEqualGUID(&guid, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_GUID), "got %s.\n", debugstr_guid(&guid));
+
+        hr = IMFActivate_GetUINT32(source, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ROLE, &count2);
+        /* The attribute is filled if specified in input attributes as a filter. */
+        ok(hr == MF_E_ATTRIBUTENOTFOUND, "got %#lx.\n", hr);
+
+        hr = IMMDevice_OpenPropertyStore(device, STGM_READ, &ps);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        hr = IPropertyStore_GetValue(ps, (const PROPERTYKEY*)&DEVPKEY_Device_FriendlyName, &pv);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        IPropertyStore_Release(ps);
+
+        ok(pv.vt == VT_LPWSTR, "got %#x.\n", pv.vt);
+        hr = IMFActivate_GetString(source, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, str, sizeof(str), NULL);
+        ok(hr == S_OK, "got %#lx.\n", hr);
+        ok(!wcscmp(str, pv.pwszVal), "got %s, %s.\n", debugstr_w(str), debugstr_w(pv.pwszVal));
+
+        PropVariantClear(&pv);
+
+        CoTaskMemFree(device_id);
+        IMMDevice_Release(device);
+        IMFActivate_Release(source);
+    }
+
+    IMMDeviceCollection_Release(devices);
+    IMMDeviceEnumerator_Release(devenum);
+    IMFAttributes_Release(attrs);
+
+    CoTaskMemFree(sources);
+    CoUninitialize();
+}
+
+static void test_media_session_Close(void)
+{
+    media_type_desc video_rgb32_desc =
+    {
+        ATTR_GUID(MF_MT_MAJOR_TYPE, MFMediaType_Video),
+        ATTR_GUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32),
+    };
+    struct test_grabber_callback *grabber_callback;
+    IMFPresentationClock *presentation_clock;
+    IMFActivate *sink_activate;
+    IMFAsyncCallback *callback;
+    IMFMediaType *output_type;
+    IMFMediaSession *session;
+    IMFMediaSource *source;
+    IMFTopology *topology;
+    PROPVARIANT propvar;
+    IMFClock *clock;
+    UINT64 duration;
+    HRESULT hr;
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    ok(hr == S_OK, "Failed to start up, hr %#lx.\n", hr);
+
+    if (!(source = create_media_source(L"test.mp4", L"video/mp4")))
+    {
+        todo_wine /* Gitlab CI Debian runner */
+        win_skip("MP4 media source is not supported, skipping tests.\n");
+        MFShutdown();
+        return;
+    }
+
+    grabber_callback = impl_from_IMFSampleGrabberSinkCallback(create_test_grabber_callback());
+    hr = MFCreateMediaType(&output_type);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    init_media_type(output_type, video_rgb32_desc, -1);
+    hr = MFCreateSampleGrabberSinkActivate(output_type, &grabber_callback->IMFSampleGrabberSinkCallback_iface, &sink_activate);
+    ok(hr == S_OK, "Failed to create grabber sink, hr %#lx.\n", hr);
+    IMFMediaType_Release(output_type);
+
+    hr = MFCreateMediaSession(NULL, &session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    topology = create_test_topology(source, sink_activate, &duration);
+    hr = IMFMediaSession_SetTopology(session, 0, topology);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFTopology_Release(topology);
+
+    hr = IMFMediaSession_GetClock(session, &clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFClock_QueryInterface(clock, &IID_IMFPresentationClock, (void **)&presentation_clock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    IMFClock_Release(clock);
+
+    propvar.vt = VT_EMPTY;
+    hr = IMFMediaSession_Start(session, &GUID_NULL, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    callback = create_test_callback(TRUE);
+    hr = wait_media_event(session, callback, MESessionStarted, 5000, &propvar);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IMFMediaSession_Close(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IMFMediaSource_Shutdown(source);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = wait_media_event_until_blocking(session, callback, MESessionClosed, 5000, &propvar);
+    ok(hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
+
+    hr = IMFMediaSession_Shutdown(session);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    IMFPresentationClock_Release(presentation_clock);
+    IMFAsyncCallback_Release(callback);
+    IMFMediaSession_Release(session);
+    IMFActivate_ShutdownObject(sink_activate);
+    IMFActivate_Release(sink_activate);
+    IMFSampleGrabberSinkCallback_Release(&grabber_callback->IMFSampleGrabberSinkCallback_iface);
+    IMFMediaSource_Release(source);
+
+    hr = MFShutdown();
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+}
+
 START_TEST(mf)
 {
     init_functions();
@@ -7227,10 +6809,6 @@ START_TEST(mf)
         return;
     }
 
-    test_topology();
-    test_topology_tee_node();
-    test_topology_loader();
-    test_topology_loader_evr();
     test_MFGetService();
     test_sequencer_source();
     test_media_session();
@@ -7253,4 +6831,8 @@ START_TEST(mf)
     test_MFRequireProtectedEnvironment();
     test_mpeg4_media_sink();
     test_MFCreateSequencerSegmentOffset();
+    test_media_session_Start();
+    test_MFEnumDeviceSources();
+    test_media_session_Close();
+    test_media_session_source_shutdown();
 }
