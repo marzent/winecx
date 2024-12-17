@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>wineloader</string><!-- CrossOver Hack 10913 -->
     <key>CFBundleIdentifier</key>
-    <string>com.codeweavers.CrossOver.wineloader</string><!-- CrossOver Hack 10913 -->
+    <string>dezent.XIV-on-Mac.wine</string><!-- CrossOver Hack 10913 -->
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
