@@ -1896,7 +1896,13 @@ NTSTATUS WINAPI NtQueryPerformanceCounter( LARGE_INTEGER *counter, LARGE_INTEGER
  */
 NTSTATUS WINAPI NtQuerySystemTime( LARGE_INTEGER *time )
 {
-#ifdef HAVE_CLOCK_GETTIME
+#ifdef __APPLE__
+    extern int __commpage_gettimeofday( struct timeval * );
+    struct timeval now;
+    if (__commpage_gettimeofday( &now ) == KERN_SUCCESS)
+        time->QuadPart = ticks_from_time_t(now.tv_sec) + now.tv_usec * 10;
+    else
+#elif HAVE_CLOCK_GETTIME
     struct timespec ts;
     static clockid_t clock_id = CLOCK_MONOTONIC; /* placeholder */
 
