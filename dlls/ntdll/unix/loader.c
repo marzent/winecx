@@ -499,7 +499,7 @@ static void init_paths( char *argv[] )
      * This isn't usable for building the path to the wineloader, so we need to hardcode
      * the binary's name (which is just "wine" in upstream, but CrossOver hacks it to be "wineloader").
      */
-    basename = "wineloader";
+    basename = "wine64";
 #endif
 
     if (!dladdr( init_paths, &info ) || !(ntdll_dir = realpath_dirname( info.dli_fname )))
