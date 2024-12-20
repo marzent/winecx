@@ -577,8 +577,10 @@ char *get_alternate_wineloader( WORD machine )
  */
 static char *extract_exe_name(const char *exe_path)
 {
-    char *exe_name, *exe_path_copy, *p, *ret;
+    char *exe_name, *exe_path_copy, *p, *ret = NULL;
     size_t exe_name_len;
+    const char *suffix = " (XIV on Mac)";
+    size_t suffix_len = strlen(suffix);
 
     exe_path_copy = strdup(exe_path);
     exe_name = exe_path_copy;
@@ -594,10 +596,26 @@ static char *extract_exe_name(const char *exe_path)
         exe_name_len = strlen(exe_name);
 
     if (exe_name_len)
-        ret = strdup(exe_name);
-    else
-        ret = NULL;
+    {
+        if (!strcmp(exe_name, "ffxiv_dx11.exe"))
+        {
+            ret = strdup("FINAL FANTASY XIV");
+            goto out;
+        }
 
+        ret = malloc(exe_name_len + suffix_len + 1);
+        if (!ret)
+        {
+            free(exe_path_copy);
+            goto out;
+        }
+
+        memcpy(ret, exe_name, exe_name_len);
+        ret[exe_name_len] = '\0';
+        strcat(ret, suffix);
+    }
+
+out:
     free(exe_path_copy);
     return ret;
 }
