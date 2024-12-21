@@ -38,46 +38,6 @@
 
 #include "unix_private.h"
 
-BOOL is_xbox_gamepad(WORD vid, WORD pid)
-{
-    if (vid != 0x045e) return FALSE;
-    if (pid == 0x0202) return TRUE; /* Xbox Controller */
-    if (pid == 0x0285) return TRUE; /* Xbox Controller S */
-    if (pid == 0x0289) return TRUE; /* Xbox Controller S */
-    if (pid == 0x028e) return TRUE; /* Xbox360 Controller */
-    if (pid == 0x028f) return TRUE; /* Xbox360 Wireless Controller */
-    if (pid == 0x02d1) return TRUE; /* Xbox One Controller */
-    if (pid == 0x02dd) return TRUE; /* Xbox One Controller (Covert Forces/Firmware 2015) */
-    if (pid == 0x02e0) return TRUE; /* Xbox One X Controller */
-    if (pid == 0x02e3) return TRUE; /* Xbox One Elite Controller */
-    if (pid == 0x02e6) return TRUE; /* Wireless XBox Controller Dongle */
-    if (pid == 0x02ea) return TRUE; /* Xbox One S Controller */
-    if (pid == 0x02fd) return TRUE; /* Xbox One S Controller (Firmware 2017) */
-    if (pid == 0x0b00) return TRUE; /* Xbox Elite 2 */
-    if (pid == 0x0b05) return TRUE; /* Xbox Elite 2 Wireless */
-    if (pid == 0x0b12) return TRUE; /* Xbox Series */
-    if (pid == 0x0b13) return TRUE; /* Xbox Series Wireless */
-    if (pid == 0x0719) return TRUE; /* Xbox 360 Wireless Adapter */
-    return FALSE;
-}
-
-BOOL is_dualshock4_gamepad(WORD vid, WORD pid)
-{
-    if (vid != 0x054c) return FALSE;
-    if (pid == 0x05c4) return TRUE; /* DualShock 4 [CUH-ZCT1x] */
-    if (pid == 0x09cc) return TRUE; /* DualShock 4 [CUH-ZCT2x] */
-    if (pid == 0x0ba0) return TRUE; /* Dualshock 4 Wireless Adaptor */
-    return FALSE;
-}
-
-BOOL is_dualsense_gamepad(WORD vid, WORD pid)
-{
-    if (vid != 0x054c) return FALSE;
-    if (pid == 0x0ce6) return TRUE; /* DualSense */
-    if (pid == 0x0df2) return TRUE; /* DualSense Edge */
-    return FALSE;
-}
-
 struct mouse_device
 {
     struct unix_device unix_device;
@@ -89,14 +49,6 @@ static void mouse_destroy(struct unix_device *iface)
 
 static NTSTATUS mouse_start(struct unix_device *iface)
 {
-    const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_MOUSE};
-    if (!hid_device_begin_report_descriptor(iface, &device_usage))
-        return STATUS_NO_MEMORY;
-    if (!hid_device_add_buttons(iface, HID_USAGE_PAGE_BUTTON, 1, 3))
-        return STATUS_NO_MEMORY;
-    if (!hid_device_end_report_descriptor(iface))
-        return STATUS_NO_MEMORY;
-
     return STATUS_SUCCESS;
 }
 
@@ -163,9 +115,21 @@ static const struct device_desc mouse_device_desc =
 
 static NTSTATUS mouse_device_create(void *args)
 {
+    const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_MOUSE};
     struct device_create_params *params = args;
+    struct unix_device *iface;
+
+    if (!(iface = hid_device_create(&mouse_vtbl, sizeof(struct mouse_device))))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_begin_report_descriptor(iface, &device_usage))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_add_buttons(iface, HID_USAGE_PAGE_BUTTON, 1, 3))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_end_report_descriptor(iface))
+        return STATUS_NO_MEMORY;
+
     params->desc = mouse_device_desc;
-    params->device = (UINT_PTR)hid_device_create(&mouse_vtbl, sizeof(struct mouse_device));
+    params->device = (UINT_PTR)iface;
     return STATUS_SUCCESS;
 }
 
@@ -180,14 +144,6 @@ static void keyboard_destroy(struct unix_device *iface)
 
 static NTSTATUS keyboard_start(struct unix_device *iface)
 {
-    const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_KEYBOARD};
-    if (!hid_device_begin_report_descriptor(iface, &device_usage))
-        return STATUS_NO_MEMORY;
-    if (!hid_device_add_buttons(iface, HID_USAGE_PAGE_KEYBOARD, 0, 101))
-        return STATUS_NO_MEMORY;
-    if (!hid_device_end_report_descriptor(iface))
-        return STATUS_NO_MEMORY;
-
     return STATUS_SUCCESS;
 }
 
@@ -254,9 +210,21 @@ static const struct device_desc keyboard_device_desc =
 
 static NTSTATUS keyboard_device_create(void *args)
 {
+    const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_KEYBOARD};
     struct device_create_params *params = args;
+    struct unix_device *iface;
+
+    if (!(iface = hid_device_create(&keyboard_vtbl, sizeof(struct keyboard_device))))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_begin_report_descriptor(iface, &device_usage))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_add_buttons(iface, HID_USAGE_PAGE_KEYBOARD, 0, 101))
+        return STATUS_NO_MEMORY;
+    if (!hid_device_end_report_descriptor(iface))
+        return STATUS_NO_MEMORY;
+
     params->desc = keyboard_device_desc;
-    params->device = (UINT_PTR)hid_device_create(&keyboard_vtbl, sizeof(struct keyboard_device));
+    params->device = (UINT_PTR)iface;
     return STATUS_SUCCESS;
 }
 

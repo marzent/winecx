@@ -67,7 +67,7 @@ HANDLE msi_create_file( MSIPACKAGE *package, const WCHAR *filename, DWORD access
     return handle;
 }
 
-static BOOL copy_file( MSIPACKAGE *package, const WCHAR *src, const WCHAR *dst, BOOL fail_if_exists )
+BOOL msi_copy_file( MSIPACKAGE *package, const WCHAR *src, const WCHAR *dst, BOOL fail_if_exists )
 {
     BOOL ret;
     msi_disable_fs_redirection( package );
@@ -334,13 +334,13 @@ static msi_file_state calculate_install_state( MSIPACKAGE *package, MSIFILE *fil
             }
             /* CrossOver Hack #19776 for Microsoft Visual C++ Redistributable (2015 and 2017).
              * Always install ucrtbase.dll. */
-            else if (!wcscmp(file->File, L"ucrtbase.dll") &&
+            else if ((!wcscmp(file->File, L"ucrtbase.dll") || !wcscmp(file->File, L"msvcp140.dll")) &&
                     (!wcscmp(package->ProductCode, L"{A2563E55-3BEC-3828-8D67-E5E8B9E8B675}") ||
                      !wcscmp(package->ProductCode, L"{029DA848-1A80-34D3-BFC1-A6447BFC8E7F}") ||
                      !wcscmp(package->ProductCode, L"{0D3E9E15-DE7A-300B-96F1-B4AF12B96488}") ||
                      !wcscmp(package->ProductCode, L"{B0037450-526D-3448-A370-CACBD87769A0}")))
             {
-                    FIXME("hack: Force ucrtbase.dll installation\n");
+                    FIXME("hack: Force %s installation\n", wine_dbgstr_w(file->File));
                     state = msifs_overwrite;
             }
             else
@@ -416,7 +416,7 @@ static UINT copy_file_attributes( MSIPACKAGE *package, MSIFILE *file, WCHAR *sou
 {
     BOOL ret;
 
-    ret = copy_file( package, source, file->TargetPath, FALSE );
+    ret = msi_copy_file( package, source, file->TargetPath, FALSE );
     if (!ret)
         return GetLastError();
 
@@ -464,7 +464,7 @@ static UINT copy_install_file(MSIPACKAGE *package, MSIFILE *file, LPWSTR source)
         if (!GetTempFileNameW( pathW, L"msi", 0, tmpfileW )) tmpfileW[0] = 0;
         free( pathW );
 
-        if (copy_file( package, source, tmpfileW, FALSE ) &&
+        if (msi_copy_file( package, source, tmpfileW, FALSE ) &&
             msi_move_file( package, file->TargetPath, NULL, MOVEFILE_DELAY_UNTIL_REBOOT ) &&
             msi_move_file( package, tmpfileW, file->TargetPath, MOVEFILE_DELAY_UNTIL_REBOOT ))
         {
@@ -762,7 +762,7 @@ UINT msi_patch_assembly( MSIPACKAGE *package, MSIASSEMBLY *assembly, MSIFILEPATC
 
         if ((path = msi_get_assembly_path( package, displayname )))
         {
-            if (!copy_file( package, path, patch->File->TargetPath, FALSE ))
+            if (!msi_copy_file( package, path, patch->File->TargetPath, FALSE ))
             {
                 ERR( "failed to copy file %s -> %s (%lu)\n", debugstr_w(path),
                      debugstr_w(patch->File->TargetPath), GetLastError() );
@@ -895,7 +895,7 @@ static BOOL move_file( MSIPACKAGE *package, const WCHAR *source, const WCHAR *de
     else
     {
         TRACE("copying %s -> %s\n", debugstr_w(source), debugstr_w(dest));
-        ret = copy_file( package, source, dest, FALSE );
+        ret = msi_copy_file( package, source, dest, FALSE );
         if (!ret)
         {
             WARN( "copy_file failed: %lu\n", GetLastError() );
@@ -1305,7 +1305,7 @@ static UINT ITERATE_DuplicateFiles(MSIRECORD *row, LPVOID param)
     }
 
     TRACE("Duplicating file %s to %s\n", debugstr_w(file->TargetPath), debugstr_w(dest));
-    if (!copy_file( package, file->TargetPath, dest, TRUE ))
+    if (!msi_copy_file( package, file->TargetPath, dest, TRUE ))
     {
         WARN( "failed to copy file %s -> %s (%lu)\n",
               debugstr_w(file->TargetPath), debugstr_w(dest), GetLastError() );

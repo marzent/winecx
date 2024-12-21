@@ -55,7 +55,7 @@ static int open_proc_as( struct process *process, int flags )
         return -1;
     }
 
-    sprintf( buffer, "/proc/%u/as", process->unix_pid );
+    snprintf( buffer, sizeof(buffer), "/proc/%u/as", process->unix_pid );
     if ((fd = open( buffer, flags )) == -1)
     {
         if (errno == ENOENT)  /* probably got killed */
@@ -75,7 +75,7 @@ static int open_proc_lwpctl( struct thread *thread )
 
     if (thread->unix_pid == -1) return -1;
 
-    sprintf( buffer, "/proc/%u/lwp/%u/lwpctl", thread->unix_pid, thread->unix_tid );
+    snprintf( buffer, sizeof(buffer), "/proc/%u/lwp/%u/lwpctl", thread->unix_pid, thread->unix_tid );
     if ((fd = open( buffer, O_WRONLY )) == -1)
     {
         if (errno == ENOENT)  /* probably got killed */
@@ -208,13 +208,13 @@ void init_thread_context( struct thread *thread )
 }
 
 /* retrieve the thread registers */
-void get_thread_context( struct thread *thread, context_t *context, unsigned int flags )
+void get_thread_context( struct thread *thread, struct context_data *context, unsigned int flags )
 {
     /* FIXME: get debug registers */
 }
 
 /* set the thread registers */
-void set_thread_context( struct thread *thread, const context_t *context, unsigned int flags )
+void set_thread_context( struct thread *thread, const struct context_data *context, unsigned int flags )
 {
     /* FIXME: set debug registers */
 }

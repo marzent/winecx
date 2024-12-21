@@ -1048,7 +1048,7 @@ static void *import_text_html( Atom type, const void *data, size_t size, size_t 
 /**************************************************************************
  *      file_list_to_drop_files
  */
-void *file_list_to_drop_files( const void *data, size_t size, size_t *ret_size )
+DROPFILES *file_list_to_drop_files( const void *data, size_t size, size_t *ret_size )
 {
     size_t buf_size = 4096, path_size;
     DROPFILES *drop = NULL;
@@ -1100,7 +1100,7 @@ void *file_list_to_drop_files( const void *data, size_t size, size_t *ret_size )
 /**************************************************************************
  *      uri_list_to_drop_files
  */
-void *uri_list_to_drop_files( const void *data, size_t size, size_t *ret_size )
+DROPFILES *uri_list_to_drop_files( const void *data, size_t size, size_t *ret_size )
 {
     const char *uriList = data;
     char *uri;
@@ -1627,7 +1627,7 @@ static BOOL export_hdrop( Display *display, Window win, Atom prop, Atom target, 
         {
             static const char hex_table[] = "0123456789abcdef";
             textUriList[next++] = '%';
-            textUriList[next++] = hex_table[unixFilename[u] >> 4];
+            textUriList[next++] = hex_table[(unsigned char)unixFilename[u] >> 4];
             textUriList[next++] = hex_table[unixFilename[u] & 0xf];
         }
         textUriList[next++] = '\r';

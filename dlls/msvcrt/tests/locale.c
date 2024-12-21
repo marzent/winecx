@@ -19,6 +19,7 @@
  */
 
 #include <locale.h>
+#include <process.h>
 
 #include "wine/test.h"
 #include "winnls.h"
@@ -27,6 +28,9 @@ static BOOL (__cdecl *p__crtGetStringTypeW)(DWORD, DWORD, const wchar_t*, int, W
 static int (__cdecl *pmemcpy_s)(void *, size_t, void*, size_t);
 static int (__cdecl *p___mb_cur_max_func)(void);
 static int *(__cdecl *p__p___mb_cur_max)(void);
+static _locale_t(__cdecl *p_create_locale)(int, const char*);
+static void(__cdecl *p_free_locale)(_locale_t);
+static int (__cdecl *p_wcsicmp_l)(const wchar_t*, const wchar_t*, _locale_t);
 void* __cdecl _Gettnames(void);
 
 static void init(void)
@@ -37,6 +41,9 @@ static void init(void)
     pmemcpy_s = (void*)GetProcAddress(hmod, "memcpy_s");
     p___mb_cur_max_func = (void*)GetProcAddress(hmod, "___mb_cur_max_func");
     p__p___mb_cur_max = (void*)GetProcAddress(hmod, "__p___mb_cur_max");
+    p_create_locale = (void*)GetProcAddress(hmod, "_create_locale");
+    p_free_locale = (void*)GetProcAddress(hmod, "_free_locale");
+    p_wcsicmp_l = (void*)GetProcAddress(hmod, "_wcsicmp_l");
 }
 
 static void test_setlocale(void)
@@ -573,12 +580,14 @@ static void test_setlocale(void)
     ret = setlocale(LC_ALL, "trk");
     ok(ret != NULL || broken (ret == NULL), "ret == NULL\n");
     if(ret)
-        ok(!strcmp(ret, "Turkish_Turkey.1254"), "ret = %s\n", ret);
+        ok(!strcmp(ret, "Turkish_Turkey.1254")
+        || !strcmp(ret, "Turkish_T\xfcrkiye.1254"), "ret = %s\n", ret);
 
     ret = setlocale(LC_ALL, "turkish");
     ok(ret != NULL || broken (ret == NULL), "ret == NULL\n");
     if(ret)
-        ok(!strcmp(ret, "Turkish_Turkey.1254"), "ret = %s\n", ret);
+        ok(!strcmp(ret, "Turkish_Turkey.1254")
+        || !strcmp(ret, "Turkish_T\xfcrkiye.1254"), "ret = %s\n", ret);
 
     ret = setlocale(LC_ALL, "uk");
     ok(ret != NULL, "ret == NULL\n");
@@ -796,6 +805,178 @@ static void test___mb_cur_max_func(void)
     }
 }
 
+static void test__wcsicmp_l(void)
+{
+    const struct {
+        const wchar_t *str1;
+        const wchar_t *str2;
+        int exp;
+        const char *loc;
+    } tests[] = {
+        { L"i", L"i",  0 },
+        { L"I", L"i",  0 },
+        { L"I", L"i",  0, "Turkish" },
+        { L"i", L"a",  8 },
+        { L"a", L"i", -8 },
+        { L"i", L"a",  8, "Turkish" },
+    };
+    int ret, i;
+
+    if (!p_wcsicmp_l || !p_create_locale)
+    {
+        win_skip("_wcsicmp_l or _create_locale not available\n");
+        return;
+    }
+    ok(!!p_free_locale, "_free_locale not available\n");
+
+    for(i=0; i<ARRAY_SIZE(tests); i++) {
+        _locale_t loc = NULL;
+
+        if(tests[i].loc && !(loc = p_create_locale(LC_ALL, tests[i].loc))) {
+            win_skip("locale %s not available.  skipping\n", tests[i].loc);
+            continue;
+        }
+
+        ret = p_wcsicmp_l(tests[i].str1, tests[i].str2, loc);
+        ok(ret == tests[i].exp, "_wcsicmp_l = %d, expected %d for test %d '%ls' vs '%ls' using %s locale\n",
+            ret, tests[i].exp, i, tests[i].str1, tests[i].str2, loc ? tests[i].loc : "current");
+
+        if(loc)
+            p_free_locale(loc);
+    }
+}
+
+static unsigned __stdcall test_thread_setlocale_func(void *arg)
+{
+    char *ret;
+
+    ret = setlocale(LC_ALL, NULL);
+    ok(!strcmp(ret, "C"), "expected ret=C, but received ret=%s\n", ret);
+
+    ret = setlocale(LC_ALL, "");
+    ok(strcmp(ret, "Invariant Language_Invariant Country.0"), "expected valid locale\n");
+
+    return 0;
+}
+
+static void test_thread_setlocale(void)
+{
+    HANDLE hThread;
+
+    hThread = (HANDLE)_beginthreadex(NULL, 0, test_thread_setlocale_func, NULL, 0, NULL);
+    ok(hThread != INVALID_HANDLE_VALUE, "_beginthread failed (%d)\n", errno);
+    WaitForSingleObject(hThread, 5000);
+    CloseHandle(hThread);
+}
+
+static void test_locale_info(void)
+{
+    pthreadlocinfo locinfo, locinfo2;
+    _locale_t locale, locale2;
+    int ret;
+
+    if (!p_create_locale)
+    {
+        win_skip("_create_locale isn't available.\n");
+        return;
+    }
+
+    if (PRIMARYLANGID(GetUserDefaultLangID()) == LANG_JAPANESE)
+        skip("Skip language-specific tests on Japanese system.\n");
+    else
+    {
+        locale = p_create_locale(LC_ALL, "Japanese_Japan.932");
+        locale2 = p_create_locale(LC_ALL, ".932");
+        locinfo = locale->locinfo;
+        locinfo2 = locale2->locinfo;
+
+        ok(locinfo->mb_cur_max == locinfo2->mb_cur_max, "Got wrong max char size %d %d.\n",
+                locinfo->mb_cur_max, locinfo2->mb_cur_max);
+        ok(locinfo->ctype1_refcount != locinfo2->ctype1_refcount, "Got wrong refcount pointer %p vs %p.\n",
+                locinfo->ctype1_refcount, locinfo2->ctype1_refcount);
+        ok(locinfo->lc_codepage == 932 && locinfo->lc_codepage == locinfo2->lc_codepage,
+                "Got wrong codepage %d vs %d.\n", locinfo->lc_codepage, locinfo2->lc_codepage);
+        ok(locinfo->lc_id[LC_CTYPE].wCodePage == 932
+                && locinfo->lc_id[LC_CTYPE].wCodePage == locinfo2->lc_id[LC_CTYPE].wCodePage,
+                "Got wrong LC_CTYPE codepage %d vs %d.\n", locinfo->lc_id[LC_CTYPE].wCodePage,
+                locinfo2->lc_id[LC_CTYPE].wCodePage);
+        ret = strcmp(locinfo->lc_category[LC_CTYPE].locale, locinfo2->lc_category[LC_CTYPE].locale);
+        ok(!!ret, "Got locale name %s vs %s.\n", locinfo->lc_category[LC_CTYPE].locale,
+                locinfo2->lc_category[LC_CTYPE].locale);
+        ret = memcmp(locinfo->ctype1, locinfo2->ctype1, 257 * sizeof(*locinfo->ctype1));
+        ok(!ret, "Got wrong ctype1 data.\n");
+        ret = memcmp(locinfo->pclmap, locinfo2->pclmap, 256 * sizeof(*locinfo->pclmap));
+        ok(!ret, "Got wrong pclmap data.\n");
+        ret = memcmp(locinfo->pcumap, locinfo2->pcumap, 256 * sizeof(*locinfo->pcumap));
+        ok(!ret, "Got wrong pcumap data.\n");
+        ok(locinfo->lc_handle[LC_CTYPE] != locinfo2->lc_handle[LC_CTYPE],
+                "Got wrong LC_CTYPE %#lx vs %#lx.\n", locinfo->lc_handle[LC_CTYPE], locinfo2->lc_handle[LC_CTYPE]);
+
+        p_free_locale(locale2);
+        locale2 = p_create_locale(LC_ALL, "Japanese_Japan.1252");
+        locinfo2 = locale2->locinfo;
+
+        ok(locinfo->mb_cur_max != locinfo2->mb_cur_max, "Got wrong max char size %d %d.\n",
+                locinfo->mb_cur_max, locinfo2->mb_cur_max);
+        ok(locinfo->ctype1_refcount != locinfo2->ctype1_refcount, "Got wrong refcount pointer %p vs %p.\n",
+                locinfo->ctype1_refcount, locinfo2->ctype1_refcount);
+        ok(locinfo2->lc_codepage == 1252, "Got wrong codepage %d.\n", locinfo2->lc_codepage);
+        ok(locinfo2->lc_id[LC_CTYPE].wCodePage == 1252, "Got wrong LC_CTYPE codepage %d.\n",
+                locinfo2->lc_id[LC_CTYPE].wCodePage);
+        ok(locinfo->lc_codepage != locinfo2->lc_codepage, "Got wrong codepage %d vs %d.\n",
+                locinfo->lc_codepage, locinfo2->lc_codepage);
+        ok(locinfo->lc_id[LC_CTYPE].wCodePage != locinfo2->lc_id[LC_CTYPE].wCodePage,
+                "Got wrong LC_CTYPE codepage %d vs %d.\n", locinfo->lc_id[LC_CTYPE].wCodePage,
+                locinfo2->lc_id[LC_CTYPE].wCodePage);
+        ret = strcmp(locinfo->lc_category[LC_CTYPE].locale, locinfo2->lc_category[LC_CTYPE].locale);
+        ok(!!ret, "Got locale name %s vs %s.\n", locinfo->lc_category[LC_CTYPE].locale,
+                locinfo2->lc_category[LC_CTYPE].locale);
+        ret = memcmp(locinfo->ctype1, locinfo2->ctype1, 257 * sizeof(*locinfo->ctype1));
+        ok(!!ret, "Got wrong ctype1 data.\n");
+        ret = memcmp(locinfo->pclmap, locinfo2->pclmap, 256 * sizeof(*locinfo->pclmap));
+        ok(!!ret, "Got wrong pclmap data.\n");
+        ret = memcmp(locinfo->pcumap, locinfo2->pcumap, 256 * sizeof(*locinfo->pcumap));
+        ok(!!ret, "Got wrong pcumap data.\n");
+        ok(locinfo->lc_handle[LC_CTYPE] == locinfo2->lc_handle[LC_CTYPE],
+                "Got wrong LC_CTYPE %#lx vs %#lx.\n", locinfo->lc_handle[LC_CTYPE], locinfo2->lc_handle[LC_CTYPE]);
+
+        p_free_locale(locale2);
+        locale2 = p_create_locale(LC_ALL, "Japanese_Japan.3000"); /* an invalid codepage */
+        ok(!locale2, "Got %p.\n", locale2);
+
+        p_free_locale(locale);
+    }
+
+    locale = p_create_locale(LC_ALL, "German_Germany.437");
+    locale2 = p_create_locale(LC_ALL, "German_Germany.1252");
+    locinfo = locale->locinfo;
+    locinfo2 = locale2->locinfo;
+
+    ok(locinfo->mb_cur_max == locinfo2->mb_cur_max, "Got wrong max char size %d %d.\n",
+            locinfo->mb_cur_max, locinfo2->mb_cur_max);
+    ok(locinfo->ctype1_refcount != locinfo2->ctype1_refcount, "Got wrong refcount pointer %p vs %p.\n",
+            locinfo->ctype1_refcount, locinfo2->ctype1_refcount);
+    ok(locinfo->lc_codepage != locinfo2->lc_codepage, "Got wrong codepage %d vs %d.\n",
+            locinfo->lc_codepage, locinfo2->lc_codepage);
+    ok(locinfo->lc_id[LC_CTYPE].wCodePage != locinfo2->lc_id[LC_CTYPE].wCodePage,
+            "Got wrong LC_CTYPE codepage %d vs %d.\n", locinfo->lc_id[LC_CTYPE].wCodePage,
+            locinfo2->lc_id[LC_CTYPE].wCodePage);
+    ret = strcmp(locinfo->lc_category[LC_CTYPE].locale, locinfo2->lc_category[LC_CTYPE].locale);
+    ok(!!ret, "Got locale name %s vs %s.\n", locinfo->lc_category[LC_CTYPE].locale,
+            locinfo2->lc_category[LC_CTYPE].locale);
+    ret = memcmp(locinfo->ctype1, locinfo2->ctype1, 257 * sizeof(*locinfo->ctype1));
+    ok(!!ret, "Got wrong ctype1 data.\n");
+    ret = memcmp(locinfo->pclmap, locinfo2->pclmap, 256 * sizeof(*locinfo->pclmap));
+    ok(!!ret, "Got wrong pclmap data.\n");
+    ret = memcmp(locinfo->pcumap, locinfo2->pcumap, 256 * sizeof(*locinfo->pcumap));
+    ok(!!ret, "Got wrong pcumap data.\n");
+    ok(locinfo->lc_handle[LC_CTYPE] == locinfo2->lc_handle[LC_CTYPE],
+            "Got wrong LC_CTYPE %#lx vs %#lx.\n", locinfo->lc_handle[LC_CTYPE], locinfo2->lc_handle[LC_CTYPE]);
+
+    p_free_locale(locale2);
+    p_free_locale(locale);
+}
+
 START_TEST(locale)
 {
     init();
@@ -804,4 +985,7 @@ START_TEST(locale)
     test_setlocale();
     test__Gettnames();
     test___mb_cur_max_func();
+    test__wcsicmp_l();
+    test_thread_setlocale();
+    test_locale_info();
 }

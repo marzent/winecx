@@ -57,6 +57,77 @@ static BOOL is_keyword(json_parse_ctx_t *ctx, const WCHAR *keyword)
     return TRUE;
 }
 
+static BOOL unescape_json_string(WCHAR *str, size_t *len)
+{
+    WCHAR *pd, *p, c, *end = str + *len;
+    int i;
+
+    pd = p = str;
+    while(p < end) {
+        if(*p != '\\') {
+            *pd++ = *p++;
+            continue;
+        }
+
+        if(++p == end)
+            return FALSE;
+
+        switch(*p) {
+        case '\"':
+        case '\\':
+        case '/':
+            c = *p;
+            break;
+        case 'b':
+            c = '\b';
+            break;
+        case 't':
+            c = '\t';
+            break;
+        case 'n':
+            c = '\n';
+            break;
+        case 'f':
+            c = '\f';
+            break;
+        case 'r':
+            c = '\r';
+            break;
+        case 'u':
+            if(p + 4 >= end)
+                return FALSE;
+            i = hex_to_int(*++p);
+            if(i == -1)
+                return FALSE;
+            c = i << 12;
+
+            i = hex_to_int(*++p);
+            if(i == -1)
+                return FALSE;
+            c += i << 8;
+
+            i = hex_to_int(*++p);
+            if(i == -1)
+                return FALSE;
+            c += i << 4;
+
+            i = hex_to_int(*++p);
+            if(i == -1)
+                return FALSE;
+            c += i;
+            break;
+        default:
+            return FALSE;
+        }
+
+        *pd++ = c;
+        p++;
+    }
+
+    *len = pd - str;
+    return TRUE;
+}
+
 /* ECMA-262 5.1 Edition    15.12.1.1 */
 static HRESULT parse_json_string(json_parse_ctx_t *ctx, WCHAR **r)
 {
@@ -80,10 +151,10 @@ static HRESULT parse_json_string(json_parse_ctx_t *ctx, WCHAR **r)
     if(len)
         memcpy(buf, ptr, len*sizeof(WCHAR));
 
-    if(!unescape(buf, &len)) {
-        FIXME("unescape failed\n");
+    if(!(ctx->ctx->html_mode ? unescape_json_string(buf, &len) : unescape(buf, &len))) {
+        WARN("unescape failed\n");
         free(buf);
-        return E_FAIL;
+        return JS_E_INVALID_CHAR;
     }
 
     buf[len] = 0;
@@ -315,7 +386,7 @@ static jsval_t transform_json_object(struct transform_json_object_ctx *proc_ctx,
                         goto ret;
                     if(FAILED(jsdisp_get_id(obj, str, 0, &id)))
                         continue;
-                    proc_ctx->hres = disp_delete((IDispatch*)&obj->IDispatchEx_iface, id, &b);
+                    proc_ctx->hres = disp_delete(to_disp(obj), id, &b);
                 }else {
                     proc_ctx->hres = jsdisp_define_data_property(obj, str, PROPF_WRITABLE | PROPF_ENUMERABLE | PROPF_CONFIGURABLE, res);
                     jsval_release(res);
@@ -334,7 +405,7 @@ static jsval_t transform_json_object(struct transform_json_object_ctx *proc_ctx,
                 res = transform_json_object(proc_ctx, obj, jsstr);
                 if(is_undefined(res)) {
                     if(SUCCEEDED(proc_ctx->hres))
-                        proc_ctx->hres = disp_delete((IDispatch*)&obj->IDispatchEx_iface, id, &b);
+                        proc_ctx->hres = disp_delete(to_disp(obj), id, &b);
                 }else {
                     if(!(str = jsstr_flatten(jsstr)))
                         proc_ctx->hres = E_OUTOFMEMORY;
@@ -671,7 +742,7 @@ static HRESULT stringify_object(stringify_ctx_t *ctx, jsdisp_t *obj)
     if(!append_char(ctx, '{'))
         return E_OUTOFMEMORY;
 
-    while((hres = IDispatchEx_GetNextDispID(&obj->IDispatchEx_iface, fdexEnumDefault, dispid, &dispid)) == S_OK) {
+    while((hres = IDispatchEx_GetNextDispID(to_dispex(obj), fdexEnumDefault, dispid, &dispid)) == S_OK) {
         stepback = ctx->buf_len;
 
         if(prop_cnt && !append_char(ctx, ',')) {
@@ -693,7 +764,7 @@ static HRESULT stringify_object(stringify_ctx_t *ctx, jsdisp_t *obj)
             }
         }
 
-        hres = IDispatchEx_GetMemberName(&obj->IDispatchEx_iface, dispid, &prop_name);
+        hres = IDispatchEx_GetMemberName(to_dispex(obj), dispid, &prop_name);
         if(FAILED(hres))
             return hres;
 
@@ -948,12 +1019,9 @@ static const builtin_prop_t JSON_props[] = {
 };
 
 static const builtin_info_t JSON_info = {
-    JSCLASS_JSON,
-    NULL,
-    ARRAY_SIZE(JSON_props),
-    JSON_props,
-    NULL,
-    NULL
+    .class     = JSCLASS_JSON,
+    .props_cnt = ARRAY_SIZE(JSON_props),
+    .props     = JSON_props,
 };
 
 HRESULT create_json(script_ctx_t *ctx, jsdisp_t **ret)

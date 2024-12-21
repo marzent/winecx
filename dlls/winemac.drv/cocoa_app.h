@@ -92,7 +92,6 @@ enum {
     CGEventSourceKeyboardType keyboardType;
     NSEvent* lastFlagsChanged;
     BOOL inputSourceIsInputMethod;
-    BOOL inputSourceIsInputMethodValid;
     uint32_t pressedKeyCodes[128 / 32];
 
     CGFloat primaryScreenHeight;
@@ -128,9 +127,9 @@ enum {
 
     NSImage* applicationIcon;
 
-    /* CW Hack 22310 */
+    /* CW Hack 22310, 24199 */
     NSString *explicitAppUserModelID;
-    BOOL terminatingDueToAUMIDRequest;
+    BOOL terminatingDueToExternalRequest;
 
     BOOL beenActive;
 

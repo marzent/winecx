@@ -115,7 +115,6 @@ static const struct message redraw_listview_seq[] = {
     { WM_NCPAINT,    sent|id|defwinproc, 0, 0, HEADER_ID },
     { WM_ERASEBKGND, sent|id|defwinproc|optional, 0, 0, HEADER_ID },
     { WM_NOTIFY,     sent|id|defwinproc, 0, 0, LISTVIEW_ID },
-    { WM_NCPAINT,    sent|id|defwinproc, 0, 0, LISTVIEW_ID },
     { WM_ERASEBKGND, sent|id|defwinproc|optional, 0, 0, LISTVIEW_ID },
     { 0 }
 };
@@ -810,6 +809,8 @@ static HWND create_listview_control(DWORD style)
 
     if (!hwnd) return NULL;
 
+    UpdateWindow(hwnd);
+
     oldproc = (WNDPROC)SetWindowLongPtrA(hwnd, GWLP_WNDPROC,
                                         (LONG_PTR)listview_subclass_proc);
     SetWindowLongPtrA(hwnd, GWLP_USERDATA, (LONG_PTR)oldproc);
@@ -832,6 +833,8 @@ static HWND create_listview_controlW(DWORD style, HWND parent)
     ok(hwnd != NULL, "gle=%ld\n", GetLastError());
 
     if (!hwnd) return NULL;
+
+    UpdateWindow(hwnd);
 
     oldproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC,
                                         (LONG_PTR)listview_subclass_proc);
@@ -1888,7 +1891,10 @@ static void test_create(BOOL is_version_6)
 
     /* WM_MEASUREITEM should be sent when created with LVS_OWNERDRAWFIXED */
     flush_sequences(sequences, NUM_MSG_SEQUENCES);
-    hList = create_listview_control(LVS_OWNERDRAWFIXED | LVS_REPORT);
+    hList = CreateWindowExA(0, WC_LISTVIEWA, NULL,
+        WS_CHILD | WS_BORDER | WS_VISIBLE | LVS_OWNERDRAWFIXED | LVS_REPORT,
+        0, 0, 100, 100, hwndparent, NULL, GetModuleHandleA(NULL), NULL);
+    ok(hList != NULL, "Failed to create ListView window.\n");
     ok_sequence(sequences, PARENT_SEQ_INDEX, create_ownerdrawfixed_parent_seq,
                 "created with LVS_OWNERDRAWFIXED|LVS_REPORT - parent seq", FALSE);
     DestroyWindow(hList);
@@ -2198,8 +2204,8 @@ static void test_color(void)
 
     rect.right = rect.bottom = 1;
     r = GetUpdateRect(hwnd, &rect, TRUE);
-    todo_wine expect(FALSE, r);
-    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle\n");
+    expect(FALSE, r);
+    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle %s\n", wine_dbgstr_rect(&rect));
 
     r = ValidateRect(hwnd, NULL);
     expect(TRUE, r);
@@ -2208,8 +2214,8 @@ static void test_color(void)
 
     rect.right = rect.bottom = 1;
     r = GetUpdateRect(hwnd, &rect, TRUE);
-    todo_wine expect(FALSE, r);
-    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle\n");
+    expect(FALSE, r);
+    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle %s\n", wine_dbgstr_rect(&rect));
 
     r = ValidateRect(hwnd, NULL);
     expect(TRUE, r);
@@ -2218,8 +2224,8 @@ static void test_color(void)
 
     rect.right = rect.bottom = 1;
     r = GetUpdateRect(hwnd, &rect, TRUE);
-    todo_wine expect(FALSE, r);
-    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle\n");
+    expect(FALSE, r);
+    ok(rect.right == 0 && rect.bottom == 0, "got update rectangle %s\n", wine_dbgstr_rect(&rect));
 
     DestroyWindow(hwnd);
 }
@@ -3020,6 +3026,78 @@ static void test_subitem_rect(void)
     expect(1, rect.top);
     expect(-10, rect.bottom);
     DestroyWindow(hwnd);
+}
+
+static INT WINAPI test_CallBackCompareEx(LPARAM first, LPARAM second, LPARAM lParam)
+{
+    HWND list_view = (HWND)lParam;
+    CHAR buffer1[256], buffer2[256];
+    int itm1, itm2;
+
+    ListView_GetItemTextA(list_view, first, 0, buffer1, sizeof(buffer1));
+    ListView_GetItemTextA(list_view, second, 0, buffer2, sizeof(buffer2));
+
+    itm1 = atoi(buffer1);
+    itm2 = atoi(buffer2);
+
+    return (itm1 - itm2);
+}
+
+static void test_custom_sort(void)
+{
+    int prev_value;
+    int sorted;
+    LVITEMA lvi = {0};
+    LV_COLUMNA lvc = {0};
+    CHAR buffer[256];
+    CHAR col_names[][2] = { "1", "2" };
+    HWND list_view = create_listview_control(LVS_REPORT);
+
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+    lvc.pszText = col_names[0];
+    lvc.iSubItem = 0;
+    SendMessageA(list_view, LVM_INSERTCOLUMNA, 0, (LPARAM)&lvc);
+
+    lvc.pszText = col_names[1];
+    lvc.iSubItem = 1;
+    SendMessageA(list_view, LVM_INSERTCOLUMNA, 1, (LPARAM)&lvc);
+
+    srand(1234);
+
+    for (int i = 0; i < 100; i++)
+    {
+        lvi.mask = LVIF_TEXT;
+        lvi.iItem = i;
+        lvi.iSubItem = 0;
+        lvi.pszText = buffer;
+        sprintf(buffer, "%d", rand() % 100);
+        SendMessageA(list_view, LVM_INSERTITEMA, 0, (LPARAM)&lvi);
+
+        lvi.iSubItem = 1;
+        sprintf(buffer, "%d", rand() % 100);
+        SendMessageA(list_view, LVM_SETITEMTEXTA, i, (LPARAM)&lvi);
+    }
+
+    SendMessageA(list_view, LVM_SORTITEMSEX, (WPARAM)list_view, (LPARAM)test_CallBackCompareEx);
+
+    for (int i = 1; i < 100; i++)
+    {
+        ListView_GetItemTextA(list_view, i - 1, 0, buffer, sizeof(buffer));
+        prev_value = atoi(buffer);
+
+        ListView_GetItemTextA(list_view, i, 0, buffer, sizeof(buffer));
+
+        if (atoi(buffer) < prev_value)
+        {
+            sorted = 0;
+            break;
+        }
+        sorted = 1;
+    }
+
+    ok(sorted, "ListView not sorted correctly.\n");
+
+    DestroyWindow(list_view);
 }
 
 /* comparison callback for test_sorting */
@@ -7156,6 +7234,40 @@ static void test_LVM_SETBKIMAGE(BOOL is_v6)
     CoUninitialize();
 }
 
+static void test_LVM_GETNEXTITEM(void)
+{
+    HWND hwnd;
+    LRESULT lr;
+
+    hwnd = create_listview_control(LVS_REPORT);
+    insert_item(hwnd, 0);
+    insert_item(hwnd, 1);
+
+    lr = SendMessageA(hwnd, LVM_GETNEXTITEM, 0, LVNI_ABOVE);
+    expect(-1, lr);
+    lr = SendMessageA(hwnd, LVM_GETNEXTITEM, 0, LVNI_BELOW);
+    expect(1, lr);
+    lr = SendMessageA(hwnd, LVM_GETNEXTITEM, 1, LVNI_ABOVE);
+    expect(0, lr);
+    lr = SendMessageA(hwnd, LVM_GETNEXTITEM, 1, LVNI_BELOW);
+    expect(-1, lr);
+
+    DestroyWindow(hwnd);
+}
+
+static void test_LVM_GETHOTCURSOR(void)
+{
+    HCURSOR cursor;
+    HWND hwnd;
+
+    hwnd = create_listview_control(LVS_REPORT);
+
+    cursor = (HCURSOR)SendMessageA(hwnd, LVM_GETHOTCURSOR, 0, 0);
+    ok(!!cursor, "Unexpected cursor %p.\n", cursor);
+
+    DestroyWindow(hwnd);
+}
+
 START_TEST(listview)
 {
     ULONG_PTR ctx_cookie;
@@ -7221,6 +7333,9 @@ START_TEST(listview)
     test_LVM_GETCOUNTPERPAGE();
     test_item_state_change();
     test_LVM_SETBKIMAGE(FALSE);
+    test_custom_sort();
+    test_LVM_GETNEXTITEM();
+    test_LVM_GETHOTCURSOR();
 
     if (!load_v6_module(&ctx_cookie, &hCtx))
     {
@@ -7269,7 +7384,9 @@ START_TEST(listview)
     test_item_state_change();
     test_selected_column();
     test_LVM_GETNEXTITEMINDEX();
+    test_LVM_GETNEXTITEM();
     test_LVM_SETBKIMAGE(TRUE);
+    test_LVM_GETHOTCURSOR();
 
     unload_v6_module(ctx_cookie, hCtx);
 

@@ -900,6 +900,83 @@ unsigned char* CDECL _mbsncpy_l(unsigned char* dst, const unsigned char* src, si
     return ret;
 }
 
+#if _MSVCR_VER>=80
+errno_t CDECL _mbsncpy_s_l(unsigned char* dst, size_t maxsize, const unsigned char* src, size_t n, _locale_t locale)
+{
+    BOOL truncate = (n == _TRUNCATE);
+    unsigned char *start = dst, *last;
+    pthreadmbcinfo mbcinfo;
+    unsigned int curlen;
+
+    if (!dst && !maxsize && !n)
+        return 0;
+
+    if (!MSVCRT_CHECK_PMT(dst != NULL)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(maxsize != 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(src != NULL))
+    {
+        *start = 0;
+        return EINVAL;
+    }
+
+    if (!n)
+    {
+        *start = 0;
+        return 0;
+    }
+
+    if (locale)
+        mbcinfo = locale->mbcinfo;
+    else
+        mbcinfo = get_mbcinfo();
+
+    curlen = 0;
+    last = dst;
+    while (*src && n && maxsize)
+    {
+        if (curlen)
+        {
+            --maxsize;
+            *dst++ = *src++;
+            if (!--curlen) --n;
+            continue;
+        }
+        last = dst;
+        if (!(mbcinfo->ismbcodepage && _ismbblead_l(*src, locale)))
+        {
+            curlen = 1;
+            continue;
+        }
+        curlen = 2;
+        if (!truncate && maxsize <= curlen) maxsize = 0;
+    }
+
+    if (!maxsize && truncate)
+    {
+        *last = 0;
+        return STRUNCATE;
+    }
+    if (!truncate && curlen && !src[curlen - 1])
+    {
+        *_errno() = EILSEQ;
+        *start = 0;
+        return EILSEQ;
+    }
+    if (!maxsize)
+    {
+        *start = 0;
+        if (!MSVCRT_CHECK_PMT_ERR(FALSE, ERANGE)) return ERANGE;
+    }
+    *dst = 0;
+    return 0;
+}
+
+errno_t CDECL _mbsncpy_s(unsigned char* dst, size_t maxsize, const unsigned char* src, size_t n)
+{
+    return _mbsncpy_s_l(dst, maxsize, src, n, NULL);
+}
+#endif
+
 /*********************************************************************
  *		_mbsncpy(MSVCRT.@)
  * REMARKS
@@ -3189,6 +3266,17 @@ size_t CDECL mbrtowc(wchar_t *dst, const char *str,
     return len;
 }
 
+static inline int get_utf8_char_len(char ch)
+{
+    if((ch&0xf8) == 0xf0)
+        return 4;
+    else if((ch&0xf0) == 0xe0)
+        return 3;
+    else if((ch&0xe0) == 0xc0)
+        return 2;
+    return 1;
+}
+
 /*********************************************************************
  *		_mbstowcs_l(MSVCRT.@)
  */
@@ -3234,7 +3322,22 @@ size_t CDECL _mbstowcs_l(wchar_t *wcstr, const char *mbstr,
         if(mbstr[size] == '\0')
             break;
 
-        size += (_isleadbyte_l((unsigned char)mbstr[size], locale) ? 2 : 1);
+        if(locinfo->lc_codepage == CP_UTF8) {
+            int j, chlen = get_utf8_char_len(mbstr[size]);
+
+            for(j = 1; j < chlen; j++)
+            {
+                if(!mbstr[size + j])
+                {
+                    if(count) wcstr[0] = '\0';
+                    *_errno() = EILSEQ;
+                    return -1;
+                }
+            }
+            size += chlen;
+        }
+        else
+            size += (_isleadbyte_l((unsigned char)mbstr[size], locale) ? 2 : 1);
     }
 
     if(size) {

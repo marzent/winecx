@@ -67,8 +67,6 @@ static const struct object_ops ranges_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
-    NULL,                      /* get_esync_fd */
-    NULL,                      /* get_msync_idx */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -106,8 +104,6 @@ static const struct object_ops shared_map_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
-    NULL,                      /* get_esync_fd */
-    NULL,                      /* get_msync_idx */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -133,7 +129,7 @@ struct memory_view
     struct fd      *fd;              /* fd for mapped file */
     struct ranges  *committed;       /* list of committed ranges in this mapping */
     struct shared_map *shared;       /* temp file for shared PE mapping */
-    pe_image_info_t image;           /* image info (for PE image mapping) */
+    struct pe_image_info image;      /* image info (for PE image mapping) */
     unsigned int    flags;           /* SEC_* flags */
     client_ptr_t    base;            /* view base address (in process addr space) */
     mem_size_t      size;            /* view size */
@@ -163,7 +159,7 @@ struct mapping
     mem_size_t      size;            /* mapping size */
     unsigned int    flags;           /* SEC_* flags */
     struct fd      *fd;              /* fd for mapped file */
-    pe_image_info_t image;           /* image info (for PE image mapping) */
+    struct pe_image_info image;      /* image info (for PE image mapping) */
     char            tmp_name[16];    /* name of temp file if any */
     struct ranges  *committed;       /* list of committed ranges in this mapping */
     struct shared_map *shared;       /* temp file for shared PE mapping */
@@ -182,8 +178,6 @@ static const struct object_ops mapping_ops =
     no_add_queue,                /* add_queue */
     NULL,                        /* remove_queue */
     NULL,                        /* signaled */
-    NULL,                        /* get_esync_fd */
-    NULL,                        /* get_msync_idx */
     NULL,                        /* satisfied */
     no_signal,                   /* signal */
     mapping_get_fd,              /* get_fd */
@@ -233,6 +227,36 @@ static const mem_size_t granularity_mask = 0xffff;
 static struct addr_range ranges32;
 static struct addr_range ranges64;
 
+struct session_block
+{
+    struct list entry;      /* entry in the session block list */
+    const char *data;       /* base pointer for the mmaped data */
+    mem_size_t offset;      /* offset of data in the session shared mapping */
+    mem_size_t used_size;   /* used size for previously allocated objects  */
+    mem_size_t block_size;  /* total size of the block */
+};
+
+struct session_object
+{
+    struct list entry;      /* entry in the session free object list */
+    mem_size_t offset;      /* offset of obj in the session shared mapping */
+    shared_object_t obj;    /* object actually shared with the client */
+};
+
+struct session
+{
+    struct list blocks;
+    struct list free_objects;
+    object_id_t last_object_id;
+};
+
+static struct mapping *session_mapping;
+static struct session session =
+{
+    .blocks = LIST_INIT(session.blocks),
+    .free_objects = LIST_INIT(session.free_objects),
+};
+
 #define ROUND_SIZE(size)  (((size) + page_mask) & ~page_mask)
 
 static void unlink_temp_file( char *name );
@@ -242,6 +266,9 @@ void init_memory(void)
     page_mask = sysconf( _SC_PAGESIZE ) - 1;
     free_map_addr( 0x60000000, 0x1c000000 );
     free_map_addr( 0x600000000000, 0x100000000000 );
+    if (page_mask != 0xfff)
+        fprintf( stderr, "wineserver: page size is %uk but Wine requires 4k pages, expect problems\n",
+                 (int)(page_mask + 1) / 1024 );
 }
 
 static void ranges_dump( struct object *obj, int verbose )
@@ -303,7 +330,7 @@ static int make_temp_file( char name[16] )
     value += (current_time >> 16) + current_time;
     for (i = 0; i < 0x8000 && fd < 0; i++, value += 7777)
     {
-        sprintf( name, "tmpmap-%08x", value );
+        snprintf( name, 16, "tmpmap-%08x", value );
         fd = open( name, O_RDWR | O_CREAT | O_EXCL, 0600 );
     }
     return fd;
@@ -426,14 +453,6 @@ struct memory_view *get_exe_view( struct process *process )
     return LIST_ENTRY( list_head( &process->views ), struct memory_view, entry );
 }
 
-static void set_process_machine( struct process *process, struct memory_view *view )
-{
-    if ((view->image.image_flags & IMAGE_FLAGS_ComPlusNativeReady) && !wow64_using_32bit_prefix)
-        process->machine = native_machine;
-    else
-        process->machine = view->image.machine;
-}
-
 static int generate_dll_event( struct thread *thread, int code, struct memory_view *view )
 {
     if (!(view->flags & SEC_IMAGE)) return 0;
@@ -442,7 +461,8 @@ static int generate_dll_event( struct thread *thread, int code, struct memory_vi
 }
 
 /* add a view to the process list */
-static void add_process_view( struct thread *thread, struct memory_view *view )
+/* return 1 if this is the main exe view */
+static int add_process_view( struct thread *thread, struct memory_view *view )
 {
     struct process *process = thread->process;
     struct unicode_str name;
@@ -456,18 +476,17 @@ static void add_process_view( struct thread *thread, struct memory_view *view )
         else if (!(view->image.image_charact & IMAGE_FILE_DLL))
         {
             /* main exe */
-            set_process_machine( process, view );
-            list_add_head( &process->views, &view->entry );
-
             free( process->image );
             process->image = NULL;
             if (get_view_nt_name( view, &name ) && (process->image = memdup( name.str, name.len )))
                 process->imagelen = name.len;
             process->image_info = view->image;
-            return;
+            list_add_head( &process->views, &view->entry );
+            return 1;
         }
     }
     list_add_tail( &process->views, &view->entry );
+    return 0;
 }
 
 static void free_memory_view( struct memory_view *view )
@@ -687,11 +706,10 @@ static int build_shared_mapping( struct mapping *mapping, int fd,
     return 0;
 }
 
-/* load the CLR header from its section */
-static int load_clr_header( IMAGE_COR20_HEADER *hdr, size_t va, size_t size, int unix_fd,
-                            IMAGE_SECTION_HEADER *sec, unsigned int nb_sec )
+/* load a data directory header from its section */
+static int load_data_dir( void *dir, size_t dir_size, size_t va, size_t size, int unix_fd,
+                          IMAGE_SECTION_HEADER *sec, unsigned int nb_sec )
 {
-    ssize_t ret;
     size_t map_size, file_size;
     off_t file_start;
     unsigned int i;
@@ -705,16 +723,39 @@ static int load_clr_header( IMAGE_COR20_HEADER *hdr, size_t va, size_t size, int
         get_section_sizes( &sec[i], &map_size, &file_start, &file_size );
         if (size >= map_size) continue;
         if (va - sec[i].VirtualAddress >= map_size - size) continue;
-        file_size = min( file_size, map_size );
-        size = min( size, sizeof(*hdr) );
-        ret = pread( unix_fd, hdr, min( size, file_size ), file_start + va - sec[i].VirtualAddress );
-        if (ret <= 0) break;
-        if (ret < sizeof(*hdr)) memset( (char *)hdr + ret, 0, sizeof(*hdr) - ret );
-        return (hdr->MajorRuntimeVersion > COR_VERSION_MAJOR_V2 ||
-                (hdr->MajorRuntimeVersion == COR_VERSION_MAJOR_V2 &&
-                 hdr->MinorRuntimeVersion >= COR_VERSION_MINOR));
+        if (size > dir_size) size = dir_size;
+        if (size > file_size) size = file_size;
+        return pread( unix_fd, dir, size, file_start + va - sec[i].VirtualAddress );
     }
     return 0;
+}
+
+/* load the CLR header from its section */
+static int load_clr_header( IMAGE_COR20_HEADER *hdr, size_t va, size_t size, int unix_fd,
+                            IMAGE_SECTION_HEADER *sec, unsigned int nb_sec )
+{
+    int ret = load_data_dir( hdr, sizeof(*hdr), va, size, unix_fd, sec, nb_sec );
+
+    if (ret <= 0) return 0;
+    if (ret < sizeof(*hdr)) memset( (char *)hdr + ret, 0, sizeof(*hdr) - ret );
+    return (hdr->MajorRuntimeVersion > COR_VERSION_MAJOR_V2 ||
+            (hdr->MajorRuntimeVersion == COR_VERSION_MAJOR_V2 &&
+             hdr->MinorRuntimeVersion >= COR_VERSION_MINOR));
+}
+
+/* load the LOAD_CONFIG header from its section */
+static int load_cfg_header( IMAGE_LOAD_CONFIG_DIRECTORY64 *cfg, size_t va, size_t size,
+                            int unix_fd, IMAGE_SECTION_HEADER *sec, unsigned int nb_sec )
+{
+    unsigned int cfg_size;
+    int ret = load_data_dir( cfg, sizeof(*cfg), va, size, unix_fd, sec, nb_sec );
+
+    if (ret <= 0) return 0;
+    cfg_size = ret;
+    if (cfg_size < offsetof( IMAGE_LOAD_CONFIG_DIRECTORY64, Size ) + sizeof(cfg_size)) return 0;
+    if (cfg_size > cfg->Size) cfg_size = cfg->Size;
+    if (cfg_size < sizeof(*cfg)) memset( (char *)cfg + cfg_size, 0, sizeof(*cfg) - cfg_size );
+    return 1;
 }
 
 /* retrieve the mapping parameters for an executable (PE) image */
@@ -740,9 +781,14 @@ static unsigned int get_image_params( struct mapping *mapping, file_pos_t file_s
             IMAGE_OPTIONAL_HEADER64 hdr64;
         } opt;
     } nt;
+    union
+    {
+        IMAGE_LOAD_CONFIG_DIRECTORY32 cfg32;
+        IMAGE_LOAD_CONFIG_DIRECTORY64 cfg64;
+    } cfg;
     off_t pos;
     int size, has_relocs;
-    size_t mz_size, clr_va = 0, clr_size = 0;
+    size_t mz_size, clr_va = 0, clr_size = 0, cfg_va, cfg_size;
     unsigned int i;
 
     /* load the headers */
@@ -786,6 +832,9 @@ static unsigned int get_image_params( struct mapping *mapping, file_pos_t file_s
             clr_va = nt.opt.hdr32.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress;
             clr_size = nt.opt.hdr32.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size;
         }
+        cfg_va = nt.opt.hdr32.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress;
+        cfg_size = nt.opt.hdr32.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size;
+
         mapping->image.base            = nt.opt.hdr32.ImageBase;
         mapping->image.entry_point     = nt.opt.hdr32.AddressOfEntryPoint;
         mapping->image.map_size        = ROUND_SIZE( nt.opt.hdr32.SizeOfImage );
@@ -834,6 +883,9 @@ static unsigned int get_image_params( struct mapping *mapping, file_pos_t file_s
             clr_va = nt.opt.hdr64.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress;
             clr_size = nt.opt.hdr64.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size;
         }
+        cfg_va = nt.opt.hdr64.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress;
+        cfg_size = nt.opt.hdr64.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].Size;
+
         mapping->image.base            = nt.opt.hdr64.ImageBase;
         mapping->image.entry_point     = nt.opt.hdr64.AddressOfEntryPoint;
         mapping->image.map_size        = ROUND_SIZE( nt.opt.hdr64.SizeOfImage );
@@ -867,6 +919,7 @@ static unsigned int get_image_params( struct mapping *mapping, file_pos_t file_s
         return STATUS_INVALID_IMAGE_FORMAT;
     }
 
+    mapping->image.is_hybrid     = 0;
     mapping->image.padding       = 0;
     mapping->image.map_addr      = get_fd_map_address( mapping->fd );
     mapping->image.image_charact = nt.FileHeader.Characteristics;
@@ -906,6 +959,14 @@ static unsigned int get_image_params( struct mapping *mapping, file_pos_t file_s
             if (clr.Flags & COMIMAGE_FLAGS_32BITPREFERRED)
                 mapping->image.image_flags |= IMAGE_FLAGS_ComPlusPrefer32bit;
         }
+    }
+
+    if (load_cfg_header( &cfg.cfg64, cfg_va, cfg_size, unix_fd, sec, nt.FileHeader.NumberOfSections ))
+    {
+        if (nt.opt.hdr32.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+            mapping->image.is_hybrid = !!cfg.cfg32.CHPEMetadataPointer;
+        else
+            mapping->image.is_hybrid = !!cfg.cfg64.CHPEMetadataPointer;
     }
 
     if (!build_shared_mapping( mapping, unix_fd, sec, nt.FileHeader.NumberOfSections ))
@@ -1096,7 +1157,7 @@ struct file *get_view_file( const struct memory_view *view, unsigned int access,
 }
 
 /* get the image info for a SEC_IMAGE mapped view */
-const pe_image_info_t *get_view_image_info( const struct memory_view *view, client_ptr_t *base )
+const struct pe_image_info *get_view_image_info( const struct memory_view *view, client_ptr_t *base )
 {
     if (!(view->flags & SEC_IMAGE)) return NULL;
     *base = view->base;
@@ -1249,6 +1310,146 @@ int get_page_size(void)
     return page_mask + 1;
 }
 
+struct mapping *create_session_mapping( struct object *root, const struct unicode_str *name,
+                                        unsigned int attr, const struct security_descriptor *sd )
+{
+    static const unsigned int access = FILE_READ_DATA | FILE_WRITE_DATA;
+    mem_size_t size = max( sizeof(shared_object_t) * 512, 0x10000 );
+
+    return create_mapping( root, name, attr, size, SEC_COMMIT, 0, access, sd );
+}
+
+void set_session_mapping( struct mapping *mapping )
+{
+    int unix_fd = get_unix_fd( mapping->fd );
+    mem_size_t size = mapping->size;
+    struct session_block *block;
+    void *tmp;
+
+    if (!(block = mem_alloc( sizeof(*block) ))) return;
+    if ((tmp = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, unix_fd, 0 )) == MAP_FAILED)
+    {
+        free( block );
+        return;
+    }
+
+    block->data = tmp;
+    block->offset = 0;
+    block->used_size = 0;
+    block->block_size = size;
+
+    session_mapping = mapping;
+    list_add_tail( &session.blocks, &block->entry );
+}
+
+static struct session_block *grow_session_mapping( mem_size_t needed )
+{
+    mem_size_t old_size = session_mapping->size, new_size;
+    struct session_block *block;
+    int unix_fd;
+    void *tmp;
+
+    new_size = max( old_size * 3 / 2, old_size + max( needed, 0x10000 ) );
+    new_size = (new_size + page_mask) & ~((mem_size_t)page_mask);
+    assert( new_size > old_size );
+
+    unix_fd = get_unix_fd( session_mapping->fd );
+    if (!grow_file( unix_fd, new_size )) return NULL;
+
+    if (!(block = mem_alloc( sizeof(*block) ))) return NULL;
+    if ((tmp = mmap( NULL, new_size - old_size, PROT_READ | PROT_WRITE, MAP_SHARED, unix_fd, old_size )) == MAP_FAILED)
+    {
+        file_set_error();
+        free( block );
+        return NULL;
+    }
+
+    block->data = tmp;
+    block->offset = old_size;
+    block->used_size = 0;
+    block->block_size = new_size - old_size;
+
+    session_mapping->size = new_size;
+    list_add_tail( &session.blocks, &block->entry );
+
+    return block;
+}
+
+static struct session_block *find_free_session_block( mem_size_t size )
+{
+    struct session_block *block;
+
+    LIST_FOR_EACH_ENTRY( block, &session.blocks, struct session_block, entry )
+        if (size < block->block_size && block->used_size < block->block_size - size) return block;
+
+    return grow_session_mapping( size );
+}
+
+const volatile void *alloc_shared_object(void)
+{
+    struct session_object *object;
+    struct list *ptr;
+
+    if ((ptr = list_head( &session.free_objects )))
+    {
+        object = CONTAINING_RECORD( ptr, struct session_object, entry );
+        list_remove( &object->entry );
+    }
+    else
+    {
+        mem_size_t size = sizeof(*object);
+        struct session_block *block;
+
+        if (!(block = find_free_session_block( size ))) return NULL;
+        object = (struct session_object *)(block->data + block->used_size);
+        object->offset = (char *)&object->obj - block->data;
+        block->used_size += size;
+    }
+
+    SHARED_WRITE_BEGIN( &object->obj.shm, object_shm_t )
+    {
+        /* mark the object data as uninitialized */
+        mark_block_uninitialized( (void *)shared, sizeof(*shared) );
+        CONTAINING_RECORD( shared, shared_object_t, shm )->id = ++session.last_object_id;
+    }
+    SHARED_WRITE_END;
+
+    return &object->obj.shm;
+}
+
+void free_shared_object( const volatile void *object_shm )
+{
+    struct session_object *object = CONTAINING_RECORD( object_shm, struct session_object, obj.shm );
+
+    SHARED_WRITE_BEGIN( &object->obj.shm, object_shm_t )
+    {
+        mark_block_noaccess( (void *)shared, sizeof(*shared) );
+        CONTAINING_RECORD( shared, shared_object_t, shm )->id = 0;
+    }
+    SHARED_WRITE_END;
+
+    list_add_tail( &session.free_objects, &object->entry );
+}
+
+/* invalidate client caches for a shared object by giving it a new id */
+void invalidate_shared_object( const volatile void *object_shm )
+{
+    struct session_object *object = CONTAINING_RECORD( object_shm, struct session_object, obj.shm );
+
+    SHARED_WRITE_BEGIN( &object->obj.shm, object_shm_t )
+    {
+        CONTAINING_RECORD( shared, shared_object_t, shm )->id = ++session.last_object_id;
+    }
+    SHARED_WRITE_END;
+}
+
+struct obj_locator get_shared_object_locator( const volatile void *object_shm )
+{
+    struct session_object *object = CONTAINING_RECORD( object_shm, struct session_object, obj.shm );
+    struct obj_locator locator = {.offset = object->offset, .id = object->obj.id};
+    return locator;
+}
+
 struct object *create_user_data_mapping( struct object *root, const struct unicode_str *name,
                                         unsigned int attr, const struct security_descriptor *sd )
 {
@@ -1317,14 +1518,13 @@ DECL_HANDLER(get_mapping_info)
         void *data;
 
         if (mapping->fd) get_nt_name( mapping->fd, &name );
-        size = min( sizeof(pe_image_info_t) + name.len, get_reply_max_size() );
+        size = min( sizeof(struct pe_image_info) + name.len, get_reply_max_size() );
         if ((data = set_reply_data_size( size )))
         {
-            memcpy( data, &mapping->image, min( sizeof(pe_image_info_t), size ));
-            if (size > sizeof(pe_image_info_t))
-                memcpy( (pe_image_info_t *)data + 1, name.str, size - sizeof(pe_image_info_t) );
+            data = mem_append( data, &mapping->image, min( sizeof(struct pe_image_info), size ));
+            if (size > sizeof(struct pe_image_info)) memcpy( data, name.str, size - sizeof(struct pe_image_info) );
         }
-        reply->total = sizeof(pe_image_info_t) + name.len;
+        reply->total = sizeof(struct pe_image_info) + name.len;
     }
 
     if (!(req->access & (SECTION_MAP_READ | SECTION_MAP_WRITE)))  /* query only */
@@ -1428,16 +1628,19 @@ DECL_HANDLER(map_image_view)
         view->committed = NULL;
         view->shared    = mapping->shared ? (struct shared_map *)grab_object( mapping->shared ) : NULL;
         view->image     = mapping->image;
-        view->image.machine     = req->machine;
-        view->image.entry_point = req->entry;
-        add_process_view( current, view );
+        if (add_process_view( current, view ))
+        {
+            current->entry_point = view->base + req->entry;
+            current->process->machine = ((view->image.image_flags & IMAGE_FLAGS_ComPlusNativeReady) && !wow64_using_32bit_prefix) ?
+                                         native_machine : req->machine;
+        }
 
         if (view->base != (mapping->image.map_addr ? mapping->image.map_addr : mapping->image.base))
             set_error( STATUS_IMAGE_NOT_AT_BASE );
-        if (view->image.machine != current->process->machine)
+        if (req->machine != current->process->machine)
         {
             /* on 32-bit, the native 64-bit machine is allowed */
-            if (is_machine_64bit( current->process->machine ) || view->image.machine != native_machine)
+            if (is_machine_64bit( current->process->machine ) || req->machine != native_machine)
                 set_error( STATUS_IMAGE_MACHINE_TYPE_MISMATCH );
         }
     }
@@ -1450,7 +1653,7 @@ done:
 DECL_HANDLER(map_builtin_view)
 {
     struct memory_view *view;
-    const pe_image_info_t *image = get_req_data();
+    const struct pe_image_info *image = get_req_data();
     data_size_t namelen = get_req_data_size() - sizeof(*image);
 
     if (get_req_data_size() < sizeof(*image) ||
@@ -1470,7 +1673,11 @@ DECL_HANDLER(map_builtin_view)
         view->image   = *image;
         view->namelen = namelen;
         memcpy( view->name, image + 1, namelen );
-        add_process_view( current, view );
+        if (add_process_view( current, view ))
+        {
+            current->entry_point = view->base + image->entry_point;
+            current->process->machine = image->machine;
+        }
     }
 }
 

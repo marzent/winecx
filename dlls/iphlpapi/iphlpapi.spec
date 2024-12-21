@@ -73,7 +73,7 @@
 @ stdcall GetAdaptersAddresses( long long ptr ptr ptr )
 @ stdcall GetAdaptersInfo( ptr ptr )
 #@ stub GetAnycastIpAddressEntry
-#@ stub GetAnycastIpAddressTable
+@ stdcall GetAnycastIpAddressTable( long ptr )
 @ stdcall GetBestInterface( long ptr )
 @ stdcall GetBestInterfaceEx( ptr ptr )
 @ stub GetBestInterfaceFromStack
@@ -268,7 +268,7 @@
 @ stdcall SendARP( long long ptr ptr )
 @ stub SetAdapterIpAddress
 @ stub SetBlockRoutes
-#@ stub SetCurrentThreadCompartmentId
+@ stdcall SetCurrentThreadCompartmentId( long )
 @ stdcall SetIfEntry( ptr )
 @ stub SetIfEntryToStack
 #@ stub SetIpForwardEntry2

@@ -103,6 +103,9 @@ static const char frameset_str[] =
 static const char emptydiv_str[] =
     "<html><head><title>emptydiv test</title></head>"
     "<body><div id=\"divid\"></div></body></html>";
+static const char emptydiv_ie9_str[] =
+    "<html><head><meta http-equiv=\"x-ua-compatible\" content=\"IE=9\"/><title>emptydiv test</title></head>"
+    "<body><div id=\"divid\"></div></body></html>";
 static const char noscript_str[] =
     "<html><head><title>noscript test</title><noscript><style>.body { margin-right: 0px; }</style></noscript></head>"
     "<body><noscript><div>test</div></noscript></body></html>";
@@ -338,6 +341,7 @@ static const IID * const window_iids[] = {
 static const IID * const comment_iids[] = {
     ELEM_IFACES,
     &IID_IHTMLCommentElement,
+    &IID_IHTMLCommentElement2,
     &IID_IConnectionPointContainer,
     NULL
 };
@@ -1010,6 +1014,17 @@ static IHTMLCommentElement *_get_comment_iface(unsigned line, IUnknown *unk)
     hres = IUnknown_QueryInterface(unk, &IID_IHTMLCommentElement, (void**)&comment);
     ok_(__FILE__,line) (hres == S_OK, "Could not get IHTMLCommentElement: %08lx\n", hres);
     return comment;
+}
+
+#define get_comment2_iface(u) _get_comment2_iface(__LINE__,u)
+static IHTMLCommentElement2 *_get_comment2_iface(unsigned line, IUnknown *unk)
+{
+    IHTMLCommentElement2 *comment2;
+    HRESULT hres;
+
+    hres = IUnknown_QueryInterface(unk, &IID_IHTMLCommentElement2, (void**)&comment2);
+    ok_(__FILE__,line) (hres == S_OK, "Could not get IHTMLCommentElement2: %08lx\n", hres);
+    return comment2;
 }
 
 #define get_object_iface(u) _get_object_iface(__LINE__,u)
@@ -2044,9 +2059,10 @@ static IHTMLFormElement *_get_textarea_form(unsigned line, IUnknown *unk)
     return form;
 }
 
-#define test_comment_text(c,t) _test_comment_text(__LINE__,c,t)
-static void _test_comment_text(unsigned line, IUnknown *unk, const WCHAR *extext)
+#define test_comment_text(c,t,d) _test_comment_text(__LINE__,c,t,d)
+static void _test_comment_text(unsigned line, IUnknown *unk, const WCHAR *extext, const WCHAR *data)
 {
+    IHTMLCommentElement2 *comment2 = _get_comment2_iface(__LINE__,unk);
     IHTMLCommentElement *comment = _get_comment_iface(__LINE__,unk);
     const WCHAR *p;
     BSTR text;
@@ -2060,6 +2076,13 @@ static void _test_comment_text(unsigned line, IUnknown *unk, const WCHAR *extext
         ok_(__FILE__,line)(!lstrcmpW(text, extext), "text = \"%s\", expected \"%s\"\n", wine_dbgstr_w(text), wine_dbgstr_w(extext));
 
     IHTMLCommentElement_Release(comment);
+    SysFreeString(text);
+
+    hres = IHTMLCommentElement2_get_data(comment2, &text);
+    ok_(__FILE__,line)(hres == S_OK, "get_data failed: %08lx\n", hres);
+    ok_(__FILE__,line)(!wcscmp(text, data), "data = \"%s\", expected \"%s\"\n", wine_dbgstr_w(text), wine_dbgstr_w(data));
+
+    IHTMLCommentElement2_Release(comment2);
     SysFreeString(text);
 }
 
@@ -10503,12 +10526,12 @@ static void test_create_elems(IHTMLDocument2 *doc)
             test_elem_title((IUnknown*)comment, NULL);
             test_elem_set_title((IUnknown*)comment, L"comment title");
             test_elem_title((IUnknown*)comment, L"comment title");
-            test_comment_text((IUnknown*)comment, L"<!--testing-->");
+            test_comment_text((IUnknown*)comment, L"<!--testing-->", L"testing");
             test_elem_outerhtml((IUnknown*)comment, L"<!--testing-->");
             test_comment_attrs((IUnknown*)comment);
 
             node2 = clone_node((IUnknown*)comment, VARIANT_TRUE);
-            test_comment_text((IUnknown*)node2, L"<!--testing-->");
+            test_comment_text((IUnknown*)node2, L"<!--testing-->", L"testing");
             IHTMLDOMNode_Release(node2);
 
             test_elem_getelembytag((IUnknown*)comment, ET_COMMENT, 0, NULL);
@@ -10602,7 +10625,7 @@ static void test_doctype(IHTMLDocument2 *doc)
     type = get_node_type((IUnknown*)doctype);
     ok(type == 8, "type = %d\n", type);
 
-    test_comment_text((IUnknown*)doctype, L"<!DOCTYPE html>");
+    test_comment_text((IUnknown*)doctype, L"<!DOCTYPE html>", L"DOCTYPE html");
     test_elem_type((IUnknown*)doctype, ET_COMMENT);
     IHTMLDOMNode_Release(doctype);
 }
@@ -11065,6 +11088,8 @@ static void test_docfrag(IHTMLDocument2 *doc)
     frag = create_docfrag(doc);
 
     test_disp((IUnknown*)frag, &DIID_DispHTMLDocument, &CLSID_HTMLDocument, L"[object]");
+    if(is_ie9plus)
+        test_ifaces((IUnknown*)frag, doc_node_iids);
 
     frag_body = (void*)0xdeadbeef;
     hres = IHTMLDocument2_get_body(frag, &frag_body);
@@ -11097,6 +11122,11 @@ static void test_docfrag(IHTMLDocument2 *doc)
     div = get_elem_by_id(doc, L"divid", TRUE);
     test_node_append_child_discard((IUnknown*)div, (IUnknown*)frag);
     IHTMLElement_Release(div);
+
+    if(compat_mode >= COMPAT_IE9) {
+        IHTMLDocument2_Release(frag);
+        return;
+    }
 
     hres = IHTMLDocument2_get_all(doc, &col);
     ok(hres == S_OK, "get_all failed: %08lx\n", hres);
@@ -11836,6 +11866,10 @@ static void test_quirks_mode(void)
                      " <meta http-equiv=\"x-ua-compatible\" content=\"IE=%s\" />"
                      "</head><body></body></html>", tests[i].str);
         run_domtest(buf, test_document_mode);
+        sprintf(buf, "<html><head>"
+                     " <meta http-equiv=\"x-ua-compatible\" content=\"IE=%s\" />"
+                     "</head><body></body></html>", tests[i].str);
+        run_domtest(buf, test_document_mode);
     }
 
     expected_document_mode = 8;
@@ -11848,6 +11882,24 @@ static void test_quirks_mode(void)
                 " <body>"
                 " </body>"
                 "</html>", test_document_mode);
+
+    for(i = 7; i <= 11; i++) {
+        char buf[128];
+        expected_document_mode = i;
+        sprintf(buf, "<!DOCTYPE html>\n<html><head>"
+                     " <meta http-equiv=\"x-ua-compatible\" content=\"IE=EmulateIE%u\" />"
+                     "</head><body></body></html>", i);
+        run_domtest(buf, test_document_mode);
+        expected_document_mode = i < 10 ? 5 : i;
+        sprintf(buf, "<html><head>"
+                     " <meta http-equiv=\"x-ua-compatible\" content=\"IE=EmulateIE%u\" />"
+                     "</head><body></body></html>", i);
+        run_domtest(buf, test_document_mode);
+        sprintf(buf, "<html><head>"
+                     " <meta http-equiv=\"x-ua-compatible\" content=\"IE=eMulaTeie%u\" />"
+                     "</head><body></body></html>", i);
+        run_domtest(buf, test_document_mode);
+    }
 }
 
 static void test_document_mode_lock(void)
@@ -12029,6 +12081,77 @@ static void test_document_mode_lock(void)
     IHTMLDocument2_Release(doc);
 }
 
+static void test_document_mode_after_initnew(void)
+{
+    IHTMLDocument2 *doc;
+    IHTMLDocument6 *doc6;
+    IEventTarget *event_target;
+    IPersistStreamInit *init;
+    IStream *stream;
+    HRESULT hres;
+    HGLOBAL mem;
+    VARIANT var;
+    SIZE_T len;
+    MSG msg;
+
+    notif_doc = doc = create_document();
+    if(!doc)
+        return;
+    doc_complete = FALSE;
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IEventTarget, (void**)&event_target);
+    ok(hres == E_NOINTERFACE, "QueryInterface(IID_IEventTarget) returned %08lx.\n", hres);
+    ok(event_target == NULL, "event_target != NULL\n");
+
+    len = strlen(doc_blank_ie9);
+    mem = GlobalAlloc(0, len);
+    memcpy(mem, doc_blank_ie9, len);
+    hres = CreateStreamOnHGlobal(mem, TRUE, &stream);
+    ok(hres == S_OK, "Failed to create stream: %08lx.\n", hres);
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IPersistStreamInit, (void**)&init);
+    ok(hres == S_OK, "QueryInterface(IID_IPersistStreamInit) failed: %08lx.\n", hres);
+
+    IPersistStreamInit_InitNew(init);
+    IPersistStreamInit_Load(init, stream);
+    IPersistStreamInit_Release(init);
+    IStream_Release(stream);
+
+    set_client_site(doc, TRUE);
+    do_advise((IUnknown*)doc, &IID_IPropertyNotifySink, (IUnknown*)&PropertyNotifySink);
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IHTMLDocument6, (void**)&doc6);
+    ok(hres == S_OK, "QueryInterface(IID_IHTMLDocument6) failed: %08lx\n", hres);
+
+    V_VT(&var) = VT_EMPTY;
+    hres = IHTMLDocument6_get_documentMode(doc6, &var);
+    ok(hres == S_OK, "get_documentMode failed: %08lx\n", hres);
+    ok(V_VT(&var) == VT_R4, "V_VT(documentMode) = %u\n", V_VT(&var));
+    ok(V_R4(&var) == 5, "documentMode = %f, expected 5\n", V_R4(&var));
+    VariantClear(&var);
+
+    while(!doc_complete && GetMessageW(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IEventTarget, (void**)&event_target);
+    ok(hres == S_OK, "QueryInterface(IID_IEventTarget) returned %08lx.\n", hres);
+    ok(event_target != NULL, "event_target == NULL\n");
+    IEventTarget_Release(event_target);
+
+    V_VT(&var) = VT_EMPTY;
+    hres = IHTMLDocument6_get_documentMode(doc6, &var);
+    ok(hres == S_OK, "get_documentMode failed: %08lx\n", hres);
+    ok(V_VT(&var) == VT_R4, "V_VT(documentMode) = %u\n", V_VT(&var));
+    ok(V_R4(&var) == 9, "documentMode = %f, expected 9\n", V_R4(&var));
+    IHTMLDocument6_Release(doc6);
+    VariantClear(&var);
+
+    set_client_site(doc, FALSE);
+    IHTMLDocument2_Release(doc);
+}
+
 static DWORD WINAPI create_document_proc(void *param)
 {
     IHTMLDocument2 *doc = NULL;
@@ -12149,9 +12272,15 @@ START_TEST(dom)
     run_domtest(emptydiv_str, test_docfrag);
     run_domtest(doc_blank, test_replacechild_elems);
     run_domtest(doctype_str, test_doctype);
+    if(is_ie9plus) {
+        compat_mode = COMPAT_IE9;
+        run_domtest(emptydiv_ie9_str, test_docfrag);
+        compat_mode = COMPAT_NONE;
+    }
 
     test_quirks_mode();
     test_document_mode_lock();
+    test_document_mode_after_initnew();
     test_threads();
 
     /* Run this last since it messes with the process-wide user agent */

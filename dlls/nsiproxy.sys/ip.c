@@ -1482,6 +1482,7 @@ static NTSTATUS ipv4_forward_enumerate_all( void *key_data, UINT key_size, void 
     return status;
 }
 
+#ifdef __linux__
 struct ipv6_route_data
 {
     NET_LUID luid;
@@ -1537,6 +1538,7 @@ static void ipv6_forward_fill_entry( struct ipv6_route_data *entry, struct nsi_i
         stat->if_index = entry->if_index;
     }
 }
+#endif
 
 struct in6_addr str_to_in6_addr(char *nptr, char **endptr)
 {
@@ -1544,7 +1546,7 @@ struct in6_addr str_to_in6_addr(char *nptr, char **endptr)
 
     for (int i = 0; i < sizeof(ret); i++)
     {
-        if (!isxdigit( *nptr ) || !isxdigit( *nptr + 1 ))
+        if (!isxdigit( *nptr ) || !isxdigit( *(nptr + 1) ))
         {
             /* invalid hex string */
             if (endptr) *endptr = nptr;
@@ -1567,24 +1569,25 @@ static NTSTATUS ipv6_forward_enumerate_all( void *key_data, UINT key_size, void 
     UINT num = 0;
     NTSTATUS status = STATUS_SUCCESS;
     BOOL want_data = key_size || rw_size || dynamic_size || static_size;
-    struct ipv6_route_data entry;
 
     TRACE( "%p %d %p %d %p %d %p %d %p\n" , key_data, key_size, rw_data, rw_size,
         dynamic_data, dynamic_size, static_data, static_size, count );
 
 #ifdef __linux__
     {
-        char buf[512], *ptr;
+        struct ipv6_route_data entry;
+        char buf[512], *ptr, *end;
         UINT rtf_flags;
         FILE *fp;
 
-        if (!(fp = fopen( "/proc/net/ipv6_route", "r" ))) return STATUS_NOT_SUPPORTED;
+        if (!(fp = fopen( "/proc/net/ipv6_route", "r" )))
+        {
+            *count = 0;
+            return STATUS_SUCCESS;
+        }
 
         while ((ptr = fgets( buf, sizeof(buf), fp )))
         {
-            while (!isspace( *ptr )) ptr++;
-            *ptr++ = '\0';
-
             entry.prefix = str_to_in6_addr( ptr, &ptr );
             entry.prefix_len = strtoul( ptr + 1, &ptr, 16 );
             str_to_in6_addr( ptr + 1, &ptr ); /* source network, skip */
@@ -1597,6 +1600,10 @@ static NTSTATUS ipv6_forward_enumerate_all( void *key_data, UINT key_size, void 
             entry.protocol = (rtf_flags & RTF_GATEWAY) ? MIB_IPPROTO_NETMGMT : MIB_IPPROTO_LOCAL;
             entry.loopback = entry.protocol == MIB_IPPROTO_LOCAL && entry.prefix_len == 32;
 
+            while (isspace( *ptr )) ptr++;
+            end = ptr;
+            while (*end && !isspace(*end)) ++end;
+            *end = 0;
             if (!convert_unix_name_to_luid( ptr, &entry.luid )) continue;
             if (!convert_luid_to_index( &entry.luid, &entry.if_index )) continue;
 

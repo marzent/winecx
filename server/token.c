@@ -72,7 +72,6 @@ struct sid_attrs
 
 const struct sid world_sid = { SID_REVISION, 1, SECURITY_WORLD_SID_AUTHORITY, { SECURITY_WORLD_RID } };
 const struct sid local_system_sid = { SID_REVISION, 1, SECURITY_NT_AUTHORITY, { SECURITY_LOCAL_SYSTEM_RID } };
-const struct sid high_label_sid = { SID_REVISION, 1, SECURITY_MANDATORY_LABEL_AUTHORITY, { SECURITY_MANDATORY_HIGH_RID } };
 const struct sid local_user_sid = { SID_REVISION, 5, SECURITY_NT_AUTHORITY, { SECURITY_NT_NON_UNIQUE, 0, 0, 0, 1000 } };
 const struct sid builtin_admins_sid = { SID_REVISION, 2, SECURITY_NT_AUTHORITY, { SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS } };
 const struct sid builtin_users_sid = { SID_REVISION, 2, SECURITY_NT_AUTHORITY, { SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_USERS } };
@@ -82,6 +81,7 @@ static const struct sid local_sid = { SID_REVISION, 1, SECURITY_LOCAL_SID_AUTHOR
 static const struct sid interactive_sid = { SID_REVISION, 1, SECURITY_NT_AUTHORITY, { SECURITY_INTERACTIVE_RID } };
 static const struct sid anonymous_logon_sid = { SID_REVISION, 1, SECURITY_NT_AUTHORITY, { SECURITY_ANONYMOUS_LOGON_RID } };
 static const struct sid authenticated_user_sid = { SID_REVISION, 1, SECURITY_NT_AUTHORITY, { SECURITY_AUTHENTICATED_USER_RID } };
+static const struct sid high_label_sid = { SID_REVISION, 1, SECURITY_MANDATORY_LABEL_AUTHORITY, { SECURITY_MANDATORY_HIGH_RID } };
 
 static struct luid prev_luid_value = { 1000, 0 };
 
@@ -134,6 +134,8 @@ struct group
 
 static void token_dump( struct object *obj, int verbose );
 static void token_destroy( struct object *obj );
+static int token_set_sd( struct object *obj, const struct security_descriptor *sd,
+                         unsigned int set_info );
 
 static const struct object_ops token_ops =
 {
@@ -143,14 +145,12 @@ static const struct object_ops token_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
-    NULL,                      /* get_esync_fd */
-    NULL,                      /* get_msync_idx */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
     default_map_access,        /* map_access */
     default_get_sd,            /* get_sd */
-    default_set_sd,            /* set_sd */
+    token_set_sd,              /* set_sd */
     no_get_full_name,          /* get_full_name */
     no_lookup_name,            /* lookup_name */
     no_link_name,              /* link_name */
@@ -167,6 +167,12 @@ static void token_dump( struct object *obj, int verbose )
     assert( obj->ops == &token_ops );
     fprintf( stderr, "Token id=%d.%u primary=%u impersonation level=%d\n", token->token_id.high_part,
              token->token_id.low_part, token->primary, token->impersonation_level );
+}
+
+static int token_set_sd( struct object *obj, const struct security_descriptor *sd,
+                         unsigned int set_info )
+{
+    return default_set_sd( obj, sd, set_info & ~LABEL_SECURITY_INFORMATION );
 }
 
 void security_set_thread_token( struct thread *thread, obj_handle_t handle )
@@ -279,7 +285,6 @@ int sd_is_valid( const struct security_descriptor *sd, data_size_t size )
     dacl = sd_get_dacl( sd, &dummy );
     if (dacl && !acl_is_valid( dacl, sd->dacl_len ))
         return FALSE;
-    offset += sd->dacl_len;
 
     return TRUE;
 }
@@ -313,13 +318,9 @@ struct acl *extract_security_labels( const struct acl *sacl )
 
     label_ace = ace_first( label_acl );
     for (i = 0, ace = ace_first( sacl ); i < sacl->count; i++, ace = ace_next( ace ))
-    {
         if (ace->type == SYSTEM_MANDATORY_LABEL_ACE_TYPE)
-        {
-            memcpy( label_ace, ace, ace->size );
-            label_ace = ace_next( label_ace );
-        }
-    }
+            label_ace = mem_append( label_ace, ace, ace->size );
+
     return label_acl;
 }
 
@@ -373,21 +374,15 @@ struct acl *replace_security_labels( const struct acl *old_sacl, const struct ac
     if (old_sacl)
     {
         for (i = 0, ace = ace_first( old_sacl ); i < old_sacl->count; i++, ace = ace_next( ace ))
-        {
-            if (ace->type == SYSTEM_MANDATORY_LABEL_ACE_TYPE) continue;
-            memcpy( replaced_ace, ace, ace->size );
-            replaced_ace = ace_next( replaced_ace );
-        }
+            if (ace->type != SYSTEM_MANDATORY_LABEL_ACE_TYPE)
+                replaced_ace = mem_append( replaced_ace, ace, ace->size );
     }
 
     if (new_sacl)
     {
         for (i = 0, ace = ace_first( new_sacl ); i < new_sacl->count; i++, ace = ace_next( ace ))
-        {
-            if (ace->type != SYSTEM_MANDATORY_LABEL_ACE_TYPE) continue;
-            memcpy( replaced_ace, ace, ace->size );
-            replaced_ace = ace_next( replaced_ace );
-        }
+            if (ace->type == SYSTEM_MANDATORY_LABEL_ACE_TYPE)
+                replaced_ace = mem_append( replaced_ace, ace, ace->size );
     }
 
     return replaced_acl;
@@ -643,6 +638,24 @@ struct token *token_duplicate( struct token *src_token, unsigned primary,
     if (sd) default_set_sd( &token->obj, sd, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
                             DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION );
 
+    if (src_token->obj.sd)
+    {
+        const struct acl *sacl;
+        const struct ace *ace;
+        unsigned int i;
+        int present;
+
+        sacl = sd_get_sacl( src_token->obj.sd, &present );
+        if (present)
+        {
+            for (i = 0, ace = ace_first( sacl ); i < sacl->count; i++, ace = ace_next( ace ))
+            {
+                if (ace->type != SYSTEM_MANDATORY_LABEL_ACE_TYPE) continue;
+                token_assign_label( token, (const struct sid *)(ace + 1) );
+            }
+        }
+    }
+
     return token;
 }
 
@@ -779,6 +792,15 @@ struct token *token_create_admin( unsigned primary, int impersonation_level, int
     /* we really need a primary group */
     assert( token->primary_group );
 
+    /* Assign a high security label to the token. The default would be medium
+     * but Wine provides admin access to all applications right now so high
+     * makes more sense for the time being. */
+    if (!token_assign_label( token, &high_label_sid ))
+    {
+        release_object( token );
+        return NULL;
+    }
+
     free( default_dacl );
     return token;
 }
@@ -895,7 +917,7 @@ static unsigned int token_access_check( struct token *token,
                                  unsigned int desired_access,
                                  struct luid_attr *privs,
                                  unsigned int *priv_count,
-                                 const generic_map_t *mapping,
+                                 const struct generic_map *mapping,
                                  unsigned int *granted_access,
                                  unsigned int *status )
 {
@@ -1063,7 +1085,7 @@ unsigned int token_get_session_id( struct token *token )
 
 int check_object_access(struct token *token, struct object *obj, unsigned int *access)
 {
-    generic_map_t mapping;
+    struct generic_map mapping;
     unsigned int status;
     int res;
 
@@ -1180,8 +1202,10 @@ DECL_HANDLER(create_token)
     token = create_token( req->primary, default_session_id, user, groups, req->group_count,
                           privs, req->priv_count, dacl, NULL, req->primary_group, req->impersonation_level, 0 );
     if (token)
+    {
         reply->token = alloc_handle( current->process, token, req->access, objattr->attributes );
-
+        release_object( token );
+    }
     free( default_dacl );
     free( groups );
 }
@@ -1527,25 +1551,21 @@ DECL_HANDLER(get_token_default_dacl)
 {
     struct token *token;
 
-    reply->acl_len = 0;
+    if (!(token = (struct token *)get_handle_obj( current->process, req->handle,
+                                                  TOKEN_QUERY, &token_ops )))
+        return;
 
-    if ((token = (struct token *)get_handle_obj( current->process, req->handle,
-                                                 TOKEN_QUERY,
-                                                 &token_ops )))
+    if (token->default_dacl)
     {
-        if (token->default_dacl)
-            reply->acl_len = token->default_dacl->size;
-
+        reply->acl_len = token->default_dacl->size;
         if (reply->acl_len <= get_reply_max_size())
         {
             struct acl *acl_reply = set_reply_data_size( reply->acl_len );
-            if (acl_reply)
-                memcpy( acl_reply, token->default_dacl, reply->acl_len );
+            if (acl_reply) memcpy( acl_reply, token->default_dacl, reply->acl_len );
         }
         else set_error( STATUS_BUFFER_TOO_SMALL );
-
-        release_object( token );
     }
+    release_object( token );
 }
 
 DECL_HANDLER(set_token_default_dacl)

@@ -368,6 +368,7 @@ typedef struct
     PSDRV_DEVMODE	*Devmode;
     PRINTERINFO		*pi;
     int                 pathdepth;
+    RECT                bbox;
 } print_ctx;
 
 extern print_ctx *create_print_ctx( HDC hdc, const WCHAR *device,
@@ -465,6 +466,7 @@ extern char PSDRV_UnicodeToANSI(int u);
 
 extern INT PSDRV_WriteHeader( print_ctx *ctx, LPCWSTR title );
 extern INT PSDRV_WriteFooter( print_ctx *ctx );
+extern INT PSDRV_WritePageSize( print_ctx *ctx );
 extern INT PSDRV_WriteNewPage( print_ctx *ctx );
 extern INT PSDRV_WriteEndPage( print_ctx *ctx );
 extern BOOL PSDRV_WriteMoveTo(print_ctx *ctx, INT x, INT y);
@@ -542,13 +544,7 @@ extern DWORD ASCII85_encode(BYTE *in_buf, DWORD len, BYTE *out_buf);
 extern void passthrough_enter(print_ctx *ctx);
 extern void passthrough_leave(print_ctx *ctx);
 
-#define push_lc_numeric(x) do {					\
-	const char *tmplocale = setlocale(LC_NUMERIC,NULL);	\
-	setlocale(LC_NUMERIC,x);
-
-#define pop_lc_numeric()					\
-	setlocale(LC_NUMERIC,tmplocale);			\
-} while (0)
+extern _locale_t c_locale;
 
 static inline WCHAR *strdupW( const WCHAR *str )
 {

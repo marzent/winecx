@@ -1225,6 +1225,7 @@ static void test_CreateBitmapRenderTarget(void)
     SIZE size;
     ULONG ref;
     UINT32 ch;
+    RECT box;
     HDC hdc;
     int ret;
 
@@ -1506,6 +1507,13 @@ static void test_CreateBitmapRenderTarget(void)
     hr = IDWriteBitmapRenderTarget_DrawGlyphRun(target, 0.0f, 0.0f, DWRITE_MEASURING_MODE_GDI_NATURAL,
         &run, params, RGB(255, 0, 0), NULL);
     ok(hr == S_OK, "Failed to draw a run, hr %#lx.\n", hr);
+
+    /* Glyph bitmap outside of the target bitmap. */
+    SetRectEmpty(&box);
+    hr = IDWriteBitmapRenderTarget_DrawGlyphRun(target, -500.0f, -500.0f, DWRITE_MEASURING_MODE_GDI_NATURAL,
+       &run, params, RGB(255, 0, 0), &box);
+    ok(hr == S_OK, "Failed to draw a run, hr %#lx.\n", hr);
+    ok(!IsRectEmpty(&box), "Got unexpected rectangle %s.\n", wine_dbgstr_rect(&box));
 
     IDWriteRenderingParams_Release(params);
 
@@ -9296,6 +9304,9 @@ static DWORD get_sbix_formats(IDWriteFontFace4 *fontface)
                 break;
             case MS_TIFF_TAG:
                 ret |= DWRITE_GLYPH_IMAGE_FORMATS_TIFF;
+                break;
+            case DWRITE_MAKE_OPENTYPE_TAG('f','l','i','p'):
+                /* ignore macOS-specific tag */
                 break;
             default:
                 ok(0, "unexpected format, %#lx\n", GET_BE_DWORD(format));

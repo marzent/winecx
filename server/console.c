@@ -83,8 +83,6 @@ static const struct object_ops console_ops =
     console_add_queue,                /* add_queue */
     remove_queue,                     /* remove_queue */
     console_signaled,                 /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     console_get_fd,                   /* get_fd */
@@ -166,8 +164,6 @@ static const struct object_ops console_server_ops =
     add_queue,                        /* add_queue */
     remove_queue,                     /* remove_queue */
     console_server_signaled,          /* signaled */
-    console_server_get_esync_fd,      /* get_esync_fd */
-    console_server_get_msync_idx,     /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     console_server_get_fd,            /* get_fd */
@@ -181,7 +177,9 @@ static const struct object_ops console_server_ops =
     console_server_open_file,         /* open_file */
     no_kernel_obj_list,               /* get_kernel_obj_list */
     no_close_handle,                  /* close_handle */
-    console_server_destroy            /* destroy */
+    console_server_destroy,           /* destroy */
+    console_server_get_esync_fd,      /* get_esync_fd */
+    console_server_get_msync_idx,     /* get_msync_idx */
 };
 
 static void console_server_ioctl( struct fd *fd, ioctl_code_t code, struct async *async );
@@ -237,8 +235,6 @@ static const struct object_ops screen_buffer_ops =
     screen_buffer_add_queue,          /* add_queue */
     NULL,                             /* remove_queue */
     NULL,                             /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     NULL,                             /* satisfied */
     no_signal,                        /* signal */
     screen_buffer_get_fd,             /* get_fd */
@@ -288,8 +284,6 @@ static const struct object_ops console_device_ops =
     no_add_queue,                     /* add_queue */
     NULL,                             /* remove_queue */
     NULL,                             /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     no_get_fd,                        /* get_fd */
@@ -327,8 +321,6 @@ static const struct object_ops console_input_ops =
     console_input_add_queue,          /* add_queue */
     NULL,                             /* remove_queue */
     NULL,                             /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     console_input_get_fd,             /* get_fd */
@@ -386,8 +378,6 @@ static const struct object_ops console_output_ops =
     console_output_add_queue,         /* add_queue */
     NULL,                             /* remove_queue */
     NULL,                             /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     console_output_get_fd,            /* get_fd */
@@ -446,8 +436,6 @@ static const struct object_ops console_connection_ops =
     no_add_queue,                     /* add_queue */
     NULL,                             /* remove_queue */
     NULL,                             /* signaled */
-    NULL,                             /* get_esync_fd */
-    NULL,                             /* get_msync_idx */
     no_satisfied,                     /* satisfied */
     no_signal,                        /* signal */
     console_connection_get_fd,        /* get_fd */
@@ -823,6 +811,12 @@ static struct object *console_lookup_name( struct object *obj, struct unicode_st
     static const WCHAR connectionW[]    = {'C','o','n','n','e','c','t','i','o','n'};
     assert( obj->ops == &console_ops );
 
+    if (!name)
+    {
+        set_error( STATUS_NOT_FOUND );
+        return NULL;
+    }
+
     if (name->len == sizeof(connectionW) && !memcmp( name->str, connectionW, name->len ))
     {
         name->len = 0;
@@ -909,6 +903,12 @@ static struct object *console_server_lookup_name( struct object *obj, struct uni
     struct console_server *server = (struct console_server*)obj;
     static const WCHAR referenceW[] = {'R','e','f','e','r','e','n','c','e'};
     assert( obj->ops == &console_server_ops );
+
+    if (!name)
+    {
+        set_error( STATUS_NOT_FOUND );
+        return NULL;
+    }
 
     if (name->len == sizeof(referenceW) && !memcmp( name->str, referenceW, name->len ))
     {

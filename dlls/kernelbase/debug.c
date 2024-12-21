@@ -313,7 +313,34 @@ void WINAPI DECLSPEC_HOTPATCH OutputDebugStringW( LPCWSTR str )
 /*******************************************************************
  *           RaiseException  (kernelbase.@)
  */
-#if defined(__x86_64__)
+#ifdef __x86_64__
+#ifdef __arm64ec__
+void __attribute__((naked)) RaiseException( DWORD code, DWORD flags, DWORD count, const ULONG_PTR *args )
+{
+    asm( ".seh_proc RaiseException\n\t"
+         "stp x29, x30, [sp, #-0xb0]!\n\t"
+         ".seh_save_fplr_x 0xb0\n\t"
+         ".seh_endprologue\n\t"
+         "and w1, w1, #0x01\n\t"        /* EXCEPTION_NONCONTINUABLE */
+         "stp w0, w1, [sp, #0x10]\n\t"  /* ExceptionCode, ExceptionFlags */
+         "adr x4, RaiseException\n\t"
+         "stp xzr, x4, [sp, #0x18]\n\t" /* ExceptionRecord, ExceptionAddress */
+         "mov w5, #0x0f\n\t"            /* EXCEPTION_MAXIMUM_PARAMETERS */
+         "cmp w2, w5\n\t"
+         "csel w2, w2, w5, lo\n\t"
+         "str x2, [sp, #0x28]\n\t"      /* NumberParameters */
+         "cbz x3, 1f\n\t"
+         "lsl w2, w2, #3\n\t"
+         "add x0, sp, #0x30\n\t"        /* ExceptionInformation */
+         "mov x1, x3\n\t"               /* args */
+         "bl \"#memcpy\"\n"
+         "1:\tadd x0, sp, #0x10\n\t"    /* rec */
+         "bl \"#RtlRaiseException\"\n\t"
+         "ldp x29, x30, [sp], #0xb0\n\t"
+         "ret\n\t"
+         ".seh_endproc" );
+}
+#else
 /* Some DRMs depend on RaiseException not altering non-volatile registers. */
 __ASM_GLOBAL_FUNC( RaiseException,
                    ".byte 0x48,0x8d,0xa4,0x24,0x00,0x00,0x00,0x00\n\t" /* hotpatch prolog */
@@ -350,20 +377,20 @@ __ASM_GLOBAL_FUNC( RaiseException,
                    "add $0xc8,%rsp\n\t"
                    __ASM_CFI(".cfi_adjust_cfa_offset -0xc8\n\t")
                    "ret" )
-
+#endif  /* __arm64ec__ */
 C_ASSERT( offsetof(EXCEPTION_RECORD, ExceptionCode) == 0 );
 C_ASSERT( offsetof(EXCEPTION_RECORD, ExceptionFlags) == 4 );
 C_ASSERT( offsetof(EXCEPTION_RECORD, ExceptionRecord) == 8 );
 C_ASSERT( offsetof(EXCEPTION_RECORD, ExceptionAddress) == 0x10 );
 C_ASSERT( offsetof(EXCEPTION_RECORD, NumberParameters) == 0x18 );
 C_ASSERT( offsetof(EXCEPTION_RECORD, ExceptionInformation) == 0x20 );
-#else
+#else  /* __x86_64__ */
 void WINAPI DECLSPEC_HOTPATCH RaiseException( DWORD code, DWORD flags, DWORD count, const ULONG_PTR *args )
 {
     EXCEPTION_RECORD record;
 
     record.ExceptionCode    = code;
-    record.ExceptionFlags   = flags & EH_NONCONTINUABLE;
+    record.ExceptionFlags   = flags & EXCEPTION_NONCONTINUABLE;
     record.ExceptionRecord  = NULL;
     record.ExceptionAddress = RaiseException;
     if (count && args)
@@ -600,7 +627,7 @@ static BOOL start_debugger( EXCEPTION_POINTERS *epointers, HANDLE event )
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESHOWWINDOW;
     startup.wShowWindow = SW_SHOWNORMAL;
-    ret = CreateProcessW( NULL, cmdline, NULL, NULL, TRUE, 0, env, NULL, &startup, &info );
+    ret = CreateProcessW( NULL, cmdline, NULL, NULL, TRUE, CREATE_UNICODE_ENVIRONMENT, env, NULL, &startup, &info );
     FreeEnvironmentStringsW( env );
 
     if (ret)
@@ -747,8 +774,6 @@ LONG WINAPI UnhandledExceptionFilter( EXCEPTION_POINTERS *epointers )
             if (ret != EXCEPTION_CONTINUE_SEARCH) return ret;
         }
 
-        /* FIXME: Should check the current error mode */
-
         /* CrossOver Hack #22795 */
         if (is_quicken_updateicons())
         {
@@ -756,7 +781,8 @@ LONG WINAPI UnhandledExceptionFilter( EXCEPTION_POINTERS *epointers )
             TerminateProcess( GetCurrentProcess(), 1 );
         }
 
-        if (!start_debugger_atomic( epointers ) || !NtCurrentTeb()->Peb->BeingDebugged)
+        if ((GetErrorMode() & SEM_NOGPFAULTERRORBOX) ||
+            !start_debugger_atomic( epointers ) || !NtCurrentTeb()->Peb->BeingDebugged)
             return EXCEPTION_EXECUTE_HANDLER;
     }
     return EXCEPTION_CONTINUE_SEARCH;
@@ -1448,7 +1474,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH GetModuleFileNameExW( HANDLE process, HMODULE mod
                                                      WCHAR *name, DWORD size )
 {
     BOOL wow64, found = FALSE;
-    DWORD len;
+    DWORD len = 0;
 
     if (!size) return 0;
 

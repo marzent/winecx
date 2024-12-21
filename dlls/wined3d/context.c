@@ -54,7 +54,7 @@ void wined3d_context_cleanup(struct wined3d_context *context)
  * A to avoid breaking caller code. */
 void context_restore(struct wined3d_context *context, struct wined3d_texture *texture, unsigned int sub_resource_idx)
 {
-    if (context->current_rt.texture != texture || context->current_rt.sub_resource_idx != sub_resource_idx)
+    if (texture && (context->current_rt.texture != texture || context->current_rt.sub_resource_idx != sub_resource_idx))
     {
         context_release(context);
         context = context_acquire(texture->resource.device, texture, sub_resource_idx);
@@ -113,6 +113,10 @@ void wined3d_context_init(struct wined3d_context *context, struct wined3d_swapch
             | (1u << WINED3D_SHADER_TYPE_HULL)
             | (1u << WINED3D_SHADER_TYPE_DOMAIN)
             | (1u << WINED3D_SHADER_TYPE_COMPUTE);
+
+    context->update_primitive_type = 1;
+    context->update_patch_vertex_count = 1;
+    context->update_multisample_state = 1;
 }
 
 HRESULT wined3d_context_no3d_init(struct wined3d_context *context_no3d, struct wined3d_swapchain *swapchain)
@@ -157,9 +161,8 @@ void wined3d_stream_info_from_declaration(struct wined3d_stream_info *stream_inf
         const struct wined3d_state *state, const struct wined3d_d3d_info *d3d_info)
 {
     /* We need to deal with frequency data! */
+    BOOL use_vshader = use_vs(state) || (d3d_info->ffp_hlsl && state->shader[WINED3D_SHADER_TYPE_VERTEX]);
     struct wined3d_vertex_declaration *declaration = state->vertex_declaration;
-    BOOL generic_attributes = d3d_info->ffp_generic_attributes;
-    BOOL use_vshader = use_vs(state);
     unsigned int i;
 
     stream_info->use_map = 0;
@@ -209,16 +212,7 @@ void wined3d_stream_info_from_declaration(struct wined3d_stream_info *stream_inf
         }
         else
         {
-            if (!generic_attributes && !element->ffp_valid)
-            {
-                WARN("Skipping unsupported fixed function element of format %s and usage %s.\n",
-                        debug_d3dformat(element->format->id), debug_d3ddeclusage(element->usage));
-                stride_used = FALSE;
-            }
-            else
-            {
-                stride_used = fixed_get_input(element->usage, element->usage_idx, &idx);
-            }
+            stride_used = fixed_get_input(element->usage, element->usage_idx, &idx);
         }
 
         if (stride_used)
@@ -316,20 +310,4 @@ void context_update_stream_info(struct wined3d_context *context, const struct wi
 
     if (prev_all_vbo != stream_info->all_vbo)
         context_invalidate_state(context, STATE_INDEXBUFFER);
-
-    context->use_immediate_mode_draw = FALSE;
-
-    if (stream_info->all_vbo)
-        return;
-
-    if (!use_vs(state))
-    {
-        WORD slow_mask = -!d3d_info->ffp_generic_attributes & (1u << WINED3D_FFP_PSIZE);
-        slow_mask |= -(!d3d_info->vertex_bgra && !d3d_info->ffp_generic_attributes)
-                & ((1u << WINED3D_FFP_DIFFUSE) | (1u << WINED3D_FFP_SPECULAR) | (1u << WINED3D_FFP_BLENDWEIGHT));
-
-        if ((stream_info->position_transformed && !d3d_info->xyzrhw)
-                || (stream_info->use_map & slow_mask))
-            context->use_immediate_mode_draw = TRUE;
-    }
 }

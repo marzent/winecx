@@ -1609,6 +1609,17 @@ cpp_quote("#define DWFAF_HIDDEN           0x0001")
         [out] LPVOID *ppvObj);
 }
 
+cpp_quote("#include <pshpack8.h>")
+typedef struct
+{
+    SIZE     sizeDragImage;
+    POINT    ptOffset;
+    HBITMAP  hbmpDragImage;
+    COLORREF crColorKey;
+} SHDRAGIMAGE, *LPSHDRAGIMAGE;
+cpp_quote("#include <poppack.h>")
+
+cpp_quote("#define DI_GETDRAGIMAGE TEXT(\"ShellGetDragImage\")")
 
 /*****************************************************************************
  * IDragSourceHelper interface
@@ -1621,14 +1632,6 @@ cpp_quote("#define DWFAF_HIDDEN           0x0001")
 ]
 interface IDragSourceHelper : IUnknown
 {
-    typedef struct
-    {
-        SIZE     sizeDragImage;
-        POINT    ptOffset;
-        HBITMAP  hbmpDragImage;
-        COLORREF crColorKey;
-    } SHDRAGIMAGE, *LPSHDRAGIMAGE;
-
   HRESULT InitializeFromBitmap(
       [in] LPSHDRAGIMAGE pshdi,
       [in] IDataObject *pDataObject);
@@ -1639,6 +1642,11 @@ interface IDragSourceHelper : IUnknown
       [in] IDataObject *pDataObject);
 }
 
+typedef [v1_enum] enum DSH_FLAGS
+{
+    DSH_ALLOWDROPDESCRIPTIONTEXT = 0x0001,
+} DSH_FLAGS;
+cpp_quote("DEFINE_ENUM_FLAG_OPERATORS(DSH_FLAGS)")
 
 /*****************************************************************************
  * IDragSourceHelper2 interface
@@ -3846,6 +3854,21 @@ interface IApplicationActivationManager : IUnknown
 
 [
     object,
+    uuid(8895b1c6-b41f-4c1c-a562-0d564250836f),
+]
+interface IPreviewHandler : IUnknown
+{
+    HRESULT SetWindow([in] HWND hwnd, [in] const RECT *rect);
+    HRESULT SetRect([in] const RECT *rect);
+    HRESULT DoPreview();
+    HRESULT Unload();
+    HRESULT SetFocus();
+    HRESULT QueryFocus([out] HWND *hwnd);
+    HRESULT TranslateAccelerator([in] MSG *msg);
+}
+
+[
+    object,
     uuid(fec87aaf-35f9-447a-adb7-20234491401a),
     pointer_default(unique)
 ]
@@ -3859,6 +3882,18 @@ interface IPreviewHandlerFrame : IUnknown
 
     HRESULT GetWindowContext([out] PREVIEWHANDLERFRAMEINFO *info);
     HRESULT TranslateAccelerator([in] MSG *msg);
+}
+
+[
+    object,
+    uuid(196bf9a5-b346-4ef0-aa1e-5dcdb76768b1),
+    pointer_default(unique)
+]
+interface IPreviewHandlerVisuals : IUnknown
+{
+    HRESULT SetBackgroundColor([in] COLORREF color);
+    HRESULT SetFont([in] const LOGFONTW *logfont);
+    HRESULT SetTextColor([in] COLORREF color);
 }
 
 /*****************************************************************************

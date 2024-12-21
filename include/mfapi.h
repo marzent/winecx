@@ -266,7 +266,7 @@ DEFINE_GUID(MF_MT_WRAPPED_TYPE,                        0x4d3f7b23, 0xd02f, 0x4e6
 DEFINE_GUID(MF_MT_FIXED_SIZE_SAMPLES,                  0xb8ebefaf, 0xb718, 0x4e04, 0xb0, 0xa9, 0x11, 0x67, 0x75, 0xe3, 0x32, 0x1b);
 DEFINE_GUID(MF_MT_COMPRESSED,                          0x3afd0cee, 0x18f2, 0x4ba5, 0xa1, 0x10, 0x8b, 0xea, 0x50, 0x2e, 0x1f, 0x92);
 DEFINE_GUID(MF_MT_SAMPLE_SIZE,                         0xdad3ab78, 0x1990, 0x408b, 0xbc, 0xe2, 0xeb, 0xa6, 0x73, 0xda, 0xcc, 0x10);
-DEFINE_GUID(MF_MT_VIDEO_3D,                            0xcb5e88cf, 0x7b5b, 0x47b6, 0x85, 0xaa, 0x1c, 0xa5, 0xae, 0x18, 0x75, 0x55);
+DEFINE_GUID(MF_MT_VIDEO_3D,                            0xcb5e88cf, 0x7b5b, 0x476b, 0x85, 0xaa, 0x1c, 0xa5, 0xae, 0x18, 0x75, 0x55);
 DEFINE_GUID(MF_MT_VIDEO_3D_FORMAT,                     0x5315d8a0, 0x87c5, 0x4697, 0xb7, 0x93, 0x66, 0x06, 0xc6, 0x7c, 0x04, 0x9b);
 DEFINE_GUID(MF_MT_VIDEO_3D_NUM_VIEWS,                  0xbb077e8a, 0xdcbf, 0x42eb, 0xaf, 0x60, 0x41, 0x8d, 0xf9, 0x8a, 0xa4, 0x95);
 DEFINE_GUID(MF_MT_VIDEO_3D_LEFT_IS_BASE,               0x6d4b7bff, 0x5629, 0x4404, 0x94, 0x8c, 0xc6, 0x34, 0xf4, 0xce, 0x26, 0xd4);
@@ -302,7 +302,7 @@ DEFINE_GUID(MF_MT_AUDIO_BITS_PER_SAMPLE,               0xf2deb57f, 0x40fa, 0x476
 DEFINE_GUID(MF_MT_AUDIO_VALID_BITS_PER_SAMPLE,         0xd9bf8d6a, 0x9530, 0x4b7c, 0x9d, 0xdf, 0xff, 0x6f, 0xd5, 0x8b, 0xbd, 0x06);
 DEFINE_GUID(MF_MT_AUDIO_SAMPLES_PER_BLOCK,             0xaab15aac, 0xe13a, 0x4995, 0x92, 0x22, 0x50, 0x1e, 0xa1, 0x5c, 0x68, 0x77);
 DEFINE_GUID(MF_MT_AUDIO_CHANNEL_MASK,                  0x55fb5765, 0x644a, 0x4caf, 0x84, 0x79, 0x93, 0x89, 0x83, 0xbb, 0x15, 0x88);
-DEFINE_GUID(MF_MT_AUDIO_FOLDDOWN_MATRIX,               0x9d62927c, 0x36be, 0x4cf1, 0xb5, 0xc4, 0xa3, 0x92, 0x6e, 0x3e, 0x87, 0x11);
+DEFINE_GUID(MF_MT_AUDIO_FOLDDOWN_MATRIX,               0x9d62927c, 0x36be, 0x4cf2, 0xb5, 0xc4, 0xa3, 0x92, 0x6e, 0x3e, 0x87, 0x11);
 DEFINE_GUID(MF_MT_AUDIO_WMADRC_PEAKREF,                0x9d62927d, 0x36be, 0x4cf2, 0xb5, 0xc4, 0xa3, 0x92, 0x6e, 0x3e, 0x87, 0x11);
 DEFINE_GUID(MF_MT_AUDIO_WMADRC_PEAKTARGET,             0x9d62927e, 0x36be, 0x4cf2, 0xb5, 0xc4, 0xa3, 0x92, 0x6e, 0x3e, 0x87, 0x11);
 DEFINE_GUID(MF_MT_AUDIO_WMADRC_AVGREF,                 0x9d62927f, 0x36be, 0x4cf2, 0xb5, 0xc4, 0xa3, 0x92, 0x6e, 0x3e, 0x87, 0x11);
@@ -507,7 +507,11 @@ typedef enum
 
 struct tagVIDEOINFOHEADER;
 typedef struct tagVIDEOINFOHEADER VIDEOINFOHEADER;
+struct tagVIDEOINFOHEADER2;
+typedef struct tagVIDEOINFOHEADER2 VIDEOINFOHEADER2;
 typedef struct _AMMediaType AM_MEDIA_TYPE;
+typedef struct tagMPEG1VIDEOINFO MPEG1VIDEOINFO;
+typedef struct tagMPEG2VIDEOINFO MPEG2VIDEOINFO;
 
 HRESULT WINAPI MFAddPeriodicCallback(MFPERIODICCALLBACK callback, IUnknown *context, DWORD *key);
 HRESULT WINAPI MFAllocateSerialWorkQueue(DWORD target_queue, DWORD *queue);
@@ -547,10 +551,14 @@ HRESULT WINAPI MFCreateMediaEvent(MediaEventType type, REFGUID extended_type, HR
 HRESULT WINAPI MFCreateMediaType(IMFMediaType **type);
 HRESULT WINAPI MFCreateAMMediaTypeFromMFMediaType(IMFMediaType *media_type, GUID format_type, AM_MEDIA_TYPE **am_type);
 HRESULT WINAPI MFCreateMFVideoFormatFromMFMediaType(IMFMediaType *media_type, MFVIDEOFORMAT **video_format, UINT32 *size);
+HRESULT WINAPI MFCreateMediaTypeFromRepresentation(GUID guid_representation, void *representation,
+        IMFMediaType **media_type);
 HRESULT WINAPI MFCreateSample(IMFSample **sample);
 HRESULT WINAPI MFCreateTempFile(MF_FILE_ACCESSMODE accessmode, MF_FILE_OPENMODE openmode, MF_FILE_FLAGS flags,
         IMFByteStream **bytestream);
+HRESULT WINAPI MFCreateVideoMediaType(const MFVIDEOFORMAT *format, IMFVideoMediaType **media_type);
 HRESULT WINAPI MFCreateVideoMediaTypeFromSubtype(const GUID *subtype, IMFVideoMediaType **media_type);
+HRESULT WINAPI MFCreateLegacyMediaBufferOnMFMediaBuffer(IMFSample *sample, IMFMediaBuffer *media_buffer, DWORD offset, IMediaBuffer **obj);
 
 #ifdef _KSMEDIA_
 HRESULT WINAPI MFCreateVideoMediaTypeFromVideoInfoHeader(const KS_VIDEOINFOHEADER *vih, DWORD size, DWORD pixel_aspect_ratio_x,
@@ -591,7 +599,14 @@ BOOL WINAPI MFIsFormatYUV(DWORD format);
 HRESULT WINAPI MFInitAttributesFromBlob(IMFAttributes *attributes, const UINT8 *buffer, UINT size);
 HRESULT WINAPI MFInitAMMediaTypeFromMFMediaType(IMFMediaType *media_type, GUID format, AM_MEDIA_TYPE *am_type);
 HRESULT WINAPI MFInitMediaTypeFromAMMediaType(IMFMediaType *mediatype, const AM_MEDIA_TYPE *am_type);
+HRESULT WINAPI MFInitMediaTypeFromMFVideoFormat(IMFMediaType *media_type, const MFVIDEOFORMAT *format, UINT32 size);
 HRESULT WINAPI MFInitMediaTypeFromVideoInfoHeader(IMFMediaType *media_type, const VIDEOINFOHEADER *vih,
+        UINT32 size, const GUID *subtype);
+HRESULT WINAPI MFInitMediaTypeFromVideoInfoHeader2(IMFMediaType *media_type, const VIDEOINFOHEADER2 *vih,
+        UINT32 size, const GUID *subtype);
+HRESULT WINAPI MFInitMediaTypeFromMPEG1VideoInfo(IMFMediaType *media_type, const MPEG1VIDEOINFO *vih,
+        UINT32 size, const GUID *subtype);
+HRESULT WINAPI MFInitMediaTypeFromMPEG2VideoInfo(IMFMediaType *media_type, const MPEG2VIDEOINFO *vih,
         UINT32 size, const GUID *subtype);
 HRESULT WINAPI MFInitMediaTypeFromWaveFormatEx(IMFMediaType *mediatype, const WAVEFORMATEX *format, UINT32 size);
 HRESULT WINAPI MFInitVideoFormat_RGB(MFVIDEOFORMAT *format, DWORD width, DWORD height, DWORD d3dformat);

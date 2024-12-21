@@ -82,8 +82,6 @@ static const struct object_ops timer_ops =
     add_queue,                 /* add_queue */
     remove_queue,              /* remove_queue */
     timer_signaled,            /* signaled */
-    timer_get_esync_fd,        /* get_esync_fd */
-    timer_get_msync_idx,       /* get_msync_idx */
     timer_satisfied,           /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -97,7 +95,9 @@ static const struct object_ops timer_ops =
     no_open_file,              /* open_file */
     no_kernel_obj_list,        /* get_kernel_obj_list */
     no_close_handle,           /* close_handle */
-    timer_destroy              /* destroy */
+    timer_destroy,             /* destroy */
+    timer_get_esync_fd,        /* get_esync_fd */
+    timer_get_msync_idx,       /* get_msync_idx */
 };
 
 
@@ -138,7 +138,7 @@ static void timer_callback( void *private )
     /* queue an APC */
     if (timer->thread)
     {
-        apc_call_t data;
+        union apc_call data;
 
         assert (timer->callback);
         memset( &data, 0, sizeof(data) );
@@ -275,7 +275,11 @@ DECL_HANDLER(create_timer)
 
     if ((timer = create_timer( root, &name, objattr->attributes, req->manual, sd )))
     {
-        reply->handle = alloc_handle( current->process, timer, req->access, objattr->attributes );
+        if (get_error() == STATUS_OBJECT_NAME_EXISTS)
+            reply->handle = alloc_handle( current->process, timer, req->access, objattr->attributes );
+        else
+            reply->handle = alloc_handle_no_access_check( current->process, timer,
+                                                          req->access, objattr->attributes );
         release_object( timer );
     }
 

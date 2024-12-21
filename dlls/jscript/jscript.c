@@ -47,12 +47,13 @@ typedef struct {
     IActiveScriptProperty        IActiveScriptProperty_iface;
     IObjectSafety                IObjectSafety_iface;
     IVariantChangeType           IVariantChangeType_iface;
+    IWineJScript                 IWineJScript_iface;
 
     LONG ref;
 
     DWORD safeopt;
+    struct thread_data *thread_data;
     script_ctx_t *ctx;
-    LONG thread_id;
     LCID lcid;
     DWORD version;
     BOOL html_mode;
@@ -88,6 +89,7 @@ void script_release(script_ctx_t *ctx)
     ctx->jscaller->ctx = NULL;
     IServiceProvider_Release(&ctx->jscaller->IServiceProvider_iface);
 
+    release_thread_data(ctx->thread_data);
     free(ctx);
 }
 
@@ -121,14 +123,7 @@ static inline BOOL is_started(script_ctx_t *ctx)
 
 HRESULT create_named_item_script_obj(script_ctx_t *ctx, named_item_t *item)
 {
-    static const builtin_info_t disp_info = {
-        JSCLASS_GLOBAL,
-        NULL,
-        0, NULL,
-        NULL,
-        NULL
-    };
-
+    static const builtin_info_t disp_info = { .class = JSCLASS_GLOBAL };
     return create_dispex(ctx, &disp_info, NULL, &item->script_obj);
 }
 
@@ -524,8 +519,10 @@ static void decrease_state(JScript *This, SCRIPTSTATE state)
         FIXME("NULL ctx\n");
     }
 
-    if(state == SCRIPTSTATE_UNINITIALIZED || state == SCRIPTSTATE_CLOSED)
-        This->thread_id = 0;
+    if((state == SCRIPTSTATE_UNINITIALIZED || state == SCRIPTSTATE_CLOSED) && This->thread_data) {
+        release_thread_data(This->thread_data);
+        This->thread_data = NULL;
+    }
 
     if(This->site) {
         IActiveScriptSite_Release(This->site);
@@ -673,6 +670,9 @@ static HRESULT WINAPI JScript_QueryInterface(IActiveScript *iface, REFIID riid, 
     }else if(IsEqualGUID(riid, &IID_IVariantChangeType)) {
         TRACE("(%p)->(IID_IVariantChangeType %p)\n", This, ppv);
         *ppv = &This->IVariantChangeType_iface;
+    }else if(IsEqualGUID(riid, &IID_IWineJScript)) {
+        TRACE("(%p)->(IID_IWineJScript %p)\n", This, ppv);
+        *ppv = &This->IWineJScript_iface;
     }
 
     if(*ppv) {
@@ -708,6 +708,8 @@ static ULONG WINAPI JScript_Release(IActiveScript *iface)
             This->ctx->active_script = NULL;
             script_release(This->ctx);
         }
+        if(This->thread_data)
+            release_thread_data(This->thread_data);
         free(This);
         unlock_module();
     }
@@ -715,17 +717,11 @@ static ULONG WINAPI JScript_Release(IActiveScript *iface)
     return ref;
 }
 
-static int weak_refs_compare(const void *key, const struct rb_entry *entry)
-{
-    const struct weak_refs_entry *weak_refs_entry = RB_ENTRY_VALUE(entry, const struct weak_refs_entry, entry);
-    ULONG_PTR a = (ULONG_PTR)key, b = (ULONG_PTR)LIST_ENTRY(weak_refs_entry->list.next, struct weakmap_entry, weak_refs_entry)->key;
-    return (a > b) - (a < b);
-}
-
 static HRESULT WINAPI JScript_SetScriptSite(IActiveScript *iface,
                                             IActiveScriptSite *pass)
 {
     JScript *This = impl_from_IActiveScript(iface);
+    struct thread_data *thread_data;
     named_item_t *item;
     LCID lcid;
     HRESULT hres;
@@ -738,8 +734,13 @@ static HRESULT WINAPI JScript_SetScriptSite(IActiveScript *iface,
     if(This->site)
         return E_UNEXPECTED;
 
-    if(InterlockedCompareExchange(&This->thread_id, GetCurrentThreadId(), 0))
+    if(!(thread_data = get_thread_data()))
+        return E_OUTOFMEMORY;
+
+    if(InterlockedCompareExchangePointer((void**)&This->thread_data, thread_data, NULL)) {
+        release_thread_data(thread_data);
         return E_UNEXPECTED;
+    }
 
     if(!This->ctx) {
         script_ctx_t *ctx = calloc(1, sizeof(script_ctx_t));
@@ -754,8 +755,6 @@ static HRESULT WINAPI JScript_SetScriptSite(IActiveScript *iface,
         ctx->html_mode = This->html_mode;
         ctx->acc = jsval_undefined();
         list_init(&ctx->named_items);
-        list_init(&ctx->objects);
-        rb_init(&ctx->weak_refs, weak_refs_compare);
         heap_pool_init(&ctx->tmp_heap);
 
         hres = create_jscaller(ctx);
@@ -764,13 +763,11 @@ static HRESULT WINAPI JScript_SetScriptSite(IActiveScript *iface,
             return hres;
         }
 
+        thread_data->ref++;
+        ctx->thread_data = thread_data;
         ctx->last_match = jsstr_empty();
 
-        ctx = InterlockedCompareExchangePointer((void**)&This->ctx, ctx, NULL);
-        if(ctx) {
-            script_release(ctx);
-            return E_UNEXPECTED;
-        }
+        This->ctx = ctx;
     }
 
     /* Retrieve new dispatches for persistent named items */
@@ -821,7 +818,7 @@ static HRESULT WINAPI JScript_SetScriptState(IActiveScript *iface, SCRIPTSTATE s
 
     TRACE("(%p)->(%d)\n", This, ss);
 
-    if(This->thread_id && GetCurrentThreadId() != This->thread_id)
+    if(This->thread_data && This->thread_data->thread_id != GetCurrentThreadId())
         return E_UNEXPECTED;
 
     if(ss == SCRIPTSTATE_UNINITIALIZED) {
@@ -865,7 +862,7 @@ static HRESULT WINAPI JScript_GetScriptState(IActiveScript *iface, SCRIPTSTATE *
     if(!pssState)
         return E_POINTER;
 
-    if(This->thread_id && This->thread_id != GetCurrentThreadId())
+    if(This->thread_data && This->thread_data->thread_id != GetCurrentThreadId())
         return E_UNEXPECTED;
 
     *pssState = This->ctx ? This->ctx->state : SCRIPTSTATE_UNINITIALIZED;
@@ -878,7 +875,7 @@ static HRESULT WINAPI JScript_Close(IActiveScript *iface)
 
     TRACE("(%p)->()\n", This);
 
-    if(This->thread_id && This->thread_id != GetCurrentThreadId())
+    if(This->thread_data && This->thread_data->thread_id != GetCurrentThreadId())
         return E_UNEXPECTED;
 
     decrease_state(This, SCRIPTSTATE_CLOSED);
@@ -897,7 +894,7 @@ static HRESULT WINAPI JScript_AddNamedItem(IActiveScript *iface,
 
     TRACE("(%p)->(%s %lx)\n", This, debugstr_w(pstrName), dwFlags);
 
-    if(This->thread_id != GetCurrentThreadId() || !This->ctx || This->ctx->state == SCRIPTSTATE_CLOSED)
+    if(!This->thread_data || This->thread_data->thread_id != GetCurrentThreadId() || !This->ctx || This->ctx->state == SCRIPTSTATE_CLOSED)
         return E_UNEXPECTED;
 
     if(dwFlags & SCRIPTITEM_GLOBALMEMBERS) {
@@ -959,7 +956,7 @@ static HRESULT WINAPI JScript_GetScriptDispatch(IActiveScript *iface, LPCOLESTR 
     if(!ppdisp)
         return E_POINTER;
 
-    if(This->thread_id != GetCurrentThreadId() || !This->ctx->global) {
+    if(!This->thread_data || This->thread_data->thread_id != GetCurrentThreadId() || !This->ctx->global) {
         *ppdisp = NULL;
         return E_UNEXPECTED;
     }
@@ -1101,7 +1098,7 @@ static HRESULT WINAPI JScriptParse_ParseScriptText(IActiveScriptParse *iface,
           debugstr_w(pstrItemName), punkContext, debugstr_w(pstrDelimiter),
           wine_dbgstr_longlong(dwSourceContextCookie), ulStartingLine, dwFlags, pvarResult, pexcepinfo);
 
-    if(This->thread_id != GetCurrentThreadId() || This->ctx->state == SCRIPTSTATE_CLOSED)
+    if(!This->thread_data || This->thread_data->thread_id != GetCurrentThreadId() || This->ctx->state == SCRIPTSTATE_CLOSED)
         return E_UNEXPECTED;
 
     if(pstrItemName) {
@@ -1204,7 +1201,7 @@ static HRESULT WINAPI JScriptParseProcedure_ParseProcedureText(IActiveScriptPars
           debugstr_w(pstrProcedureName), debugstr_w(pstrItemName), punkContext, debugstr_w(pstrDelimiter),
           wine_dbgstr_longlong(dwSourceContextCookie), ulStartingLineNumber, dwFlags, ppdisp);
 
-    if(This->thread_id != GetCurrentThreadId() || This->ctx->state == SCRIPTSTATE_CLOSED)
+    if(!This->thread_data || This->thread_data->thread_id != GetCurrentThreadId() || This->ctx->state == SCRIPTSTATE_CLOSED)
         return E_UNEXPECTED;
 
     if(pstrItemName) {
@@ -1431,6 +1428,51 @@ static const IVariantChangeTypeVtbl VariantChangeTypeVtbl = {
     VariantChangeType_ChangeType
 };
 
+static inline JScript *impl_from_IWineJScript(IWineJScript *iface)
+{
+    return CONTAINING_RECORD(iface, JScript, IWineJScript_iface);
+}
+
+static HRESULT WINAPI WineJScript_QueryInterface(IWineJScript *iface, REFIID riid, void **ppv)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    return IActiveScript_QueryInterface(&This->IActiveScript_iface, riid, ppv);
+}
+
+static ULONG WINAPI WineJScript_AddRef(IWineJScript *iface)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    return IActiveScript_AddRef(&This->IActiveScript_iface);
+}
+
+static ULONG WINAPI WineJScript_Release(IWineJScript *iface)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    return IActiveScript_Release(&This->IActiveScript_iface);
+}
+
+static HRESULT WINAPI WineJScript_InitHostObject(IWineJScript *iface, IWineJSDispatchHost *host_obj,
+                                                 IWineJSDispatch *prototype, UINT32 flags, IWineJSDispatch **ret)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    return init_host_object(This->ctx, host_obj, prototype, flags, ret);
+}
+
+static HRESULT WINAPI WineJScript_InitHostConstructor(IWineJScript *iface, IWineJSDispatchHost *constr,
+                                                      IWineJSDispatch *prototype, IWineJSDispatch **ret)
+{
+    JScript *This = impl_from_IWineJScript(iface);
+    return init_host_constructor(This->ctx, constr, prototype, ret);
+}
+
+static const IWineJScriptVtbl WineJScriptVtbl = {
+    WineJScript_QueryInterface,
+    WineJScript_AddRef,
+    WineJScript_Release,
+    WineJScript_InitHostObject,
+    WineJScript_InitHostConstructor,
+};
+
 HRESULT create_jscript_object(BOOL is_encode, REFIID riid, void **ppv)
 {
     JScript *ret;
@@ -1448,6 +1490,7 @@ HRESULT create_jscript_object(BOOL is_encode, REFIID riid, void **ppv)
     ret->IActiveScriptProperty_iface.lpVtbl = &JScriptPropertyVtbl;
     ret->IObjectSafety_iface.lpVtbl = &JScriptSafetyVtbl;
     ret->IVariantChangeType_iface.lpVtbl = &VariantChangeTypeVtbl;
+    ret->IWineJScript_iface.lpVtbl = &WineJScriptVtbl;
     ret->ref = 1;
     ret->safeopt = INTERFACE_USES_DISPEX;
     ret->is_encode = is_encode;

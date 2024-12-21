@@ -53,6 +53,7 @@ DEFINE_GUID(IID_IProxyManager,0x00000008,0x0000,0x0000,0xc0,0x00,0x00,0x00,0x00,
 DEFINE_OLEGUID(CGID_DocHostCmdPriv, 0x000214D4L, 0, 0);
 DEFINE_GUID(SID_SContainerDispatch,0xb722be00,0x4e68,0x101b,0xa2,0xbc,0x00,0xaa,0x00,0x40,0x47,0x70);
 DEFINE_GUID(outer_test_iid,0xabcabc00,0,0,0,0,0,0,0,0,0,0x66);
+extern const IID IID_IActiveScriptSite;
 
 #define DEFINE_EXPECT(func) \
     static BOOL expect_ ## func = FALSE, called_ ## func = FALSE
@@ -5680,6 +5681,29 @@ static void _test_readyState(unsigned line, IUnknown *unk)
     ok_(__FILE__,line) (V_VT(&out) == VT_I4, "V_VT(out)=%d\n", V_VT(&out));
     ok_(__FILE__,line) (V_I4(&out) == load_state%5, "VT_I4(out)=%ld, expected %d\n", V_I4(&out), load_state%5);
 
+    /* check on document node too */
+    if(load_state == LD_COMPLETE) {
+        IHTMLDocument2 *doc_node;
+        IHTMLWindow2 *window;
+
+        hres = IHTMLDocument2_get_parentWindow(htmldoc, &window);
+        ok(hres == S_OK, "get_parentWindow failed: %08lx\n", hres);
+
+        hres = IHTMLWindow2_get_document(window, &doc_node);
+        ok(hres == S_OK, "get_document failed: %08lx\n", hres);
+
+        VariantInit(&out);
+        hres = IHTMLDocument2_Invoke(doc_node, DISPID_READYSTATE, &IID_NULL, 0, DISPATCH_PROPERTYGET,
+                                     &dispparams, &out, NULL, NULL);
+        ok(hres == S_OK, "Invoke(DISPID_READYSTATE) failed: %08lx\n", hres);
+
+        ok_(__FILE__,line) (V_VT(&out) == VT_I4, "V_VT(out)=%d\n", V_VT(&out));
+        ok_(__FILE__,line) (V_I4(&out) == load_state%5, "VT_I4(out)=%ld, expected %d\n", V_I4(&out), load_state%5);
+
+        IHTMLDocument2_Release(doc_node);
+        IHTMLWindow2_Release(window);
+    }
+
     test_doscroll((IUnknown*)htmldoc);
 
     IHTMLDocument2_Release(htmldoc);
@@ -8334,6 +8358,121 @@ static void test_MHTMLDocument(void)
     release_document(doc);
 }
 
+static LONG get_document_elements_count(IHTMLDocument2 *doc)
+{
+    LONG elements_count;
+    IHTMLElementCollection *elements = NULL;
+
+    IHTMLDocument2_get_all(doc, &elements);
+    IHTMLElementCollection_get_length(elements, &elements_count);
+
+    IHTMLElementCollection_Release(elements);
+    return elements_count;
+}
+
+static void test_MarkupContainer(IMarkupServices *markup_services)
+{
+    IHTMLDOMNode *doc_node;
+    IHTMLDocument2 *markup_container_doc;
+    ITargetContainer *target_container_doc;
+    IInternetSecurityManager *sec_manager;
+    IMarkupContainer *container = NULL;
+    ICustomDoc *custom_doc;
+    IHTMLLocation *location = NULL;
+    IHTMLElement *body = NULL;
+    LONG elements_count;
+    HRESULT hres;
+
+    hres = IMarkupServices_CreateMarkupContainer(markup_services, &container);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+    ok(container != NULL, "MarkupContainer is null.\n");
+    if (!container) return;
+
+    hres = IMarkupContainer_QueryInterface(container, &IID_IHTMLDocument2, (void**)&markup_container_doc);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+
+    hres = IHTMLDocument2_get_location(markup_container_doc, &location);
+    ok(hres == E_UNEXPECTED, "expected E_UNEXPECTED, got 0x%08lx\n", hres);
+    ok(location == NULL, "expected null location\n");
+
+    hres = IHTMLDocument2_get_body(markup_container_doc, &body);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+    ok(body == NULL, "expected null body\n");
+
+    elements_count = get_document_elements_count(markup_container_doc);
+    ok(elements_count == 0, "expected document to not have elements\n");
+
+    hres = IMarkupContainer_QueryInterface(container, &IID_IHTMLDOMNode, (void**)&doc_node);
+    todo_wine ok(hres == E_NOINTERFACE, "expected to fail with E_NOINTERFACE got 0x%08lx\n", hres);
+
+    hres = IHTMLDocument2_QueryInterface(markup_container_doc, &IID_IInternetSecurityManager, (void**)&sec_manager);
+    ok(hres == E_NOINTERFACE, "expected to fail with E_NOINTERFACE got 0x%08lx\n", hres);
+
+    hres = IHTMLDocument2_QueryInterface(markup_container_doc, &IID_ITargetContainer, (void**)&target_container_doc);
+    ok(hres == E_NOINTERFACE, "expected to fail with E_NOINTERFACE got 0x%08lx\n", hres);
+
+    hres = IHTMLDocument2_QueryInterface(markup_container_doc, &IID_ICustomDoc, (void**)&custom_doc);
+    ok(hres == E_NOINTERFACE, "expected to fail with E_NOINTERFACE got 0x%08lx\n", hres);
+
+    IHTMLDocument2_Release(markup_container_doc);
+    IMarkupContainer_Release(container);
+}
+
+static void test_MarkupServices_ParseString(IMarkupServices *markup_services, IHTMLDocument2 *doc)
+{
+    HRESULT hres;
+    LONG document_elements_count, markup_container_elements_count;
+    IHTMLElement *body;
+    BSTR inner_text;
+    IHTMLDocument2 *markup_container_doc = NULL;
+    IMarkupContainer *markup_container = NULL;
+
+    hres = IMarkupServices_ParseString(markup_services, (OLECHAR*)L"<div>Hello World</div>", 0, &markup_container, NULL, NULL);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+    ok(markup_container != NULL, "MarkupContainer is null.\n");
+    if (!markup_container) return;
+
+    hres = IMarkupContainer_QueryInterface(markup_container, &IID_IHTMLDocument2, (void**)&markup_container_doc);
+    ok(hres == S_OK, "failed to query interface of MarkupContainer 0x%08lx\n", hres);
+
+    markup_container_elements_count = get_document_elements_count(markup_container_doc);
+    ok(markup_container_elements_count == 5, "expected markup container to have 5 elements but got %ld\n",
+                 markup_container_elements_count);
+
+    document_elements_count = get_document_elements_count(doc);
+    ok(document_elements_count != markup_container_elements_count,
+                 "expected document to not have the same elements count of the markup container %ld == %ld\n",
+                 document_elements_count, markup_container_elements_count);
+
+    hres = IHTMLDocument2_get_body(markup_container_doc, &body);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+    ok(body != NULL, "got null body\n");
+
+    hres = IHTMLElement_get_innerText(body, &inner_text);
+    ok(hres == S_OK, "failed to get inner text error 0x%08lx\n", hres);
+    ok(inner_text != NULL, "got a null pointer for inner text\n");
+    ok(!wcscmp(inner_text, L"Hello World"), "strings don't match, got %ls\n", inner_text);
+
+    SysFreeString(inner_text);
+    IHTMLElement_Release(body);
+    IHTMLDocument2_Release(markup_container_doc);
+    IMarkupContainer_Release(markup_container);
+}
+
+static void test_MarkupServices(IHTMLDocument2 *doc)
+{
+    HRESULT hres;
+    IMarkupServices *markup_services = NULL;
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IMarkupServices, (void**)&markup_services);
+    ok(hres == S_OK, "got 0x%08lx\n", hres);
+
+    test_MarkupContainer(markup_services);
+    test_MarkupServices_ParseString(markup_services, doc);
+
+    IMarkupServices_Release(markup_services);
+}
+
 static void test_HTMLDocument_hlink(DWORD status)
 {
     IHTMLDocument2 *doc;
@@ -8500,6 +8639,7 @@ static void test_HTMLDocument_http(BOOL with_wbapp)
     test_travellog(doc);
     test_binding_ui((IUnknown*)doc);
     test_doc_domain(doc);
+    test_MarkupServices(doc);
 
     nav_url = nav_serv_url = L"http://test.winehq.org/tests/winehq_snapshot/"; /* for valid prev nav_url */
     if(support_wbapp) {
@@ -8730,8 +8870,11 @@ static void test_submit(void)
 static void test_QueryService(IHTMLDocument2 *doc, BOOL success)
 {
     IHTMLWindow2 *window, *sp_window;
+    IOleCommandTarget *cmdtarget;
+    IHTMLDocument2 *doc_node;
     IServiceProvider *sp;
     IHlinkFrame *hf;
+    IUnknown *unk;
     HRESULT hres;
 
     hres = IHTMLDocument2_QueryInterface(doc, &IID_IServiceProvider, (void**)&sp);
@@ -8747,6 +8890,9 @@ static void test_QueryService(IHTMLDocument2 *doc, BOOL success)
     ok(hres == S_OK, "QueryService(IID_IHlinkFrame) failed: %08lx\n", hres);
     ok(hf == &HlinkFrame, "hf != HlinkFrame\n");
     IHlinkFrame_Release(hf);
+
+    hres = IServiceProvider_QueryService(sp, &IID_IActiveScriptSite, &IID_IOleCommandTarget, (void**)&cmdtarget);
+    ok(hres == E_NOINTERFACE, "QueryService(IID_IActiveScriptSite->IID_IOleCommandTarget) returned: %08lx\n", hres);
 
     IServiceProvider_Release(sp);
 
@@ -8766,8 +8912,28 @@ static void test_QueryService(IHTMLDocument2 *doc, BOOL success)
     ok(hf == &HlinkFrame, "hf != HlinkFrame\n");
     IHlinkFrame_Release(hf);
 
+    hres = IServiceProvider_QueryService(sp, &IID_IActiveScriptSite, &IID_IOleCommandTarget, (void**)&cmdtarget);
+    ok(hres == E_NOINTERFACE, "QueryService(IID_IActiveScriptSite->IID_IOleCommandTarget) returned: %08lx\n", hres);
+
     IServiceProvider_Release(sp);
+
+    hres = IHTMLWindow2_get_document(window, &doc_node);
+    ok(hres == S_OK, "get_document failed: %08lx\n", hres);
     IHTMLWindow2_Release(window);
+
+    hres = IHTMLDocument2_QueryInterface(doc_node, &IID_IServiceProvider, (void**)&sp);
+    ok(hres == S_OK, "Could not get IServiceProvider iface: %08lx\n", hres);
+    IHTMLDocument2_Release(doc_node);
+
+    hres = IServiceProvider_QueryService(sp, &IID_IActiveScriptSite, &IID_IOleCommandTarget, (void**)&cmdtarget);
+    ok(hres == S_OK, "QueryService(IID_IActiveScriptSite->IID_IOleCommandTarget) failed: %08lx\n", hres);
+    ok(cmdtarget != NULL, "cmdtarget == NULL\n");
+    hres = IOleCommandTarget_QueryInterface(cmdtarget, &IID_IActiveScriptSite, (void**)&unk);
+    ok(hres == S_OK, "Command Target QI for IActiveScriptSite failed: %08lx\n", hres);
+    IUnknown_Release(unk);
+
+    IOleCommandTarget_Release(cmdtarget);
+    IServiceProvider_Release(sp);
 }
 
 static void test_HTMLDocument_StreamLoad(void)
@@ -9281,8 +9447,10 @@ static BOOL check_ie(void)
 static void test_ServiceProvider(void)
 {
     IHTMLDocument3 *doc3, *doc3_2;
+    IOleCommandTarget *cmdtarget;
     IServiceProvider *provider;
     IHTMLDocument2 *doc, *doc2;
+    IHTMLWindow2 *window;
     IUnknown *unk;
     HRESULT hres;
 
@@ -9318,6 +9486,29 @@ static void test_ServiceProvider(void)
     ok(hres == S_OK, "QueryService(HTMLEditServices) failed: %08lx\n", hres);
     IUnknown_Release(unk);
 
+    hres = IServiceProvider_QueryService(provider, &IID_IActiveScriptSite, &IID_IOleCommandTarget, (void**)&cmdtarget);
+    ok(hres == E_NOINTERFACE, "QueryService(IID_IActiveScriptSite->IID_IOleCommandTarget) returned: %08lx\n", hres);
+    IServiceProvider_Release(provider);
+
+    hres = IHTMLDocument2_get_parentWindow(doc, &window);
+    ok(hres == S_OK, "get_parentWindow failed: %08lx\n", hres);
+
+    hres = IHTMLWindow2_get_document(window, &doc2);
+    ok(hres == S_OK, "get_document failed: %08lx\n", hres);
+    IHTMLWindow2_Release(window);
+
+    hres = IHTMLDocument2_QueryInterface(doc2, &IID_IServiceProvider, (void**)&provider);
+    ok(hres == S_OK, "Could not get IServiceProvider iface: %08lx\n", hres);
+    IHTMLDocument2_Release(doc2);
+
+    hres = IServiceProvider_QueryService(provider, &IID_IActiveScriptSite, &IID_IOleCommandTarget, (void**)&cmdtarget);
+    ok(hres == S_OK, "QueryService(IID_IActiveScriptSite->IID_IOleCommandTarget) failed: %08lx\n", hres);
+    ok(cmdtarget != NULL, "cmdtarget == NULL\n");
+    hres = IOleCommandTarget_QueryInterface(cmdtarget, &IID_IActiveScriptSite, (void**)&unk);
+    ok(hres == S_OK, "Command Target QI for IActiveScriptSite failed: %08lx\n", hres);
+    IUnknown_Release(unk);
+
+    IOleCommandTarget_Release(cmdtarget);
     IServiceProvider_Release(provider);
     release_document(doc);
 }

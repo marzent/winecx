@@ -1313,7 +1313,7 @@ static NTSTATUS process_console_input( struct console *console )
                     ctrl_value = ir.Event.KeyEvent.uChar.UnicodeChar;
                     ctrl_keyvalue = ir.Event.KeyEvent.dwControlKeyState;
                     ctx->status = STATUS_SUCCESS;
-                    TRACE("Found ctrl char in mask: ^%lc %x\n", ir.Event.KeyEvent.uChar.UnicodeChar + '@', ctx->ctrl_mask);
+                    TRACE("Found ctrl char in mask: ^%c %x\n", ir.Event.KeyEvent.uChar.UnicodeChar + '@', ctx->ctrl_mask);
                     continue;
                 }
                 if (ir.Event.KeyEvent.uChar.UnicodeChar == 10) continue;
@@ -2694,7 +2694,17 @@ static NTSTATUS console_input_ioctl( struct console *console, unsigned int code,
             if (!(info = alloc_ioctl_buffer( sizeof(*info )))) return STATUS_NO_MEMORY;
             info->input_cp    = console->input_cp;
             info->output_cp   = console->output_cp;
-            info->input_count = console->record_count;
+            return STATUS_SUCCESS;
+        }
+
+    case IOCTL_CONDRV_GET_INPUT_COUNT:
+        {
+            DWORD *count;
+            TRACE( "get input count\n" );
+            if (in_size || *out_size != sizeof(*count)) return STATUS_INVALID_PARAMETER;
+            ensure_tty_input_thread( console );
+            if (!(count = alloc_ioctl_buffer( sizeof(*count )))) return STATUS_NO_MEMORY;
+            *count = console->record_count;
             return STATUS_SUCCESS;
         }
 
@@ -2841,6 +2851,12 @@ static NTSTATUS process_console_ioctls( struct console *console )
     }
 }
 
+static BOOL is_key_message( const MSG *msg )
+{
+    return msg->message == WM_KEYDOWN || msg->message == WM_SYSKEYDOWN ||
+           msg->message == WM_KEYUP   || msg->message == WM_SYSKEYUP;
+}
+
 static int main_loop( struct console *console, HANDLE signal )
 {
     HANDLE signal_event = NULL;
@@ -2875,10 +2891,15 @@ static int main_loop( struct console *console, HANDLE signal )
         if (res == WAIT_OBJECT_0 + wait_cnt)
         {
             MSG msg;
+
             while (PeekMessageW( &msg, 0, 0, 0, PM_REMOVE ))
             {
+                BOOL translated = FALSE;
                 if (msg.message == WM_QUIT) return 0;
-                DispatchMessageW(&msg);
+                if (is_key_message( &msg ) && msg.wParam == VK_PROCESSKEY)
+                    translated = TranslateMessage( &msg );
+                if (!translated || msg.hwnd != console->win)
+                    DispatchMessageW( &msg );
             }
             continue;
         }

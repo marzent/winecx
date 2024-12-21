@@ -7,19 +7,19 @@
 */
 
 #include "mpg123lib_intern.h"
-#include "version.h"
+#include "../version.h"
 #include "icy2utf8.h"
 
 #include "gapless.h"
 /* Want accurate rounding function regardless of decoder setup. */
 #define FORCE_ACCURATE
-#include "sample.h"
+#include "../common/sample.h"
 #include "parse.h"
 #ifndef PORTABLE_API
 #include "lfs_wrap.h"
 #endif
 
-#include "debug.h"
+#include "../common/debug.h"
 
 #define SEEKFRAME(mh) ((mh)->ignoreframe < 0 ? 0 : (mh)->ignoreframe)
 
@@ -457,7 +457,7 @@ int attribute_align_arg mpg123_getstate(mpg123_handle *mh, enum mpg123_state key
 			theval = mh->enc_padding;
 		break;
 		case MPG123_DEC_DELAY:
-			theval = mh->lay == 3 ? GAPLESS_DELAY : -1;
+			theval = mh->hdr.lay == 3 ? GAPLESS_DELAY : -1;
 		break;
 		default:
 			mh->err = MPG123_BAD_KEY;
@@ -560,6 +560,15 @@ double attribute_align_arg mpg123_geteq2(mpg123_handle *mh, int channel, int ban
 }
 
 #ifndef PORTABLE_API
+
+#ifdef FORCED_OFF_64
+// Only _64 symbols for a system-wide enforced _FILE_OFFSET_BITS=64.
+#define mpg123_open mpg123_open_64
+#define mpg123_open_fixed mpg123_open_fixed_64
+#define mpg123_open_fd mpg123_open_fd_64
+#define mpg123_open_handle mpg123_open_handle_64
+#endif
+
 /* plain file access, no http! */
 int attribute_align_arg mpg123_open(mpg123_handle *mh, const char *path)
 {
@@ -579,7 +588,9 @@ int attribute_align_arg mpg123_open(mpg123_handle *mh, const char *path)
 // The convenience function mpg123_open_fixed() wraps over acual mpg123_open
 // and hence needs to have the exact same code in lfs_wrap.c. The flesh is
 // in INT123_open_fixed_pre() and INT123_open_fixed_post(), wich are only defined here.
-int INT123_open_fixed_pre(mpg123_handle *mh, int channels, int encoding)
+// Update: The open routines are just alias calls now, since the conversion to
+// int64_t internally.
+static int INT123_open_fixed_pre(mpg123_handle *mh, int channels, int encoding)
 {
 	if(!mh)
 		return MPG123_BAD_HANDLE;
@@ -590,7 +601,7 @@ int INT123_open_fixed_pre(mpg123_handle *mh, int channels, int encoding)
 	return err;
 }
 
-int INT123_open_fixed_post(mpg123_handle *mh, int channels, int encoding)
+static int INT123_open_fixed_post(mpg123_handle *mh, int channels, int encoding)
 {
 	if(!mh)
 		return MPG123_BAD_HANDLE;
@@ -637,7 +648,7 @@ int attribute_align_arg mpg123_open_fd(mpg123_handle *mh, int fd)
 		ret = INT123_open_stream_handle(mh, mh->wrapperdata);
 	return ret;
 }
-#endif
+#endif // PORTABLE_API
 
 int attribute_align_arg mpg123_open_handle(mpg123_handle *mh, void *iohandle)
 {
@@ -648,9 +659,10 @@ int attribute_align_arg mpg123_open_handle(mpg123_handle *mh, void *iohandle)
 #ifndef PORTABLE_API
 	ret = INT123_wrap_open( mh, iohandle, NULL, -1
 	,	mh->p.timeout, mh->p.flags & MPG123_QUIET );
+	iohandle = ret == LFS_WRAP_NONE ? iohandle : mh->wrapperdata;
 	if(ret >= 0)
 #endif
-		ret = INT123_open_stream_handle(mh, ret == LFS_WRAP_NONE ? iohandle : mh->wrapperdata);
+		ret = INT123_open_stream_handle(mh, iohandle);
 	return ret;
 }
 
@@ -911,7 +923,8 @@ static void decode_the_frame(mpg123_handle *fr)
 		if(fr->buffer.fill < needed_bytes)
 		{
 			if(VERBOSE2)
-			fprintf(stderr, "Note: broken frame %li, filling up with %"SIZE_P" zeroes, from %"SIZE_P"\n", (long)fr->num, (size_p)(needed_bytes-fr->buffer.fill), (size_p)fr->buffer.fill);
+				fprintf( stderr, "Note: broken frame %li, filling up with %zu zeroes, from %zu\n"
+				,	(long)fr->num, (needed_bytes-fr->buffer.fill), fr->buffer.fill );
 
 			/*
 				One could do a loop with individual samples instead... but zero is zero
@@ -931,7 +944,7 @@ static void decode_the_frame(mpg123_handle *fr)
 		else
 		{
 			if(NOQUIET)
-			error2("I got _more_ bytes than expected (%"SIZE_P" / %"SIZE_P"), that should not be possible!", (size_p)fr->buffer.fill, (size_p)needed_bytes);
+			error2("I got _more_ bytes than expected (%zu / %zu), that should not be possible!", fr->buffer.fill, needed_bytes);
 		}
 	}
 #endif
@@ -1228,10 +1241,10 @@ static int init_track(mpg123_handle *mh)
 	b = init_track(mh); \
 	if(b < 0) return b; \
  \
-	mi->version = mh->mpeg25 ? MPG123_2_5 : (mh->lsf ? MPG123_2_0 : MPG123_1_0); \
-	mi->layer = mh->lay; \
+	mi->version = mh->hdr.mpeg25 ? MPG123_2_5 : (mh->hdr.lsf ? MPG123_2_0 : MPG123_1_0); \
+	mi->layer = mh->hdr.lay; \
 	mi->rate = INT123_frame_freq(mh); \
-	switch(mh->mode) \
+	switch(mh->hdr.mode) \
 	{ \
 		case 0: mi->mode = MPG123_M_STEREO; break; \
 		case 1: mi->mode = MPG123_M_JOINT;  break; \
@@ -1239,14 +1252,14 @@ static int init_track(mpg123_handle *mh)
 		case 3: mi->mode = MPG123_M_MONO;   break; \
 		default: mi->mode = 0; /* Nothing good to do here. */ \
 	} \
-	mi->mode_ext = mh->mode_ext; \
-	mi->framesize = mh->framesize+4; /* Include header. */ \
+	mi->mode_ext = mh->hdr.mode_ext; \
+	mi->framesize = mh->hdr.framesize+4; /* Include header. */ \
 	mi->flags = 0; \
-	if(mh->error_protection) mi->flags |= MPG123_CRC; \
-	if(mh->copyright)        mi->flags |= MPG123_COPYRIGHT; \
-	if(mh->extension)        mi->flags |= MPG123_PRIVATE; \
-	if(mh->original)         mi->flags |= MPG123_ORIGINAL; \
-	mi->emphasis = mh->emphasis; \
+	if(mh->hdr.error_protection) mi->flags |= MPG123_CRC; \
+	if(mh->hdr.copyright)        mi->flags |= MPG123_COPYRIGHT; \
+	if(mh->hdr.extension)        mi->flags |= MPG123_PRIVATE; \
+	if(mh->hdr.original)         mi->flags |= MPG123_ORIGINAL; \
+	mi->emphasis = mh->hdr.emphasis; \
 	mi->bitrate  = INT123_frame_bitrate(mh); \
 	mi->abr_rate = mh->abr_rate; \
 	mi->vbr = mh->vbr; \

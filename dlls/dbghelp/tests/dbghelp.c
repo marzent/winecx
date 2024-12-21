@@ -372,6 +372,29 @@ static unsigned get_native_module_count(HANDLE proc)
     return count;
 }
 
+struct module_present
+{
+    const WCHAR* module_name;
+    BOOL found;
+};
+
+static BOOL CALLBACK is_module_present_cb(const WCHAR* name, DWORD64 base, void* usr)
+{
+    struct module_present* present = usr;
+    if (!wcsicmp(name, present->module_name))
+    {
+        present->found = TRUE;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL is_module_present(HANDLE proc, const WCHAR* module_name)
+{
+    struct module_present present = { .module_name = module_name };
+    return SymEnumerateModulesW64(proc, is_module_present_cb, &present) && present.found;
+}
+
 struct nth_module
 {
     HANDLE              proc;
@@ -415,6 +438,28 @@ static BOOL wrapper_EnumerateLoadedModulesW64(HANDLE proc, PENUMLOADED_MODULES_C
     {
         ret = EnumerateLoadedModulesW64(proc, cb, usr);
         if (ret || GetLastError() != STATUS_INFO_LENGTH_MISMATCH)
+            break;
+        Sleep(10);
+    }
+    if (retry + 1 < retry_count)
+        trace("used wrapper retry: ret=%d retry=%d top=%d\n", ret, retry, retry_count);
+
+    return ret;
+}
+
+/* wrapper around SymRefreshModuleList which sometimes fails (it's very likely implemented on top
+ * of EnumerateLoadedModulesW64 on native too)
+ */
+static BOOL wrapper_SymRefreshModuleList(HANDLE proc)
+{
+    BOOL ret;
+    int retry;
+    int retry_count = !strcmp(winetest_platform, "wine") ? 1 : 5;
+
+    for (retry = retry_count - 1; retry >= 0; retry--)
+    {
+        ret = SymRefreshModuleList(proc);
+        if (ret || (GetLastError() != STATUS_INFO_LENGTH_MISMATCH && GetLastError() == STATUS_PARTIAL_COPY))
             break;
         Sleep(10);
     }
@@ -492,6 +537,7 @@ static BOOL test_modules(void)
 
     ret = SymRefreshModuleList(dummy);
     ok(!ret, "SymRefreshModuleList should have failed\n");
+    ok(GetLastError() == STATUS_INVALID_CID, "Unexpected last error %lx\n", GetLastError());
 
     count = get_module_count(dummy);
     ok(count == 0, "Unexpected count (%u instead of 0)\n", count);
@@ -825,6 +871,11 @@ static void test_loaded_modules(void)
     ok(ret, "got error %lu\n", GetLastError());
     strcat(buffer, "\\msinfo32.exe");
 
+    /* testing invalid process handle */
+    ret = wrapper_EnumerateLoadedModulesW64((HANDLE)(ULONG_PTR)0xffffffc0, NULL, FALSE);
+    ok(!ret, "EnumerateLoadedModulesW64 should have failed\n");
+    ok(GetLastError() == STATUS_INVALID_CID, "Unexpected last error %lx\n", GetLastError());
+
     /* testing with child process of different machines */
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
     ok(ret, "CreateProcess failed: %lu\n", GetLastError());
@@ -876,6 +927,7 @@ static void test_loaded_modules(void)
                aggregation.count_systemdir, aggregation.count_wowdir);
             break;
         case PCSKIND_WINE_OLD_WOW64:
+            todo_wine
             ok(aggregation.count_systemdir == 1 && aggregation.count_wowdir > 2, "Wrong directory aggregation count %u %u\n",
                aggregation.count_systemdir, aggregation.count_wowdir);
             break;
@@ -884,9 +936,10 @@ static void test_loaded_modules(void)
 
     pcskind = get_process_kind(pi.hProcess);
 
-    ret = SymRefreshModuleList(pi.hProcess);
-    todo_wine_if(pcskind == PCSKIND_WOW64)
-    ok(ret || broken(GetLastError() == STATUS_PARTIAL_COPY /* Win11 in some cases */), "SymRefreshModuleList failed: %lu\n", GetLastError());
+    ret = wrapper_SymRefreshModuleList(pi.hProcess);
+    ok(ret || broken(GetLastError() == STATUS_PARTIAL_COPY /* Win11 in some cases */ ||
+                             GetLastError() == STATUS_INFO_LENGTH_MISMATCH /* Win11 in some cases */),
+       "SymRefreshModuleList failed: %lx\n", GetLastError());
 
     if (!strcmp(winetest_platform, "wine"))
     {
@@ -944,8 +997,8 @@ static void test_loaded_modules(void)
                    "Wrong directory aggregation count %u %u\n",
                    aggregation.count_systemdir, aggregation.count_wowdir);
             }
-            ret = SymRefreshModuleList(pi.hProcess);
-            ok(ret, "SymRefreshModuleList failed: %lu\n", GetLastError());
+            ret = wrapper_SymRefreshModuleList(pi.hProcess);
+            ok(ret, "SymRefreshModuleList failed: %lx\n", GetLastError());
 
             if (!strcmp(winetest_platform, "wine"))
             {
@@ -1006,8 +1059,8 @@ static void test_loaded_modules(void)
                 break;
             }
 
-            ret = SymRefreshModuleList(pi.hProcess);
-            ok(ret, "SymRefreshModuleList failed: %lu\n", GetLastError());
+            ret = wrapper_SymRefreshModuleList(pi.hProcess);
+            ok(ret, "SymRefreshModuleList failed: %lx\n", GetLastError());
 
             if (!strcmp(winetest_platform, "wine"))
             {
@@ -1353,6 +1406,7 @@ static void test_live_modules_proc(WCHAR* exename, BOOL with_32)
         ok(aggregation_event.count_exe == 1,                    "Unexpected event.count_exe %u\n",       aggregation_event.count_exe);
         ok(aggregation_event.count_32bit >= MODCOUNT,           "Unexpected event.count_32bit %u\n",     aggregation_event.count_32bit);
         ok(aggregation_event.count_64bit == 0,                  "Unexpected event.count_64bit %u\n",     aggregation_event.count_64bit);
+        todo_wine
         ok(aggregation_event.count_systemdir == 0,              "Unexpected event.count_systemdir %u\n", aggregation_event.count_systemdir);
         ok(aggregation_event.count_wowdir >= MODCOUNT,          "Unexpected event.count_wowdir %u\n",    aggregation_event.count_wowdir);
         ok(aggregation_event.count_ntdll == 1,                  "Unexpected event.count_ntdll %u\n",     aggregation_event.count_ntdll);
@@ -1418,6 +1472,7 @@ static void test_live_modules_proc(WCHAR* exename, BOOL with_32)
         ok(aggregation_event.count_exe == 1,                    "Unexpected event.count_exe %u\n",       aggregation_event.count_exe);
         ok(aggregation_event.count_32bit >= MODCOUNT,           "Unexpected event.count_32bit %u\n",     aggregation_event.count_32bit);
         ok(aggregation_event.count_64bit == 0,                  "Unexpected event.count_64bit %u\n",     aggregation_event.count_64bit);
+        todo_wine
         ok(aggregation_event.count_systemdir == 1,              "Unexpected event.count_systemdir %u\n", aggregation_event.count_systemdir);
         ok(aggregation_event.count_wowdir >= MODCOUNT,          "Unexpected event.count_wowdir %u\n",    aggregation_event.count_wowdir);
         ok(aggregation_event.count_ntdll == 1,                  "Unexpected event.count_ntdll %u\n",     aggregation_event.count_ntdll);
@@ -1489,6 +1544,112 @@ static void test_live_modules(void)
     }
 }
 
+#define test_function_table_main_module(b) _test_function_table_entry(__LINE__, NULL, #b, (DWORD64)(DWORD_PTR)&(b))
+#define test_function_table_module(a, b)   _test_function_table_entry(__LINE__, a,    #b, (DWORD64)(DWORD_PTR)GetProcAddress(GetModuleHandleA(a), (b)))
+static void *_test_function_table_entry(unsigned lineno, const char *modulename, const char *name, DWORD64 addr)
+{
+    DWORD64 base_module = (DWORD64)(DWORD_PTR)GetModuleHandleA(modulename);
+
+    if (RtlImageNtHeader(GetModuleHandleW(NULL))->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
+    {
+        IMAGE_AMD64_RUNTIME_FUNCTION_ENTRY *func;
+
+        func = SymFunctionTableAccess64(GetCurrentProcess(), addr);
+        ok_(__FILE__, lineno)(func != NULL, "Couldn't find function table for %s\n", name);
+        if (func)
+        {
+            ok_(__FILE__, lineno)(func->BeginAddress == addr - base_module, "Unexpected start of function\n");
+            ok_(__FILE__, lineno)(func->BeginAddress < func->EndAddress, "Unexpected end of function\n");
+            ok_(__FILE__, lineno)((func->UnwindData & 1) == 0, "Unexpected chained runtime function\n");
+        }
+
+        return func;
+    }
+    return NULL;
+}
+
+static void test_function_tables(void)
+{
+    void *ptr1, *ptr2;
+
+    SymInitialize(GetCurrentProcess(), NULL, TRUE);
+    ptr1 = test_function_table_main_module(test_live_modules);
+    ptr2 = test_function_table_main_module(test_function_tables);
+    ok(ptr1 == ptr2, "Expecting unique storage area\n");
+    ptr2 = test_function_table_module("kernel32.dll", "CreateFileMappingA");
+    ok(ptr1 == ptr2, "Expecting unique storage area\n");
+    SymCleanup(GetCurrentProcess());
+}
+
+static void test_refresh_modules(void)
+{
+    BOOL ret;
+    unsigned count, count_current;
+    HMODULE hmod;
+    IMAGEHLP_MODULEW64 module_info = { .SizeOfStruct = sizeof(module_info) };
+
+    /* pick a DLL: which isn't already loaded by test, and that will not load other DLLs for deps */
+    static const WCHAR* unused_dll = L"psapi";
+
+    ret = SymInitialize(GetCurrentProcess(), 0, TRUE);
+    ok(ret, "SymInitialize failed: %lu\n", GetLastError());
+
+    count = get_module_count(GetCurrentProcess());
+    ok(count, "Unexpected module count %u\n", count);
+
+    ret = SymCleanup(GetCurrentProcess());
+    ok(ret, "SymCleanup failed: %lu\n", GetLastError());
+
+    ret = SymInitialize(GetCurrentProcess(), 0, FALSE);
+    ok(ret, "SymInitialize failed: %lu\n", GetLastError());
+
+    count_current = get_module_count(GetCurrentProcess());
+    ok(!count_current, "Unexpected module count %u\n", count_current);
+
+    ret = wrapper_SymRefreshModuleList(GetCurrentProcess());
+    ok(ret, "SymRefreshModuleList failed: %lx\n", GetLastError());
+
+    count_current = get_module_count(GetCurrentProcess());
+    ok(count == count_current, "Unexpected module count %u, %u\n", count, count_current);
+
+    hmod = GetModuleHandleW(unused_dll);
+    ok(hmod == NULL, "Expecting DLL %ls not be loaded\n", unused_dll);
+
+    hmod = LoadLibraryW(unused_dll);
+    ok(hmod != NULL, "LoadLibraryW failed: %lu\n", GetLastError());
+
+    count_current = get_module_count(GetCurrentProcess());
+    ok(count == count_current, "Unexpected module count %u, %u\n", count, count_current);
+    ret = is_module_present(GetCurrentProcess(), unused_dll);
+    ok(!ret, "Couldn't find module %ls\n", unused_dll);
+
+    ret = wrapper_SymRefreshModuleList(GetCurrentProcess());
+    ok(ret, "SymRefreshModuleList failed: %lx\n", GetLastError());
+
+    count_current = get_module_count(GetCurrentProcess());
+    ok(count + 1 == count_current, "Unexpected module count %u, %u\n", count, count_current);
+    ret = is_module_present(GetCurrentProcess(), unused_dll);
+    ok(ret, "Couldn't find module %ls\n", unused_dll);
+
+    ret = FreeLibrary(hmod);
+    ok(ret, "LoadLibraryW failed: %lu\n", GetLastError());
+
+    count_current = get_module_count(GetCurrentProcess());
+    ok(count + 1 == count_current, "Unexpected module count %u, %u\n", count, count_current);
+
+    ret = wrapper_SymRefreshModuleList(GetCurrentProcess());
+    ok(ret, "SymRefreshModuleList failed: %lx\n", GetLastError());
+
+    /* SymRefreshModuleList() doesn't remove the unloaded modules... */
+    count_current = get_module_count(GetCurrentProcess());
+    ok(count + 1 == count_current, "Unexpected module count %u != %u\n", count, count_current);
+    ret = is_module_present(GetCurrentProcess(), unused_dll);
+    ok(ret, "Couldn't find module %ls\n", unused_dll);
+
+    ret = SymCleanup(GetCurrentProcess());
+    ok(ret, "SymCleanup failed: %lu\n", GetLastError());
+}
+
 START_TEST(dbghelp)
 {
     BOOL ret;
@@ -1519,5 +1680,7 @@ START_TEST(dbghelp)
         test_modules_overlap();
         test_loaded_modules();
         test_live_modules();
+        test_refresh_modules();
     }
+    test_function_tables();
 }

@@ -420,6 +420,7 @@ extern BOOL             memory_disasm_one_insn(ADDRESS64* addr);
 #define MAX_OFFSET_TO_STR_LEN 19
 extern char*            memory_offset_to_string(char *str, DWORD64 offset, unsigned mode);
 extern void             print_bare_address(const ADDRESS64* addr);
+extern void             print_address_symbol(const ADDRESS64* addr, BOOL with_line, const char *sep);
 extern void             print_address(const ADDRESS64* addr, BOOLEAN with_line);
 extern void             print_basic(const struct dbg_lvalue* value, char format);
 
@@ -474,6 +475,7 @@ struct list_string
     char* string;
     struct list_string* next;
 };
+extern void             dbg_set_exec_file(const char *path);
 extern void             dbg_run_debuggee(struct list_string* ls);
 extern void             dbg_wait_next_exception(DWORD cont, int count, int mode);
 extern enum dbg_start   dbg_active_attach(int argc, char* argv[]);
@@ -487,7 +489,8 @@ extern void             fetch_module_name(void* name_addr, void* mod_addr, WCHAR
 
   /* tgt_minidump.c */
 extern void             minidump_write(const char*, const EXCEPTION_RECORD*);
-extern enum dbg_start   minidump_reload(int argc, char* argv[]);
+extern enum dbg_start   minidump_reload(const char *);
+extern enum dbg_start   minidump_start(int argc, char* argv[]);
 
   /* tgt_module.c */
 extern enum dbg_start   tgt_module_load(const char* name, BOOL keep);

@@ -45,6 +45,7 @@ DEFINE_GUID(DUMMY_GUID1, 0x12345678, 0x1234,0x1234, 0x12, 0x13, 0x14, 0x15, 0x16
 static const char topic[] = "wine topic";
 static const WCHAR topicW[] = {'w','i','n','e',' ','t','o','p','i','c',0};
 static const WCHAR emptyW[] = {0};
+static const WCHAR dummy_guid_str[] = L"{DEADBEEF-DEAD-BEEF-DEAD-BEEFCAFEBABE}";
 
 #define EXPECT_REF(obj,ref) _expect_ref((IUnknown *)obj, ref, __LINE__)
 static void _expect_ref(IUnknown *obj, ULONG ref, int line)
@@ -473,7 +474,7 @@ static void test_InitPropVariantFromGUIDAsString(void)
         const WCHAR *str;
     } testcases[] = {
         {&IID_NULL,             L"{00000000-0000-0000-0000-000000000000}" },
-        {&dummy_guid,           L"{DEADBEEF-DEAD-BEEF-DEAD-BEEFCAFEBABE}" },
+        {&dummy_guid,           dummy_guid_str },
     };
 
     hres = InitPropVariantFromGUIDAsString(NULL, &propvar);
@@ -661,6 +662,13 @@ static void test_PropVariantToStringAlloc(void)
     hres = PropVariantToStringAlloc(&prop, &str);
     ok(hres == S_OK, "returned %lx\n", hres);
     ok(!lstrcmpW(str, emptyW), "got %s\n", wine_dbgstr_w(str));
+    CoTaskMemFree(str);
+
+    prop.vt = VT_CLSID;
+    prop.puuid = (CLSID *)&dummy_guid;
+    hres = PropVariantToStringAlloc(&prop, &str);
+    ok(hres == S_OK, "PropVariantToStringAlloc returned %#lx.\n", hres);
+    ok(!wcscmp(str, dummy_guid_str), "Unexpected str %s.\n", debugstr_w(str));
     CoTaskMemFree(str);
 }
 
@@ -1302,6 +1310,11 @@ static void test_PropVariantToStringWithDefault(void)
     result = PropVariantToStringWithDefault(&propvar, default_value);
     ok(result == default_value, "Unexpected value %s\n", wine_dbgstr_w(result));
 
+    propvar.vt = VT_CLSID;
+    propvar.puuid = (CLSID *)&dummy_guid;
+    result = PropVariantToStringWithDefault(&propvar, default_value);
+    ok(result == default_value, "Unexpected value %s.\n", debugstr_w(result));
+
     /* VT_LPWSTR */
 
     propvar.vt = VT_LPWSTR;
@@ -1513,10 +1526,10 @@ static void test_PropVariantToDouble(void)
 
 static void test_PropVariantToString(void)
 {
-    PROPVARIANT propvar;
+    static WCHAR stringW[] = L"Wine";
     static CHAR string[] = "Wine";
-    static WCHAR stringW[] = {'W','i','n','e',0};
     WCHAR bufferW[256] = {0};
+    PROPVARIANT propvar;
     HRESULT hr;
 
     PropVariantInit(&propvar);
@@ -1574,12 +1587,23 @@ static void test_PropVariantToString(void)
     ok(!lstrcmpW(bufferW, stringW), "got wrong string: \"%s\".\n", wine_dbgstr_w(bufferW));
     memset(bufferW, 0, sizeof(bufferW));
 
+    /*  Result string will be truncated if output buffer is too small. */
+    PropVariantInit(&propvar);
+    propvar.vt = VT_UI4;
+    propvar.lVal = 123456;
+    hr = PropVariantToString(&propvar, bufferW, 4);
+    todo_wine
+    ok(hr == STRSAFE_E_INSUFFICIENT_BUFFER, "PropVariantToString returned: %#lx.\n", hr);
+    todo_wine
+    ok(!wcscmp(bufferW, L"123"), "Unexpected string %s.\n", debugstr_w(bufferW));
+    memset(bufferW, 0, sizeof(bufferW));
+
     PropVariantInit(&propvar);
     propvar.vt = VT_LPWSTR;
     propvar.pwszVal = stringW;
     hr = PropVariantToString(&propvar, bufferW, 4);
     ok(hr == STRSAFE_E_INSUFFICIENT_BUFFER, "PropVariantToString returned: 0x%08lx.\n", hr);
-    ok(!memcmp(bufferW, stringW, 4), "got wrong string.\n");
+    ok(!wcscmp(bufferW, L"Win"), "Unexpected string %s.\n", debugstr_w(bufferW));
     memset(bufferW, 0, sizeof(bufferW));
 
     PropVariantInit(&propvar);
@@ -1587,7 +1611,7 @@ static void test_PropVariantToString(void)
     propvar.pszVal = string;
     hr = PropVariantToString(&propvar, bufferW, 4);
     ok(hr == STRSAFE_E_INSUFFICIENT_BUFFER, "PropVariantToString returned: 0x%08lx.\n", hr);
-    ok(!memcmp(bufferW, stringW, 4), "got wrong string.\n");
+    ok(!wcscmp(bufferW, L"Win"), "Unexpected string %s.\n", debugstr_w(bufferW));
     memset(bufferW, 0, sizeof(bufferW));
 
     PropVariantInit(&propvar);
@@ -1598,6 +1622,116 @@ static void test_PropVariantToString(void)
     ok(!lstrcmpW(bufferW, stringW), "got wrong string: \"%s\".\n", wine_dbgstr_w(bufferW));
     memset(bufferW, 0, sizeof(bufferW));
     SysFreeString(propvar.bstrVal);
+
+    PropVariantInit(&propvar);
+    propvar.vt = VT_CLSID;
+    propvar.puuid = (CLSID *)&dummy_guid;
+    hr = PropVariantToString(&propvar, bufferW, ARRAY_SIZE(bufferW));
+    ok(hr == S_OK, "PropVariantToString returned %#lx.\n", hr);
+    ok(!wcscmp(bufferW, dummy_guid_str), "Unexpected string %s.\n", debugstr_w(bufferW));
+    memset(bufferW, 0, sizeof(bufferW));
+}
+
+#define check_PropVariantToBSTR(type, member, value, expect_str)    \
+do                                                                  \
+{                                                                   \
+    PROPVARIANT check_propvar_ = {.vt = (type), .member = (value)}; \
+    HRESULT check_hr_;                                              \
+    BSTR check_bstr_;                                               \
+                                                                    \
+    check_hr_ = PropVariantToBSTR(&check_propvar_, &check_bstr_);   \
+    ok_(__FILE__, __LINE__)(check_hr_ == S_OK,                      \
+            "PropVariantToBSTR returned %#lx.\n", check_hr_);       \
+                                                                    \
+    if (check_hr_ == S_OK)                                          \
+    {                                                               \
+        ok_(__FILE__, __LINE__)(!wcscmp(check_bstr_, (expect_str)), \
+                "Unexpected bstr %s.\n", debugstr_w(check_bstr_));  \
+        SysFreeString(check_bstr_);                                 \
+    }                                                               \
+} while (0)
+
+static void test_PropVariantToBSTR(void)
+{
+    unsigned char test_bytes[] = {1, 20, 30, 4};
+    WCHAR test_bstr[] = {'a', 0, 'b', 0, 'c'};
+    PROPVARIANT propvar;
+    UINT length;
+    HRESULT hr;
+    BSTR bstr;
+
+    if (0) /* Crashes. */
+    {
+        hr = PropVariantToBSTR(&propvar, NULL);
+        hr = PropVariantToBSTR(NULL, &bstr);
+    }
+
+    todo_wine
+    {
+    check_PropVariantToBSTR(VT_I1,     cVal,           -123,                 L"-123");
+    check_PropVariantToBSTR(VT_I2,     iVal,           -456,                 L"-456");
+    check_PropVariantToBSTR(VT_I4,     lVal,           -789,                 L"-789");
+    check_PropVariantToBSTR(VT_I8,     hVal.QuadPart,  -101112,              L"-101112");
+    check_PropVariantToBSTR(VT_UI1,    bVal,           0xcd,                 L"205");
+    check_PropVariantToBSTR(VT_UI2,    uiVal,          0xdead,               L"57005");
+    check_PropVariantToBSTR(VT_UI4,    ulVal,          0xdeadbeef,           L"3735928559");
+    check_PropVariantToBSTR(VT_UI8,    uhVal.QuadPart, 0xdeadbeefdeadbeef,   L"16045690984833335023");
+    check_PropVariantToBSTR(VT_BOOL,   boolVal,        TRUE,                 L"1");
+    check_PropVariantToBSTR(VT_R4,     fltVal,         0.125f,               L"0.125");
+    check_PropVariantToBSTR(VT_R8,     dblVal,         0.456,                L"0.456");
+    }
+    check_PropVariantToBSTR(VT_CLSID,  puuid,          (CLSID *)&dummy_guid, dummy_guid_str);
+    check_PropVariantToBSTR(VT_LPSTR,  pszVal,         (char *)topic,        topicW);
+    check_PropVariantToBSTR(VT_LPWSTR, pwszVal,        (WCHAR *)topicW,      topicW);
+
+    PropVariantInit(&propvar);
+    propvar.vt = VT_FILETIME;
+    propvar.filetime.dwLowDateTime = 0xdead;
+    propvar.filetime.dwHighDateTime = 0xbeef;
+    hr = PropVariantToBSTR(&propvar, &bstr);
+    todo_wine
+    ok(hr == S_OK, "PropVariantToBSTR returned %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+    ok(!wcscmp(bstr, L"1601/08/31:23:29:30.651"), "Unexpected bstr %s.\n", debugstr_w(bstr));
+    SysFreeString(bstr);
+    }
+
+    PropVariantInit(&propvar);
+    propvar.vt = VT_DATE;
+    propvar.date = 123.123f;
+    hr = PropVariantToBSTR(&propvar, &bstr);
+    todo_wine
+    ok(hr == S_OK, "PropVariantToBSTR returned %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+    ok(!wcscmp(bstr, L"1900/05/02:02:57:07.000"), "Unexpected bstr %s.\n", debugstr_w(bstr));
+    SysFreeString(bstr);
+    }
+
+    PropVariantInit(&propvar);
+    propvar.vt = VT_VECTOR | VT_I1;
+    propvar.caub.cElems = ARRAY_SIZE(test_bytes);
+    propvar.caub.pElems = test_bytes;
+    hr = PropVariantToBSTR(&propvar, &bstr);
+    todo_wine
+    ok(hr == S_OK, "PropVariantToBSTR returned %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+    ok(!wcscmp(bstr, L"1; 20; 30; 4"), "Unexpected bstr %s.\n", debugstr_w(bstr));
+    SysFreeString(bstr);
+    }
+
+    PropVariantInit(&propvar);
+    propvar.vt = VT_BSTR;
+    propvar.bstrVal = SysAllocStringLen(test_bstr, ARRAY_SIZE(test_bstr));
+    hr = PropVariantToBSTR(&propvar, &bstr);
+    ok(hr == S_OK, "PropVariantToBSTR returned %#lx.\n", hr);
+    length = SysStringLen(bstr);
+    ok(length == wcslen(test_bstr), "Unexpected length %u.\n", length);
+    ok(!wcscmp(bstr, test_bstr), "Unexpected bstr %s.", debugstr_wn(bstr, ARRAY_SIZE(test_bstr)));
+    SysFreeString(bstr);
+    PropVariantClear(&propvar);
 }
 
 static void test_PropVariantToBuffer(void)
@@ -1609,7 +1743,7 @@ static void test_PropVariantToBuffer(void)
     SAFEARRAY *sa;
     SAFEARRAYBOUND sabound;
     void *pdata;
-    UINT8 buffer[256];
+    UINT8 buffer[256] = {0};
 
     hr = InitPropVariantFromBuffer(data, 10, &propvar);
     ok(hr == S_OK, "InitPropVariantFromBuffer failed 0x%08lx.\n", hr);
@@ -2322,6 +2456,176 @@ static void test_VariantToString(void)
     VariantClear(&v);
 }
 
+#define check_VariantToPropVariant(var, propvar, type, member, value, format) do                     \
+{                                                                                                    \
+    V_VT(&(var)) = VT_##type;                                                                        \
+    V_##type(&(var)) = (value);                                                                      \
+    hr = VariantToPropVariant(&(var), &(propvar));                                                   \
+    ok_(__FILE__, __LINE__)(hr == S_OK, "VariantToPropVariant returned %#lx.\n", hr);                \
+    ok_(__FILE__, __LINE__)((propvar).vt == VT_##type, "Unexpected propvar.vt %d.\n", (propvar).vt); \
+    ok_(__FILE__, __LINE__)((propvar).member == (value),                                             \
+            "Unexpected propvar."#member" "format".\n", (propvar).member);                           \
+} while (0)
+
+#define check_PropVariantToVariant(propvar, var, type, member, value, format) do                     \
+{                                                                                                    \
+    (propvar).vt = VT_##type;                                                                        \
+    (propvar).member = (value);                                                                      \
+    hr = PropVariantToVariant(&(propvar), &(var));                                                   \
+    ok_(__FILE__, __LINE__)(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);                \
+    ok_(__FILE__, __LINE__)(V_VT(&(var)) == VT_##type, "Unexpected vt %d.\n", V_VT(&(var)));         \
+    ok_(__FILE__, __LINE__)(V_##type(&(var)) == (value),                                             \
+            "Unexpected V_"#type"(&var) "format".\n", (propvar).member);                             \
+} while (0)
+
+static void test_VariantToPropVariant(void)
+{
+    PROPVARIANT propvar;
+    VARIANT var;
+    HRESULT hr;
+
+    VariantInit(&var);
+    PropVariantInit(&propvar);
+
+    hr = VariantToPropVariant(NULL, &propvar);
+    ok(hr == E_INVALIDARG, "VariantToPropVariant returned %#lx.\n", hr);
+    hr = VariantToPropVariant(&var, NULL);
+    ok(hr == E_INVALIDARG, "VariantToPropVariant returned %#lx.\n", hr);
+
+    V_VT(&var) = 0xdead;
+    hr = VariantToPropVariant(&var, &propvar);
+    ok(hr == DISP_E_BADVARTYPE, "VariantToPropVariant returned %#lx.\n", hr);
+    V_VT(&var) = VT_ILLEGAL;
+    hr = VariantToPropVariant(&var, &propvar);
+    todo_wine
+    ok(hr == TYPE_E_TYPEMISMATCH, "VariantToPropVariant returned %#lx.\n", hr);
+    V_VT(&var) = VT_CLSID;
+    hr = VariantToPropVariant(&var, &propvar);
+    todo_wine
+    ok(hr == DISP_E_BADVARTYPE, "VariantToPropVariant returned %#lx.\n", hr);
+
+    V_VT(&var) = VT_EMPTY;
+    hr = VariantToPropVariant(&var, &propvar);
+    ok(hr == S_OK, "VariantToPropVariant returned %#lx.\n", hr);
+    ok(propvar.vt == VT_EMPTY, "Unexpected propvar.vt %d.\n", propvar.vt);
+
+    V_VT(&var) = VT_NULL;
+    hr = VariantToPropVariant(&var, &propvar);
+    ok(hr == S_OK, "VariantToPropVariant returned %#lx.\n", hr);
+    ok(propvar.vt == VT_NULL, "Unexpected propvar.vt %d.\n", propvar.vt);
+
+    check_VariantToPropVariant(var, propvar, I1,  cVal,          -123,    "%c");
+    check_VariantToPropVariant(var, propvar, I2,  iVal,          -456,    "%d");
+    check_VariantToPropVariant(var, propvar, I4,  lVal,          -789,    "%ld");
+    check_VariantToPropVariant(var, propvar, I8,  hVal.QuadPart, -101112, "%I64d");
+
+    check_VariantToPropVariant(var, propvar, UI1, bVal,           0xcd,               "%#x");
+    check_VariantToPropVariant(var, propvar, UI2, uiVal,          0xdead,             "%#x");
+    check_VariantToPropVariant(var, propvar, UI4, ulVal,          0xdeadbeef,         "%#lx");
+    check_VariantToPropVariant(var, propvar, UI8, uhVal.QuadPart, 0xdeadbeefdeadbeef, "%I64x");
+
+    check_VariantToPropVariant(var, propvar, BOOL, boolVal, TRUE, "%d");
+
+    check_VariantToPropVariant(var, propvar, R4, fltVal, 0.123f, "%f");
+    check_VariantToPropVariant(var, propvar, R8, dblVal, 0.456f, "%f");
+
+    V_VT(&var) = VT_BSTR;
+    V_BSTR(&var) = SysAllocString(L"test");
+    hr = VariantToPropVariant(&var, &propvar);
+    ok(hr == S_OK, "VariantToPropVariant returned %#lx.\n", hr);
+    ok(propvar.vt == VT_BSTR, "Unexpected propvar.vt %d.\n", propvar.vt);
+    ok(propvar.bstrVal != V_BSTR(&var), "Got same string pointer.\n");
+    ok(!wcscmp(propvar.bstrVal, V_BSTR(&var)), "Unexpected propvar.bstrVal %s.\n", debugstr_w(propvar.bstrVal));
+
+    PropVariantClear(&propvar);
+    VariantClear(&var);
+}
+
+static void test_PropVariantToVariant(void)
+{
+    PROPVARIANT propvar;
+    VARIANT var;
+    HRESULT hr;
+
+    VariantInit(&var);
+    PropVariantInit(&propvar);
+
+    hr = PropVariantToVariant(NULL, &var);
+    ok(hr == E_INVALIDARG, "PropVariantToVariant returned %#lx.\n", hr);
+    hr = PropVariantToVariant(&propvar, NULL);
+    ok(hr == E_INVALIDARG, "PropVariantToVariant returned %#lx.\n", hr);
+
+    propvar.vt = 0xdead;
+    hr = PropVariantToVariant(&propvar, &var);
+    todo_wine
+    ok(hr == E_OUTOFMEMORY, "PropVariantToVariant returned %#lx.\n", hr);
+    propvar.vt = VT_ILLEGAL;
+    hr = PropVariantToVariant(&propvar, &var);
+    todo_wine
+    ok(hr == E_OUTOFMEMORY, "PropVariantToVariant returned %#lx.\n", hr);
+
+    propvar.vt = VT_EMPTY;
+    hr = PropVariantToVariant(&propvar, &var);
+    ok(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_EMPTY, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+
+    propvar.vt = VT_NULL;
+    hr = PropVariantToVariant(&propvar, &var);
+    ok(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_NULL, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+
+    check_PropVariantToVariant(propvar, var, I1,  cVal,          'X',     "%c");
+    check_PropVariantToVariant(propvar, var, I2,  iVal,          -456,    "%d");
+    check_PropVariantToVariant(propvar, var, I4,  lVal,          -789,    "%ld");
+    check_PropVariantToVariant(propvar, var, I8,  hVal.QuadPart, -101112, "%I64d");
+
+    check_PropVariantToVariant(propvar, var, UI1, bVal,           0xcd,               "%#x");
+    check_PropVariantToVariant(propvar, var, UI2, uiVal,          0xdead,             "%#x");
+    check_PropVariantToVariant(propvar, var, UI4, ulVal,          0xdeadbeef,         "%#lx");
+    check_PropVariantToVariant(propvar, var, UI8, uhVal.QuadPart, 0xdeadbeefdeadbeef, "%I64x");
+
+    check_PropVariantToVariant(propvar, var, BOOL, boolVal, TRUE, "%d");
+
+    check_PropVariantToVariant(propvar, var, R4, fltVal, 0.123f, "%f");
+    check_PropVariantToVariant(propvar, var, R8, dblVal, 0.456f, "%f");
+
+    propvar.vt = VT_BSTR;
+    propvar.bstrVal = SysAllocString(L"test");
+    hr = PropVariantToVariant(&propvar, &var);
+    ok(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_BSTR, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+    ok(V_BSTR(&var) != propvar.bstrVal, "Got same string pointer.\n");
+    ok(!wcscmp(V_BSTR(&var), propvar.bstrVal), "Unexpected V_BSTR(&var) %s.\n", debugstr_w(V_BSTR(&var)));
+    PropVariantClear(&propvar);
+    VariantClear(&var);
+
+    propvar.vt = VT_CLSID;
+    propvar.puuid = (GUID *)&dummy_guid;
+    hr = PropVariantToVariant(&propvar, &var);
+    todo_wine
+    ok(hr == 39, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_BSTR, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+    ok(!wcscmp(V_BSTR(&var), dummy_guid_str), "Unexpected V_BSTR(&var) %s.\n", debugstr_w(V_BSTR(&var)));
+    VariantClear(&var);
+
+    propvar.vt = VT_LPSTR;
+    propvar.pszVal = (char *)topic;
+    hr = PropVariantToVariant(&propvar, &var);
+    ok(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_BSTR, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+    ok(!wcscmp(V_BSTR(&var), topicW), "Unexpected V_BSTR(&var) %s.\n", debugstr_w(V_BSTR(&var)));
+    VariantClear(&var);
+
+    propvar.vt = VT_LPWSTR;
+    propvar.pwszVal = (WCHAR *)topicW;
+    hr = PropVariantToVariant(&propvar, &var);
+    ok(hr == S_OK, "PropVariantToVariant returned %#lx.\n", hr);
+    ok(V_VT(&var) == VT_BSTR, "Unexpected V_VT(&var) %d.\n", V_VT(&var));
+    ok(V_BSTR(&var) != topicW, "Got same string pointer.\n");
+    ok(!wcscmp(V_BSTR(&var), topicW), "Unexpected V_BSTR(&var) %s.\n", debugstr_w(V_BSTR(&var)));
+    VariantClear(&var);
+}
+
 START_TEST(propsys)
 {
     test_InitPropVariantFromGUIDAsString();
@@ -2342,6 +2646,7 @@ START_TEST(propsys)
     test_PropVariantToStringWithDefault();
     test_PropVariantToDouble();
     test_PropVariantToString();
+    test_PropVariantToBSTR();
     test_PropVariantToBuffer();
     test_inmemorystore();
     test_persistserialized();
@@ -2350,4 +2655,6 @@ START_TEST(propsys)
     test_PSCreatePropertyStoreFromObject();
     test_VariantToStringWithDefault();
     test_VariantToString();
+    test_VariantToPropVariant();
+    test_PropVariantToVariant();
 }

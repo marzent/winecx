@@ -21,6 +21,7 @@
 #define __QUARTZ_PRIVATE_INCLUDED__
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <wchar.h>
 
 #define COBJMACROS
@@ -44,39 +45,25 @@
       0, 0, { (DWORD_PTR)(__FILE__ ": " # cs) }};                       \
     static CRITICAL_SECTION cs = { &cs##_debug, -1, 0, 0, 0, 0 };
 
-static inline const char *debugstr_time(REFERENCE_TIME time)
-{
-    ULONGLONG abstime = time >= 0 ? time : -time;
-    unsigned int i = 0, j = 0;
-    char buffer[23], rev[23];
-
-    while (abstime || i <= 8)
-    {
-        buffer[i++] = '0' + (abstime % 10);
-        abstime /= 10;
-        if (i == 7) buffer[i++] = '.';
-    }
-    if (time < 0) buffer[i++] = '-';
-
-    while (i--) rev[j++] = buffer[i];
-    while (rev[j-1] == '0' && rev[j-2] != '.') --j;
-    rev[j] = 0;
-
-    return wine_dbg_sprintf("%s", rev);
-}
-
 /* see IAsyncReader::Request on MSDN for the explanation of this */
 #define MEDIATIME_FROM_BYTES(x) ((LONGLONG)(x) * 10000000)
 #define BYTES_FROM_MEDIATIME(time) ((time) / 10000000)
 
+bool array_reserve(void **elements, size_t *capacity, size_t count, size_t size);
+
 HRESULT acm_wrapper_create(IUnknown *outer, IUnknown **out);
-HRESULT avi_dec_create(IUnknown *outer, IUnknown **out);
 HRESULT async_reader_create(IUnknown *outer, IUnknown **out);
+HRESULT avi_dec_create(IUnknown *outer, IUnknown **out);
+HRESULT avi_splitter_create(IUnknown *outer, IUnknown **out);
 HRESULT dsound_render_create(IUnknown *outer, IUnknown **out);
 HRESULT filter_graph_create(IUnknown *outer, IUnknown **out);
 HRESULT filter_graph_no_thread_create(IUnknown *outer, IUnknown **out);
 HRESULT filter_mapper_create(IUnknown *outer, IUnknown **out);
 HRESULT mem_allocator_create(IUnknown *outer, IUnknown **out);
+HRESULT mpeg_audio_codec_create(IUnknown *outer, IUnknown **out);
+HRESULT mpeg_layer3_decoder_create(IUnknown *outer, IUnknown **out);
+HRESULT mpeg_video_codec_create(IUnknown *outer, IUnknown **out);
+HRESULT mpeg1_splitter_create(IUnknown *outer, IUnknown **out);
 HRESULT system_clock_create(IUnknown *outer, IUnknown **out);
 HRESULT seeking_passthrough_create(IUnknown *outer, IUnknown **out);
 HRESULT video_renderer_create(IUnknown *outer, IUnknown **out);
@@ -84,6 +71,7 @@ HRESULT video_renderer_default_create(IUnknown *outer, IUnknown **out);
 HRESULT vmr7_presenter_create(IUnknown *outer, IUnknown **out);
 HRESULT vmr7_create(IUnknown *outer, IUnknown **out);
 HRESULT vmr9_create(IUnknown *outer, IUnknown **out);
+HRESULT wave_parser_create(IUnknown *outer, IUnknown **out);
 
 extern const char * qzdebugstr_guid(const GUID * id);
 extern void video_unregister_windowclass(void);

@@ -250,6 +250,17 @@ static void init_load_order(void)
     /* note: we don't free the string because the stored module names point inside it */
 }
 
+/* CX Hack 24067 */
+__attribute__((visibility("default")))
+void add_load_order_override( WCHAR *entry )
+{
+    if (!init_done) init_load_order();
+
+    add_load_order_set( entry );
+    if (env_list.count)
+        qsort( env_list.order, env_list.count, sizeof(env_list.order[0]), cmp_sort_func );
+}
+
 
 /***************************************************************************
  *	get_env_load_order

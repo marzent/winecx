@@ -275,9 +275,7 @@ static const struct user_driver_funcs macdrv_funcs =
     .pDesktopWindowProc = macdrv_DesktopWindowProc,
     .pDestroyCursorIcon = macdrv_DestroyCursorIcon,
     .pDestroyWindow = macdrv_DestroyWindow,
-    .pGetCurrentDisplaySettings = macdrv_GetCurrentDisplaySettings,
     .pGetCurrentProcessExplicitAppUserModelID = macdrv_GetCurrentProcessExplicitAppUserModelID,  /* CW Hack 22310 */
-    .pGetDisplayDepth = macdrv_GetDisplayDepth,
     .pUpdateDisplayDevices = macdrv_UpdateDisplayDevices,
     .pGetCursorPos = macdrv_GetCursorPos,
     .pGetKeyboardLayoutList = macdrv_GetKeyboardLayoutList,
@@ -306,12 +304,14 @@ static const struct user_driver_funcs macdrv_funcs =
     .pUpdateLayeredWindow = macdrv_UpdateLayeredWindow,
     .pVkKeyScanEx = macdrv_VkKeyScanEx,
     .pImeProcessKey = macdrv_ImeProcessKey,
-    .pImeToAsciiEx = macdrv_ImeToAsciiEx,
     .pNotifyIMEStatus = macdrv_NotifyIMEStatus,
+    .pSetIMECompositionRect = macdrv_SetIMECompositionRect,
     .pWindowMessage = macdrv_WindowMessage,
     .pWindowPosChanged = macdrv_WindowPosChanged,
     .pWindowPosChanging = macdrv_WindowPosChanging,
-    .pwine_get_vulkan_driver = macdrv_wine_get_vulkan_driver,
+    .pGetWindowStyleMasks = macdrv_GetWindowStyleMasks,
+    .pCreateWindowSurface = macdrv_CreateWindowSurface,
+    .pVulkanInit = macdrv_VulkanInit,
     .pwine_get_wgl_driver = macdrv_wine_get_wgl_driver,
 };
 

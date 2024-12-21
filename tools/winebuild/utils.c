@@ -193,6 +193,7 @@ static const char *find_clang_tool( struct strarray clang, const char *tool )
     size_t cnt;
 
     strarray_addall( &args, clang );
+    if (!args.count) strarray_add( &args, "clang" );
     strarray_add( &args, strmake( "-print-prog-name=%s", tool ));
     if (verbose) strarray_add( &args, "-v" );
 
@@ -243,16 +244,11 @@ struct strarray find_tool( const char *name, const char * const *names )
         names++;
     }
 
-    if (!file)
-    {
-        if (cc_command.count) file = find_clang_tool( cc_command, name );
-        if (!file && !(file = find_binary( "llvm", name )))
-        {
-            struct strarray clang = empty_strarray;
-            strarray_add( &clang, "clang" );
-            file = find_clang_tool( clang, strmake( "llvm-%s", name ));
-        }
-    }
+    if (!file && cc_command.count) file = find_clang_tool( cc_command, name );
+    if (!file) file = find_binary( "llvm", name );
+    if (!file) file = find_clang_tool( empty_strarray, strmake( "llvm-%s", name ));
+    if (!file) file = find_clang_tool( empty_strarray, name );
+
     if (!file) fatal_error( "cannot find the '%s' tool\n", name );
 
     strarray_add( &ret, file );
@@ -267,12 +263,7 @@ struct strarray find_link_tool(void)
 
     if (cc_command.count) file = find_clang_tool( cc_command, "lld-link" );
     if (!file) file = find_binary( NULL, "lld-link" );
-    if (!file)
-    {
-        struct strarray clang = empty_strarray;
-        strarray_add( &clang, "clang" );
-        file = find_clang_tool( clang, "lld-link" );
-    }
+    if (!file) file = find_clang_tool( empty_strarray, "lld-link" );
 
     if (!file) fatal_error( "cannot find the 'lld-link' tool\n" );
     strarray_add( &ret, file );
@@ -475,11 +466,6 @@ void output_standard_file_header(void)
         output( "\t.globl  @feat.00\n" );
         output( ".set @feat.00, 1\n" );
     }
-    if (thumb_mode)
-    {
-        output( "\t.syntax unified\n" );
-        output( "\t.thumb\n" );
-    }
 }
 
 /* dump a byte stream into the assembly code */
@@ -623,13 +609,22 @@ DLLSPEC *alloc_dll_spec(void)
     spec = xmalloc( sizeof(*spec) );
     memset( spec, 0, sizeof(*spec) );
     spec->type               = SPEC_WIN32;
-    spec->base               = MAX_ORDINALS;
     spec->characteristics    = IMAGE_FILE_EXECUTABLE_IMAGE;
     spec->subsystem          = IMAGE_SUBSYSTEM_WINDOWS_CUI;
     spec->subsystem_major    = 4;
     spec->subsystem_minor    = 0;
     spec->dll_characteristics = IMAGE_DLLCHARACTERISTICS_NX_COMPAT | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE;
+    spec->exports.base        = MAX_ORDINALS;
+    spec->native_exports.base = MAX_ORDINALS;
     return spec;
+}
+
+
+static void free_exports( struct exports *entries )
+{
+    free( entries->entry_points );
+    free( entries->names );
+    free( entries->ordinals );
 }
 
 
@@ -649,13 +644,13 @@ void free_dll_spec( DLLSPEC *spec )
         free( odp->export_name );
         free( odp->link_name );
     }
+    free_exports( &spec->exports );
+    free_exports( &spec->native_exports );
     free( spec->file_name );
     free( spec->dll_name );
     free( spec->c_name );
     free( spec->init_func );
     free( spec->entry_points );
-    free( spec->names );
-    free( spec->ordinals );
     free( spec->resources );
     free( spec );
 }
@@ -830,15 +825,8 @@ const char *asm_name( const char *sym )
 /* return the assembly name for an ARM64/ARM64EC function */
 const char *arm64_name( const char *sym )
 {
-    switch (target.platform)
-    {
-    case PLATFORM_MINGW:
-    case PLATFORM_WINDOWS:
-        if (target.cpu == CPU_ARM64EC) return strmake( "\"#%s\"", sym );
-        /* fall through */
-    default:
-        return asm_name( sym );
-    }
+    if (target.cpu == CPU_ARM64EC) return strmake( "\"#%s\"", sym );
+    return asm_name( sym );
 }
 
 /* return an assembly function declaration for a C function name */
@@ -858,22 +846,9 @@ void output_function_header( const char *func, int global )
         if (target.cpu == CPU_ARM64EC) output( ".section .text,\"xr\",discard,%s\n\t", name );
         output( "\t.def %s\n\t.scl 2\n\t.type 32\n\t.endef\n", name );
         if (global) output( "\t.globl %s\n", name );
-        if (thumb_mode) output( "\t.thumb_func\n" );
         break;
     default:
-        switch (target.cpu)
-        {
-        case CPU_ARM:
-            output( "\t.type %s,%%function\n", name );
-            if (thumb_mode) output( "\t.thumb_func\n" );
-            break;
-        case CPU_ARM64:
-            output( "\t.type %s,%%function\n", name );
-            break;
-        default:
-            output( "\t.type %s,@function\n", name );
-            break;
-        }
+        output( "\t.type %s,@function\n", name );
         if (global) output( "\t.globl %s\n\t.hidden %s\n", name, name );
         break;
     }
@@ -987,16 +962,7 @@ void output_gnu_stack_note(void)
     case PLATFORM_APPLE:
         break;
     default:
-        switch (target.cpu)
-        {
-        case CPU_ARM:
-        case CPU_ARM64:
-            output( "\t.section .note.GNU-stack,\"\",%%progbits\n" );
-            break;
-        default:
-            output( "\t.section .note.GNU-stack,\"\",@progbits\n" );
-            break;
-        }
+        output( "\t.section .note.GNU-stack,\"\",@progbits\n" );
         break;
     }
 }
@@ -1086,36 +1052,4 @@ const char *get_asm_string_section(void)
     case PLATFORM_APPLE: return ".cstring";
     default:             return ".section .rodata";
     }
-}
-
-const char *arm64_page( const char *sym )
-{
-    static char *buffer;
-
-    switch (target.platform)
-    {
-    case PLATFORM_APPLE:
-        free( buffer );
-        buffer = strmake( "%s@PAGE", sym );
-        return buffer;
-    default:
-        return sym;
-    }
-}
-
-const char *arm64_pageoff( const char *sym )
-{
-    static char *buffer;
-
-    free( buffer );
-    switch (target.platform)
-    {
-    case PLATFORM_APPLE:
-        buffer = strmake( "%s@PAGEOFF", sym );
-        break;
-    default:
-        buffer = strmake( ":lo12:%s", sym );
-        break;
-    }
-    return buffer;
 }
