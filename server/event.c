@@ -79,8 +79,6 @@ static const struct object_ops event_ops =
     add_queue,                 /* add_queue */
     remove_queue,              /* remove_queue */
     event_signaled,            /* signaled */
-    event_get_esync_fd,        /* get_esync_fd */
-    event_get_msync_idx,       /* get_msync_idx */
     event_satisfied,           /* satisfied */
     event_signal,              /* signal */
     no_get_fd,                 /* get_fd */
@@ -94,7 +92,9 @@ static const struct object_ops event_ops =
     no_open_file,              /* open_file */
     event_get_kernel_obj_list, /* get_kernel_obj_list */
     no_close_handle,           /* close_handle */
-    event_destroy              /* destroy */
+    event_destroy,             /* destroy */
+    event_get_esync_fd,        /* get_esync_fd */
+    event_get_msync_idx,       /* get_msync_idx */
 };
 
 
@@ -128,8 +128,6 @@ static const struct object_ops keyed_event_ops =
     add_queue,                   /* add_queue */
     remove_queue,                /* remove_queue */
     keyed_event_signaled,        /* signaled */
-    NULL,                        /* get_esync_fd */
-    NULL,                        /* get_msync_idx */
     no_satisfied,                /* satisfied */
     no_signal,                   /* signal */
     no_get_fd,                   /* get_fd */
@@ -330,7 +328,7 @@ static void keyed_event_dump( struct object *obj, int verbose )
     fputs( "Keyed event\n", stderr );
 }
 
-static enum select_op matching_op( enum select_op op )
+static enum select_opcode matching_op( enum select_opcode op )
 {
     return op ^ (SELECT_KEYED_EVENT_WAIT ^ SELECT_KEYED_EVENT_RELEASE);
 }
@@ -339,7 +337,7 @@ static int keyed_event_signaled( struct object *obj, struct wait_queue_entry *en
 {
     struct wait_queue_entry *ptr;
     struct process *process;
-    enum select_op select_op;
+    enum select_opcode select_op;
 
     assert( obj->ops == &keyed_event_ops );
 

@@ -199,8 +199,6 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetVolumeInformationW( LPCWSTR root, LPWSTR label,
     if (status)
     {
         TRACE( "cannot open device %s: %lx\n", debugstr_w(nt_name.Buffer), status );
-        if (status == STATUS_ACCESS_DENIED)
-            MESSAGE( "wine: Read access denied for device %s, FS volume label and serial are not available.\n", debugstr_w(nt_name.Buffer) );
         status = NtOpenFile( &handle, SYNCHRONIZE, &attr, &io, 0,
                                       FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT );
     }
@@ -418,7 +416,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH DefineDosDeviceW( DWORD flags, const WCHAR *device
     InitializeObjectAttributes( &attr, &nt_name, OBJ_CASE_INSENSITIVE | OBJ_PERMANENT, 0, NULL );
     if (flags & DDD_REMOVE_DEFINITION)
     {
-        if (!set_ntstatus( NtOpenSymbolicLinkObject( &handle, 0, &attr ) ))
+        if (!set_ntstatus( NtOpenSymbolicLinkObject( &handle, DELETE, &attr ) ))
             return FALSE;
 
         status = NtMakeTemporaryObject( handle );

@@ -75,6 +75,11 @@ BOOL dbg_attach_debuggee(DWORD pid)
         dbg_printf("WineDbg can't debug its own process. Please use another process ID.\n");
         return FALSE;
     }
+    if (dbg_curr_process)
+    {
+        dbg_printf("WineDbg can't debug several processes at once.\nEither 'detach' from current one, or use another instance of WineDbg\n");
+        return FALSE;
+    }
     if (!(dbg_curr_process = dbg_add_process(&be_process_active_io, pid, 0))) return FALSE;
 
     if (!DebugActiveProcess(pid))
@@ -87,6 +92,11 @@ BOOL dbg_attach_debuggee(DWORD pid)
     SetEnvironmentVariableA("DBGHELP_NOLIVE", NULL);
 
     dbg_curr_process->active_debuggee = TRUE;
+    dbg_printf("WineDbg attached to pid %04lx\n", pid);
+    dbg_curr_pid = pid;
+    dbg_curr_thread = NULL;
+    dbg_curr_tid = 0;
+
     return TRUE;
 }
 
@@ -275,7 +285,7 @@ static DWORD dbg_handle_exception(const EXCEPTION_RECORD* rec, BOOL first_chance
     }
 
     if (first_chance && !is_debug && !DBG_IVAR(BreakOnFirstChance) &&
-	!(rec->ExceptionFlags & EH_STACK_INVALID))
+	!(rec->ExceptionFlags & EXCEPTION_STACK_INVALID))
     {
         /* pass exception to program except for debug exceptions */
         return DBG_EXCEPTION_NOT_HANDLED;
@@ -670,6 +680,7 @@ static BOOL dbg_start_debuggee(LPSTR cmdLine)
         free(dbg_last_cmd_line);
         dbg_last_cmd_line = cmdLine;
     }
+    dbg_printf("WineDbg starting on pid %04lx\n", dbg_curr_pid);
 
     return TRUE;
 }
@@ -755,6 +766,11 @@ static char *dbg_build_command_line( char **argv )
     return ret;
 }
 
+void dbg_set_exec_file(const char *path)
+{
+    free(dbg_executable);
+    dbg_executable = strdup(path);
+}
 
 void	dbg_run_debuggee(struct list_string* ls)
 {
@@ -846,7 +862,6 @@ enum dbg_start  dbg_active_attach(int argc, char* argv[])
     }
     else return start_error_parse;
 
-    dbg_curr_pid = pid;
     return start_ok;
 }
 

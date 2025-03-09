@@ -99,8 +99,8 @@ msgstr "Informacije o podršci"
 #: dlls/mshtml/mshtml.rc:47 dlls/mshtml/mshtml.rc:57 dlls/msvfw32/msvfw32.rc:36
 #: dlls/oledlg/oledlg.rc:62 dlls/oledlg/oledlg.rc:94
 #: dlls/serialui/serialui.rc:41 dlls/setupapi/setupapi.rc:59
-#: dlls/shell32/shell32.rc:274 dlls/shell32/shell32.rc:298
-#: dlls/shell32/shell32.rc:320 dlls/shell32/shell32.rc:339
+#: dlls/shell32/shell32.rc:278 dlls/shell32/shell32.rc:302
+#: dlls/shell32/shell32.rc:324 dlls/shell32/shell32.rc:343
 #: dlls/shlwapi/shlwapi.rc:44 dlls/twain_32/twain.rc:32
 #: dlls/user32/user32.rc:94 dlls/user32/user32.rc:109 dlls/user32/user32.rc:73
 #: dlls/wininet/wininet.rc:62 dlls/wininet/wininet.rc:82
@@ -170,16 +170,16 @@ msgid ""
 "install it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Gecko\">https://wiki.winehq.org/Gecko</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://gitlab."
+"winehq.org/wine/wine/-/wikis/Gecko</a> for details."
 msgstr ""
 "Wine nije uspio pronaći Gecko paket koji je neophodan za ispravno "
 "funkcioniranje programa koji imaju ugrađeni HTML. Wine može automatski "
 "preuzeti i instalirati program.\n"
 "\n"
 "Napomena: preporučujemo korištenje paketa vaše distribucije. Pogledajte <a "
-"href=\"https://wiki.winehq.org/Gecko\">https://wiki.winehq.org/Gecko</a> za "
-"više informacija."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://gitlab."
+"winehq.org/wine/wine/-/wikis/Gecko</a> za više informacija."
 
 #: dlls/appwiz.cpl/appwiz.rc:110 dlls/appwiz.cpl/appwiz.rc:125
 msgid "&Install"
@@ -204,9 +204,9 @@ msgstr "&Instaliraj"
 #: dlls/mshtml/mshtml.rc:48 dlls/mshtml/mshtml.rc:58 dlls/msvfw32/msvfw32.rc:37
 #: dlls/oledlg/oledlg.rc:63 dlls/oledlg/oledlg.rc:95
 #: dlls/serialui/serialui.rc:42 dlls/setupapi/setupapi.rc:42
-#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:275
-#: dlls/shell32/shell32.rc:299 dlls/shell32/shell32.rc:310
-#: dlls/shell32/shell32.rc:340 dlls/shlwapi/shlwapi.rc:45
+#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:279
+#: dlls/shell32/shell32.rc:303 dlls/shell32/shell32.rc:314
+#: dlls/shell32/shell32.rc:344 dlls/shlwapi/shlwapi.rc:45
 #: dlls/twain_32/twain.rc:33 dlls/user32/user32.rc:95 dlls/user32/user32.rc:110
 #: dlls/user32/user32.rc:74 dlls/wininet/wininet.rc:63
 #: dlls/wininet/wininet.rc:83 dlls/winspool.drv/winspool.rc:43
@@ -239,16 +239,16 @@ msgid ""
 "it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Mono\">https://wiki.winehq.org/Mono</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> for details."
 msgstr ""
 "Wine nije uspio pronaći wine-mono paket koji je neophodan za ispravno "
 "funkcioniranje .NET aplikacija. Wine može automatski preuzeti i instalirati "
 "program.\n"
 "\n"
 "Napomena: preporučujemo korištenje paketa vaše distribucije. Pogledajte <a "
-"href=\"https://wiki.winehq.org/Mono\">https://wiki.winehq.org/Mono</a> za "
-"više informacija."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> za više informacija."
 
 #: dlls/appwiz.cpl/appwiz.rc:31
 msgid "Add/Remove Programs"
@@ -278,7 +278,7 @@ msgid "Not specified"
 msgstr "Nije određeno"
 
 #: dlls/appwiz.cpl/appwiz.rc:38 dlls/oledb32/version.rc:38
-#: dlls/shell32/shell32.rc:144 dlls/shell32/shell32.rc:239
+#: dlls/shell32/shell32.rc:141 dlls/shell32/shell32.rc:243
 #: programs/regedit/regedit.rc:150 programs/winefile/winefile.rc:106
 msgid "Name"
 msgstr "Naziv"
@@ -300,7 +300,7 @@ msgid "Programs (*.exe)"
 msgstr "Programi (*.exe)"
 
 #: dlls/appwiz.cpl/appwiz.rc:43 dlls/avifil32/avifil32.rc:33
-#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:197
+#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:199
 #: programs/notepad/notepad.rc:81 programs/oleview/oleview.rc:103
 #: programs/progman/progman.rc:82 programs/regedit/regedit.rc:230
 #: programs/winedbg/winedbg.rc:43 programs/winhlp32/winhlp32.rc:90
@@ -414,6 +414,7 @@ msgid "Properties for %s"
 msgstr "Svojstva za %s"
 
 #: dlls/comctl32/comctl32.rc:73 dlls/comdlg32/comdlg32.rc:265
+#: dlls/desk.cpl/desk.rc:41
 msgid "&Apply"
 msgstr "&Primijeni"
 
@@ -462,7 +463,7 @@ msgstr "&Poništi"
 #: dlls/comdlg32/comdlg32.rc:482 dlls/comdlg32/comdlg32.rc:508
 #: dlls/comdlg32/comdlg32.rc:531 dlls/ieframe/ieframe.rc:58
 #: dlls/msacm32/msacm32.rc:52 dlls/oledlg/oledlg.rc:96
-#: dlls/shell32/shell32.rc:128 programs/clock/clock.rc:44
+#: dlls/shell32/shell32.rc:125 programs/clock/clock.rc:44
 #: programs/notepad/notepad.rc:65 programs/notepad/notepad.rc:126
 #: programs/oleview/oleview.rc:72 programs/progman/progman.rc:55
 #: programs/progman/progman.rc:108 programs/progman/progman.rc:126
@@ -508,12 +509,12 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Ništa"
 
-#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:307
+#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:311
 #: dlls/shlwapi/shlwapi.rc:46 dlls/user32/user32.rc:90 dlls/user32/user32.rc:78
 msgid "&Yes"
 msgstr "&Da"
 
-#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:309
+#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:313
 #: dlls/shlwapi/shlwapi.rc:47 dlls/user32/user32.rc:91 dlls/user32/user32.rc:79
 msgid "&No"
 msgstr "&Ne"
@@ -552,8 +553,7 @@ msgstr "Prijeđi na današnji dan"
 
 #: dlls/comdlg32/comdlg32.rc:158 dlls/comdlg32/comdlg32.rc:171
 #: dlls/comdlg32/comdlg32.rc:462 dlls/comdlg32/comdlg32.rc:487
-#: dlls/comdlg32/comdlg32.rc:514 dlls/shell32/shell32.rc:165
-#: programs/oleview/oleview.rc:101
+#: dlls/comdlg32/comdlg32.rc:514 programs/oleview/oleview.rc:101
 msgid "Open"
 msgstr "Otvori"
 
@@ -574,7 +574,7 @@ msgid "Dri&ves:"
 msgstr "Po&goni:"
 
 #: dlls/comdlg32/comdlg32.rc:174 dlls/comdlg32/comdlg32.rc:196
-#: dlls/shell32/shell32.rc:368 dlls/shell32/shell32.rc:405
+#: dlls/shell32/shell32.rc:372 dlls/shell32/shell32.rc:409
 #: programs/winefile/winefile.rc:172
 msgid "&Read Only"
 msgstr "Samo za č&itanje"
@@ -835,7 +835,7 @@ msgstr "Zamijeni &sve"
 
 #: dlls/comdlg32/comdlg32.rc:363 dlls/comdlg32/comdlg32.rc:403
 #: dlls/ieframe/ieframe.rc:42 dlls/shdoclc/shdoclc.rc:61
-#: dlls/shell32/shell32.rc:108 programs/clock/clock.rc:31
+#: dlls/shell32/shell32.rc:105 programs/clock/clock.rc:31
 #: programs/conhost/conhost.rc:34
 msgid "&Properties"
 msgstr "&Svojstva"
@@ -959,7 +959,7 @@ msgstr "Otvori sa&mo za čitanje"
 
 #: dlls/comdlg32/comdlg32.rc:480 dlls/comdlg32/comdlg32.rc:506
 #: dlls/comdlg32/comdlg32.rc:524 dlls/shdoclc/shdoclc.rc:127
-#: dlls/shell32/shell32.rc:99
+#: dlls/shell32/shell32.rc:165
 msgid "&Open"
 msgstr "&Otvori"
 
@@ -2264,8 +2264,8 @@ msgid "Notice Text="
 msgstr "Tekst obavijesti="
 
 #: dlls/cryptui/cryptui.rc:185 dlls/cryptui/cryptui.rc:240
-#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:346
-#: dlls/shell32/shell32.rc:375
+#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:350
+#: dlls/shell32/shell32.rc:379
 msgid "General"
 msgstr "Opće"
 
@@ -2481,7 +2481,7 @@ msgid "Certificate intended purposes"
 msgstr "Predviđena namjena certifikata"
 
 #: dlls/cryptui/cryptui.rc:355 dlls/ieframe/ieframe.rc:45
-#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:120
+#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:117
 #: programs/notepad/notepad.rc:61 programs/oleview/oleview.rc:59
 #: programs/oleview/oleview.rc:61 programs/oleview/oleview.rc:85
 #: programs/regedit/regedit.rc:65 programs/taskmgr/taskmgr.rc:52
@@ -2766,7 +2766,7 @@ msgstr ""
 msgid "Friendly name"
 msgstr ""
 
-#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:240
+#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:244
 #: programs/ipconfig/ipconfig.rc:45
 msgid "Description"
 msgstr "Opis"
@@ -2863,7 +2863,7 @@ msgstr ""
 msgid "Automatically determined by the program"
 msgstr "Automatski odlučeno od strane programa"
 
-#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:137
+#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:134
 msgid "File"
 msgstr "Datoteka"
 
@@ -3150,7 +3150,7 @@ msgstr "Napomena: Privatan ključ za ovaj certifikat se ne može izvesti."
 msgid "Intended Use"
 msgstr "Predvi&đena namjena:"
 
-#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:150
+#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:147
 msgid "Location"
 msgstr "Lokacija"
 
@@ -3164,6 +3164,40 @@ msgstr "Odaberite spremnik certifikata"
 #: programs/winhlp32/winhlp32.rc:110 programs/winhlp32/winhlp32.rc:85
 msgid "Not yet implemented"
 msgstr "Nije još implementirano"
+
+#: dlls/desk.cpl/desk.rc:35
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Desktop"
+msgstr "Radna površina"
+
+#: dlls/desk.cpl/desk.rc:38
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Virtual Desktop"
+msgstr "Radna površina"
+
+#: dlls/desk.cpl/desk.rc:40 dlls/joy.cpl/joy.rc:41
+#, fuzzy
+#| msgid "Reset"
+msgid "&Reset"
+msgstr "Poništi"
+
+#: dlls/desk.cpl/desk.rc:42
+msgid "Emulate display mode changes (requires restart)"
+msgstr ""
+
+#: dlls/desk.cpl/desk.rc:29
+#, fuzzy
+#| msgid "Default Settings"
+msgid "Display Settings"
+msgstr "Osnovne postavke"
+
+#: dlls/desk.cpl/desk.rc:30
+msgid "Configure monitors and display devices."
+msgstr ""
 
 #: dlls/dinput/dinput.rc:34
 msgid "Configure Devices"
@@ -3380,7 +3414,7 @@ msgstr "&Izreži"
 #: dlls/hhctrl.ocx/hhctrl.rc:88 dlls/shdoclc/shdoclc.rc:80
 #: dlls/shdoclc/shdoclc.rc:94 dlls/shdoclc/shdoclc.rc:118
 #: dlls/shdoclc/shdoclc.rc:133 dlls/shdoclc/shdoclc.rc:160
-#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:102
+#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:98
 #: dlls/user32/user32.rc:61 programs/conhost/conhost.rc:36
 #: programs/winhlp32/winhlp32.rc:40 programs/wordpad/wordpad.rc:113
 msgid "&Copy"
@@ -3392,6 +3426,7 @@ msgid "Paste"
 msgstr "Zalijepi"
 
 #: dlls/hhctrl.ocx/hhctrl.rc:91 dlls/shdoclc/shdoclc.rc:121
+#: dlls/shell32/shell32.rc:166
 msgid "&Print"
 msgstr "&Ipiši"
 
@@ -3458,7 +3493,7 @@ msgstr "Naprijed"
 msgid "Cinepak Video codec"
 msgstr "Cinepak Video codec"
 
-#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:114
+#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:111
 #: programs/notepad/notepad.rc:29 programs/oleview/oleview.rc:30
 #: programs/oleview/oleview.rc:80 programs/progman/progman.rc:32
 #: programs/taskmgr/taskmgr.rc:35 programs/view/view.rc:31
@@ -3763,67 +3798,71 @@ msgstr "Joystici"
 msgid "&Disable"
 msgstr "&Isključi"
 
-#: dlls/joy.cpl/joy.rc:41
-#, fuzzy
-#| msgid "Reset"
-msgid "&Reset"
-msgstr "Poništi"
-
 #: dlls/joy.cpl/joy.rc:42
-msgid "&Enable"
-msgstr "&Uključi"
-
-#: dlls/joy.cpl/joy.rc:43
 #, fuzzy
 #| msgid "Edit Override"
 msgid "&Override"
 msgstr "Izmjeni podešavanje"
 
+#: dlls/joy.cpl/joy.rc:43
+msgid "&Enable"
+msgstr "&Uključi"
+
 #: dlls/joy.cpl/joy.rc:44
-msgid "Connected"
-msgstr "Povezan"
+#, fuzzy
+#| msgid "Voice input device:"
+msgid "Connected (DirectInput devices)"
+msgstr "Ulazni uređdaj za glas:"
 
 #: dlls/joy.cpl/joy.rc:46
 #, fuzzy
 #| msgid "Voice input device:"
-msgid "Connected (xinput device)"
+msgid "Connected (XInput devices)"
 msgstr "Ulazni uređdaj za glas:"
 
 #: dlls/joy.cpl/joy.rc:48
 msgid "Disabled"
 msgstr "Isključen"
 
-#: dlls/joy.cpl/joy.rc:50
-msgid ""
-"After disabling or enabling a device, the connected joysticks won't be "
-"updated here until you restart this applet."
+#: dlls/joy.cpl/joy.rc:51
+msgid "Advanced settings (restart prefix required to take effect)"
 msgstr ""
-"Nakon isključivanja ili uključivanja uređaja, povezani joystici neće biti "
-"osvježeni ovdje dok ponovno ne pokrenete ovaj applet."
 
-#: dlls/joy.cpl/joy.rc:55
+#: dlls/joy.cpl/joy.rc:52
+#, fuzzy
+#| msgid "&Enable"
+msgid "Enable SDL"
+msgstr "&Uključi"
+
+#: dlls/joy.cpl/joy.rc:53
+#, fuzzy
+#| msgid "Disabled"
+msgid "Disable hidraw"
+msgstr "Isključen"
+
+#: dlls/joy.cpl/joy.rc:58
 msgid "DInput"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:59
+#: dlls/joy.cpl/joy.rc:62
 msgid "Axes"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:60
+#: dlls/joy.cpl/joy.rc:63
 msgid "POVs"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:61
+#: dlls/joy.cpl/joy.rc:64
 msgid "Buttons"
 msgstr "Gumbi"
 
-#: dlls/joy.cpl/joy.rc:62
+#: dlls/joy.cpl/joy.rc:65
 #, fuzzy
 #| msgid "Test Force Feedback"
 msgid "Force Feedback Effect"
 msgstr "Isprobaj povratnu vezu sile"
 
-#: dlls/joy.cpl/joy.rc:64
+#: dlls/joy.cpl/joy.rc:67
 msgid ""
 "Press any button in the controller to activate the chosen effect. The effect "
 "direction can be changed with the controller axis."
@@ -3831,60 +3870,60 @@ msgstr ""
 "Pritsnite bilo koji gumb na upravljaču kako bi aktivirali odabaran efekt. "
 "Smjer efetka se može promijeniti pomoću osi upravljača."
 
-#: dlls/joy.cpl/joy.rc:70
+#: dlls/joy.cpl/joy.rc:73
 msgid "XInput"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:73
+#: dlls/joy.cpl/joy.rc:76
 #, fuzzy
 #| msgid "User"
 msgid "User #0"
 msgstr "Korisničko ime"
 
-#: dlls/joy.cpl/joy.rc:74
+#: dlls/joy.cpl/joy.rc:77
 #, fuzzy
 #| msgid "User"
 msgid "User #1"
 msgstr "Korisničko ime"
 
-#: dlls/joy.cpl/joy.rc:75
+#: dlls/joy.cpl/joy.rc:78
 #, fuzzy
 #| msgid "User"
 msgid "User #2"
 msgstr "Korisničko ime"
 
-#: dlls/joy.cpl/joy.rc:76
+#: dlls/joy.cpl/joy.rc:79
 #, fuzzy
 #| msgid "User"
 msgid "User #3"
 msgstr "Korisničko ime"
 
-#: dlls/joy.cpl/joy.rc:78
+#: dlls/joy.cpl/joy.rc:81
 msgid ""
 "No user detected on slot #0, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:82
+#: dlls/joy.cpl/joy.rc:85
 msgid ""
 "No user detected on slot #1, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:86
+#: dlls/joy.cpl/joy.rc:89
 msgid ""
 "No user detected on slot #2, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:90
+#: dlls/joy.cpl/joy.rc:93
 msgid ""
 "No user detected on slot #3, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:95 dlls/joy.cpl/joy.rc:96 dlls/joy.cpl/joy.rc:97
-#: dlls/joy.cpl/joy.rc:98
+#: dlls/joy.cpl/joy.rc:98 dlls/joy.cpl/joy.rc:99 dlls/joy.cpl/joy.rc:100
+#: dlls/joy.cpl/joy.rc:101
 msgid "Rumble"
 msgstr ""
 
@@ -3934,221 +3973,251 @@ msgstr "Objekt ne podržava ovu radnju"
 msgid "Argument not optional"
 msgstr "Argument nije opcionalan"
 
-#: dlls/jscript/jscript.rc:37
+#: dlls/jscript/jscript.rc:37 dlls/vbscript/vbscript.rc:56
+#, fuzzy
+#| msgid "Object Class Violation"
+msgid "Object not a collection"
+msgstr "Kršenje klase objekata"
+
+#: dlls/jscript/jscript.rc:38
 msgid "Syntax error"
 msgstr "Greška u sintaksi"
 
-#: dlls/jscript/jscript.rc:38
+#: dlls/jscript/jscript.rc:39
 msgid "Expected ';'"
 msgstr "Očekivano ';'"
 
-#: dlls/jscript/jscript.rc:39
+#: dlls/jscript/jscript.rc:40
 msgid "Expected '('"
 msgstr "Očekivano '('"
 
-#: dlls/jscript/jscript.rc:40
+#: dlls/jscript/jscript.rc:41
 msgid "Expected ')'"
 msgstr "Očekivano ')'"
 
-#: dlls/jscript/jscript.rc:41
+#: dlls/jscript/jscript.rc:42
 #, fuzzy
 #| msgid "Expected an operand.\n"
 msgid "Expected identifier"
 msgstr "Očekivan operand.\n"
 
-#: dlls/jscript/jscript.rc:42
+#: dlls/jscript/jscript.rc:43
 #, fuzzy
 #| msgid "Expected ';'"
 msgid "Expected '='"
 msgstr "Očekivano ';'"
 
-#: dlls/jscript/jscript.rc:43
+#: dlls/jscript/jscript.rc:44
 msgid "Invalid character"
 msgstr "Neispravan znak"
 
-#: dlls/jscript/jscript.rc:44
+#: dlls/jscript/jscript.rc:45
 msgid "Unterminated string constant"
 msgstr "Nezavršen niz znakova"
 
-#: dlls/jscript/jscript.rc:45
+#: dlls/jscript/jscript.rc:46
 msgid "'return' statement outside of function"
 msgstr "'return' naredba izvan funkcije"
 
-#: dlls/jscript/jscript.rc:46
+#: dlls/jscript/jscript.rc:47
 msgid "Can't have 'break' outside of loop"
 msgstr "'break' ne može biti izvan petlje"
 
-#: dlls/jscript/jscript.rc:47
+#: dlls/jscript/jscript.rc:48
 msgid "Can't have 'continue' outside of loop"
 msgstr "'continue' ne može biti izvan petlje"
 
-#: dlls/jscript/jscript.rc:48
+#: dlls/jscript/jscript.rc:49
 msgid "Label redefined"
 msgstr "Oznaka redefinirana"
 
-#: dlls/jscript/jscript.rc:49
+#: dlls/jscript/jscript.rc:50
 msgid "Label not found"
 msgstr "Oznaka nije pronađena"
 
-#: dlls/jscript/jscript.rc:50
+#: dlls/jscript/jscript.rc:51
 #, fuzzy
 #| msgid "Expected ';'"
 msgid "Expected '@end'"
 msgstr "Očekivano ';'"
 
-#: dlls/jscript/jscript.rc:51
+#: dlls/jscript/jscript.rc:52
 msgid "Conditional compilation is turned off"
 msgstr "Kondicionalna kompilacija je isključena"
 
-#: dlls/jscript/jscript.rc:52
+#: dlls/jscript/jscript.rc:53
 #, fuzzy
 #| msgid "Expected ';'"
 msgid "Expected '@'"
 msgstr "Očekivano ';'"
 
-#: dlls/jscript/jscript.rc:84
+#: dlls/jscript/jscript.rc:90
 msgid "Microsoft JScript compilation error"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:85
+#: dlls/jscript/jscript.rc:91
 msgid "Microsoft JScript runtime error"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:86 dlls/vbscript/vbscript.rc:64
+#: dlls/jscript/jscript.rc:92 dlls/vbscript/vbscript.rc:64
 #, fuzzy
 #| msgid "Unknown error"
 msgid "Unknown runtime error"
 msgstr "Nepoznata greška"
 
-#: dlls/jscript/jscript.rc:55
+#: dlls/jscript/jscript.rc:56
 msgid "Number expected"
 msgstr "Očekivan broj"
 
-#: dlls/jscript/jscript.rc:53
+#: dlls/jscript/jscript.rc:54
 msgid "Function expected"
 msgstr "Očekivana funkcija"
 
-#: dlls/jscript/jscript.rc:54
+#: dlls/jscript/jscript.rc:55
 msgid "'[object]' is not a date object"
 msgstr "'[object]' nije vremenski objekt"
 
-#: dlls/jscript/jscript.rc:56
+#: dlls/jscript/jscript.rc:57
 msgid "Object expected"
 msgstr "Očekivan objekt"
 
-#: dlls/jscript/jscript.rc:57
+#: dlls/jscript/jscript.rc:58
 msgid "Illegal assignment"
 msgstr "Nedozvoljeno pridruživanje"
 
-#: dlls/jscript/jscript.rc:58
+#: dlls/jscript/jscript.rc:59
 msgid "'|' is undefined"
 msgstr "'|' nije definiran"
 
-#: dlls/jscript/jscript.rc:59
+#: dlls/jscript/jscript.rc:60
 msgid "Boolean object expected"
 msgstr "Očekivani objekt istinitosne vrijednosti"
 
-#: dlls/jscript/jscript.rc:60
+#: dlls/jscript/jscript.rc:61
 msgid "Cannot delete '|'"
 msgstr "Ne mogu izbrisati '|'"
 
-#: dlls/jscript/jscript.rc:61
+#: dlls/jscript/jscript.rc:62
 msgid "VBArray object expected"
 msgstr "Očekivan VBArray objekt"
 
-#: dlls/jscript/jscript.rc:62
+#: dlls/jscript/jscript.rc:63
 msgid "JScript object expected"
 msgstr "Očekivan JScript objekt"
 
-#: dlls/jscript/jscript.rc:63
+#: dlls/jscript/jscript.rc:64
 #, fuzzy
 #| msgid "Array object expected"
 msgid "Enumerator object expected"
 msgstr "Očekivan niz objekata"
 
-#: dlls/jscript/jscript.rc:64
+#: dlls/jscript/jscript.rc:65
 #, fuzzy
 #| msgid "Boolean object expected"
 msgid "Regular Expression object expected"
 msgstr "Očekivani objekt istinitosne vrijednosti"
 
-#: dlls/jscript/jscript.rc:65
+#: dlls/jscript/jscript.rc:66
 msgid "Syntax error in regular expression"
 msgstr "Sintaksna greška u regularnom izrazu"
 
-#: dlls/jscript/jscript.rc:66
+#: dlls/jscript/jscript.rc:67
 #, fuzzy
 #| msgid "Expected an operand.\n"
 msgid "Unexpected quantifier"
 msgstr "Očekivan operand.\n"
 
-#: dlls/jscript/jscript.rc:67
+#: dlls/jscript/jscript.rc:68
 msgid "Exception thrown and not caught"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:69
+#: dlls/jscript/jscript.rc:70
 msgid "URI to be encoded contains invalid characters"
 msgstr "URI za kodiranje sadrži neispravne znakove"
 
-#: dlls/jscript/jscript.rc:68
+#: dlls/jscript/jscript.rc:69
 msgid "URI to be decoded is incorrect"
 msgstr "URI za dekodiranje je neispravan"
 
-#: dlls/jscript/jscript.rc:70
+#: dlls/jscript/jscript.rc:71
 msgid "Number of fraction digits is out of range"
 msgstr "Broj decimalnih znamenki je izvan dosega"
 
-#: dlls/jscript/jscript.rc:71
+#: dlls/jscript/jscript.rc:72
 msgid "Precision is out of range"
 msgstr "Preciznost je izvan dosega"
 
-#: dlls/jscript/jscript.rc:72
+#: dlls/jscript/jscript.rc:73
 msgid "Array length must be a finite positive integer"
 msgstr "Duljina niza treba biti konačan prirodan broj"
 
-#: dlls/jscript/jscript.rc:73
+#: dlls/jscript/jscript.rc:74
 msgid "Array object expected"
 msgstr "Očekivan niz objekata"
 
-#: dlls/jscript/jscript.rc:74
+#: dlls/jscript/jscript.rc:75
 msgid ""
 "'writable' attribute on the property descriptor cannot be set to 'true' on "
 "this object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:75
+#: dlls/jscript/jscript.rc:76
 msgid "Cyclic __proto__ value"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:76
+#: dlls/jscript/jscript.rc:77
 msgid "Cannot create property for a non-extensible object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:77
+#: dlls/jscript/jscript.rc:78
 msgid "Cannot define property '|': object is not extensible"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:78
+#: dlls/jscript/jscript.rc:79
 msgid "Cannot redefine non-configurable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:79
+#: dlls/jscript/jscript.rc:80
 msgid "Cannot modify non-writable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:80
+#: dlls/jscript/jscript.rc:81
+#, fuzzy
+#| msgid "'[object]' is not a date object"
+msgid "'this' is not a DataView object"
+msgstr "'[object]' nije vremenski objekt"
+
+#: dlls/jscript/jscript.rc:82
+msgid "Required argument offset or value in DataView method is not specified"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:83
+msgid "DataView operation access beyond specified buffer length"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:84
+msgid "DataView constructor argument offset is invalid"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:85
 #, fuzzy
 #| msgid "'[object]' is not a date object"
 msgid "'this' is not a | object"
 msgstr "'[object]' nije vremenski objekt"
 
-#: dlls/jscript/jscript.rc:81
+#: dlls/jscript/jscript.rc:86
 #, fuzzy
 #| msgid "'[object]' is not a date object"
 msgid "'key' is not an object"
 msgstr "'[object]' nije vremenski objekt"
 
-#: dlls/jscript/jscript.rc:82
+#: dlls/jscript/jscript.rc:87
+#, fuzzy
+#| msgid "Array object expected"
+msgid "ArrayBuffer object expected"
+msgstr "Očekivan niz objekata"
+
+#: dlls/jscript/jscript.rc:88
 msgid "Property cannot have both accessors and a value"
 msgstr ""
 
@@ -4827,7 +4896,7 @@ msgstr "Varijabla okoline nije pronađena.\n"
 msgid "No signal sent.\n"
 msgstr "Nijedan signal poslan.\n"
 
-#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:410
+#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:406
 msgid "File name is too long.\n"
 msgstr "Naziv datoteke je predugačak.\n"
 
@@ -5577,7 +5646,7 @@ msgstr "Korisnik prekinuo operaciju.\n"
 msgid "File has a user-mapped section.\n"
 msgstr "Datoteka ima korisnički mapiranu sekciju.\n"
 
-#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3783
+#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3788
 msgid "Connection refused.\n"
 msgstr "Povezivanje odbijeno.\n"
 
@@ -7188,58 +7257,62 @@ msgid "Invalid argument.\n"
 msgstr "Neispravno ime.\n"
 
 #: dlls/kernelbase/winerror.mc:3778
+msgid "Cannot assign requested address.\n"
+msgstr ""
+
+#: dlls/kernelbase/winerror.mc:3783
 #, fuzzy
 #| msgid "Connection refused.\n"
 msgid "Connection reset by peer.\n"
 msgstr "Povezivanje odbijeno.\n"
 
-#: dlls/kernelbase/winerror.mc:3788
+#: dlls/kernelbase/winerror.mc:3793
 #, fuzzy
 #| msgid "Point not found.\n"
 msgid "Host not found.\n"
 msgstr "Točka nije pronađena.\n"
 
-#: dlls/kernelbase/winerror.mc:3793
+#: dlls/kernelbase/winerror.mc:3798
 #, fuzzy
 #| msgid "File not found.\n"
 msgid "Nonauthoritative host not found.\n"
 msgstr "Datoteka nije pronađena.\n"
 
-#: dlls/kernelbase/winerror.mc:3798
+#: dlls/kernelbase/winerror.mc:3803
 #, fuzzy
 #| msgid "A printer error occurred."
 msgid "Nonrecoverable error.\n"
 msgstr "Došlo je do greške kod pisača."
 
-#: dlls/kernelbase/winerror.mc:3803
+#: dlls/kernelbase/winerror.mc:3808
 msgid "Name valid, no data record.\n"
 msgstr ""
 
-#: dlls/kernelbase/winerror.mc:3817
+#: dlls/kernelbase/winerror.mc:3822
 #, fuzzy
 #| msgid "Not implemented"
 msgid "Not implemented.\n"
 msgstr "Nije još implementirano"
 
-#: dlls/kernelbase/winerror.mc:3838
+#: dlls/kernelbase/winerror.mc:3843
 #, fuzzy
 #| msgid "RPC call failed.\n"
 msgid "Call failed.\n"
 msgstr "RPC poziv neuspio.\n"
 
-#: dlls/kernelbase/winerror.mc:3810
+#: dlls/kernelbase/winerror.mc:3815
 #, fuzzy
 #| msgid "Message 0x%1 not found in file %2.\n"
 msgid "No Signature found in file.\n"
 msgstr "Poruka 0x%1 nije pronađena u datoteci %2.\n"
 
-#: dlls/kernelbase/winerror.mc:3824
+#: dlls/kernelbase/winerror.mc:3829
 #, fuzzy
 #| msgid "Invalid level.\n"
 msgid "Invalid call.\n"
 msgstr "Neispravna razina.\n"
 
-#: dlls/kernelbase/winerror.mc:3831
+#: dlls/kernelbase/winerror.mc:3836
 #, fuzzy
 #| msgid "Help not available."
 msgid "Resource is not currently available.\n"
@@ -8572,7 +8645,7 @@ msgstr "mogućnost od:"
 msgid "choose which folder contains %s"
 msgstr "izaberite koja mapa sadrži %s"
 
-#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:236
+#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:238
 msgid "New Folder"
 msgstr "Nova mapa"
 
@@ -9848,8 +9921,9 @@ msgstr "Izvor:"
 #: dlls/oledlg/oledlg.rc:86 dlls/shdoclc/shdoclc.rc:50
 #: dlls/shdoclc/shdoclc.rc:82 dlls/shdoclc/shdoclc.rc:95
 #: dlls/shdoclc/shdoclc.rc:135 dlls/shdoclc/shdoclc.rc:162
-#: dlls/shdoclc/shdoclc.rc:186 dlls/user32/user32.rc:62
-#: programs/conhost/conhost.rc:37 programs/wordpad/wordpad.rc:114
+#: dlls/shdoclc/shdoclc.rc:186 dlls/shell32/shell32.rc:99
+#: dlls/user32/user32.rc:62 programs/conhost/conhost.rc:37
+#: programs/wordpad/wordpad.rc:114
 msgid "&Paste"
 msgstr "&Zalijepi"
 
@@ -9881,7 +9955,7 @@ msgstr ""
 "Unesite sadržaj datoteke kao objkat u dokument kako biste ga mogli "
 "aktivirali koristeći program koji ga je napravio."
 
-#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:195
+#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:197
 msgid "Browse"
 msgstr "Potraži"
 
@@ -10186,12 +10260,12 @@ msgstr "&Svojstva"
 msgid "&Undo"
 msgstr ""
 
-#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:105
+#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:102
 #: dlls/user32/user32.rc:63
 msgid "&Delete"
 msgstr "Iz&briši"
 
-#: dlls/shdoclc/shdoclc.rc:103 dlls/shell32/shell32.rc:97
+#: dlls/shdoclc/shdoclc.rc:103
 msgid "&Select"
 msgstr "&Izaberi"
 
@@ -10360,26 +10434,26 @@ msgid "&w&bPage &p"
 msgstr "&w&bStrana &p"
 
 #: dlls/shell32/shell32.rc:30 dlls/shell32/shell32.rc:45
-#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
+#: dlls/shell32/shell32.rc:119 dlls/shell32/shell32.rc:157
 #: programs/taskmgr/taskmgr.rc:65 programs/taskmgr/taskmgr.rc:110
 #: programs/taskmgr/taskmgr.rc:252
 msgid "Lar&ge Icons"
 msgstr "&Velike ikone"
 
 #: dlls/shell32/shell32.rc:31 dlls/shell32/shell32.rc:46
-#: dlls/shell32/shell32.rc:123 dlls/shell32/shell32.rc:161
+#: dlls/shell32/shell32.rc:120 dlls/shell32/shell32.rc:158
 #: programs/taskmgr/taskmgr.rc:66 programs/taskmgr/taskmgr.rc:111
 #: programs/taskmgr/taskmgr.rc:253
 msgid "S&mall Icons"
 msgstr "&Male ikone"
 
 #: dlls/shell32/shell32.rc:32 dlls/shell32/shell32.rc:47
-#: dlls/shell32/shell32.rc:124 dlls/shell32/shell32.rc:162
+#: dlls/shell32/shell32.rc:121 dlls/shell32/shell32.rc:159
 msgid "&List"
 msgstr "&Popis"
 
 #: dlls/shell32/shell32.rc:33 dlls/shell32/shell32.rc:48
-#: dlls/shell32/shell32.rc:125 dlls/shell32/shell32.rc:163
+#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
 #: programs/taskmgr/taskmgr.rc:67 programs/taskmgr/taskmgr.rc:112
 #: programs/taskmgr/taskmgr.rc:254
 msgid "&Details"
@@ -10422,7 +10496,7 @@ msgstr "Zalijepi kao vezu"
 msgid "New"
 msgstr "Novo"
 
-#: dlls/shell32/shell32.rc:69
+#: dlls/shell32/shell32.rc:69 dlls/shell32/shell32.rc:240
 msgid "New &Folder"
 msgstr "Nova &mapa"
 
@@ -10439,23 +10513,19 @@ msgstr "&Povrati"
 msgid "&Erase"
 msgstr "Iz&briši"
 
-#: dlls/shell32/shell32.rc:98
-msgid "E&xplore"
-msgstr "&Pretraži"
-
-#: dlls/shell32/shell32.rc:101
+#: dlls/shell32/shell32.rc:97
 msgid "C&ut"
 msgstr "&Odreži"
 
-#: dlls/shell32/shell32.rc:104
+#: dlls/shell32/shell32.rc:101
 msgid "Create &Link"
 msgstr "Napravi &vezu"
 
-#: dlls/shell32/shell32.rc:106
+#: dlls/shell32/shell32.rc:103
 msgid "&Rename"
 msgstr "Pr&eimenuj"
 
-#: dlls/shell32/shell32.rc:117 programs/notepad/notepad.rc:39
+#: dlls/shell32/shell32.rc:114 programs/notepad/notepad.rc:39
 #: programs/oleview/oleview.rc:38 programs/regedit/regedit.rc:41
 #: programs/view/view.rc:34 programs/winefile/winefile.rc:40
 #: programs/winemine/winemine.rc:51 programs/winhlp32/winhlp32.rc:37
@@ -10463,53 +10533,53 @@ msgstr "Pr&eimenuj"
 msgid "E&xit"
 msgstr "I&zlaz"
 
-#: dlls/shell32/shell32.rc:130
+#: dlls/shell32/shell32.rc:127
 msgid "&About Control Panel"
 msgstr "&O upravljačkom panelu"
 
-#: dlls/shell32/shell32.rc:271 dlls/shell32/shell32.rc:286
+#: dlls/shell32/shell32.rc:275 dlls/shell32/shell32.rc:290
 msgid "Browse for Folder"
 msgstr "Pretraživanje za mapom"
 
-#: dlls/shell32/shell32.rc:291
+#: dlls/shell32/shell32.rc:295
 msgid "Folder:"
 msgstr "Mapa:"
 
-#: dlls/shell32/shell32.rc:297
+#: dlls/shell32/shell32.rc:301
 msgid "&Make New Folder"
 msgstr "&Napravi novu mapu"
 
-#: dlls/shell32/shell32.rc:304
+#: dlls/shell32/shell32.rc:308
 msgid "Message"
 msgstr "Poruka"
 
-#: dlls/shell32/shell32.rc:308
+#: dlls/shell32/shell32.rc:312
 msgid "Yes to &all"
 msgstr "Da za &sve"
 
-#: dlls/shell32/shell32.rc:317
+#: dlls/shell32/shell32.rc:321
 msgid "About %s"
 msgstr "O %s"
 
-#: dlls/shell32/shell32.rc:321
+#: dlls/shell32/shell32.rc:325
 msgid "Wine &license"
 msgstr "Wine &licenca"
 
-#: dlls/shell32/shell32.rc:326
+#: dlls/shell32/shell32.rc:330
 msgid "Running on %s"
 msgstr "Radi na %s"
 
-#: dlls/shell32/shell32.rc:327
+#: dlls/shell32/shell32.rc:331
 msgid "Wine was brought to you by:"
 msgstr "Wine su Vam omogućili:"
 
-#: dlls/shell32/shell32.rc:332
+#: dlls/shell32/shell32.rc:336
 #, fuzzy
 #| msgid "&Run..."
 msgid "Run"
 msgstr "Pok&reni..."
 
-#: dlls/shell32/shell32.rc:336
+#: dlls/shell32/shell32.rc:340
 msgid ""
 "Type the name of a program, folder, document, or Internet resource, and Wine "
 "will open it for you."
@@ -10517,301 +10587,309 @@ msgstr ""
 "Unesite naziv programa, mape, dokumenta ili internet resursa, a Wine će ga "
 "otvoriti."
 
-#: dlls/shell32/shell32.rc:337
+#: dlls/shell32/shell32.rc:341
 msgid "&Open:"
 msgstr "&Otvori:"
 
-#: dlls/shell32/shell32.rc:341 programs/progman/progman.rc:182
+#: dlls/shell32/shell32.rc:345 programs/progman/progman.rc:182
 #: programs/progman/progman.rc:201 programs/progman/progman.rc:218
 #: programs/winecfg/winecfg.rc:247 programs/winefile/winefile.rc:129
 msgid "&Browse..."
 msgstr "&Nađi..."
 
-#: dlls/shell32/shell32.rc:353 dlls/shell32/shell32.rc:382
+#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:386
 #, fuzzy
 #| msgid "File type"
 msgid "File type:"
 msgstr "Vrsta datoteke"
 
-#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:390
+#: dlls/shell32/shell32.rc:361 dlls/shell32/shell32.rc:394
 #: dlls/urlmon/urlmon.rc:37 programs/explorer/explorer.rc:33
 msgid "Location:"
 msgstr "Lokacija:"
 
-#: dlls/shell32/shell32.rc:359 dlls/shell32/shell32.rc:392
+#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
 #: programs/winefile/winefile.rc:169
 msgid "Size:"
 msgstr "Veličina:"
 
-#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
+#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:400
 #, fuzzy
 #| msgid "Creation date"
 msgid "Creation date:"
 msgstr "Datum stvaranja"
 
-#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:404
+#: dlls/shell32/shell32.rc:371 dlls/shell32/shell32.rc:408
 #, fuzzy
 #| msgid "&Attributes:"
 msgid "Attributes:"
 msgstr "&Atributi:"
 
-#: dlls/shell32/shell32.rc:369 dlls/shell32/shell32.rc:406
+#: dlls/shell32/shell32.rc:373 dlls/shell32/shell32.rc:410
 #: programs/winefile/winefile.rc:173
 msgid "H&idden"
 msgstr "Skriv&eno"
 
-#: dlls/shell32/shell32.rc:370 dlls/shell32/shell32.rc:407
+#: dlls/shell32/shell32.rc:374 dlls/shell32/shell32.rc:411
 #: programs/winefile/winefile.rc:174
 msgid "&Archive"
 msgstr "Arhi&va"
 
-#: dlls/shell32/shell32.rc:384
+#: dlls/shell32/shell32.rc:388
 #, fuzzy
 #| msgid "Open:"
 msgid "Open with:"
 msgstr "Otvori:"
 
-#: dlls/shell32/shell32.rc:387
+#: dlls/shell32/shell32.rc:391
 #, fuzzy
 #| msgid "Change &Icon..."
 msgid "&Change..."
 msgstr "Promijeni &ikonicu..."
 
-#: dlls/shell32/shell32.rc:398
+#: dlls/shell32/shell32.rc:402
 #, fuzzy
 #| msgid "Modified"
 msgid "Last modified:"
 msgstr "Izmjenjeno"
 
-#: dlls/shell32/shell32.rc:400
+#: dlls/shell32/shell32.rc:404
 #, fuzzy
 #| msgid "Last Change:"
 msgid "Last accessed:"
 msgstr "Zadnja promjena:"
 
-#: dlls/shell32/shell32.rc:138 dlls/shell32/shell32.rc:142
+#: dlls/shell32/shell32.rc:135 dlls/shell32/shell32.rc:139
 #: programs/winefile/winefile.rc:107
 msgid "Size"
 msgstr "Veličina"
 
-#: dlls/shell32/shell32.rc:139 programs/regedit/regedit.rc:151
+#: dlls/shell32/shell32.rc:136 programs/regedit/regedit.rc:151
 msgid "Type"
 msgstr "Vrsta"
 
-#: dlls/shell32/shell32.rc:140
+#: dlls/shell32/shell32.rc:137
 msgid "Modified"
 msgstr "Izmjenjeno"
 
-#: dlls/shell32/shell32.rc:141 programs/winefile/winefile.rc:171
+#: dlls/shell32/shell32.rc:138 programs/winefile/winefile.rc:171
 #: programs/winefile/winefile.rc:113
 msgid "Attributes"
 msgstr "Osobine"
 
-#: dlls/shell32/shell32.rc:143
+#: dlls/shell32/shell32.rc:140
 msgid "Size available"
 msgstr "Dostupno"
 
-#: dlls/shell32/shell32.rc:145
+#: dlls/shell32/shell32.rc:142
 msgid "Comments"
 msgstr "Komentari"
 
-#: dlls/shell32/shell32.rc:146
+#: dlls/shell32/shell32.rc:143
 msgid "Original location"
 msgstr "Originalna lokacija"
 
-#: dlls/shell32/shell32.rc:147
+#: dlls/shell32/shell32.rc:144
 msgid "Date deleted"
 msgstr "Datum brisanja"
 
-#: dlls/shell32/shell32.rc:154 programs/winecfg/winecfg.rc:106
+#: dlls/shell32/shell32.rc:151 programs/winecfg/winecfg.rc:106
 #: programs/winefile/winefile.rc:99
 msgctxt "display name"
 msgid "Desktop"
 msgstr "Radna površina"
 
-#: dlls/shell32/shell32.rc:155 programs/regedit/regedit.rc:243
+#: dlls/shell32/shell32.rc:152 programs/regedit/regedit.rc:243
 msgid "My Computer"
 msgstr "Moje računalo"
 
-#: dlls/shell32/shell32.rc:157
+#: dlls/shell32/shell32.rc:154
 msgid "Control Panel"
 msgstr "Upravljački panel"
 
-#: dlls/shell32/shell32.rc:164
-msgid "Select"
-msgstr "Izaberi"
+#: dlls/shell32/shell32.rc:162
+msgid "Ne&w"
+msgstr ""
 
-#: dlls/shell32/shell32.rc:187
+#: dlls/shell32/shell32.rc:164
+msgid "E&xplore"
+msgstr "&Pretraži"
+
+#: dlls/shell32/shell32.rc:167
+msgid "Run as &Administrator"
+msgstr ""
+
+#: dlls/shell32/shell32.rc:189
 msgid "Restart"
 msgstr "Ponovno pokretanje"
 
-#: dlls/shell32/shell32.rc:188
+#: dlls/shell32/shell32.rc:190
 msgid "Do you want to simulate a Windows reboot?"
 msgstr "Želite li simulirati ponovno pokretanje Windowsa?"
 
-#: dlls/shell32/shell32.rc:189
+#: dlls/shell32/shell32.rc:191
 msgid "Shutdown"
 msgstr "Gašenje"
 
-#: dlls/shell32/shell32.rc:190
+#: dlls/shell32/shell32.rc:192
 msgid "Do you want to shutdown your Wine session?"
 msgstr "Želite li ugasiti Wine sjednicu?"
 
-#: dlls/shell32/shell32.rc:201 programs/progman/progman.rc:83
+#: dlls/shell32/shell32.rc:203 programs/progman/progman.rc:83
 msgid "Programs"
 msgstr "Programi"
 
-#: dlls/shell32/shell32.rc:202 dlls/shell32/shell32.rc:217
-#: dlls/shell32/shell32.rc:148 dlls/shell32/shell32.rc:233
+#: dlls/shell32/shell32.rc:204 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:145 dlls/shell32/shell32.rc:235
 msgid "Documents"
 msgstr "Dokumenti"
 
-#: dlls/shell32/shell32.rc:203
+#: dlls/shell32/shell32.rc:205
 msgid "Favorites"
 msgstr "Omiljeno"
 
-#: dlls/shell32/shell32.rc:204
+#: dlls/shell32/shell32.rc:206
 msgid "StartUp"
 msgstr ""
 
-#: dlls/shell32/shell32.rc:205
+#: dlls/shell32/shell32.rc:207
 msgid "Start Menu"
 msgstr "'Start' izbornik"
 
-#: dlls/shell32/shell32.rc:206 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:208 dlls/shell32/shell32.rc:221
 msgid "Music"
 msgstr "Glazba"
 
-#: dlls/shell32/shell32.rc:207 dlls/shell32/shell32.rc:221
+#: dlls/shell32/shell32.rc:209 dlls/shell32/shell32.rc:223
 msgid "Videos"
 msgstr "Video"
 
-#: dlls/shell32/shell32.rc:208
+#: dlls/shell32/shell32.rc:210
 msgctxt "directory"
 msgid "Desktop"
 msgstr "Radna površina"
 
-#: dlls/shell32/shell32.rc:209
+#: dlls/shell32/shell32.rc:211
 msgid "NetHood"
 msgstr ""
 
-#: dlls/shell32/shell32.rc:210
+#: dlls/shell32/shell32.rc:212
 msgid "Templates"
 msgstr "Predlošci"
 
-#: dlls/shell32/shell32.rc:211
+#: dlls/shell32/shell32.rc:213
 msgid "PrintHood"
 msgstr "Pisači"
 
-#: dlls/shell32/shell32.rc:212 programs/winhlp32/winhlp32.rc:49
+#: dlls/shell32/shell32.rc:214 programs/winhlp32/winhlp32.rc:49
 msgid "History"
 msgstr "Povijest"
 
-#: dlls/shell32/shell32.rc:213
+#: dlls/shell32/shell32.rc:215
 msgid "Program Files"
 msgstr "Programske datoteke"
 
-#: dlls/shell32/shell32.rc:215 dlls/shell32/shell32.rc:220
+#: dlls/shell32/shell32.rc:217 dlls/shell32/shell32.rc:222
 msgid "Pictures"
 msgstr "Slike"
 
-#: dlls/shell32/shell32.rc:216
+#: dlls/shell32/shell32.rc:218
 msgid "Common Files"
 msgstr "Zajedničke datoteke"
 
-#: dlls/shell32/shell32.rc:218
+#: dlls/shell32/shell32.rc:220
 msgid "Administrative Tools"
 msgstr "Administrativni alati"
 
-#: dlls/shell32/shell32.rc:214
+#: dlls/shell32/shell32.rc:216
 msgid "Program Files (x86)"
 msgstr "Programske datoteke (x86)"
 
-#: dlls/shell32/shell32.rc:222
+#: dlls/shell32/shell32.rc:224
 msgid "Contacts"
 msgstr "Kontakti"
 
-#: dlls/shell32/shell32.rc:223 programs/winefile/winefile.rc:112
+#: dlls/shell32/shell32.rc:225 programs/winefile/winefile.rc:112
 msgid "Links"
 msgstr "Veze"
 
-#: dlls/shell32/shell32.rc:224
+#: dlls/shell32/shell32.rc:226
 msgid "Slide Shows"
 msgstr "Prezentacije"
 
-#: dlls/shell32/shell32.rc:225
+#: dlls/shell32/shell32.rc:227
 msgid "Playlists"
 msgstr "Playliste"
 
-#: dlls/shell32/shell32.rc:149 programs/taskmgr/taskmgr.rc:326
+#: dlls/shell32/shell32.rc:146 programs/taskmgr/taskmgr.rc:326
 msgid "Status"
 msgstr "Stanje"
 
-#: dlls/shell32/shell32.rc:151
+#: dlls/shell32/shell32.rc:148
 msgid "Model"
 msgstr "Model"
 
-#: dlls/shell32/shell32.rc:226
+#: dlls/shell32/shell32.rc:228
 msgid "Sample Music"
 msgstr "Primjeri glazbe"
 
-#: dlls/shell32/shell32.rc:227
+#: dlls/shell32/shell32.rc:229
 msgid "Sample Pictures"
 msgstr "Primjeri slika"
 
-#: dlls/shell32/shell32.rc:228
+#: dlls/shell32/shell32.rc:230
 msgid "Sample Playlists"
 msgstr "Primjeri playlista"
 
-#: dlls/shell32/shell32.rc:229
+#: dlls/shell32/shell32.rc:231
 msgid "Sample Videos"
 msgstr "Primjeri videa"
 
-#: dlls/shell32/shell32.rc:230
+#: dlls/shell32/shell32.rc:232
 msgid "Saved Games"
 msgstr "Spremljene igre"
 
-#: dlls/shell32/shell32.rc:231
+#: dlls/shell32/shell32.rc:233
 msgid "Searches"
 msgstr "Pretrage"
 
-#: dlls/shell32/shell32.rc:232
+#: dlls/shell32/shell32.rc:234
 msgid "Users"
 msgstr "Korisnici"
 
-#: dlls/shell32/shell32.rc:234
+#: dlls/shell32/shell32.rc:236
 msgid "Downloads"
 msgstr "Preuzimanja"
 
-#: dlls/shell32/shell32.rc:167
+#: dlls/shell32/shell32.rc:169
 msgid "Unable to create new Folder: Permission denied."
 msgstr "Stvaranje mape nije usjpelo: nemate odgovarajuću dozvolu."
 
-#: dlls/shell32/shell32.rc:168
+#: dlls/shell32/shell32.rc:170
 msgid "Error during creation of a new folder"
 msgstr "Došlo je do greške prilikom stvaranja mape"
 
-#: dlls/shell32/shell32.rc:169
+#: dlls/shell32/shell32.rc:171
 msgid "Confirm file deletion"
 msgstr "Potvrda brisanja datoteke"
 
-#: dlls/shell32/shell32.rc:170
+#: dlls/shell32/shell32.rc:172
 msgid "Confirm folder deletion"
 msgstr "Potvrda brisanja mape"
 
-#: dlls/shell32/shell32.rc:171
+#: dlls/shell32/shell32.rc:173
 msgid "Are you sure you want to delete '%1'?"
 msgstr "Sigurno želite izbrisati '%1'?"
 
-#: dlls/shell32/shell32.rc:172
+#: dlls/shell32/shell32.rc:174
 msgid "Are you sure you want to delete these %1 items?"
 msgstr "Sigurno želite izbrisati ovih %1 stavki?"
 
-#: dlls/shell32/shell32.rc:179
+#: dlls/shell32/shell32.rc:181
 msgid "Confirm file overwrite"
 msgstr "Potvrda zamjene datoteke"
 
-#: dlls/shell32/shell32.rc:178
+#: dlls/shell32/shell32.rc:180
 msgid ""
 "This folder already contains a file called '%1'.\n"
 "\n"
@@ -10821,28 +10899,28 @@ msgstr ""
 "\n"
 "Želite li je zamjeniti?"
 
-#: dlls/shell32/shell32.rc:173
+#: dlls/shell32/shell32.rc:175
 msgid "Are you sure you want to delete the selected item(s)?"
 msgstr "Želite li izbrišati izabranu stavku/izabrane stavke?"
 
-#: dlls/shell32/shell32.rc:175
+#: dlls/shell32/shell32.rc:177
 msgid ""
 "Are you sure that you want to send '%1' and all its content to the Trash?"
 msgstr "Sigurno želite poslati '%1' i sav sadržaj u smeće?"
 
-#: dlls/shell32/shell32.rc:174
+#: dlls/shell32/shell32.rc:176
 msgid "Are you sure that you want to send '%1' to the Trash?"
 msgstr "Sigurno želite poslati '%1' u smeće?"
 
-#: dlls/shell32/shell32.rc:176
+#: dlls/shell32/shell32.rc:178
 msgid "Are you sure that you want to send these %1 items to the Trash?"
 msgstr "Sigurno želite poslati ovih %1 stavki u smeće?"
 
-#: dlls/shell32/shell32.rc:177
+#: dlls/shell32/shell32.rc:179
 msgid "The item '%1' can't be sent to Trash. Do you want to delete it instead?"
 msgstr "Stavka '%1' se ne može poslati u smeće. Želite li ju trajno izbrisati?"
 
-#: dlls/shell32/shell32.rc:184
+#: dlls/shell32/shell32.rc:186
 msgid ""
 "This folder already contains a folder named '%1'.\n"
 "\n"
@@ -10856,42 +10934,42 @@ msgstr ""
 "izabranoj mapi, oni će biti zamjenjeni. Želite li premjestiti ili kopirati "
 "mapu?"
 
-#: dlls/shell32/shell32.rc:238
+#: dlls/shell32/shell32.rc:242
 msgid "Wine Control Panel"
 msgstr "Wine upravljački panel"
 
-#: dlls/shell32/shell32.rc:193
+#: dlls/shell32/shell32.rc:195
 #, fuzzy
 #| msgid "Unable to display Run File dialog box (internal error)"
 msgid "Unable to display Run dialog box (internal error)"
 msgstr ""
 "Prikazivanje dijaloga za pokretanje datoteke nije uspjelo (unutarnja greška)"
 
-#: dlls/shell32/shell32.rc:194
+#: dlls/shell32/shell32.rc:196
 msgid "Unable to display Browse dialog box (internal error)"
 msgstr "Prikazivanje dijaloga za razgledavanje nije uspjelo (unutarnja greška)"
 
-#: dlls/shell32/shell32.rc:196
+#: dlls/shell32/shell32.rc:198
 msgid "Executable files (*.exe)"
 msgstr "Izvršne datoteke (*.exe)"
 
-#: dlls/shell32/shell32.rc:242
+#: dlls/shell32/shell32.rc:246
 msgid "There is no Windows program configured to open this type of file."
 msgstr "Nijedan program nije podešen za otvaranje ove vrste datoteka."
 
-#: dlls/shell32/shell32.rc:244
+#: dlls/shell32/shell32.rc:248
 msgid "Are you sure you wish to permanently delete '%1'?"
 msgstr "Sigurno želite trajno izbrisati '%1'?"
 
-#: dlls/shell32/shell32.rc:245
+#: dlls/shell32/shell32.rc:249
 msgid "Are you sure you wish to permanently delete these %1 items?"
 msgstr "Sigurno želite trajno izbrisati ovih %1 stavki?"
 
-#: dlls/shell32/shell32.rc:246
+#: dlls/shell32/shell32.rc:250
 msgid "Confirm deletion"
 msgstr "Potvrda brisanja"
 
-#: dlls/shell32/shell32.rc:247
+#: dlls/shell32/shell32.rc:251
 msgid ""
 "A file already exists at the path %1.\n"
 "\n"
@@ -10901,7 +10979,7 @@ msgstr ""
 "\n"
 "Želite li je zamjeniti?"
 
-#: dlls/shell32/shell32.rc:248
+#: dlls/shell32/shell32.rc:252
 msgid ""
 "A folder already exists at the path %1.\n"
 "\n"
@@ -10911,11 +10989,11 @@ msgstr ""
 "\n"
 "Želite li je zamjeniti?"
 
-#: dlls/shell32/shell32.rc:249
+#: dlls/shell32/shell32.rc:253
 msgid "Confirm overwrite"
 msgstr "Potvrda zamjene"
 
-#: dlls/shell32/shell32.rc:266
+#: dlls/shell32/shell32.rc:270
 msgid ""
 "Wine is free software; you can redistribute it and/or modify it under the "
 "terms of the GNU Lesser General Public License as published by the Free "
@@ -10944,11 +11022,11 @@ msgstr ""
 "ukoliko niste, pišite Free Software Foundationu, Inc., 51 Franklin St, Fifth "
 "Floor, Boston, MA 02110-1301, USA."
 
-#: dlls/shell32/shell32.rc:254
+#: dlls/shell32/shell32.rc:258
 msgid "Wine License"
 msgstr "Wine licenca"
 
-#: dlls/shell32/shell32.rc:156
+#: dlls/shell32/shell32.rc:153
 msgid "Trash"
 msgstr "Smeće"
 
@@ -13612,12 +13690,6 @@ msgstr "Element nije pronađen.\n"
 msgid "Wrong number of arguments or invalid property assignment"
 msgstr ""
 
-#: dlls/vbscript/vbscript.rc:56
-#, fuzzy
-#| msgid "Object Class Violation"
-msgid "Object not a collection"
-msgstr "Kršenje klase objekata"
-
 #: dlls/vbscript/vbscript.rc:57
 #, fuzzy
 #| msgid "Specified control was not found in message"
@@ -14615,7 +14687,7 @@ msgstr "Ponavljaj pri rukovanju s upućivačima"
 msgid "Referral hop limit exceeded"
 msgstr "Ograničenje čvora upućivača je prekoračeno"
 
-#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:373
+#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:370
 msgid ""
 "Not Yet Implemented\n"
 "\n"
@@ -14623,7 +14695,7 @@ msgstr ""
 "Nije još implementirano\n"
 "\n"
 
-#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:376
+#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:373
 msgid "%1: File Not Found\n"
 msgstr "%1: Datoteka nije pronađena\n"
 
@@ -14748,22 +14820,18 @@ msgid "COPY <filename> copies a file.\n"
 msgstr "COPY <imeDatoteke> kopira datoteku.\n"
 
 #: programs/cmd/cmd.rc:56
-msgid "CTTY changes the input/output device.\n"
-msgstr "CTTY mijenja U/I uređaj.\n"
-
-#: programs/cmd/cmd.rc:59
 msgid "DATE shows or changes the system date.\n"
 msgstr "DATE prikazuje ili mijenja vrijeme sustava.\n"
 
-#: programs/cmd/cmd.rc:62
+#: programs/cmd/cmd.rc:59
 msgid "DEL <filename> deletes a file or set of files.\n"
 msgstr "DEL <imeDatoteke> briše datoteku ili skup datoteka.\n"
 
-#: programs/cmd/cmd.rc:65
+#: programs/cmd/cmd.rc:62
 msgid "DIR lists the contents of a directory.\n"
 msgstr "DIR ispisuje sadržaj direktorija.\n"
 
-#: programs/cmd/cmd.rc:75
+#: programs/cmd/cmd.rc:72
 msgid ""
 "ECHO <string> displays <string> on the current terminal device.\n"
 "\n"
@@ -14775,11 +14843,11 @@ msgid ""
 "preceding it with an @ sign.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:78
+#: programs/cmd/cmd.rc:75
 msgid "ERASE <filename> deletes a file or set of files.\n"
 msgstr "ERASE <imeDatoteke> briše datoteku ili skup datoteka.\n"
 
-#: programs/cmd/cmd.rc:85
+#: programs/cmd/cmd.rc:82
 msgid ""
 "The FOR command is used to execute a command for each of a set of files.\n"
 "\n"
@@ -14788,7 +14856,7 @@ msgid ""
 "The % sign must be doubled when using FOR in a batch file.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:97
+#: programs/cmd/cmd.rc:94
 msgid ""
 "The GOTO command transfers execution to another statement within a batch\n"
 "file.\n"
@@ -14802,7 +14870,7 @@ msgid ""
 "GOTO has no effect when used interactively.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:101
+#: programs/cmd/cmd.rc:98
 msgid ""
 "HELP <command> shows brief help details on a topic.\n"
 "HELP without an argument shows all CMD built-in commands.\n"
@@ -14810,7 +14878,7 @@ msgstr ""
 "HELP <naredba> prikazuje kratku pomoć o temi.\n"
 "HELP bez argumenta prikazuje sve CMD ugrađene naredbe.\n"
 
-#: programs/cmd/cmd.rc:111
+#: programs/cmd/cmd.rc:108
 msgid ""
 "IF is used to conditionally execute a command.\n"
 "\n"
@@ -14822,7 +14890,7 @@ msgid ""
 "quotes. The comparison is not case-sensitive.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:118
+#: programs/cmd/cmd.rc:115
 msgid ""
 "LABEL is used to set a disk volume label.\n"
 "\n"
@@ -14831,15 +14899,15 @@ msgid ""
 "You can display the disk volume label with the VOL command.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:121
+#: programs/cmd/cmd.rc:118
 msgid "MD <name> is the short version of MKDIR. It creates a subdirectory.\n"
 msgstr "MD <ime> je kraća verzija MKDIR. Stvara poddirektorij.\n"
 
-#: programs/cmd/cmd.rc:123
+#: programs/cmd/cmd.rc:120
 msgid "MKDIR <name> creates a subdirectory.\n"
 msgstr "MKDIR <ime> stvara poddirektorij.\n"
 
-#: programs/cmd/cmd.rc:131
+#: programs/cmd/cmd.rc:128
 msgid ""
 "MOVE relocates a file or directory to a new point within the file system.\n"
 "\n"
@@ -14849,7 +14917,7 @@ msgid ""
 "MOVE fails if the old and new locations are on different DOS drive letters.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:142
+#: programs/cmd/cmd.rc:139
 msgid ""
 "PATH displays or changes the cmd search path.\n"
 "\n"
@@ -14862,7 +14930,7 @@ msgid ""
 "PATH %PATH%;c:\\temp\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:148
+#: programs/cmd/cmd.rc:145
 msgid ""
 "PAUSE displays a message on the screen asking the user to press a key.\n"
 "\n"
@@ -14870,7 +14938,7 @@ msgid ""
 "a previous command before it scrolls off the screen.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:169
+#: programs/cmd/cmd.rc:166
 msgid ""
 "PROMPT sets the command-line prompt.\n"
 "\n"
@@ -14893,33 +14961,33 @@ msgid ""
 "so the command 'SET PROMPT=text' has the same effect as 'PROMPT text'.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:173
+#: programs/cmd/cmd.rc:170
 msgid ""
 "A command line beginning with REM (followed by a space) performs no action,\n"
 "and can therefore be used as a comment in a batch file.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:176
+#: programs/cmd/cmd.rc:173
 msgid "REN <filename> is the short version of RENAME. It renames a file.\n"
 msgstr "REN <imeDatoteke> je kraća verzija RENAME. Preimenuje datoteku.\n"
 
-#: programs/cmd/cmd.rc:178
+#: programs/cmd/cmd.rc:175
 msgid "RENAME <filename> renames a file.\n"
 msgstr "RENAME <imeDatoteke> preimenuje datoteku.\n"
 
-#: programs/cmd/cmd.rc:181
+#: programs/cmd/cmd.rc:178
 #, fuzzy
 #| msgid "RD <dir> is the short version of RMDIR. It deletes a subdirectory.\n"
 msgid "RD <directory> is the short version of RMDIR. It deletes a directory.\n"
 msgstr "RD <dir> je kraća verzija RMDIR. Briše poddirektorij.\n"
 
-#: programs/cmd/cmd.rc:183
+#: programs/cmd/cmd.rc:180
 #, fuzzy
 #| msgid "RMDIR <dir> deletes a subdirectory.\n"
 msgid "RMDIR <directory> deletes a directory.\n"
 msgstr "RMDIR <dir> briše poddirektorij.\n"
 
-#: programs/cmd/cmd.rc:229
+#: programs/cmd/cmd.rc:226
 msgid ""
 "SET displays or changes the cmd environment variables.\n"
 "\n"
@@ -14938,14 +15006,14 @@ msgid ""
 "to affect the operating system environment from within cmd.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:234
+#: programs/cmd/cmd.rc:231
 msgid ""
 "SHIFT is used in a batch file to remove one parameter from the head of the\n"
 "list, so parameter 2 becomes parameter 1 and so on. It has no effect if\n"
 "called from the command line.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:212
+#: programs/cmd/cmd.rc:209
 msgid ""
 "Start a program, or open a document in the program normally used for files\n"
 "with that suffix.\n"
@@ -14976,21 +15044,21 @@ msgid ""
 "/?             Display this help and exit.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:237
+#: programs/cmd/cmd.rc:234
 msgid "TIME sets or shows the current system time.\n"
 msgstr "TIME postavlja ili prikazuje trenutno vrijeme sistema.\n"
 
-#: programs/cmd/cmd.rc:240
+#: programs/cmd/cmd.rc:237
 msgid "TITLE <string> sets the window title for the cmd window.\n"
 msgstr "TITLE <string> postavlja naslov prozora za cmd prozor.\n"
 
-#: programs/cmd/cmd.rc:244
+#: programs/cmd/cmd.rc:241
 msgid ""
 "TYPE <filename> copies <filename> to the console device (or elsewhere if\n"
 "redirected). No check is made that the file is readable text.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:253
+#: programs/cmd/cmd.rc:250
 msgid ""
 "VERIFY is used to set, clear or test the verify flag. Valid forms are:\n"
 "\n"
@@ -15001,21 +15069,21 @@ msgid ""
 "The verify flag has no function in Wine.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:256
+#: programs/cmd/cmd.rc:253
 msgid "VER displays the version of cmd you are running.\n"
 msgstr "VER prikazuje verziju cmd koju izvodite.\n"
 
-#: programs/cmd/cmd.rc:259
+#: programs/cmd/cmd.rc:256
 msgid "VOL shows the volume label of a disk device.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:263
+#: programs/cmd/cmd.rc:260
 msgid ""
 "ENDLOCAL ends localization of environment changes in a batch file which\n"
 "were introduced by a preceding SETLOCAL.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:271
+#: programs/cmd/cmd.rc:268
 msgid ""
 "SETLOCAL starts localization of environment changes in a batch file.\n"
 "\n"
@@ -15025,7 +15093,7 @@ msgid ""
 "settings are restored.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:275
+#: programs/cmd/cmd.rc:272
 msgid ""
 "PUSHD <directory> saves the current directory onto a stack, and then\n"
 "changes the current directory to the supplied one.\n"
@@ -15033,11 +15101,11 @@ msgstr ""
 "CD <dir> je kraća verzija CHDIR. Mijenja trenutan podrazumijevan "
 "direktorij.\n"
 
-#: programs/cmd/cmd.rc:278
+#: programs/cmd/cmd.rc:275
 msgid "POPD changes current directory to the last one saved with PUSHD.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:288
+#: programs/cmd/cmd.rc:285
 msgid ""
 "ASSOC shows or modifies file extension associations.\n"
 "\n"
@@ -15049,7 +15117,7 @@ msgid ""
 "association, if any.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:300
+#: programs/cmd/cmd.rc:297
 msgid ""
 "FTYPE shows or modifies open commands associated with file types.\n"
 "\n"
@@ -15063,18 +15131,18 @@ msgid ""
 "associated to the specified file type.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:303
+#: programs/cmd/cmd.rc:300
 msgid "MORE displays output of files or piped input in pages.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:308
+#: programs/cmd/cmd.rc:305
 msgid ""
 "CHOICE displays a text and waits, until the User presses an allowed Key\n"
 "from a selectable list.\n"
 "CHOICE is mainly used to build a menu selection in a batch file.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:324
+#: programs/cmd/cmd.rc:321
 msgid ""
 "Create a symbolic link.\n"
 "\n"
@@ -15088,13 +15156,13 @@ msgid ""
 "target is the path that link_name points to.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:312
+#: programs/cmd/cmd.rc:309
 msgid ""
 "EXIT terminates the current command session and returns to the operating\n"
 "system or shell from which you invoked cmd.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:364
+#: programs/cmd/cmd.rc:361
 msgid ""
 "CMD built-in commands are:\n"
 "ASSOC\t\tShow or modify file extension associations\n"
@@ -15137,185 +15205,199 @@ msgid ""
 "Enter HELP <command> for further information on any of the above commands.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:365
+#: programs/cmd/cmd.rc:362
 msgid "Are you sure?"
 msgstr "Da li ste sigurni?"
 
-#: programs/cmd/cmd.rc:366 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
+#: programs/cmd/cmd.rc:363 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
 msgctxt "Yes key"
 msgid "Y"
 msgstr "D"
 
-#: programs/cmd/cmd.rc:367 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
+#: programs/cmd/cmd.rc:364 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
 msgctxt "No key"
 msgid "N"
 msgstr "N"
 
-#: programs/cmd/cmd.rc:368
+#: programs/cmd/cmd.rc:365
 msgid "File association missing for extension %1\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:369
+#: programs/cmd/cmd.rc:366
 msgid "No open command associated with file type '%1'\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:370
+#: programs/cmd/cmd.rc:367
 msgid "Overwrite %1?"
 msgstr "Pisati preko %1?"
 
-#: programs/cmd/cmd.rc:371
+#: programs/cmd/cmd.rc:368
 msgid "More..."
 msgstr "Više..."
 
-#: programs/cmd/cmd.rc:372
+#: programs/cmd/cmd.rc:369
 msgid "Line in Batch processing possibly truncated. Using:\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:374
+#: programs/cmd/cmd.rc:371
 msgid "Argument missing\n"
 msgstr "Nedostaje argument\n"
 
-#: programs/cmd/cmd.rc:375
+#: programs/cmd/cmd.rc:372
 msgid "Syntax error\n"
 msgstr "Sintaksna greška\n"
 
-#: programs/cmd/cmd.rc:377
+#: programs/cmd/cmd.rc:374
 msgid "No help available for %1\n"
 msgstr "Nedostupa pomoć za %1\n"
 
-#: programs/cmd/cmd.rc:378
+#: programs/cmd/cmd.rc:375
 msgid "Target to GOTO not found\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:379
+#: programs/cmd/cmd.rc:376
 msgid "Current Date is %1\n"
 msgstr "Trenutni datum je %1\n"
 
-#: programs/cmd/cmd.rc:380
+#: programs/cmd/cmd.rc:377
 msgid "Current Time is %1\n"
 msgstr "Trenutno vrijeme je %1\n"
 
-#: programs/cmd/cmd.rc:381
+#: programs/cmd/cmd.rc:378
 msgid "Enter new date: "
 msgstr "Unesite novi datum: "
 
-#: programs/cmd/cmd.rc:382
+#: programs/cmd/cmd.rc:379
 msgid "Enter new time: "
 msgstr "Unesite novo vrijeme: "
 
-#: programs/cmd/cmd.rc:383
+#: programs/cmd/cmd.rc:380
 msgid "Environment variable %1 not defined\n"
 msgstr "Varijabla okruženja %1 nije definirana\n"
 
-#: programs/cmd/cmd.rc:384 programs/xcopy/xcopy.rc:41
+#: programs/cmd/cmd.rc:381 programs/xcopy/xcopy.rc:41
 msgid "Failed to open '%1'\n"
 msgstr "Neuspjelo otvaranje '%1'\n"
 
-#: programs/cmd/cmd.rc:385
+#: programs/cmd/cmd.rc:382
 msgid "Cannot call batch label outside of a batch script\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:386 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
+#: programs/cmd/cmd.rc:383 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
 msgctxt "All key"
 msgid "A"
 msgstr "S"
 
-#: programs/cmd/cmd.rc:387
+#: programs/cmd/cmd.rc:384
 msgid "Delete %1?"
 msgstr "Izbriši %1?"
 
-#: programs/cmd/cmd.rc:388
+#: programs/cmd/cmd.rc:385
 msgid "Echo is %1\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:389
+#: programs/cmd/cmd.rc:386
 msgid "Verify is %1\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:390
+#: programs/cmd/cmd.rc:387
 msgid "Verify must be ON or OFF\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:391
+#: programs/cmd/cmd.rc:388
 msgid "Parameter error\n"
 msgstr "Greška parametra\n"
 
-#: programs/cmd/cmd.rc:392
+#: programs/cmd/cmd.rc:389
 msgid ""
 "Volume Serial Number is %1!04x!-%2!04x!\n"
 "\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:393
+#: programs/cmd/cmd.rc:390
 msgid "Volume label (11 characters, <Enter> for none)?"
 msgstr ""
 
-#: programs/cmd/cmd.rc:394
-msgid "PATH not found\n"
-msgstr "PATH nije nađen\n"
-
-#: programs/cmd/cmd.rc:395
+#: programs/cmd/cmd.rc:391
 msgid "Press any key to continue... "
 msgstr "Pritisnite bilo koju tipku za nastavak... "
 
-#: programs/cmd/cmd.rc:396
+#: programs/cmd/cmd.rc:392
 msgid "Wine Command Prompt"
 msgstr ""
 
-#: programs/cmd/cmd.rc:397
+#: programs/cmd/cmd.rc:393
 msgid "Microsoft Windows %1!S!\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:398
+#: programs/cmd/cmd.rc:394
 msgid "More? "
 msgstr "Više? "
 
-#: programs/cmd/cmd.rc:399
+#: programs/cmd/cmd.rc:395
 msgid "The input line is too long.\n"
 msgstr "Ulazni redak je predugačak.\n"
 
-#: programs/cmd/cmd.rc:400
+#: programs/cmd/cmd.rc:396
 msgid "Volume in drive %1!c! is %2\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:401
+#: programs/cmd/cmd.rc:397
 msgid "Volume in drive %1!c! has no label.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:402 programs/reg/reg.rc:129
+#: programs/cmd/cmd.rc:398 programs/reg/reg.rc:129
 msgid " (Yes|No)"
 msgstr " (Da|Ne)"
 
-#: programs/cmd/cmd.rc:403 programs/reg/reg.rc:130
+#: programs/cmd/cmd.rc:399 programs/reg/reg.rc:130
 msgid " (Yes|No|All)"
 msgstr " (Da|Ne|Sve)"
 
-#: programs/cmd/cmd.rc:404
+#: programs/cmd/cmd.rc:400
 msgid ""
 "Can't recognize '%1' as an internal or external command, or batch script.\n"
 msgstr ""
 
-#: programs/cmd/cmd.rc:405
+#: programs/cmd/cmd.rc:401
 msgid "Division by zero error.\n"
 msgstr "Greška dijeljenja sa nulom.\n"
 
-#: programs/cmd/cmd.rc:406
+#: programs/cmd/cmd.rc:402
 msgid "Expected an operand.\n"
 msgstr "Očekivan operand.\n"
 
-#: programs/cmd/cmd.rc:407
+#: programs/cmd/cmd.rc:403
 msgid "Expected an operator.\n"
 msgstr "Očekivan operator.\n"
 
-#: programs/cmd/cmd.rc:408
+#: programs/cmd/cmd.rc:404
 msgid "Mismatch in parentheses.\n"
 msgstr "Nepodudaranje u zagradama.\n"
 
-#: programs/cmd/cmd.rc:409
+#: programs/cmd/cmd.rc:405
 msgid ""
 "Badly formed number - must be one of decimal (12),\n"
 " hexadecimal (0x34) or octal (056).\n"
 msgstr ""
+
+#: programs/cmd/cmd.rc:407
+#, fuzzy
+#| msgid "Syntax error\n"
+msgid "Syntax error: unexpected %1\n"
+msgstr "Sintaksna greška\n"
+
+#: programs/cmd/cmd.rc:408
+#, fuzzy
+#| msgid "End of file.\n"
+msgid "End of line"
+msgstr "Kraj datoteke.\n"
+
+#: programs/cmd/cmd.rc:409
+#, fuzzy
+#| msgid "End of file.\n"
+msgid "End of file"
+msgstr "Kraj datoteke.\n"
 
 #: programs/conhost/conhost.rc:54
 msgid "Cursor size"
@@ -15515,6 +15597,13 @@ msgid ""
 "Are you sure you want to close all programs and exit the virtual desktop?"
 msgstr "Sigurno želite izbrisati ovih %1 stavki?"
 
+#: programs/explorer/explorer.rc:38
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Wine Desktop"
+msgstr "Radna površina"
+
 #: programs/findstr/findstr.rc:28
 #, fuzzy
 #| msgid "Reconnecting"
@@ -15691,6 +15780,12 @@ msgstr "Enkriptirajući datotečni sustav"
 #| msgid "Current Connections"
 msgid "Current LogonId is"
 msgstr "Trenutne veze"
+
+#: programs/klist/klist.rc:38
+#, fuzzy
+#| msgid "client"
+msgid "Client"
+msgstr "klijent"
 
 #: programs/msinfo32/msinfo32.rc:28
 #, fuzzy
@@ -19968,7 +20063,9 @@ msgid "Help topics: "
 msgstr "Teme: "
 
 #: programs/wmic/wmic.rc:28
-msgid "Error: Command line not supported\n"
+#, fuzzy
+#| msgid "Error: Command line not supported\n"
+msgid "Error: Command not supported\n"
 msgstr ""
 "Greška: uneseni su nepoznati ili neispravni parametri naredbene linije\n"
 
@@ -19985,6 +20082,12 @@ msgstr "Error: Neispravan upit\n"
 #| msgid "Error: Invalid key name\n"
 msgid "Error: Invalid syntax for PATH\n"
 msgstr "Greška: Neispravan naziv ključa\n"
+
+#: programs/wmic/wmic.rc:32
+#, fuzzy
+#| msgid "Bad command.\n"
+msgid "Supply a command\n"
+msgstr "Loša naredba.\n"
 
 #: programs/wordpad/wordpad.rc:31
 msgid "&New...\tCtrl+N"

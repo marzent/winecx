@@ -28,6 +28,7 @@
 #include "ole2.h"
 #include "dispex.h"
 #include "activscp.h"
+#include "jsdisp.h"
 
 #include "resource.h"
 
@@ -75,15 +76,9 @@ typedef struct jsdisp_t jsdisp_t;
 extern HINSTANCE jscript_hinstance ;
 HRESULT get_dispatch_typeinfo(ITypeInfo**);
 
-#define PROPF_ARGMASK       0x00ff
-#define PROPF_METHOD        0x0100
-#define PROPF_CONSTR        0x0200
-
-#define PROPF_ENUMERABLE    0x0400
-#define PROPF_WRITABLE      0x0800
-#define PROPF_CONFIGURABLE  0x1000
 #define PROPF_ALL           (PROPF_ENUMERABLE | PROPF_WRITABLE | PROPF_CONFIGURABLE)
 
+#define PROPF_ARGMASK       0x000000ff
 #define PROPF_VERSION_MASK  0x01ff0000
 #define PROPF_VERSION_SHIFT 16
 #define PROPF_HTML          (SCRIPTLANGUAGEVERSION_HTML << PROPF_VERSION_SHIFT)
@@ -116,9 +111,12 @@ typedef enum {
     JSCLASS_ARGUMENTS,
     JSCLASS_VBARRAY,
     JSCLASS_JSON,
+    JSCLASS_ARRAYBUFFER,
+    JSCLASS_DATAVIEW,
     JSCLASS_MAP,
     JSCLASS_SET,
     JSCLASS_WEAKMAP,
+    JSCLASS_HOST,
 } jsclass_t;
 
 jsdisp_t *iface_to_jsdisp(IDispatch*);
@@ -128,6 +126,20 @@ typedef HRESULT (*builtin_getter_t)(script_ctx_t*,jsdisp_t*,jsval_t*);
 typedef HRESULT (*builtin_setter_t)(script_ctx_t*,jsdisp_t*,jsval_t);
 
 HRESULT builtin_set_const(script_ctx_t*,jsdisp_t*,jsval_t);
+
+struct thread_data {
+    LONG ref;
+    LONG thread_id;
+
+    BOOL gc_is_unlinking;
+    DWORD gc_last_tick;
+
+    struct list objects;
+    struct rb_tree weak_refs;
+};
+
+struct thread_data *get_thread_data(void);
+void release_thread_data(struct thread_data*);
 
 typedef struct named_item_t {
     jsdisp_t *script_obj;
@@ -168,21 +180,28 @@ typedef struct {
     DWORD props_cnt;
     const builtin_prop_t *props;
     void (*destructor)(jsdisp_t*);
+    ULONG (*addref)(jsdisp_t*);
+    ULONG (*release)(jsdisp_t*);
     void (*on_put)(jsdisp_t*,const WCHAR*);
-    unsigned (*idx_length)(jsdisp_t*);
-    HRESULT (*idx_get)(jsdisp_t*,unsigned,jsval_t*);
-    HRESULT (*idx_put)(jsdisp_t*,unsigned,jsval_t);
+    HRESULT (*lookup_prop)(jsdisp_t*,const WCHAR*,unsigned,struct property_info*);
+    HRESULT (*next_prop)(jsdisp_t*,unsigned,struct property_info*);
+    HRESULT (*prop_get)(jsdisp_t*,unsigned,jsval_t*);
+    HRESULT (*prop_put)(jsdisp_t*,unsigned,jsval_t);
+    HRESULT (*prop_delete)(jsdisp_t*,unsigned);
+    HRESULT (*prop_config)(jsdisp_t*,unsigned,unsigned);
+    HRESULT (*to_string)(jsdisp_t*,jsstr_t**);
     HRESULT (*gc_traverse)(struct gc_ctx*,enum gc_traverse_op,jsdisp_t*);
 } builtin_info_t;
 
 struct jsdisp_t {
-    IDispatchEx IDispatchEx_iface;
+    IWineJSDispatch IWineJSDispatch_iface;
 
     LONG ref;
 
     BOOLEAN has_weak_refs;
     BOOLEAN extensible;
     BOOLEAN gc_marked;
+    BOOLEAN is_constructor;
 
     DWORD buf_size;
     DWORD prop_cnt;
@@ -197,39 +216,20 @@ struct jsdisp_t {
 
 static inline IDispatch *to_disp(jsdisp_t *jsdisp)
 {
-    return (IDispatch*)&jsdisp->IDispatchEx_iface;
+    return (IDispatch *)&jsdisp->IWineJSDispatch_iface;
+}
+
+static inline IDispatchEx *to_dispex(jsdisp_t *jsdisp)
+{
+    return (IDispatchEx *)&jsdisp->IWineJSDispatch_iface;
 }
 
 jsdisp_t *as_jsdisp(IDispatch*);
 jsdisp_t *to_jsdisp(IDispatch*);
-void jsdisp_free(jsdisp_t*);
-
-#ifndef TRACE_REFCNT
-
-/*
- * We do a lot of refcount calls during script execution, so having an inline
- * version is a nice perf win. Define TRACE_REFCNT macro when debugging
- * refcount bugs to have traces. Also, since jsdisp_t is not thread safe anyways,
- * there is no point in using atomic operations.
- */
-static inline jsdisp_t *jsdisp_addref(jsdisp_t *jsdisp)
-{
-    jsdisp->ref++;
-    return jsdisp;
-}
-
-static inline void jsdisp_release(jsdisp_t *jsdisp)
-{
-    if(!--jsdisp->ref)
-        jsdisp_free(jsdisp);
-}
-
-#else
+IWineJSDispatchHost *get_host_dispatch(IDispatch*);
 
 jsdisp_t *jsdisp_addref(jsdisp_t*);
-void jsdisp_release(jsdisp_t*);
-
-#endif
+ULONG jsdisp_release(jsdisp_t*);
 
 enum jsdisp_enum_type {
     JSDISP_ENUM_ALL,
@@ -240,6 +240,8 @@ enum jsdisp_enum_type {
 HRESULT create_dispex(script_ctx_t*,const builtin_info_t*,jsdisp_t*,jsdisp_t**);
 HRESULT init_dispex(jsdisp_t*,script_ctx_t*,const builtin_info_t*,jsdisp_t*);
 HRESULT init_dispex_from_constr(jsdisp_t*,script_ctx_t*,const builtin_info_t*,jsdisp_t*);
+HRESULT init_host_object(script_ctx_t*,IWineJSDispatchHost*,IWineJSDispatch*,UINT32,IWineJSDispatch**);
+HRESULT init_host_constructor(script_ctx_t*,IWineJSDispatchHost*,IWineJSDispatch*,IWineJSDispatch**);
 
 HRESULT disp_call(script_ctx_t*,IDispatch*,DISPID,WORD,unsigned,jsval_t*,jsval_t*);
 HRESULT disp_call_name(script_ctx_t*,IDispatch*,const WCHAR*,WORD,unsigned,jsval_t*,jsval_t*);
@@ -260,6 +262,8 @@ HRESULT jsdisp_get_id(jsdisp_t*,const WCHAR*,DWORD,DISPID*);
 HRESULT jsdisp_get_idx_id(jsdisp_t*,DWORD,DISPID*);
 HRESULT disp_delete(IDispatch*,DISPID,BOOL*);
 HRESULT disp_delete_name(script_ctx_t*,IDispatch*,jsstr_t*,BOOL*);
+HRESULT jsdisp_index_lookup(jsdisp_t*,const WCHAR*,unsigned,struct property_info*);
+HRESULT jsdisp_next_index(jsdisp_t*,unsigned,unsigned,struct property_info*);
 HRESULT jsdisp_delete_idx(jsdisp_t*,DWORD);
 HRESULT jsdisp_get_own_property(jsdisp_t*,const WCHAR*,BOOL,property_desc_t*);
 HRESULT jsdisp_define_property(jsdisp_t*,const WCHAR*,property_desc_t*);
@@ -274,6 +278,7 @@ HRESULT create_builtin_function(script_ctx_t*,builtin_invoke_t,const WCHAR*,cons
         jsdisp_t*,jsdisp_t**);
 HRESULT create_builtin_constructor(script_ctx_t*,builtin_invoke_t,const WCHAR*,const builtin_info_t*,DWORD,
         jsdisp_t*,jsdisp_t**);
+HRESULT create_host_function(script_ctx_t*,const struct property_info*,DWORD,jsdisp_t**);
 HRESULT Function_invoke(jsdisp_t*,jsval_t,WORD,unsigned,jsval_t*,jsval_t*);
 
 HRESULT Function_value(script_ctx_t*,jsval_t,WORD,unsigned,jsval_t*,jsval_t*);
@@ -282,6 +287,7 @@ struct _function_code_t *Function_get_code(jsdisp_t*);
 
 HRESULT throw_error(script_ctx_t*,HRESULT,const WCHAR*);
 jsdisp_t *create_builtin_error(script_ctx_t *ctx);
+void handle_dispatch_exception(script_ctx_t *ctx, EXCEPINFO *ei);
 
 HRESULT create_object(script_ctx_t*,jsdisp_t*,jsdisp_t**);
 HRESULT create_math(script_ctx_t*,jsdisp_t**);
@@ -375,10 +381,9 @@ struct _script_ctx_t {
     SCRIPTSTATE state;
     IActiveScript *active_script;
 
+    struct thread_data *thread_data;
     struct _call_frame_t *call_ctx;
     struct list named_items;
-    struct list objects;
-    struct rb_tree weak_refs;
     IActiveScriptSite *site;
     IInternetHostSecurityManager *secmgr;
     DWORD safeopt;
@@ -390,9 +395,6 @@ struct _script_ctx_t {
     jsexcept_t *ei;
 
     heap_pool_t tmp_heap;
-
-    BOOL gc_is_unlinking;
-    DWORD gc_last_tick;
 
     jsval_t *stack;
     unsigned stack_top;
@@ -425,11 +427,13 @@ struct _script_ctx_t {
             jsdisp_t *regexp_constr;
             jsdisp_t *string_constr;
             jsdisp_t *vbarray_constr;
+            jsdisp_t *arraybuf_constr;
+            jsdisp_t *dataview_constr;
             jsdisp_t *map_prototype;
             jsdisp_t *set_prototype;
             jsdisp_t *weakmap_prototype;
         };
-        jsdisp_t *global_objects[23];
+        jsdisp_t *global_objects[25];
     };
 };
 C_ASSERT(RTL_SIZEOF_THROUGH_FIELD(script_ctx_t, weakmap_prototype) == RTL_SIZEOF_THROUGH_FIELD(script_ctx_t, global_objects));
@@ -454,6 +458,7 @@ HRESULT init_global(script_ctx_t*);
 HRESULT init_function_constr(script_ctx_t*,jsdisp_t*);
 HRESULT create_object_prototype(script_ctx_t*,jsdisp_t**);
 HRESULT init_set_constructor(script_ctx_t*);
+HRESULT init_arraybuf_constructors(script_ctx_t*);
 
 HRESULT create_activex_constr(script_ctx_t*,jsdisp_t**);
 HRESULT create_array_constr(script_ctx_t*,jsdisp_t*,jsdisp_t**);
@@ -511,9 +516,7 @@ static inline HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, jsval_
     return disp_call_value_with_caller(ctx, disp, vthis, flags, argc, argv, r, &ctx->jscaller->IServiceProvider_iface);
 }
 
-#define FACILITY_JSCRIPT 10
-
-#define MAKE_JSERROR(code) MAKE_HRESULT(SEVERITY_ERROR, FACILITY_JSCRIPT, code)
+#define MAKE_JSERROR(code) MAKE_HRESULT(SEVERITY_ERROR, FACILITY_CONTROL, code)
 
 #define JS_E_TO_PRIMITIVE            MAKE_JSERROR(IDS_TO_PRIMITIVE)
 #define JS_E_INVALIDARG              MAKE_JSERROR(IDS_INVALID_CALL_ARG)
@@ -524,6 +527,7 @@ static inline HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, jsval_
 #define JS_E_INVALID_PROPERTY        MAKE_JSERROR(IDS_NO_PROPERTY)
 #define JS_E_INVALID_ACTION          MAKE_JSERROR(IDS_UNSUPPORTED_ACTION)
 #define JS_E_MISSING_ARG             MAKE_JSERROR(IDS_ARG_NOT_OPT)
+#define JS_E_OBJECT_NOT_COLLECTION   MAKE_JSERROR(IDS_OBJECT_NOT_COLLECTION)
 #define JS_E_SYNTAX                  MAKE_JSERROR(IDS_SYNTAX_ERROR)
 #define JS_E_MISSING_SEMICOLON       MAKE_JSERROR(IDS_SEMICOLON)
 #define JS_E_MISSING_LBRACKET        MAKE_JSERROR(IDS_LBRACKET)
@@ -566,14 +570,19 @@ static inline HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, jsval_
 #define JS_E_OBJECT_NONEXTENSIBLE    MAKE_JSERROR(IDS_OBJECT_NONEXTENSIBLE)
 #define JS_E_NONCONFIGURABLE_REDEFINED MAKE_JSERROR(IDS_NONCONFIGURABLE_REDEFINED)
 #define JS_E_NONWRITABLE_MODIFIED    MAKE_JSERROR(IDS_NONWRITABLE_MODIFIED)
+#define JS_E_NOT_DATAVIEW            MAKE_JSERROR(IDS_NOT_DATAVIEW)
+#define JS_E_DATAVIEW_NO_ARGUMENT    MAKE_JSERROR(IDS_DATAVIEW_NO_ARGUMENT)
+#define JS_E_DATAVIEW_INVALID_ACCESS MAKE_JSERROR(IDS_DATAVIEW_INVALID_ACCESS)
+#define JS_E_DATAVIEW_INVALID_OFFSET MAKE_JSERROR(IDS_DATAVIEW_INVALID_OFFSET)
 #define JS_E_WRONG_THIS              MAKE_JSERROR(IDS_WRONG_THIS)
 #define JS_E_KEY_NOT_OBJECT          MAKE_JSERROR(IDS_KEY_NOT_OBJECT)
+#define JS_E_ARRAYBUFFER_EXPECTED    MAKE_JSERROR(IDS_ARRAYBUFFER_EXPECTED)
 #define JS_E_PROP_DESC_MISMATCH      MAKE_JSERROR(IDS_PROP_DESC_MISMATCH)
 #define JS_E_INVALID_WRITABLE_PROP_DESC MAKE_JSERROR(IDS_INVALID_WRITABLE_PROP_DESC)
 
 static inline BOOL is_jscript_error(HRESULT hres)
 {
-    return HRESULT_FACILITY(hres) == FACILITY_JSCRIPT;
+    return HRESULT_FACILITY(hres) == FACILITY_CONTROL;
 }
 
 const char *debugstr_jsval(const jsval_t);

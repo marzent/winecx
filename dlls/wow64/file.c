@@ -37,13 +37,8 @@ static FILE_OBJECTID_BUFFER windir_id, sysdir_id;
 
 static inline NTSTATUS get_file_id( HANDLE handle, FILE_OBJECTID_BUFFER *id )
 {
-    IO_STATUS_BLOCK32 io32;
     IO_STATUS_BLOCK io;
 
-    /* HACK: this shouldn't be necessary since we open the file for synchronous
-     * I/O, but we currently ignore that in ntdll.so and always write the 32-bit
-     * IOSB */
-    io.Pointer = &io32;
     return NtFsControlFile( handle, 0, NULL, NULL, &io, FSCTL_GET_OBJECT_ID, NULL, 0, id, sizeof(*id) );
 }
 
@@ -428,6 +423,26 @@ NTSTATUS WINAPI wow64_NtFlushBuffersFile( UINT *args )
 
 
 /**********************************************************************
+ *           wow64_NtFlushBuffersFileEx
+ */
+NTSTATUS WINAPI wow64_NtFlushBuffersFileEx( UINT *args )
+{
+    HANDLE handle = get_handle( &args );
+    ULONG flags = get_ulong( &args );
+    void *params = get_ptr( &args );
+    ULONG size = get_ulong( &args );
+    IO_STATUS_BLOCK32 *io32 = get_ptr( &args );
+
+    IO_STATUS_BLOCK io;
+    NTSTATUS status;
+
+    status = NtFlushBuffersFileEx( handle, flags, params, size, iosb_32to64( &io, io32 ) );
+    put_iosb( io32, &io );
+    return status;
+}
+
+
+/**********************************************************************
  *           wow64_NtFsControlFile
  */
 NTSTATUS WINAPI wow64_NtFsControlFile( UINT *args )
@@ -671,8 +686,10 @@ NTSTATUS WINAPI wow64_NtReadFile( UINT *args )
     IO_STATUS_BLOCK io;
     NTSTATUS status;
 
+    if (pBTCpuNotifyReadFile) pBTCpuNotifyReadFile( handle, buffer, len, FALSE, 0 );
     status = NtReadFile( handle, event, apc_32to64( apc ), apc_param_32to64( apc, apc_param ),
                          iosb_32to64( &io, io32 ), buffer, len, offset, key );
+    if (pBTCpuNotifyReadFile) pBTCpuNotifyReadFile( handle, buffer, len, TRUE, status );
     put_iosb( io32, &io );
     return status;
 }

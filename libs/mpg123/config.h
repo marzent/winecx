@@ -38,6 +38,9 @@
 /* Define if FIFO support is enabled. */
 #define FIFO 1
 
+/* System setup enforces 64 bit offsets where 32 bit would be native. */
+/* #undef FORCED_OFF_64 */
+
 /* Define if frame index should be used. */
 #define FRAME_INDEX 1
 
@@ -133,9 +136,6 @@
 
 /* Define to 1 if you have the `mx' library (-lmx). */
 /* #undef HAVE_LIBMX */
-
-/* Define to 1 if you have the <limits.h> header file. */
-#define HAVE_LIMITS_H 1
 
 /* Define to 1 if you have the <linux/soundcard.h> header file. */
 /* #undef HAVE_LINUX_SOUNDCARD_H */
@@ -439,7 +439,7 @@
 #define PACKAGE_NAME "mpg123"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "mpg123 1.32.2"
+#define PACKAGE_STRING "mpg123 1.32.9"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "mpg123"
@@ -448,7 +448,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.32.2"
+#define PACKAGE_VERSION "1.32.9"
 
 /* Define to only include portable library API (no off_t, no internal I/O). */
 /* #undef PORTABLE_API */
@@ -459,20 +459,8 @@
 /* Define for calculating tables at runtime. */
 /* #undef RUNTIME_TABLES */
 
-/* The size of `int32_t', as computed by sizeof. */
-#define SIZEOF_INT32_T 4
-
-/* The size of `long', as computed by sizeof. */
-#define SIZEOF_LONG 4
-
 /* The size of `off_t', as computed by sizeof. */
 #define SIZEOF_OFF_T 4
-
-/* The size of `size_t', as computed by sizeof. */
-#define SIZEOF_SIZE_T 4
-
-/* The size of `ssize_t', as computed by sizeof. */
-#define SIZEOF_SSIZE_T 4
 
 /* Define to 1 if all of the C90 standard headers exist (not just the ones
    required in a freestanding environment). This macro is provided for
@@ -492,7 +480,7 @@
 /* #undef USE_YASM_FOR_AVX */
 
 /* Version number of package */
-#define VERSION "1.32.2"
+#define VERSION "1.32.9"
 
 /* Define to use Win32 named pipes */
 #define WANT_WIN32_FIFO 1
@@ -535,30 +523,3 @@
 #ifndef __cplusplus
 /* #undef inline */
 #endif
-
-/* Define to `short' if <sys/types.h> does not define. */
-/* #undef int16_t */
-
-/* Define to `int' if <sys/types.h> does not define. */
-/* #undef int32_t */
-
-/* Define to `long long' if <sys/types.h> does not define. */
-/* #undef int64_t */
-
-/* Define to `long' if <sys/types.h> does not define. */
-/* #undef ptrdiff_t */
-
-/* Define to `unsigned long' if <sys/types.h> does not define. */
-/* #undef size_t */
-
-/* Define to `long' if <sys/types.h> does not define. */
-/* #undef ssize_t */
-
-/* Define to `unsigned short' if <sys/types.h> does not define. */
-/* #undef uint16_t */
-
-/* Define to `unsigned int' if <sys/types.h> does not define. */
-/* #undef uint32_t */
-
-/* Define to `unsigned long' if <sys/types.h> does not define. */
-/* #undef uintptr_t */

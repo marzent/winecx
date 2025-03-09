@@ -370,6 +370,19 @@ enum platform
     PLATFORM_ARM64
 };
 
+static inline BOOL is_platform_64bit(enum platform platform)
+{
+    switch (platform)
+    {
+    case PLATFORM_INTEL64:
+    case PLATFORM_X64:
+    case PLATFORM_ARM64:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 enum clr_version
 {
     CLR_VERSION_V10,
@@ -406,6 +419,7 @@ typedef struct tagMSIPACKAGE
     struct list folders;
     struct list binaries;
     struct list cabinet_streams;
+    struct list drlocators;
     LPWSTR ActionFormat;
     LPWSTR LastAction;
     LPWSTR LastActionTemplate;
@@ -532,7 +546,8 @@ typedef struct tagMSICOMPONENT
     INSTALLSTATE Action;
     BOOL ForceLocalState;
     BOOL Enabled;
-    INT  Cost;
+    /* Cost is in 512-byte units, as returned from MsiEnumComponentCosts() et al. */
+    int cost;
     INT  RefCount;
     LPWSTR FullKeypath;
     LPWSTR AdvertiseString;
@@ -714,6 +729,16 @@ struct tagMSIMIME
     MSICLASS *Class;
 };
 
+typedef struct
+{
+    struct list entry;
+    WCHAR *Signature;
+    WCHAR *Parent;
+    WCHAR *Path;
+    int Depth;
+    BOOL Seen;
+} MSIDRLOCATOR;
+
 #define SEQUENCE_UI       0x1
 #define SEQUENCE_EXEC     0x2
 
@@ -725,8 +750,8 @@ struct tagMSIMIME
 #define MSIHANDLETYPE_PACKAGE 5
 #define MSIHANDLETYPE_PREVIEW 6
 
-#define MSI_MAJORVERSION 4
-#define MSI_MINORVERSION 5
+#define MSI_MAJORVERSION 5
+#define MSI_MINORVERSION 0
 #define MSI_BUILDNUMBER 6001
 
 #define GUID_SIZE 39
@@ -774,7 +799,7 @@ extern UINT msi_commit_streams( MSIDATABASE *db );
 
 
 /* string table functions */
-extern BOOL msi_add_string( string_table *st, const WCHAR *data, int len, BOOL persistent );
+extern int msi_add_string( string_table *st, const WCHAR *data, int len, BOOL persistent );
 extern UINT msi_string2id( const string_table *st, const WCHAR *data, int len, UINT *id );
 extern VOID msi_destroy_stringtable( string_table *st );
 extern const WCHAR *msi_string_lookup( const string_table *st, UINT id, int *len );
@@ -970,6 +995,9 @@ extern WCHAR *msi_get_suminfo_product( IStorage *stg ) __WINE_DEALLOC(free) __WI
 extern UINT msi_add_suminfo( MSIDATABASE *db, LPWSTR **records, int num_records, int num_columns );
 extern UINT msi_export_suminfo( MSIDATABASE *db, HANDLE handle );
 extern UINT msi_load_suminfo_properties( MSIPACKAGE *package );
+extern UINT msi_suminfo_persist( MSISUMMARYINFO * );
+extern UINT msi_suminfo_get_prop( MSISUMMARYINFO *, UINT, UINT *, INT *, FILETIME *, awstring *, DWORD * );
+extern UINT msi_suminfo_set_prop( MSISUMMARYINFO *, UINT, UINT, INT, FILETIME *, awcstring * );
 
 /* undocumented functions */
 UINT WINAPI MsiCreateAndVerifyInstallerDirectory( DWORD );
@@ -1070,14 +1098,15 @@ extern WCHAR *msi_get_package_code(MSIDATABASE *db) __WINE_DEALLOC(free) __WINE_
 /* wrappers for filesystem functions */
 static inline void msi_disable_fs_redirection( MSIPACKAGE *package )
 {
-    if (is_wow64 && package->platform == PLATFORM_X64) Wow64DisableWow64FsRedirection( &package->cookie );
+    if (is_wow64 && is_platform_64bit( package->platform )) Wow64DisableWow64FsRedirection( &package->cookie );
 }
 static inline void msi_revert_fs_redirection( MSIPACKAGE *package )
 {
-    if (is_wow64 && package->platform == PLATFORM_X64) Wow64RevertWow64FsRedirection( package->cookie );
+    if (is_wow64 && is_platform_64bit( package->platform )) Wow64RevertWow64FsRedirection( package->cookie );
 }
 extern BOOL msi_get_temp_file_name( MSIPACKAGE *, const WCHAR *, const WCHAR *, WCHAR * );
 extern HANDLE msi_create_file( MSIPACKAGE *, const WCHAR *, DWORD, DWORD, DWORD, DWORD );
+extern BOOL msi_copy_file( MSIPACKAGE *, const WCHAR *, const WCHAR *, BOOL );
 extern BOOL msi_delete_file( MSIPACKAGE *, const WCHAR * );
 extern BOOL msi_remove_directory( MSIPACKAGE *, const WCHAR * );
 extern DWORD msi_get_file_attributes( MSIPACKAGE *, const WCHAR * );
@@ -1192,6 +1221,13 @@ static inline LPWSTR strdupUtoW( LPCSTR str )
     if (ret)
         MultiByteToWideChar( CP_UTF8, 0, str, -1, ret, len );
     return ret;
+}
+
+static inline int cost_from_size( int size )
+{
+    /* Cost is size rounded up to the nearest 4096 bytes,
+     * expressed in units of 512 bytes. */
+    return ((size + 4095) & ~4095) / 512;
 }
 
 #endif /* __WINE_MSI_PRIVATE__ */

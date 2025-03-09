@@ -31,7 +31,12 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <termios.h>
+#ifdef HAVE_ASM_TERMBITS_H
+# include <asm/termbits.h>
+# include <asm/ioctls.h>
+#else
+# include <termios.h>
+#endif
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -119,6 +124,18 @@ static const char* iocode2str(UINT ioc)
 
 static NTSTATUS get_baud_rate(int fd, SERIAL_BAUD_RATE* sbr)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+
+    /* TERMIOS2 supports separate input and output baudrate, but wine supports only the common baudrate. */
+    sbr->BaudRate = port.c_ospeed;
+#else
     struct termios port;
     int speed;
 
@@ -192,12 +209,22 @@ static NTSTATUS get_baud_rate(int fd, SERIAL_BAUD_RATE* sbr)
         ERR("unknown speed %x\n", speed);
         return STATUS_INVALID_PARAMETER;
     }
+#endif
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS get_hand_flow(int fd, SERIAL_HANDFLOW* shf)
 {
     int stat = 0;
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
@@ -205,6 +232,7 @@ static NTSTATUS get_hand_flow(int fd, SERIAL_HANDFLOW* shf)
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
     /* termios does not support DTR/DSR flow control */
     shf->ControlHandShake = 0;
     shf->FlowReplace = 0;
@@ -250,6 +278,15 @@ static NTSTATUS get_hand_flow(int fd, SERIAL_HANDFLOW* shf)
 
 static NTSTATUS get_line_control(int fd, SERIAL_LINE_CONTROL* slc)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
@@ -257,6 +294,7 @@ static NTSTATUS get_line_control(int fd, SERIAL_LINE_CONTROL* slc)
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
 
 #ifdef CMSPAR
     switch (port.c_cflag & (PARENB | PARODD | CMSPAR))
@@ -356,6 +394,15 @@ static NTSTATUS get_properties(int fd, SERIAL_COMMPROP *prop)
 
 static NTSTATUS get_special_chars(int fd, SERIAL_CHARS* sc)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
@@ -363,6 +410,8 @@ static NTSTATUS get_special_chars(int fd, SERIAL_CHARS* sc)
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
+
     sc->EofChar   = port.c_cc[VEOF];
     sc->ErrorChar = 0xFF;
     sc->BreakChar = 0; /* FIXME */
@@ -403,21 +452,7 @@ static NTSTATUS get_status(int fd, SERIAL_STATUS* ss)
     return status;
 }
 
-static void stop_waiting( HANDLE handle )
-{
-    unsigned int status;
-
-    SERVER_START_REQ( set_serial_info )
-    {
-        req->handle = wine_server_obj_handle( handle );
-        req->flags = SERIALINFO_PENDING_WAIT;
-        if ((status = wine_server_call( req )))
-            ERR("failed to clear waiting state: %#x\n", status);
-    }
-    SERVER_END_REQ;
-}
-
-static NTSTATUS get_wait_mask(HANDLE hDevice, UINT *mask, UINT *cookie, BOOL *pending_write, BOOL start_wait)
+static NTSTATUS get_wait_mask( HANDLE hDevice, UINT *mask, BOOL *pending_write )
 {
     unsigned int status;
 
@@ -425,11 +460,9 @@ static NTSTATUS get_wait_mask(HANDLE hDevice, UINT *mask, UINT *cookie, BOOL *pe
     {
         req->handle = wine_server_obj_handle( hDevice );
         req->flags = pending_write ? SERIALINFO_PENDING_WRITE : 0;
-        if (start_wait) req->flags |= SERIALINFO_PENDING_WAIT;
         if (!(status = wine_server_call( req )))
         {
             *mask = reply->eventmask;
-            if (cookie) *cookie = reply->cookie;
             if (pending_write) *pending_write = reply->pending_write;
         }
     }
@@ -444,15 +477,45 @@ static NTSTATUS purge(int fd, DWORD flags)
     ** Perhaps if we had our own internal queues, one flushes them
     ** and the other flushes the kernel's buffers.
     */
+#ifdef HAVE_ASM_TERMBITS_H
+    if (flags & PURGE_TXABORT) ioctl(fd, TCFLSH, TCOFLUSH);
+    if (flags & PURGE_RXABORT) ioctl(fd, TCFLSH, TCIFLUSH);
+    if (flags & PURGE_TXCLEAR) ioctl(fd, TCFLSH, TCOFLUSH);
+    if (flags & PURGE_RXCLEAR) ioctl(fd, TCFLSH, TCIFLUSH);
+#else
     if (flags & PURGE_TXABORT) tcflush(fd, TCOFLUSH);
     if (flags & PURGE_RXABORT) tcflush(fd, TCIFLUSH);
     if (flags & PURGE_TXCLEAR) tcflush(fd, TCOFLUSH);
     if (flags & PURGE_RXCLEAR) tcflush(fd, TCIFLUSH);
+#endif
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS set_baud_rate(int fd, const SERIAL_BAUD_RATE* sbr)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+
+    port.c_cflag &= ~CBAUD;
+    port.c_cflag |= BOTHER;
+    port.c_ospeed = sbr->BaudRate;
+
+    port.c_cflag &= ~(CBAUD << IBSHIFT);
+    port.c_cflag |= BOTHER << IBSHIFT;
+    port.c_ispeed = sbr->BaudRate;
+
+    if (ioctl(fd, TCSETS2, &port) == -1)
+    {
+        ERR("ioctl TCSETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
@@ -564,6 +627,7 @@ static NTSTATUS set_baud_rate(int fd, const SERIAL_BAUD_RATE* sbr)
         ERR("tcsetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -583,17 +647,29 @@ static int whack_modem(int fd, unsigned int andy, unsigned int orrie)
 
 static NTSTATUS set_handflow(int fd, const SERIAL_HANDFLOW* shf)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+#else
     struct termios port;
+#endif
 
     if ((shf->FlowReplace & (SERIAL_RTS_CONTROL | SERIAL_RTS_HANDSHAKE)) ==
         (SERIAL_RTS_CONTROL | SERIAL_RTS_HANDSHAKE))
         return STATUS_NOT_SUPPORTED;
 
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcgetattr(fd, &port) == -1)
     {
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
 
 #ifdef CRTSCTS
     if ((shf->ControlHandShake & SERIAL_CTS_HANDSHAKE) ||
@@ -632,25 +708,44 @@ static NTSTATUS set_handflow(int fd, const SERIAL_HANDFLOW* shf)
         port.c_iflag |= IXON;
     else
         port.c_iflag &= ~IXON;
+
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCSETS2, &port) == -1)
+    {
+        ERR("ioctl TCSETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcsetattr(fd, TCSANOW, &port) == -1)
     {
         ERR("tcsetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
 
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS set_line_control(int fd, const SERIAL_LINE_CONTROL* slc)
 {
-    struct termios port;
     unsigned bytesize, stopbits;
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
+    struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
     {
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
 
 #ifdef IMAXBEL
     port.c_iflag &= ~(ISTRIP|BRKINT|IGNCR|ICRNL|INLCR|PARMRK|IMAXBEL);
@@ -745,11 +840,19 @@ static NTSTATUS set_line_control(int fd, const SERIAL_LINE_CONTROL* slc)
         return STATUS_NOT_SUPPORTED;
     }
     /* otherwise it hangs with pending input*/
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCSETS2, &port) == -1)
+    {
+        ERR("ioctl TCSETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcsetattr(fd, TCSANOW, &port) == -1)
     {
         ERR("tcsetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -761,6 +864,15 @@ static NTSTATUS set_queue_size(int fd, const SERIAL_QUEUE_SIZE* sqs)
 
 static NTSTATUS set_special_chars(int fd, const SERIAL_CHARS* sc)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    struct termios2 port;
+
+    if (ioctl(fd, TCGETS2, &port) == -1)
+    {
+        ERR("ioctl TCGETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     struct termios port;
 
     if (tcgetattr(fd, &port) == -1)
@@ -768,6 +880,7 @@ static NTSTATUS set_special_chars(int fd, const SERIAL_CHARS* sc)
         ERR("tcgetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
 
     port.c_cc[VEOF  ] = sc->EofChar;
     /* FIXME: sc->ErrorChar is not supported */
@@ -776,11 +889,19 @@ static NTSTATUS set_special_chars(int fd, const SERIAL_CHARS* sc)
     port.c_cc[VSTART] = sc->XonChar;
     port.c_cc[VSTOP ] = sc->XoffChar;
 
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCSETS2, &port) == -1)
+    {
+        ERR("ioctl TCSETS2 error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcsetattr(fd, TCSANOW, &port) == -1)
     {
         ERR("tcsetattr error '%s'\n", strerror(errno));
         return errno_to_status( errno );
     }
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -789,10 +910,18 @@ static NTSTATUS set_special_chars(int fd, const SERIAL_CHARS* sc)
  */
 static NTSTATUS set_XOff(int fd)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCXONC, TCOOFF) == -1)
+    {
+        ERR("ioctl TCXONC error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcflow(fd, TCOOFF))
     {
         return errno_to_status( errno );
     }
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -801,10 +930,18 @@ static NTSTATUS set_XOff(int fd)
  */
 static NTSTATUS set_XOn(int fd)
 {
+#ifdef HAVE_ASM_TERMBITS_H
+    if (ioctl(fd, TCXONC, TCOON) == -1)
+    {
+        ERR("ioctl TCXONC error '%s'\n", strerror(errno));
+        return errno_to_status( errno );
+    }
+#else
     if (tcflow(fd, TCOON))
     {
         return errno_to_status( errno );
     }
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -826,12 +963,9 @@ typedef struct serial_irq_info
  */
 typedef struct async_commio
 {
-    HANDLE              hDevice;
+    struct async_fileio io;
     DWORD*              events;
-    client_ptr_t        iosb;
-    HANDLE              hEvent;
     UINT                evtmask;
-    UINT                cookie;
     UINT                mstat;
     BOOL                pending_write;
     serial_irq_info     irq_info;
@@ -930,84 +1064,77 @@ static DWORD check_events(int fd, UINT mask,
     return ret & mask;
 }
 
-/***********************************************************************
- *             wait_for_event      (INTERNAL)
- *
- *  We need to poll for what is interesting
- *  TIOCMIWAIT only checks modem status line and may not be aborted by a changing mask
- *
- */
-static void CALLBACK wait_for_event(LPVOID arg)
+static BOOL async_wait_proc( void *user, ULONG_PTR *info, unsigned int *status )
 {
-    async_commio *commio = arg;
+    async_commio *commio = user;
     int fd, needs_close;
 
-    if (!server_get_unix_fd( commio->hDevice, FILE_READ_DATA | FILE_WRITE_DATA, &fd, &needs_close, NULL, NULL ))
+    if (*status != STATUS_ALERTED)
+    {
+        release_fileio( &commio->io );
+        return TRUE;
+    }
+
+    if (!server_get_unix_fd( commio->io.handle, FILE_READ_DATA | FILE_WRITE_DATA, &fd, &needs_close, NULL, NULL ))
     {
         serial_irq_info new_irq_info;
-        UINT new_mstat, dummy, cookie;
-        LARGE_INTEGER time;
+        UINT new_mstat, dummy;
 
-        TRACE("device=%p fd=0x%08x mask=0x%08x buffer=%p event=%p irq_info=%p\n",
-              commio->hDevice, fd, commio->evtmask, commio->events, commio->hEvent, &commio->irq_info);
+        TRACE( "device=%p fd=0x%08x mask=0x%08x buffer=%p irq_info=%p\n",
+               commio->io.handle, fd, commio->evtmask, commio->events, &commio->irq_info );
 
-        time.QuadPart = (ULONGLONG)10000;
-        time.QuadPart = -time.QuadPart;
-        for (;;)
+        /*
+         * FIXME:
+         * We don't handle the EV_RXFLAG (the eventchar)
+         */
+        get_irq_info(fd, &new_irq_info);
+        if (get_modem_status(fd, &new_mstat))
         {
-            /*
-             * TIOCMIWAIT is not adequate
-             *
-             * FIXME:
-             * We don't handle the EV_RXFLAG (the eventchar)
-             */
-            NtDelayExecution(FALSE, &time);
-            get_irq_info(fd, &new_irq_info);
-            if (get_modem_status(fd, &new_mstat))
+            TRACE("get_modem_status failed\n");
+            *commio->events = 0;
+            *status = STATUS_CANCELLED;
+            *info = 0;
+        }
+        else
+        {
+            DWORD events = check_events( fd, commio->evtmask,
+                                         &new_irq_info, &commio->irq_info,
+                                         new_mstat, commio->mstat, commio->pending_write );
+            TRACE("events %#x\n", (int)events);
+            if (events)
             {
-                TRACE("get_modem_status failed\n");
-                *commio->events = 0;
-                break;
+                *commio->events = events;
+                *status = STATUS_SUCCESS;
+                *info = sizeof(events);
             }
-            *commio->events = check_events(fd, commio->evtmask,
-                                           &new_irq_info, &commio->irq_info,
-                                           new_mstat, commio->mstat, commio->pending_write);
-            if (*commio->events) break;
-            get_wait_mask(commio->hDevice, &dummy, &cookie, (commio->evtmask & EV_TXEMPTY) ? &commio->pending_write : NULL, FALSE);
-            if (commio->cookie != cookie)
+            else
             {
-                *commio->events = 0;
-                break;
+                get_wait_mask( commio->io.handle, &dummy, (commio->evtmask & EV_TXEMPTY) ? &commio->pending_write : NULL );
+                if (needs_close) close( fd );
+                return FALSE;
             }
         }
+
         if (needs_close) close( fd );
     }
-    if (*commio->events) set_async_iosb( commio->iosb, STATUS_SUCCESS, sizeof(DWORD) );
-    else set_async_iosb( commio->iosb, STATUS_CANCELLED, 0 );
-    stop_waiting(commio->hDevice);
-    if (commio->hEvent) NtSetEvent(commio->hEvent, NULL);
-    free( commio );
-    NtTerminateThread( GetCurrentThread(), 0 );
+    release_fileio( &commio->io );
+    return TRUE;
 }
 
-static NTSTATUS wait_on(HANDLE hDevice, int fd, HANDLE hEvent, client_ptr_t iosb_ptr, DWORD* events)
+static NTSTATUS wait_on( HANDLE handle, int fd, HANDLE event, PIO_APC_ROUTINE apc,
+                         void *apc_user, IO_STATUS_BLOCK *io, DWORD *out_buffer )
 {
     async_commio*       commio;
     NTSTATUS            status;
-    HANDLE handle;
+    HANDLE wait_handle;
+    ULONG options;
 
-    if ((status = NtResetEvent(hEvent, NULL)))
-        return status;
+    if (!(commio = (async_commio *)alloc_fileio( sizeof(*commio), async_wait_proc, handle )))
+        return STATUS_NO_MEMORY;
 
-    commio = malloc( sizeof(async_commio) );
-    if (!commio) return STATUS_NO_MEMORY;
-
-    commio->hDevice = hDevice;
-    commio->events  = events;
-    commio->iosb    = iosb_ptr;
-    commio->hEvent  = hEvent;
+    commio->events = out_buffer;
     commio->pending_write = 0;
-    status = get_wait_mask(commio->hDevice, &commio->evtmask, &commio->cookie, (commio->evtmask & EV_TXEMPTY) ? &commio->pending_write : NULL, TRUE);
+    status = get_wait_mask( handle, &commio->evtmask, (commio->evtmask & EV_TXEMPTY) ? &commio->pending_write : NULL );
     if (status)
     {
         free( commio );
@@ -1056,23 +1183,40 @@ static NTSTATUS wait_on(HANDLE hDevice, int fd, HANDLE hEvent, client_ptr_t iosb
         (commio->evtmask & (EV_CTS | EV_DSR| EV_RING| EV_RLSD)))
 	goto out_now;
 
-    /* We might have received something or the TX buffer is delivered */
-    *events = check_events(fd, commio->evtmask,
-                               &commio->irq_info, &commio->irq_info,
-                               commio->mstat, commio->mstat, commio->pending_write);
-    if (*events)
+    SERVER_START_REQ( ioctl )
     {
-        status = STATUS_SUCCESS;
-        goto out_now;
+        req->code   = IOCTL_SERIAL_WAIT_ON_MASK;
+        req->async  = server_async( handle, &commio->io, event, apc, apc_user, iosb_client_ptr(io) );
+        status = wine_server_call( req );
+        wait_handle = wine_server_ptr_handle( reply->wait );
+        options     = reply->options;
+    }
+    SERVER_END_REQ;
+
+    if (status == STATUS_ALERTED)
+    {
+        /* We might have received something or the TX buffer is delivered */
+        DWORD events = check_events(fd, commio->evtmask,
+                                    &commio->irq_info, &commio->irq_info,
+                                    commio->mstat, commio->mstat, commio->pending_write);
+        if (events)
+        {
+            status = STATUS_SUCCESS;
+            *out_buffer = events;
+            set_async_direct_result( &wait_handle, options, io, STATUS_SUCCESS, sizeof(events), FALSE );
+        }
+        else
+        {
+            status = STATUS_PENDING;
+            set_async_direct_result( &wait_handle, options, io, STATUS_PENDING, 0, TRUE );
+        }
     }
 
-    /* create the worker thread for the task */
-    /* FIXME: should use async I/O instead */
-    status = NtCreateThreadEx( &handle, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(),
-                               wait_for_event, commio, 0, 0, 0, 0, NULL );
-    if (status != STATUS_SUCCESS) goto out_now;
-    NtClose( handle );
-    return STATUS_PENDING;
+    if (status != STATUS_PENDING)
+        release_fileio( &commio->io );
+
+    if (wait_handle) status = wait_async( wait_handle, options & FILE_SYNCHRONOUS_IO_ALERT );
+    return status;
 
 #if !defined(TIOCINQ) || (!(defined(TIOCSERGETLSR) && defined(TIOCSER_TEMT)) || !defined(TIOCINQ)) || !defined(TIOCMGET) || !defined(TIOCM_CTS) ||!defined(TIOCM_DSR) || !defined(TIOCM_RNG) || !defined(TIOCM_CAR)
 error_caps:
@@ -1080,7 +1224,6 @@ error_caps:
     status = STATUS_INVALID_PARAMETER;
 #endif
 out_now:
-    stop_waiting(commio->hDevice);
     free( commio );
     return status;
 }
@@ -1094,17 +1237,18 @@ static NTSTATUS xmit_immediate(HANDLE hDevice, int fd, const char* ptr)
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS io_control( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                            client_ptr_t io, UINT code, void *in_buffer,
-                            UINT in_size, void *out_buffer, UINT out_size )
+NTSTATUS serial_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
+                                 IO_STATUS_BLOCK *io, UINT code, void *in_buffer,
+                                 UINT in_size, void *out_buffer, UINT out_size )
 {
     DWORD sz = 0, access = FILE_READ_DATA;
     NTSTATUS status = STATUS_SUCCESS;
     int fd = -1, needs_close = 0;
     enum server_fd_type type;
+    unsigned int options;
 
-    TRACE("%p %s %p %d %p %d\n",
-          device, iocode2str(code), in_buffer, in_size, out_buffer, out_size);
+    TRACE("%p %s %p %d %p %d %p\n",
+          device, iocode2str(code), in_buffer, in_size, out_buffer, out_size, io);
 
     switch (code)
     {
@@ -1116,12 +1260,12 @@ static NTSTATUS io_control( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, vo
         return STATUS_NOT_SUPPORTED;
     }
 
-    if ((status = server_get_unix_fd( device, access, &fd, &needs_close, &type, NULL ))) goto error;
+    if ((status = server_get_unix_fd( device, access, &fd, &needs_close, &type, &options )))
+        return status;
     if (type != FD_TYPE_SERIAL)
     {
         if (needs_close) close( fd );
-        status = STATUS_OBJECT_TYPE_MISMATCH;
-        goto error;
+        return STATUS_OBJECT_TYPE_MISMATCH;
     }
 
     switch (code)
@@ -1292,11 +1436,14 @@ static NTSTATUS io_control( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, vo
     case IOCTL_SERIAL_WAIT_ON_MASK:
         if (out_buffer && out_size == sizeof(DWORD))
         {
-            if (!(status = wait_on(device, fd, event, io, out_buffer)))
-                sz = sizeof(DWORD);
+            status = wait_on( device, fd, event, apc, apc_user, io, out_buffer );
+            if (needs_close) close( fd );
+            return status;
         }
         else
+        {
             status = STATUS_INVALID_PARAMETER;
+        }
         break;
     default:
         FIXME("Unsupported IOCTL %x (type=%x access=%x func=%x meth=%x)\n",
@@ -1305,63 +1452,17 @@ static NTSTATUS io_control( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, vo
         status = STATUS_INVALID_PARAMETER;
         break;
     }
+
     if (needs_close) close( fd );
- error:
-    set_async_iosb( io, status, sz );
-    if (event && status != STATUS_PENDING) NtSetEvent(event, NULL);
-    return status;
-}
 
-/******************************************************************
- *		serial_DeviceIoControl
- */
-NTSTATUS serial_DeviceIoControl( HANDLE device, HANDLE event, PIO_APC_ROUTINE apc, void *apc_user,
-                                 client_ptr_t io, UINT code, void *in_buffer,
-                                 UINT in_size, void *out_buffer, UINT out_size )
-{
-    NTSTATUS    status;
-
-    if (code == IOCTL_SERIAL_WAIT_ON_MASK)
-    {
-        HANDLE hev = event;
-
-        /* this is an ioctl we implement in a non blocking way if event is not null
-         * so we have to explicitly wait if no event is provided
-         */
-        if (!hev)
-        {
-            OBJECT_ATTRIBUTES   attr;
-
-            attr.Length                   = sizeof(attr);
-            attr.RootDirectory            = 0;
-            attr.ObjectName               = NULL;
-            attr.Attributes               = OBJ_CASE_INSENSITIVE | OBJ_OPENIF;
-            attr.SecurityDescriptor       = NULL;
-            attr.SecurityQualityOfService = NULL;
-            status = NtCreateEvent(&hev, EVENT_ALL_ACCESS, &attr, SynchronizationEvent, FALSE);
-
-            if (status) return status;
-        }
-        status = io_control( device, hev, apc, apc_user, io, code,
-                             in_buffer, in_size, out_buffer, out_size );
-        if (hev != event)
-        {
-            if (status == STATUS_PENDING)
-            {
-                NtWaitForSingleObject(hev, FALSE, NULL);
-                status = STATUS_SUCCESS;
-            }
-            NtClose(hev);
-        }
-    }
-    else status = io_control( device, event, apc, apc_user, io, code,
-                              in_buffer, in_size, out_buffer, out_size );
+    if (!NT_ERROR(status))
+        file_complete_async( device, options, event, apc, apc_user, io, status, sz );
     return status;
 }
 
 NTSTATUS serial_FlushBuffersFile( int fd )
 {
-#ifdef HAVE_TCDRAIN
+#if defined(HAVE_TCDRAIN) && !defined(HAVE_ASM_TERMBITS_H)
     while (tcdrain( fd ) == -1)
     {
         if (errno != EINTR) return errno_to_status( errno );

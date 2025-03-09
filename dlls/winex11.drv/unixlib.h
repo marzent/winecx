@@ -17,6 +17,7 @@
  */
 
 #include "ntuser.h"
+#include "shlobj.h"
 #include "wine/unixlib.h"
 
 enum x11drv_funcs
@@ -31,66 +32,10 @@ enum x11drv_funcs
 
 #define X11DRV_CALL(func, params) WINE_UNIX_CALL( unix_ ## func, params )
 
-/* x11drv_init params */
-struct init_params
-{
-    WNDPROC foreign_window_proc;
-};
-
 /* x11drv_tablet_info params */
 struct tablet_info_params
 {
     UINT category;
     UINT index;
     void *output;
-};
-
-/* x11drv_xim_preedit_state params */
-struct xim_preedit_state_params
-{
-    HWND hwnd;
-    BOOL open;
-};
-
-/* driver client callbacks exposed with KernelCallbackTable interface */
-enum x11drv_client_funcs
-{
-    client_func_callback = NtUserDriverCallbackFirst,
-    client_func_dnd_enter_event,
-    client_func_dnd_position_event,
-    client_func_dnd_post_drop,
-    client_func_last
-};
-
-C_ASSERT( client_func_last <= NtUserDriverCallbackLast + 1 );
-
-/* simplified interface for client callbacks requiring only a single UINT parameter */
-enum client_callback
-{
-    client_dnd_drop_event,
-    client_dnd_leave_event,
-    client_funcs_count
-};
-
-/* x11drv_callback params */
-struct client_callback_params
-{
-    UINT id;
-    UINT arg;
-};
-
-/* x11drv_dnd_enter_event and x11drv_dnd_post_drop params */
-struct format_entry
-{
-    UINT format;
-    UINT size;
-    char data[1];
-};
-
-/* x11drv_dnd_position_event params */
-struct dnd_position_event_params
-{
-    ULONG hwnd;
-    POINT point;
-    DWORD effect;
 };

@@ -1162,7 +1162,8 @@ int CDECL _strcoll_l( const char* str1, const char* str2, _locale_t locale )
 
     if(!locinfo->lc_handle[LC_COLLATE])
         return strcmp(str1, str2);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], 0, str1, -1, str2, -1)-CSTR_EQUAL;
+    return CompareStringA(locinfo->lc_handle[LC_COLLATE], SORT_STRINGSORT,
+              str1, -1, str2, -1)-CSTR_EQUAL;
 }
 
 /*********************************************************************
@@ -1213,7 +1214,7 @@ int CDECL _strncoll_l( const char* str1, const char* str2, size_t count, _locale
 
     if(!locinfo->lc_handle[LC_COLLATE])
         return strncmp(str1, str2, count);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], 0,
+    return CompareStringA(locinfo->lc_handle[LC_COLLATE], SORT_STRINGSORT,
               str1, strnlen(str1, count),
               str2, strnlen(str2, count))-CSTR_EQUAL;
 }
@@ -2785,7 +2786,7 @@ int __cdecl memcmp(const void *ptr1, const void *ptr2, size_t n)
     return memcmp_blocks(p1, p2, n);
 }
 
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || (defined(__x86_64__) && !defined(__arm64ec__))
 
 #ifdef __i386__
 
@@ -3051,7 +3052,7 @@ __ASM_GLOBAL_FUNC( sse2_memmove,
 #endif
 void * __cdecl memmove(void *dst, const void *src, size_t n)
 {
-#ifdef __x86_64__
+#if defined(__x86_64__) && !defined(__arm64ec__)
     return sse2_memmove(dst, src, n);
 #else
     unsigned char *d = dst;
@@ -3337,7 +3338,7 @@ int __cdecl _strnicmp_l(const char *s1, const char *s2,
                 c2 -= 'A' - 'a';
         }while(--count && c1 && c1==c2);
 
-        return c1-c2;
+        return (unsigned char)c1 - (unsigned char)c2;
     }
 
     do {

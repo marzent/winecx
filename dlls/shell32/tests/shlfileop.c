@@ -24,7 +24,9 @@
 #define COBJMACROS
 #include <windows.h>
 #include "shellapi.h"
+#include "shlwapi.h"
 #include "shlobj.h"
+#include "sherrors.h"
 #include "commoncontrols.h"
 
 #include "wine/test.h"
@@ -109,6 +111,20 @@ static BOOL file_has_content(const CHAR *name, const CHAR *content)
     return strcmp(buf, content)==0;
 }
 
+static void remove_directory(const WCHAR *name)
+{
+    SHFILEOPSTRUCTW shfo;
+    WCHAR path[MAX_PATH];
+
+    memset(&shfo, 0, sizeof(shfo));
+    shfo.wFunc = FO_DELETE;
+    wcscpy(path, name);
+    path[wcslen(name) + 1] = 0;
+    shfo.pFrom = path;
+    shfo.fFlags = FOF_NOCONFIRMATION | FOF_SILENT;
+    SHFileOperationW(&shfo);
+}
+
 /* initializes the tests */
 static void init_shfo_tests(void)
 {
@@ -129,6 +145,15 @@ static void init_shfo_tests(void)
     CreateDirectoryA("testdir2\\nested", NULL);
     createTestFile("testdir2\\one.txt");
     createTestFile("testdir2\\nested\\two.txt");
+    CreateDirectoryA("testdir4", NULL);
+    CreateDirectoryA("testdir4\\nested", NULL);
+    CreateDirectoryA("testdir4\\nested\\subnested", NULL);
+    createTestFile("testdir4\\nested\\2.txt");
+    createTestFile("testdir4\\nested\\subnested\\3.txt");
+    CreateDirectoryA("testdir6", NULL);
+    CreateDirectoryA("testdir6\\nested", NULL);
+    CreateDirectoryA("testdir8", NULL);
+    CreateDirectoryA("testdir8\\nested", NULL);
 }
 
 /* cleans after tests */
@@ -155,6 +180,29 @@ static void clean_after_shfo_tests(void)
     RemoveDirectoryA("testdir2\\test4.txt");
     RemoveDirectoryA("testdir2\\nested");
     RemoveDirectoryA("testdir2");
+    DeleteFileA("testdir4\\nested\\subnested\\3.txt");
+    DeleteFileA("testdir4\\nested\\two.txt");
+    DeleteFileA("testdir4\\nested\\2.txt");
+    RemoveDirectoryA("testdir4\\nested\\subnested");
+    RemoveDirectoryA("testdir4\\nested");
+    RemoveDirectoryA("testdir4");
+    DeleteFileA("testdir6\\nested\\subnested\\3.txt");
+    DeleteFileA("testdir6\\nested\\two.txt");
+    DeleteFileA("testdir6\\nested\\2.txt");
+    DeleteFileA("testdir6\\one.txt");
+    DeleteFileA("testdir6\\two.txt");
+    RemoveDirectoryA("testdir6\\nested\\subnested");
+    RemoveDirectoryA("testdir6\\subnested");
+    RemoveDirectoryA("testdir6\\nested");
+    RemoveDirectoryA("testdir6");
+    DeleteFileA("testdir8\\nested\\subnested\\3.txt");
+    DeleteFileA("testdir8\\subnested\\3.txt");
+    DeleteFileA("testdir8\\nested\\2.txt");
+    DeleteFileA("testdir8\\2.txt");
+    RemoveDirectoryA("testdir8\\nested\\subnested");
+    RemoveDirectoryA("testdir8\\subnested");
+    RemoveDirectoryA("testdir8\\nested");
+    RemoveDirectoryA("testdir8");
     RemoveDirectoryA("c:\\testdir3");
     DeleteFileA("nonexistent\\notreal\\test2.txt");
     RemoveDirectoryA("nonexistent\\notreal");
@@ -1952,22 +2000,17 @@ static void test_move(void)
     set_curr_dir_path(from, "testdir2/*.*\0");
     set_curr_dir_path(to, "test4.txt\0");
     retval = SHFileOperationA(&shfo);
-    ok(retval == ERROR_SUCCESS ||
-       broken(retval == ERROR_FILE_NOT_FOUND), /* WinXp, Win2k3 */
-       "Expected ERROR_SUCCESS, got %ld\n", retval);
-    if (retval == ERROR_SUCCESS)
-    {
-        ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
 
-        ok(dir_exists("testdir2"), "dir should not be moved\n");
-        ok(!file_exists("testdir2\\one.txt"), "file should be moved\n");
-        ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
-        ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+    ok(dir_exists("testdir2"), "dir should not be moved\n");
+    ok(!file_exists("testdir2\\one.txt"), "file should be moved\n");
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
 
-        ok(file_exists("test4.txt\\one.txt"), "file should exist\n");
-        ok(dir_exists("test4.txt\\nested"), "dir should exist\n");
-        ok(file_exists("test4.txt\\nested\\two.txt"), "file should exist\n");
-    }
+    ok(file_exists("test4.txt\\one.txt"), "file should exist\n");
+    ok(dir_exists("test4.txt\\nested"), "dir should exist\n");
+    ok(file_exists("test4.txt\\nested\\two.txt"), "file should exist\n");
 
     clean_after_shfo_tests();
     init_shfo_tests();
@@ -1998,13 +2041,161 @@ static void test_move(void)
     clean_after_shfo_tests();
     init_shfo_tests();
 
+    /* test moving dir to destination containing dir of the same name */
+    set_curr_dir_path(from, "testdir2\\nested\0");
+    set_curr_dir_path(to, "testdir4\0");
+    retval = SHFileOperationA(&shfo);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(dir_exists("testdir4\\nested"), "dir should exist\n");
+    ok(file_exists("testdir4\\nested\\two.txt"), "file should exist\n");
+    ok(file_exists("testdir4\\nested\\2.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
+    /* test moving empty dir to destination containing dir of the same name */
+    DeleteFileA("testdir2\\nested\\two.txt");
+    set_curr_dir_path(from, "testdir2\\nested\0");
+    set_curr_dir_path(to, "testdir4\0");
+    retval = SHFileOperationA(&shfo);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+
+    ok(dir_exists("testdir4\\nested"), "dir should exist\n");
+    ok(file_exists("testdir4\\nested\\2.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
+    /* test moving multiple dirs to destination containing dir of the same name */
+    set_curr_dir_path(from, "testdir2\\nested\0testdir4\\nested\0");
+    set_curr_dir_path(to, "testdir6\0");
+    retval = SHFileOperationA(&shfo);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(!dir_exists("testdir4\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir4\\nested\\2.txt"), "file should be moved\n");
+    ok(!dir_exists("testdir4\\nested\\subnested"), "dir should be moved\n");
+    ok(!file_exists("testdir4\\nested\\subnested\\3.txt"), "file should be moved\n");
+
+    ok(dir_exists("testdir6\\nested"), "dir should exist\n");
+    ok(file_exists("testdir6\\nested\\two.txt"), "file should exist\n");
+    ok(file_exists("testdir6\\nested\\2.txt"), "file should exist\n");
+    ok(dir_exists("testdir6\\nested\\subnested"), "dir should exist\n");
+    ok(file_exists("testdir6\\nested\\subnested\\3.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
     memcpy(&shfo2, &shfo, sizeof(SHFILEOPSTRUCTA));
     shfo2.fFlags |= FOF_MULTIDESTFILES;
 
+    /* test moving dir to destination containing dir of the same name with FOF_MULTIDESTFILES set */
+    set_curr_dir_path(from, "testdir2\\nested\0");
+    set_curr_dir_path(to, "testdir6\0");
+    retval = SHFileOperationA(&shfo2);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(!file_exists("testdir6\\nested\\two.txt"), "file should not exist\n");
+    ok(dir_exists("testdir6\\nested"), "dir should exist\n");
+    ok(file_exists("testdir6\\two.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
+    /* same as above, without 'nested' in from path */
+    set_curr_dir_path(from, "testdir2\0");
+    set_curr_dir_path(to, "testdir6\0");
+    retval = SHFileOperationA(&shfo2);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(!file_exists("testdir6\\two.txt"), "file should not exist\n");
+    ok(dir_exists("testdir6\\nested"), "dir should exist\n");
+    ok(file_exists("testdir6\\nested\\two.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
+    /* test moving multiple dirs to multiple destinations containing dir of the same name */
+    set_curr_dir_path(from, "testdir2\\nested\0testdir4\\nested\0");
+    set_curr_dir_path(to, "testdir6\0testdir8\0");
+    retval = SHFileOperationA(&shfo2);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(!dir_exists("testdir4\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir4\\nested\\2.txt"), "file should be moved\n");
+
+    ok(!file_exists("testdir6\\nested\\two.txt"), "file should not exist\n");
+    ok(!file_exists("testdir6\\nested\\2.txt"), "file should not exist\n");
+    ok(dir_exists("testdir6\\nested"), "dir should exist\n");
+    ok(file_exists("testdir6\\two.txt"), "file should exist\n");
+
+    ok(!dir_exists("testdir8\\nested\\subnested"), "dir should not exist\n");
+    ok(!file_exists("testdir8\\nested\\subnested\\3.txt"), "file should not exist\n");
+    ok(!file_exists("testdir8\\nested\\two.txt"), "file should not exist\n");
+    ok(!file_exists("testdir8\\nested\\2.txt"), "file should not exist\n");
+    ok(dir_exists("testdir8\\nested"), "dir should exist\n");
+    ok(dir_exists("testdir8\\subnested"), "dir should exist\n");
+    ok(file_exists("testdir8\\subnested\\3.txt"), "file should exist\n");
+    ok(file_exists("testdir8\\2.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
+    /* same as above, but include subdir in destinations */
+    set_curr_dir_path(from, "testdir2\\nested\0testdir4\\nested\0");
+    set_curr_dir_path(to, "testdir6\\nested\0testdir8\\nested\0");
+    retval = SHFileOperationA(&shfo2);
+    ok(!retval, "got %ld\n", retval);
+    ok(!shfo.fAnyOperationsAborted, "fAnyOperationsAborted %d\n", shfo.fAnyOperationsAborted);
+
+    ok(!dir_exists("testdir2\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir2\\nested\\two.txt"), "file should be moved\n");
+
+    ok(!dir_exists("testdir4\\nested"), "dir should be moved\n");
+    ok(!file_exists("testdir4\\nested\\2.txt"), "file should be moved\n");
+
+    ok(dir_exists("testdir6\\nested"), "dir should exist\n");
+    ok(file_exists("testdir6\\nested\\two.txt"), "file should exist\n");
+    ok(!file_exists("testdir6\\nested\\2.txt"), "file should not exist\n");
+    ok(!file_exists("testdir6\\two.txt"), "file should not exist\n");
+
+    ok(!dir_exists("testdir8\\subnested"), "dir should not exist\n");
+    ok(!file_exists("testdir8\\2.txt"), "file should not exist\n");
+    ok(!file_exists("testdir8\\nested\\two.txt"), "file should not exist\n");
+    ok(dir_exists("testdir8\\nested"), "dir should exist\n");
+    ok(file_exists("testdir8\\nested\\2.txt"), "file should exist\n");
+    ok(dir_exists("testdir8\\nested\\subnested"), "dir should exist\n");
+    ok(file_exists("testdir8\\nested\\subnested\\3.txt"), "file should exist\n");
+
+    clean_after_shfo_tests();
+    init_shfo_tests();
+
     set_curr_dir_path(from, "test1.txt\0test2.txt\0test4.txt\0");
     set_curr_dir_path(to, "test6.txt\0test7.txt\0test8.txt\0");
-    if (old_shell32)
-        shfo2.fFlags |= FOF_NOCONFIRMMKDIR;
     ok(!SHFileOperationA(&shfo2), "Move many files\n");
     ok(DeleteFileA("test6.txt"), "The file is not moved - many files are "
        "specified as a target\n");
@@ -2018,32 +2209,11 @@ static void test_move(void)
     set_curr_dir_path(from, "test1.txt\0test2.txt\0test4.txt\0");
     set_curr_dir_path(to, "test6.txt\0test7.txt\0");
     retval = SHFileOperationA(&shfo2);
-    if (dir_exists("test6.txt"))
-    {
-        if (retval == ERROR_SUCCESS)
-        {
-            /* Old shell32 */
-            DeleteFileA("test6.txt\\test1.txt");
-            DeleteFileA("test6.txt\\test2.txt");
-            RemoveDirectoryA("test6.txt\\test4.txt");
-            RemoveDirectoryA("test6.txt");
-        }
-        else
-        {
-            /* Vista and W2K8 (broken or new behavior ?) */
-            ok(retval == DE_DESTSAMETREE, "Expected DE_DESTSAMETREE, got %ld\n", retval);
-            ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved\n");
-            RemoveDirectoryA("test6.txt");
-            ok(DeleteFileA("test7.txt\\test2.txt"), "The file is not moved\n");
-            RemoveDirectoryA("test7.txt");
-        }
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(!file_exists("test6.txt"), "The file is not moved - many files are "
-           "specified as a target\n");
-    }
+    ok(retval == DE_DESTSAMETREE, "got %ld\n", retval);
+    ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved\n");
+    RemoveDirectoryA("test6.txt");
+    ok(DeleteFileA("test7.txt\\test2.txt"), "The file is not moved\n");
+    RemoveDirectoryA("test7.txt");
 
     init_shfo_tests();
     /* number of sources does not correspond to number of targets,
@@ -2052,33 +2222,12 @@ static void test_move(void)
     set_curr_dir_path(from, "test1.txt\0test2.txt\0test3.txt\0");
     set_curr_dir_path(to, "test6.txt\0test7.txt\0");
     retval = SHFileOperationA(&shfo2);
-    if (dir_exists("test6.txt"))
-    {
-        if (retval == ERROR_SUCCESS)
-        {
-            /* Old shell32 */
-            DeleteFileA("test6.txt\\test1.txt");
-            DeleteFileA("test6.txt\\test2.txt");
-            RemoveDirectoryA("test6.txt\\test4.txt");
-            RemoveDirectoryA("test6.txt");
-        }
-        else
-        {
-            /* Vista and W2K8 (broken or new behavior ?) */
-            ok(retval == DE_SAMEFILE, "Expected DE_SAMEFILE, got %ld\n", retval);
-            ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved\n");
-            RemoveDirectoryA("test6.txt");
-            ok(DeleteFileA("test7.txt\\test2.txt"), "The file is not moved\n");
-            RemoveDirectoryA("test7.txt");
-            ok(file_exists("test3.txt"), "File should not be moved\n");
-        }
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(!file_exists("test6.txt"), "The file is not moved - many files are "
-           "specified as a target\n");
-    }
+    ok(retval == DE_SAMEFILE, "got %ld\n", retval);
+    ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved\n");
+    RemoveDirectoryA("test6.txt");
+    ok(DeleteFileA("test7.txt\\test2.txt"), "The file is not moved\n");
+    RemoveDirectoryA("test7.txt");
+    ok(file_exists("test3.txt"), "File should not be moved\n");
 
     init_shfo_tests();
     /* number of sources does not correspond to number of targets,
@@ -2087,22 +2236,12 @@ static void test_move(void)
     set_curr_dir_path(from, "test1.txt\0test2.txt\0");
     set_curr_dir_path(to, "test6.txt\0test7.txt\0test8.txt\0");
     retval = SHFileOperationA(&shfo2);
-    if (dir_exists("test6.txt"))
-    {
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("test6.txt\\test1.txt"),"The file is not moved\n");
-        ok(DeleteFileA("test7.txt\\test2.txt"),"The file is not moved\n");
-        ok(!dir_exists("test8.txt") && !file_exists("test8.txt"),
-            "Directory should not be created\n");
-        RemoveDirectoryA("test6.txt");
-        RemoveDirectoryA("test7.txt");
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* WinXp, Win2k */);
-        ok(!file_exists("test6.txt"), "The file is not moved - many files are "
-           "specified as a target\n");
-    }
+    ok(!retval, "got %ld\n", retval);
+    ok(DeleteFileA("test6.txt\\test1.txt"),"The file is not moved\n");
+    ok(DeleteFileA("test7.txt\\test2.txt"),"The file is not moved\n");
+    ok(!dir_exists("test8.txt") && !file_exists("test8.txt"), "Directory should not be created\n");
+    RemoveDirectoryA("test6.txt");
+    RemoveDirectoryA("test7.txt");
 
     init_shfo_tests();
     /* number of sources does not correspond to number of targets,
@@ -2110,22 +2249,12 @@ static void test_move(void)
     set_curr_dir_path(from, "test1.txt\0test2.txt\0test3.txt\0");
     set_curr_dir_path(to, "test4.txt\0test5.txt\0");
     retval = SHFileOperationA(&shfo2);
-    if (dir_exists("test5.txt"))
-    {
-        ok(retval == DE_SAMEFILE, "Expected DE_SAMEFILE, got %ld\n", retval);
-        ok(DeleteFileA("test4.txt\\test1.txt"),"The file is not moved\n");
-        ok(DeleteFileA("test5.txt\\test2.txt"),"The file is not moved\n");
-        ok(file_exists("test3.txt"), "The file is not moved\n");
-        RemoveDirectoryA("test4.txt");
-        RemoveDirectoryA("test5.txt");
-    }
-    else
-    {
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("test4.txt\\test1.txt"),"The file is not moved\n");
-        ok(DeleteFileA("test4.txt\\test2.txt"),"The file is not moved\n");
-        ok(DeleteFileA("test4.txt\\test3.txt"),"The file is not moved\n");
-    }
+    ok(retval == DE_SAMEFILE, "got %ld\n", retval);
+    ok(DeleteFileA("test4.txt\\test1.txt"),"The file is not moved\n");
+    ok(DeleteFileA("test5.txt\\test2.txt"),"The file is not moved\n");
+    ok(file_exists("test3.txt"), "The file is not moved\n");
+    RemoveDirectoryA("test4.txt");
+    RemoveDirectoryA("test5.txt");
 
 
     init_shfo_tests();
@@ -2133,8 +2262,7 @@ static void test_move(void)
     set_curr_dir_path(from, "\0\0");
     set_curr_dir_path(to, "test6.txt\0\0");
     retval = SHFileOperationA(&shfo2);
-    ok(retval == ERROR_SUCCESS || retval == ERROR_ACCESS_DENIED
-        , "Expected ERROR_SUCCESS || ERROR_ACCESS_DENIED, got %ld\n", retval);
+    todo_wine ok(!retval, "got %ld\n", retval);
     ok(!file_exists("test6.txt"), "The file should not exist\n");
 
     init_shfo_tests();
@@ -2142,9 +2270,7 @@ static void test_move(void)
     set_curr_dir_path(from, "test1\0\0");
     set_curr_dir_path(to, "\0\0");
     retval = SHFileOperationA(&shfo2);
-    ok(retval == ERROR_FILE_NOT_FOUND ||
-        broken(retval == 1026)
-        , "Expected ERROR_FILE_NOT_FOUND, got %ld\n", retval);
+    ok(retval == ERROR_FILE_NOT_FOUND, "got %ld\n", retval);
     ok(!file_exists("test6.txt"), "The file should not exist\n");
 
     init_shfo_tests();
@@ -2156,27 +2282,14 @@ static void test_move(void)
 
     set_curr_dir_path(from, "test1.txt\0test2.txt\0test4.txt\0");
     set_curr_dir_path(to, "test6.txt\0test7.txt\0test8.txt\0");
-    if (old_shell32)
-        shfo.fFlags |= FOF_NOCONFIRMMKDIR;
     retval = SHFileOperationA(&shfo);
-    if (dir_exists("test6.txt"))
-    {
-        /* Old shell32 */
-        /* Vista and W2K8 (broken or new behavior ?) */
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved. Many files are specified\n");
-        ok(DeleteFileA("test6.txt\\test2.txt"), "The file is not moved. Many files are specified\n");
-        ok(DeleteFileA("test6.txt\\test4.txt\\test1.txt"), "The file is not moved. Many files are specified\n");
-        ok(RemoveDirectoryA("test6.txt\\test4.txt"), "The directory is not moved. Many files are specified\n");
-        RemoveDirectoryA("test6.txt");
-        init_shfo_tests();
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(file_exists("test1.txt"), "The file is moved. Many files are specified\n");
-        ok(dir_exists("test4.txt"), "The directory is moved. Many files are specified\n");
-    }
+    todo_wine ok(!retval, "got %ld\n", retval);
+    todo_wine ok(DeleteFileA("test6.txt\\test1.txt"), "The file is not moved. Many files are specified\n");
+    todo_wine ok(DeleteFileA("test6.txt\\test2.txt"), "The file is not moved. Many files are specified\n");
+    todo_wine ok(DeleteFileA("test6.txt\\test4.txt\\test1.txt"), "The file is not moved. Many files are specified\n");
+    todo_wine ok(RemoveDirectoryA("test6.txt\\test4.txt"), "The directory is not moved. Many files are specified\n");
+    RemoveDirectoryA("test6.txt");
+    init_shfo_tests();
 
     set_curr_dir_path(from, "test1.txt\0");
     set_curr_dir_path(to, "test6.txt\0");
@@ -2201,56 +2314,27 @@ static void test_move(void)
     shfo.pFrom = "test1.txt\0";
     shfo.pTo = "a.txt\0b.txt\0";
     retval = SHFileOperationA(&shfo);
-    if (retval == DE_OPCANCELLED)
-    {
-        /* NT4 fails and doesn't move any files */
-        ok(!file_exists("a.txt"), "Expected a.txt to not exist\n");
-        DeleteFileA("test1.txt");
-    }
-    else
-    {
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        if (old_shell32)
-        {
-            DeleteFileA("a.txt\\a.txt");
-            RemoveDirectoryA("a.txt");
-        }
-        else
-            ok(DeleteFileA("a.txt"), "Expected a.txt to exist\n");
-        ok(!file_exists("test1.txt"), "Expected test1.txt to not exist\n");
-    }
+    ok(!retval, "got %ld\n", retval);
+    ok(DeleteFileA("a.txt"), "Expected a.txt to exist\n");
+    ok(!file_exists("test1.txt"), "Expected test1.txt to not exist\n");
     ok(!file_exists("b.txt"), "Expected b.txt to not exist\n");
 
     /* move two files to one other */
     shfo.pFrom = "test2.txt\0test3.txt\0";
     shfo.pTo = "test1.txt\0";
     retval = SHFileOperationA(&shfo);
-    if (dir_exists("test1.txt"))
-    {
-        /* Old shell32 */
-        /* Vista and W2K8 (broken or new behavior ?) */
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("test1.txt\\test2.txt"), "Expected test1.txt\\test2.txt to exist\n");
-        ok(DeleteFileA("test1.txt\\test3.txt"), "Expected test1.txt\\test3.txt to exist\n");
-        RemoveDirectoryA("test1.txt");
-        createTestFile("test2.txt");
-        createTestFile("test3.txt");
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(!file_exists("test1.txt"), "Expected test1.txt to not exist\n");
-        ok(file_exists("test2.txt"), "Expected test2.txt to exist\n");
-        ok(file_exists("test3.txt"), "Expected test3.txt to exist\n");
-    }
+    todo_wine ok(!retval, "got %ld\n", retval);
+    todo_wine ok(DeleteFileA("test1.txt\\test2.txt"), "Expected test1.txt\\test2.txt to exist\n");
+    todo_wine ok(DeleteFileA("test1.txt\\test3.txt"), "Expected test1.txt\\test3.txt to exist\n");
+    RemoveDirectoryA("test1.txt");
+    createTestFile("test2.txt");
+    createTestFile("test3.txt");
 
     /* move a directory into itself */
     shfo.pFrom = "test4.txt\0";
     shfo.pTo = "test4.txt\\b.txt\0";
     retval = SHFileOperationA(&shfo);
-    ok(retval == ERROR_SUCCESS ||
-       retval == DE_DESTSUBTREE, /* Vista */
-       "Expected ERROR_SUCCESS or DE_DESTSUBTREE, got %ld\n", retval);
+    todo_wine ok(retval == DE_DESTSUBTREE, "got %ld\n", retval);
     ok(!RemoveDirectoryA("test4.txt\\b.txt"), "Expected test4.txt\\b.txt to not exist\n");
     ok(dir_exists("test4.txt"), "Expected test4.txt to exist\n");
 
@@ -2258,92 +2342,39 @@ static void test_move(void)
     shfo.pFrom = "test2.txt\0test3.txt\0";
     shfo.pTo = "d.txt\0e.txt\0";
     retval = SHFileOperationA(&shfo);
-    if (dir_exists("d.txt"))
-    {
-        /* Old shell32 */
-        /* Vista and W2K8 (broken or new behavior ?) */
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("d.txt\\test2.txt"), "Expected d.txt\\test2.txt to exist\n");
-        ok(DeleteFileA("d.txt\\test3.txt"), "Expected d.txt\\test3.txt to exist\n");
-        RemoveDirectoryA("d.txt");
-        createTestFile("test2.txt");
-        createTestFile("test3.txt");
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(!DeleteFileA("d.txt"), "Expected d.txt to not exist\n");
-        ok(!DeleteFileA("e.txt"), "Expected e.txt to not exist\n");
-    }
+    todo_wine ok(!retval, "got %ld\n", retval);
+    todo_wine ok(DeleteFileA("d.txt\\test2.txt"), "Expected d.txt\\test2.txt to exist\n");
+    todo_wine ok(DeleteFileA("d.txt\\test3.txt"), "Expected d.txt\\test3.txt to exist\n");
+    RemoveDirectoryA("d.txt");
+    createTestFile("test2.txt");
+    createTestFile("test3.txt");
 
     /* number of sources != number of targets */
     shfo.pTo = "d.txt\0";
     shfo.fFlags |= FOF_MULTIDESTFILES;
     retval = SHFileOperationA(&shfo);
-    if (dir_exists("d.txt"))
-    {
-        if (old_shell32)
-        {
-            DeleteFileA("d.txt\\test2.txt");
-            DeleteFileA("d.txt\\test3.txt");
-            RemoveDirectoryA("d.txt");
-            createTestFile("test2.txt");
-        }
-        else
-        {
-            /* Vista and W2K8 (broken or new behavior ?) */
-            ok(retval == DE_SAMEFILE,
-               "Expected DE_SAMEFILE, got %ld\n", retval);
-            ok(DeleteFileA("d.txt\\test2.txt"), "Expected d.txt\\test2.txt to exist\n");
-            ok(!file_exists("d.txt\\test3.txt"), "Expected d.txt\\test3.txt to not exist\n");
-            RemoveDirectoryA("d.txt");
-            createTestFile("test2.txt");
-        }
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-        ok(!DeleteFileA("d.txt"), "Expected d.txt to not exist\n");
-    }
+    ok(retval == DE_SAMEFILE, "got %ld\n", retval);
+    ok(DeleteFileA("d.txt\\test2.txt"), "Expected d.txt\\test2.txt to exist\n");
+    ok(!file_exists("d.txt\\test3.txt"), "Expected d.txt\\test3.txt to not exist\n");
+    RemoveDirectoryA("d.txt");
+    createTestFile("test2.txt");
 
     /* FO_MOVE does not create dest directories */
     shfo.pFrom = "test2.txt\0";
     shfo.pTo = "dir1\\dir2\\test2.txt\0";
     retval = SHFileOperationA(&shfo);
-    if (dir_exists("dir1"))
-    {
-        /* Vista and W2K8 (broken or new behavior ?) */
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(DeleteFileA("dir1\\dir2\\test2.txt"), "Expected dir1\\dir2\\test2.txt to exist\n");
-        RemoveDirectoryA("dir1\\dir2");
-        RemoveDirectoryA("dir1");
-        createTestFile("test2.txt");
-    }
-    else
-    {
-        expect_retval(ERROR_CANCELLED, DE_OPCANCELLED /* Win9x, NT4 */);
-    }
+    ok(!retval, "got %ld\n", retval);
+    ok(DeleteFileA("dir1\\dir2\\test2.txt"), "Expected dir1\\dir2\\test2.txt to exist\n");
+    RemoveDirectoryA("dir1\\dir2");
+    RemoveDirectoryA("dir1");
+    createTestFile("test2.txt");
 
     /* try to overwrite an existing file */
     shfo.pTo = "test3.txt\0";
     retval = SHFileOperationA(&shfo);
-    if (retval == DE_OPCANCELLED)
-    {
-        /* NT4 fails and doesn't move any files */
-        ok(file_exists("test2.txt"), "Expected test2.txt to exist\n");
-    }
-    else
-    {
-        ok(retval == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %ld\n", retval);
-        ok(!file_exists("test2.txt"), "Expected test2.txt to not exist\n");
-        if (old_shell32)
-        {
-            DeleteFileA("test3.txt\\test3.txt");
-            RemoveDirectoryA("test3.txt");
-        }
-        else
-            ok(file_exists("test3.txt"), "Expected test3.txt to exist\n");
-    }
+    ok(!retval, "got %ld\n", retval);
+    ok(!file_exists("test2.txt"), "Expected test2.txt to not exist\n");
+    ok(file_exists("test3.txt"), "Expected test3.txt to exist\n");
 }
 
 static void test_sh_create_dir(void)
@@ -2739,11 +2770,433 @@ static BOOL is_old_shell32(void)
     return FALSE;
 }
 
+struct progress_sink
+{
+    IFileOperationProgressSink IFileOperationProgressSink_iface;
+    unsigned int instance_id;
+    LONG ref;
+    struct progress_expected_notifications *expected;
+};
+
+struct progress_expected_notification
+{
+    const char *text;
+    DWORD tsf, tsf_broken;
+    HRESULT hres, hres_broken;
+};
+struct progress_expected_notifications
+{
+    unsigned int index, count, line;
+    const WCHAR *dir_prefix;
+    const struct progress_expected_notification *expected;
+};
+
+static inline struct progress_sink *impl_from_IFileOperationProgressSink(IFileOperationProgressSink *iface)
+{
+    return CONTAINING_RECORD(iface, struct progress_sink, IFileOperationProgressSink_iface);
+}
+
+#define progress_init_check_notifications(a, b, c, d, e) progress_init_check_notifications_(__LINE__, a, b, c, d, e)
+static void progress_init_check_notifications_(unsigned int line, IFileOperationProgressSink *iface,
+        unsigned int count, const struct progress_expected_notification *expected, const WCHAR *dir_prefix,
+        struct progress_expected_notifications *n)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+    n->line = line;
+    n->index = 0;
+    n->count = count;
+    n->expected = expected;
+    n->dir_prefix = dir_prefix;
+    progress->expected = n;
+}
+
+static void progress_check_notification(struct progress_sink *progress, const char *text, DWORD tsf, HRESULT hres)
+{
+    struct progress_expected_notifications *e = progress->expected;
+    char str[4096];
+
+    ok(!!e, "expected notifications are not set up.\n");
+    sprintf(str, "[%u] %s", progress->instance_id, text);
+    ok_(__FILE__, e->line)(e->index < e->count, "extra notification %s.\n", debugstr_a(str));
+    if (e->index < e->count)
+    {
+        ok_(__FILE__, e->line)(!strcmp(str, e->expected[e->index].text), "got notification %s, expected %s, index %u.\n",
+                debugstr_a(str), debugstr_a(e->expected[e->index].text), e->index);
+        ok_(__FILE__, e->line)(tsf == e->expected[e->index].tsf || broken(tsf == e->expected[e->index].tsf_broken),
+                "got tsf %#lx, expected %#lx, index %u (%s).\n", tsf, e->expected[e->index].tsf, e->index, debugstr_a(text));
+        ok_(__FILE__, e->line)(hres == e->expected[e->index].hres || broken(hres == e->expected[e->index].hres_broken),
+                "got hres %#lx, expected %#lx, index %u (%s).\n", hres, e->expected[e->index].hres, e->index, debugstr_a(text));
+    }
+    ++e->index;
+}
+
+static void progress_end_check_notifications(IFileOperationProgressSink *iface)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+    struct progress_expected_notifications *e = progress->expected;
+
+    ok(!!e, "expected notifications are not set up.\n");
+    ok_(__FILE__, e->line)(e->index == e->count, "got notification count %u, expected %u.\n", e->index, e->count);
+    progress->expected = NULL;
+}
+
+static const char *shellitem_str(struct progress_sink *progress, IShellItem *item)
+{
+    char str[MAX_PATH];
+    unsigned int len;
+    const char *ret;
+    WCHAR *path;
+    HRESULT hr;
+
+    if (!item)
+        return "<null>";
+
+    hr = IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path);
+    if (FAILED(hr))
+        return "<invalid>";
+
+    len = wcslen(progress->expected->dir_prefix);
+    if (progress->expected->dir_prefix[len - 1] == '\\')
+        --len;
+    if (wcsncmp(path, progress->expected->dir_prefix, len))
+    {
+        ret = debugstr_w(path);
+    }
+    else
+    {
+        sprintf(str, "<prefix>%s", debugstr_w(path + len) + 1);
+        ret = __wine_dbg_strdup(str);
+    }
+    CoTaskMemFree(path);
+    return ret;
+}
+
+static HRESULT WINAPI progress_QueryInterface(IFileOperationProgressSink *iface, REFIID riid, void **out)
+{
+    struct progress_sink *operation = impl_from_IFileOperationProgressSink(iface);
+
+    if (IsEqualIID(&IID_IFileOperationProgressSink, riid) ||  IsEqualIID(&IID_IUnknown, riid))
+        *out = &operation->IFileOperationProgressSink_iface;
+    else
+    {
+        trace("not implemented for %s.\n", debugstr_guid(riid));
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    IUnknown_AddRef((IUnknown *)*out);
+    return S_OK;
+}
+
+static ULONG WINAPI progress_AddRef(IFileOperationProgressSink *iface)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+
+    return InterlockedIncrement(&progress->ref);
+}
+
+static ULONG WINAPI progress_Release(IFileOperationProgressSink *iface)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+    LONG ref = InterlockedDecrement(&progress->ref);
+
+    if (!ref)
+        free(progress);
+
+    return ref;
+}
+
+static HRESULT WINAPI progress_StartOperations(IFileOperationProgressSink *iface)
+{
+    progress_check_notification(impl_from_IFileOperationProgressSink(iface), "StartOperations", 0, 0);
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_FinishOperations(IFileOperationProgressSink *iface, HRESULT result)
+{
+    progress_check_notification(impl_from_IFileOperationProgressSink(iface), "FinishOperations", 0, result);
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_PreRenameItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        const WCHAR *new_name)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PostRenameItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        const WCHAR *new_name, HRESULT hrRename, IShellItem *newly_created)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PreMoveItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        IShellItem *dest_folder, const WCHAR *new_name)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+    char str[1024];
+
+    sprintf(str, "PreMoveItem %s, %s, %s", shellitem_str(progress, item),
+            shellitem_str(progress, dest_folder), debugstr_w(new_name) + 1);
+    progress_check_notification(progress, str, flags, 0);
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_PostMoveItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        IShellItem *dest_folder, const WCHAR *new_name, HRESULT result, IShellItem *newly_created)
+{
+    struct progress_sink *progress = impl_from_IFileOperationProgressSink(iface);
+    char str[1024];
+
+    sprintf(str, "PostMoveItem %s, %s, %s -> %s", shellitem_str(progress, item),
+            shellitem_str(progress, dest_folder), debugstr_w(new_name) + 1, shellitem_str(progress, newly_created));
+    progress_check_notification(progress, str, flags, result);
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_PreCopyItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        IShellItem *dest_folder,LPCWSTR pszNewName)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PostCopyItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        IShellItem *dest_folder, const WCHAR *new_name, HRESULT result, IShellItem *newly_created)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PreDeleteItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PostDeleteItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *item,
+        HRESULT result, IShellItem *newly_created)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PreNewItem(IFileOperationProgressSink *iface, DWORD flags,IShellItem *dest_folder,
+        const WCHAR *new_name)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_PostNewItem(IFileOperationProgressSink *iface, DWORD flags, IShellItem *dest_folder,
+        const WCHAR *new_name, const WCHAR *template_name, DWORD file_attrs, HRESULT result, IShellItem *newly_created)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_UpdateProgress(IFileOperationProgressSink *iface, UINT total, UINT sofar)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_ResetTimer(IFileOperationProgressSink *iface)
+{
+    progress_check_notification(impl_from_IFileOperationProgressSink(iface), "ResetTimer", 0, 0);
+    return S_OK;
+}
+
+static HRESULT WINAPI progress_PauseTimer(IFileOperationProgressSink *iface)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI progress_ResumeTimer(IFileOperationProgressSink *iface)
+{
+    ok(0, ".\n");
+
+    return E_NOTIMPL;
+}
+
+static const IFileOperationProgressSinkVtbl progress_vtbl =
+{
+    progress_QueryInterface,
+    progress_AddRef,
+    progress_Release,
+    progress_StartOperations,
+    progress_FinishOperations,
+    progress_PreRenameItem,
+    progress_PostRenameItem,
+    progress_PreMoveItem,
+    progress_PostMoveItem,
+    progress_PreCopyItem,
+    progress_PostCopyItem,
+    progress_PreDeleteItem,
+    progress_PostDeleteItem,
+    progress_PreNewItem,
+    progress_PostNewItem,
+    progress_UpdateProgress,
+    progress_ResetTimer,
+    progress_PauseTimer,
+    progress_ResumeTimer,
+};
+
+static IFileOperationProgressSink *create_progress_sink(unsigned int instance_id)
+{
+    struct progress_sink *obj;
+
+    obj = calloc(1, sizeof(*obj));
+    obj->IFileOperationProgressSink_iface.lpVtbl = &progress_vtbl;
+    obj->instance_id = instance_id;
+    obj->ref = 1;
+    return &obj->IFileOperationProgressSink_iface;
+}
+
+static void set_shell_item_path(IShellItem *item, const WCHAR *path)
+{
+    IPersistIDList *idlist;
+    ITEMIDLIST *pidl;
+    HRESULT hr;
+
+    hr = SHParseDisplayName(path, NULL, &pidl, 0, NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    if (FAILED(hr))
+        return;
+    hr = IShellItem_QueryInterface(item, &IID_IPersistIDList, (void **)&idlist);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    hr = IPersistIDList_SetIDList(idlist, pidl);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    IPersistIDList_Release(idlist);
+    ILFree(pidl);
+}
+
 static void test_file_operation(void)
 {
+#define DEFAULT_TSF_FLAGS (TSF_COPY_LOCALIZED_NAME | TSF_COPY_WRITE_TIME | TSF_COPY_CREATION_TIME | TSF_OVERWRITE_EXIST)
+#define MEGRE_TSF_FLAGS (TSF_COPY_WRITE_TIME | TSF_COPY_CREATION_TIME | TSF_OVERWRITE_EXIST)
+#define UNKNOWN_POST_MERGE_TSF_FLAG 0x1000
+    static const struct progress_expected_notification notifications1[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[1] PreMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[1] PostMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test\" -> <prefix>\"\\\\test\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PostMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test\" -> <prefix>\"\\\\test\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] FinishOperations"},
+    };
+    static const struct progress_expected_notification notifications2[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[0] PostMoveItem <prefix>\"\\\\testfile1\", <prefix>\"\", \"test2\" -> <null>",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                0x80070002, COPYENGINE_S_USER_IGNORED},
+        {"[0] FinishOperations"},
+    };
+    static const struct progress_expected_notification notifications3[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\test\", <prefix>\"\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[0] PostMoveItem <prefix>\"\\\\test\", <prefix>\"\", \"test2\" -> <prefix>\"\\\\test2\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] FinishOperations"},
+    };
+    static const struct progress_expected_notification notifications4[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir1\", <prefix>\"\\\\test_dir2\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir1\", <prefix>\"\\\\test_dir2\", \"test2\" -> <null>",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_E_FLD_IS_FILE_DEST, COPYENGINE_S_USER_IGNORED},
+        {"[0] FinishOperations"},
+    };
+    static const struct progress_expected_notification notifications5[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir1\", <prefix>\"\\\\test_dir2\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir1\", <prefix>\"\\\\test_dir2\", \"test2\" -> <prefix>\"\\\\test_dir2\\\\test2\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] FinishOperations"},
+    };
+    static const struct progress_expected_notification notifications6[] =
+    {
+        {"[0] StartOperations"},
+        {"[0] ResetTimer"},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir3\", <prefix>\"\\\\test_dir2\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[1] PreMoveItem <prefix>\"\\\\test_dir3\", <prefix>\"\\\\test_dir2\", \"test2\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[1] PostMoveItem <prefix>\"\\\\test_dir3\", <prefix>\"\\\\test_dir2\", \"test2\" -> <prefix>\"\\\\test_dir2\\\\test2\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_NOT_HANDLED, COPYENGINE_S_MERGE},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir3\", <prefix>\"\\\\test_dir2\", \"test2\" -> <prefix>\"\\\\test_dir2\\\\test2\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_NOT_HANDLED, COPYENGINE_S_MERGE},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir3\\\\testfile5\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PreMoveItem <prefix>\"\\\\test_dir3\\\\testfile5\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PostMoveItem <prefix>\"\\\\test_dir3\\\\testfile5\", <prefix>\"\\\\test_dir2\\\\test2\", \"testfile5\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\testfile5\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir3\\\\testfile5\", <prefix>\"\\\\test_dir2\\\\test2\", \"testfile5\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\testfile5\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir3\\\\testfile6\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PreMoveItem <prefix>\"\\\\test_dir3\\\\testfile6\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PostMoveItem <prefix>\"\\\\test_dir3\\\\testfile6\", <prefix>\"\\\\test_dir2\\\\test2\", \"testfile6\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\testfile6\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir3\\\\testfile6\", <prefix>\"\\\\test_dir2\\\\test2\", \"testfile6\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\testfile6\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PreMoveItem <prefix>\"\\\\test_dir3\\\\inner_dir\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PreMoveItem <prefix>\"\\\\test_dir3\\\\inner_dir\", <prefix>\"\\\\test_dir2\\\\test2\", \"\"", MEGRE_TSF_FLAGS, MEGRE_TSF_FLAGS},
+        {"[1] PostMoveItem <prefix>\"\\\\test_dir3\\\\inner_dir\", <prefix>\"\\\\test_dir2\\\\test2\", \"inner_dir\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\inner_dir\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PostMoveItem <prefix>\"\\\\test_dir3\\\\inner_dir\", <prefix>\"\\\\test_dir2\\\\test2\", \"inner_dir\" -> <prefix>\"\\\\test_dir2\\\\test2\\\\inner_dir\"",
+                MEGRE_TSF_FLAGS | UNKNOWN_POST_MERGE_TSF_FLAG, MEGRE_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] PreMoveItem <prefix>\"\\\\testfile8\", <prefix>\"\\\\test_dir2\", \"\"", DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS},
+        {"[0] PostMoveItem <prefix>\"\\\\testfile8\", <prefix>\"\\\\test_dir2\", \"testfile8\" -> <prefix>\"\\\\test_dir2\\\\testfile8\"",
+                DEFAULT_TSF_FLAGS, DEFAULT_TSF_FLAGS,
+                COPYENGINE_S_DONT_PROCESS_CHILDREN, COPYENGINE_S_DONT_PROCESS_CHILDREN},
+        {"[0] FinishOperations"},
+    };
+
+    WCHAR dirpath[MAX_PATH], tmpfile[MAX_PATH], path[MAX_PATH];
+    struct progress_expected_notifications expected_notif;
+    IFileOperationProgressSink *progress, *progress2;
     IFileOperation *operation;
+    IShellItem *item, *item2;
+    IShellItem *folder;
+    LONG refcount;
     IUnknown *unk;
+    DWORD cookie;
+    BOOL aborted;
     HRESULT hr;
+    BOOL bret;
+    DWORD ret;
 
     hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_INPROC_SERVER,
             &IID_IFileOperation, (void **)&operation);
@@ -2759,7 +3212,232 @@ static void test_file_operation(void)
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
     IUnknown_Release(unk);
 
+    hr = IFileOperation_Advise(operation, NULL, &cookie);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+
+    progress = create_progress_sink(0);
+    hr = IFileOperation_Advise(operation, progress, &cookie);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == E_UNEXPECTED, "got %#lx.\n", hr);
+
+    hr = CoCreateInstance(&CLSID_ShellItem, NULL, CLSCTX_INPROC_SERVER, &IID_IShellItem, (void **)&item);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = CoCreateInstance(&CLSID_ShellItem, NULL, CLSCTX_INPROC_SERVER, &IID_IShellItem, (void **)&folder);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test", NULL);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+
+    GetTempPathW(ARRAY_SIZE(dirpath), dirpath);
+    PathCombineW(tmpfile, dirpath, L"testfile1");
+    createTestFileW(tmpfile);
+
+    set_shell_item_path(folder, dirpath);
+    set_shell_item_path(item, tmpfile);
+
+    hr = IFileOperation_SetOperationFlags(operation, 0);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    progress2 = create_progress_sink(1);
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications1), notifications1, dirpath, &expected_notif);
+    progress_init_check_notifications(progress2, ARRAY_SIZE(notifications1), notifications1, dirpath, &expected_notif);
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test", progress2);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_SetOperationFlags(operation, FOF_NO_UI);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    aborted = 0xdeadbeef;
+    hr = IFileOperation_GetAnyOperationsAborted(operation, &aborted);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(!aborted, "got %d.\n", aborted);
+    progress_end_check_notifications(progress);
+
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == E_UNEXPECTED, "got %#lx.\n", hr);
+
+    /* Input file does not exist: PerformOperations succeeds, 'aborted' is set. */
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test2", NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications2), notifications2, dirpath, &expected_notif);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_end_check_notifications(progress);
+    aborted = 0;
+    hr = IFileOperation_GetAnyOperationsAborted(operation, &aborted);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(aborted == TRUE, "got %d.\n", aborted);
+    aborted = 0;
+    hr = IFileOperation_GetAnyOperationsAborted(operation, &aborted);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(aborted == TRUE, "got %d.\n", aborted);
+
+    /* Input file exists: PerformOperations succeeds, the item data at the moment of MoveItem is used. */
+    PathCombineW(path, dirpath, L"test");
+    set_shell_item_path(item, path);
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test2", NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    PathCombineW(tmpfile, dirpath, L"testfile2");
+    /* Actual paths are fetched at _MoveItem and not at _Perform operation: changing item after doesn't matter. */
+    createTestFileW(tmpfile);
+    set_shell_item_path(item, tmpfile);
+    bret = DeleteFileW(tmpfile);
+    ok(bret, "got error %ld.\n", GetLastError());
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications3), notifications3, dirpath, &expected_notif);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_end_check_notifications(progress);
+    aborted = 0;
+    hr = IFileOperation_GetAnyOperationsAborted(operation, &aborted);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(aborted == TRUE, "got %d.\n", aborted);
+    ret = GetFileAttributesW(tmpfile);
+    ok(ret == INVALID_FILE_ATTRIBUTES, "got %#lx.\n", ret);
+    PathCombineW(path, dirpath, L"test");
+    ret = GetFileAttributesW(path);
+    ok(ret == INVALID_FILE_ATTRIBUTES, "got %#lx.\n", ret);
+    PathCombineW(path, dirpath, L"test2");
+    ret = GetFileAttributesW(path);
+    ok(ret != INVALID_FILE_ATTRIBUTES, "got %#lx.\n", ret);
+    bret = DeleteFileW(path);
+    ok(bret, "got error %ld.\n", GetLastError());
+
+    refcount = IShellItem_Release(item);
+    ok(!refcount, "got %ld.\n", refcount);
+    IShellItem_AddRef(folder);
+    refcount = IShellItem_Release(folder);
+    todo_wine ok(refcount > 1, "got %ld.\n", refcount);
+
+    hr = IFileOperation_Unadvise(operation, 0xdeadbeef);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_Unadvise(operation, cookie);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
     IFileOperation_Release(operation);
+    refcount = IShellItem_Release(folder);
+    ok(!refcount, "got %ld.\n", refcount);
+
+    /* Move directory to directory. */
+    hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_INPROC_SERVER, &IID_IFileOperation, (void **)&operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_SetOperationFlags(operation, FOF_NO_UI);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_Advise(operation, progress, &cookie);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    PathCombineW(path, dirpath, L"test_dir1");
+    bret = CreateDirectoryW(path, NULL);
+    PathCombineW(tmpfile, path, L"testfile3");
+    createTestFileW(tmpfile);
+    PathCombineW(tmpfile, path, L"testfile4");
+    createTestFileW(tmpfile);
+    hr = SHCreateItemFromParsingName(path, NULL, &IID_IShellItem, (void**)&item);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    PathCombineW(path, dirpath, L"test_dir2");
+    bret = CreateDirectoryW(path, NULL);
+    ok(bret, "got error %ld.\n", GetLastError());
+
+    hr = SHCreateItemFromParsingName(path, NULL, &IID_IShellItem, (void**)&folder);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    PathCombineW(path, path, L"test2");
+    createTestFileW(path);
+
+    /* Source is directory, destination test2 is file. */
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test2", NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications4), notifications4, dirpath, &expected_notif);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_end_check_notifications(progress);
+    aborted = 0;
+    hr = IFileOperation_GetAnyOperationsAborted(operation, &aborted);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    ok(aborted, "got %d.\n", aborted);
+
+    bret = DeleteFileW(path);
+    ok(bret, "got error %ld.\n", GetLastError());
+    IFileOperation_Release(operation);
+
+    /* Source is directory, destination is absent (simple move). */
+    hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_INPROC_SERVER, &IID_IFileOperation, (void **)&operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_Advise(operation, progress, &cookie);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_SetOperationFlags(operation, FOF_NO_UI);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test2", NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications5), notifications5, dirpath, &expected_notif);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_end_check_notifications(progress);
+    IFileOperation_Release(operation);
+
+    /* Source and dest are directories, merge is performed. */
+    hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_INPROC_SERVER, &IID_IFileOperation, (void **)&operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_Advise(operation, progress, &cookie);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_SetOperationFlags(operation, FOF_NO_UI);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    PathCombineW(path, dirpath, L"test_dir3");
+    bret = CreateDirectoryW(path, NULL);
+    set_shell_item_path(item, path);
+    ok(bret, "got error %ld.\n", GetLastError());
+    PathCombineW(tmpfile, path, L"testfile5");
+    createTestFileW(tmpfile);
+    PathCombineW(tmpfile, path, L"testfile6");
+    createTestFileW(tmpfile);
+    PathCombineW(path, path, L"inner_dir");
+    bret = CreateDirectoryW(path, NULL);
+    ok(bret, "got error %ld.\n", GetLastError());
+    PathCombineW(tmpfile, path, L"testfile7");
+    createTestFileW(tmpfile);
+    PathCombineW(tmpfile, dirpath, L"testfile8");
+    createTestFileW(tmpfile);
+
+    hr = SHCreateItemFromParsingName(tmpfile, NULL, &IID_IShellItem, (void**)&item2);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+
+    hr = IFileOperation_MoveItem(operation, item, folder, L"test2", progress2);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    hr = IFileOperation_MoveItem(operation, item2, folder, NULL, NULL);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    refcount = IShellItem_Release(item2);
+    ok(!refcount, "got %ld.\n", refcount);
+    progress_init_check_notifications(progress, ARRAY_SIZE(notifications6), notifications6, dirpath, &expected_notif);
+    hr = IFileOperation_PerformOperations(operation);
+    ok(hr == S_OK, "got %#lx.\n", hr);
+    progress_end_check_notifications(progress);
+
+    PathCombineW(path, dirpath, L"test_dir2");
+    PathCombineW(tmpfile, dirpath, L"test_dir2\\test2\\testfile6");
+    ret = GetFileAttributesW(tmpfile);
+    ok(ret != INVALID_FILE_ATTRIBUTES, "got %#lx.\n", ret);
+    remove_directory(path);
+    PathCombineW(path, dirpath, L"test_dir3");
+    ret = GetFileAttributesW(path);
+    ok(ret == INVALID_FILE_ATTRIBUTES, "got %#lx.\n", ret);
+    remove_directory(path);
+
+    IFileOperation_Release(operation);
+
+    refcount = IShellItem_Release(item);
+    ok(!refcount, "got %ld.\n", refcount);
+    refcount = IShellItem_Release(folder);
+    ok(!refcount, "got %ld.\n", refcount);
+
+    refcount = IFileOperationProgressSink_Release(progress);
+    ok(!refcount, "got %ld.\n", refcount);
+    refcount = IFileOperationProgressSink_Release(progress2);
+    ok(!refcount, "got %ld.\n", refcount);
 }
 
 START_TEST(shlfileop)
@@ -2770,6 +3448,7 @@ START_TEST(shlfileop)
     old_shell32 = is_old_shell32();
     if (old_shell32)
         win_skip("Need to cater for old shell32 (4.0.x) on Win95\n");
+
     clean_after_shfo_tests();
 
     init_shfo_tests();

@@ -158,6 +158,7 @@
 @ stdcall ApplicationRecoveryFinished(long)
 @ stdcall ApplicationRecoveryInProgress(ptr)
 @ stdcall AppPolicyGetMediaFoundationCodecLoading(ptr ptr) kernelbase.AppPolicyGetMediaFoundationCodecLoading
+@ stdcall AppPolicyGetWindowingModel(ptr ptr) kernelbase.AppPolicyGetWindowingModel
 @ stdcall -import AreFileApisANSI()
 @ stdcall AssignProcessToJobObject(ptr ptr)
 @ stdcall -import AttachConsole(long)
@@ -257,6 +258,7 @@
 @ stdcall -import ConvertThreadToFiberEx(ptr long)
 @ stdcall ConvertToGlobalHandle(long)
 @ stdcall -import CopyContext(ptr long ptr)
+@ stdcall -import CopyFile2(wstr wstr ptr)
 @ stdcall CopyFileA(str str long)
 @ stdcall CopyFileExA (str str ptr ptr ptr long)
 @ stdcall -import CopyFileExW(wstr wstr ptr ptr ptr long)
@@ -489,7 +491,7 @@
 @ stdcall -import FindFirstFileExA(str long ptr long ptr long)
 @ stdcall -import FindFirstFileExW(wstr long ptr long ptr long)
 # @ stub FindFirstFileNameTransactedW
-# @ stub FindFirstFileNameW
+@ stdcall -import FindFirstFileNameW(wstr long ptr ptr)
 @ stdcall FindFirstFileTransactedA(str long ptr long ptr long ptr)
 @ stdcall FindFirstFileTransactedW(wstr long ptr long ptr long ptr)
 @ stdcall -import FindFirstFileW(wstr ptr)
@@ -635,6 +637,7 @@
 @ stdcall GetCurrentPackageFamilyName(ptr ptr) kernelbase.GetCurrentPackageFamilyName
 @ stdcall GetCurrentPackageFullName(ptr ptr) kernelbase.GetCurrentPackageFullName
 @ stdcall GetCurrentPackageId(ptr ptr) kernelbase.GetCurrentPackageId
+@ stdcall GetCurrentPackageInfo(long ptr ptr ptr) kernelbase.GetCurrentPackageInfo
 @ stdcall GetCurrentPackagePath(ptr ptr) kernelbase.GetCurrentPackagePath
 @ stdcall -norelay GetCurrentProcess() KERNEL32_GetCurrentProcess
 @ stdcall -norelay GetCurrentProcessId() KERNEL32_GetCurrentProcessId
@@ -860,6 +863,8 @@
 @ stdcall GetTapeStatus(ptr)
 @ stdcall -import GetTempFileNameA(str str long ptr)
 @ stdcall -import GetTempFileNameW(wstr wstr long ptr)
+@ stdcall -import GetTempPath2A(long ptr)
+@ stdcall -import GetTempPath2W(long ptr)
 @ stdcall -import GetTempPathA(long ptr)
 @ stdcall -import GetTempPathW(long ptr)
 @ stdcall -import GetThreadContext(long ptr)
@@ -941,7 +946,7 @@
 @ stub HeapCreateTagsW
 @ stdcall HeapDestroy(long)
 @ stub HeapExtend
-@ stdcall HeapFree(long long ptr)
+@ stdcall -import HeapFree(long long ptr)
 @ stdcall -import HeapLock(long)
 @ stdcall -import HeapQueryInformation(long long ptr long ptr)
 @ stub HeapQueryTagW
@@ -1188,8 +1193,8 @@
 @ stdcall -import QueryDosDeviceW(wstr ptr long)
 @ stdcall -import QueryFullProcessImageNameA(ptr long ptr ptr)
 @ stdcall -import QueryFullProcessImageNameW(ptr long ptr ptr)
-# @ stub QueryIdleProcessorCycleTime
-# @ stub QueryIdleProcessorCycleTimeEx
+@ stdcall -import QueryIdleProcessorCycleTime(ptr ptr)
+@ stdcall -import QueryIdleProcessorCycleTimeEx(long ptr ptr)
 @ stdcall QueryInformationJobObject(long long ptr long ptr)
 @ stdcall -import QueryMemoryResourceNotification(ptr ptr)
 @ stub QueryNumberOfEventLogRecords
@@ -1322,7 +1327,7 @@
 @ stdcall -arch=!i386 RtlLookupFunctionEntry(long ptr ptr) NTDLL.RtlLookupFunctionEntry
 @ stdcall RtlMoveMemory(ptr ptr long) NTDLL.RtlMoveMemory
 @ stdcall RtlPcToFileHeader(ptr ptr) NTDLL.RtlPcToFileHeader
-@ stdcall -arch=!i386 -norelay RtlRaiseException(ptr) NTDLL.RtlRaiseException
+@ stdcall -arch=arm,x86_64 -norelay RtlRaiseException(ptr) NTDLL.RtlRaiseException
 @ cdecl -import RtlRestoreContext(ptr ptr)
 @ stdcall RtlUnwind(ptr ptr ptr long) NTDLL.RtlUnwind
 @ stdcall -arch=!i386 RtlUnwindEx(long long ptr long ptr) NTDLL.RtlUnwindEx
@@ -1435,7 +1440,7 @@
 # @ stub SetFileShortNameW
 @ stdcall -import SetFileTime(long ptr ptr ptr)
 @ stdcall -import SetFileValidData(ptr int64)
-# @ stub SetFirmwareEnvironmentVariableA
+@ stdcall SetFirmwareEnvironmentVariableA(str str ptr long)
 @ stdcall SetFirmwareEnvironmentVariableW(wstr wstr ptr long)
 @ stdcall SetHandleContext(long long)
 @ stdcall SetHandleCount(long)
@@ -1638,10 +1643,10 @@
 @ stdcall WinExec(str long)
 @ stdcall -import Wow64DisableWow64FsRedirection(ptr)
 @ stdcall -import Wow64EnableWow64FsRedirection(long)
-@ stdcall Wow64GetThreadContext(long ptr)
+@ stdcall -import Wow64GetThreadContext(long ptr)
 @ stdcall Wow64GetThreadSelectorEntry(long long ptr)
 @ stdcall -import Wow64RevertWow64FsRedirection(ptr)
-@ stdcall Wow64SetThreadContext(long ptr)
+@ stdcall -import Wow64SetThreadContext(long ptr)
 # @ stub Wow64SuspendThread
 @ stdcall -import WriteConsoleA(long ptr long ptr ptr)
 @ stdcall -import WriteConsoleInputA(long ptr long ptr)

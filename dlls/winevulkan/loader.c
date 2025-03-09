@@ -98,9 +98,9 @@ static BOOL is_available_device_function(VkDevice device, const char *name)
     return UNIX_CALL(is_available_device_function, &params);
 }
 
-static void *alloc_vk_object(size_t size)
+static void *vulkan_client_object_create(size_t size)
 {
-    struct wine_vk_base *object = calloc(1, size);
+    struct vulkan_client_object *object = calloc(1, size);
     object->loader_magic = VULKAN_ICD_MAGIC_VALUE;
     return object;
 }
@@ -230,9 +230,110 @@ VkResult WINAPI vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t *supported_ver
     return VK_SUCCESS;
 }
 
+static NTSTATUS WINAPI call_vulkan_debug_report_callback(void *args, ULONG size)
+{
+    struct wine_vk_debug_report_params *params = args;
+    PFN_vkDebugReportCallbackEXT callback = (void *)(UINT_PTR)params->user_callback;
+    const char *strings = (char *)(params + 1), *layer = NULL, *message = NULL;
+    void *user_data = (void *)(UINT_PTR)params->user_data;
+    VkBool32 ret;
+
+    if (params->layer_len) layer = strings;
+    strings += params->layer_len;
+    if (params->message_len) message = strings;
+
+    ret = callback(params->flags, params->object_type, params->object_handle, params->location,
+                   params->code, layer, message, user_data);
+    return NtCallbackReturn(&ret, sizeof(ret), STATUS_SUCCESS);
+}
+
+static NTSTATUS WINAPI call_vulkan_debug_utils_callback(void *args, ULONG size)
+{
+    struct wine_vk_debug_utils_params *params = args;
+    PFN_vkDebugUtilsMessengerCallbackEXT callback = (void *)(UINT_PTR)params->user_callback;
+    void *user_data = (void *)(UINT_PTR)params->user_data;
+    VkDeviceAddressBindingCallbackDataEXT address_binding =
+    {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT,
+        .flags = params->address_binding.flags,
+        .baseAddress = params->address_binding.base_address,
+        .size = params->address_binding.size,
+        .bindingType = params->address_binding.binding_type,
+    };
+    VkDebugUtilsMessengerCallbackDataEXT data =
+    {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT,
+        .flags = params->flags,
+        .messageIdNumber = params->message_id_number,
+        .queueLabelCount = params->queue_label_count,
+        .cmdBufLabelCount = params->cmd_buf_label_count,
+        .objectCount = params->object_count,
+    };
+    VkDebugUtilsObjectNameInfoEXT *objects;
+    VkDebugUtilsLabelEXT *labels;
+    const char *ptr, *strings;
+    VkBool32 ret = VK_FALSE;
+    UINT i;
+
+    size = sizeof(*params);
+    size += sizeof(struct debug_utils_label) * (data.queueLabelCount + data.cmdBufLabelCount);
+    size += sizeof(struct debug_utils_object) * data.objectCount;
+
+    ptr = (char *)(params + 1);
+    strings = (char *)params + size;
+
+    if (params->has_address_binding) data.pNext = &address_binding;
+    if (params->message_id_name_len) data.pMessageIdName = strings;
+    strings += params->message_id_name_len;
+    if (params->message_len) data.pMessage = strings;
+    strings += params->message_len;
+
+    if ((labels = calloc(data.queueLabelCount + data.cmdBufLabelCount + 1, sizeof(*data.pQueueLabels))) &&
+        (objects = calloc(data.objectCount + 1, sizeof(*data.pObjects))))
+    {
+        for (i = 0; i < data.queueLabelCount + data.cmdBufLabelCount; i++)
+        {
+            struct debug_utils_label *label = (struct debug_utils_label *)ptr;
+            labels[i].sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+            memcpy(labels[i].color, label->color, sizeof(label->color));
+            if (label->label_name_len) labels[i].pLabelName = strings;
+            strings += label->label_name_len;
+            ptr += sizeof(*label);
+        }
+        if (data.queueLabelCount) data.pQueueLabels = labels;
+        labels += data.queueLabelCount;
+        if (data.cmdBufLabelCount) data.pCmdBufLabels = labels;
+
+        for (i = 0; i < data.objectCount; i++)
+        {
+            struct debug_utils_object *object = (struct debug_utils_object *)ptr;
+            objects[i].sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+            objects[i].objectType = object->object_type;
+            objects[i].objectHandle = object->object_handle;
+            if (object->object_name_len) objects[i].pObjectName = strings;
+            strings += object->object_name_len;
+            ptr += sizeof(*object);
+        }
+        data.pObjects = objects;
+
+        ret = callback(params->severity, params->message_types, &data, user_data);
+
+        free(objects);
+    }
+    free(labels);
+
+    return NtCallbackReturn(&ret, sizeof(ret), STATUS_SUCCESS);
+}
+
 static BOOL WINAPI wine_vk_init(INIT_ONCE *once, void *param, void **context)
 {
-    return !__wine_init_unix_call() && !UNIX_CALL(init, NULL);
+    struct vk_callback_funcs callback_funcs =
+    {
+        .call_vulkan_debug_report_callback = (ULONG_PTR)call_vulkan_debug_report_callback,
+        .call_vulkan_debug_utils_callback = (ULONG_PTR)call_vulkan_debug_utils_callback,
+    };
+
+    return !__wine_init_unix_call() && !UNIX_CALL(init, &callback_funcs);
 }
 
 static BOOL  wine_vk_init_once(void)
@@ -257,11 +358,11 @@ VkResult WINAPI vkCreateInstance(const VkInstanceCreateInfo *create_info,
 
     for (;;)
     {
-        if (!(instance = alloc_vk_object(FIELD_OFFSET(struct VkInstance_T, phys_devs[phys_dev_count]))))
+        if (!(instance = vulkan_client_object_create(FIELD_OFFSET(struct VkInstance_T, phys_devs[phys_dev_count]))))
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         instance->phys_dev_count = phys_dev_count;
         for (i = 0; i < phys_dev_count; i++)
-            instance->phys_devs[i].base.loader_magic = VULKAN_ICD_MAGIC_VALUE;
+            instance->phys_devs[i].obj.loader_magic = VULKAN_ICD_MAGIC_VALUE;
 
         params.pCreateInfo = create_info;
         params.pAllocator = allocator;
@@ -275,7 +376,7 @@ VkResult WINAPI vkCreateInstance(const VkInstanceCreateInfo *create_info,
         free(instance);
     }
 
-    if (!instance->base.unix_handle)
+    if (params.result)
         free(instance);
     return params.result;
 }
@@ -470,10 +571,10 @@ VkResult WINAPI vkCreateDevice(VkPhysicalDevice phys_dev, const VkDeviceCreateIn
 
     for (i = 0; i < create_info->queueCreateInfoCount; i++)
         queue_count += create_info->pQueueCreateInfos[i].queueCount;
-    if (!(device = alloc_vk_object(FIELD_OFFSET(struct VkDevice_T, queues[queue_count]))))
+    if (!(device = vulkan_client_object_create(FIELD_OFFSET(struct VkDevice_T, queues[queue_count]))))
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     for (i = 0; i < queue_count; i++)
-        device->queues[i].base.loader_magic = VULKAN_ICD_MAGIC_VALUE;
+        device->queues[i].obj.loader_magic = VULKAN_ICD_MAGIC_VALUE;
 
     params.physicalDevice = phys_dev;
     params.pCreateInfo = create_info;
@@ -482,7 +583,7 @@ VkResult WINAPI vkCreateDevice(VkPhysicalDevice phys_dev, const VkDeviceCreateIn
     params.client_ptr = device;
     status = UNIX_CALL(vkCreateDevice, &params);
     assert(!status);
-    if (!device->base.unix_handle)
+    if (params.result)
         free(device);
     return params.result;
 }
@@ -506,9 +607,8 @@ VkResult WINAPI vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateIn
     struct vk_command_pool *cmd_pool;
     NTSTATUS status;
 
-    if (!(cmd_pool = malloc(sizeof(*cmd_pool))))
+    if (!(cmd_pool = vulkan_client_object_create(sizeof(*cmd_pool))))
         return VK_ERROR_OUT_OF_HOST_MEMORY;
-    cmd_pool->unix_handle = 0;
     list_init(&cmd_pool->command_buffers);
 
     params.device = device;
@@ -518,7 +618,7 @@ VkResult WINAPI vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateIn
     params.client_ptr = cmd_pool;
     status = UNIX_CALL(vkCreateCommandPool, &params);
     assert(!status);
-    if (!cmd_pool->unix_handle)
+    if (params.result)
         free(cmd_pool);
     return params.result;
 }
@@ -559,7 +659,7 @@ VkResult WINAPI vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferA
     uint32_t i;
 
     for (i = 0; i < allocate_info->commandBufferCount; i++)
-        buffers[i] = alloc_vk_object(sizeof(*buffers[i]));
+        buffers[i] = vulkan_client_object_create(sizeof(*buffers[i]));
 
     params.device = device;
     params.pAllocateInfo = allocate_info;
@@ -602,21 +702,8 @@ void WINAPI vkFreeCommandBuffers(VkDevice device, VkCommandPool cmd_pool, uint32
     }
 }
 
-static BOOL WINAPI call_vulkan_debug_report_callback( struct wine_vk_debug_report_params *params, ULONG size )
-{
-    return params->user_callback(params->flags, params->object_type, params->object_handle, params->location,
-                                 params->code, params->layer_prefix, params->message, params->user_data);
-}
-
-static BOOL WINAPI call_vulkan_debug_utils_callback( struct wine_vk_debug_utils_params *params, ULONG size )
-{
-    return params->user_callback(params->severity, params->message_types, &params->data, params->user_data);
-}
-
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
 {
-    void **kernel_callback_table;
-
     TRACE("%p, %lu, %p\n", hinst, reason, reserved);
 
     switch (reason)
@@ -624,10 +711,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
         case DLL_PROCESS_ATTACH:
             hinstance = hinst;
             DisableThreadLibraryCalls(hinst);
-
-            kernel_callback_table = NtCurrentTeb()->Peb->KernelCallbackTable;
-            kernel_callback_table[NtUserCallVulkanDebugReportCallback] = call_vulkan_debug_report_callback;
-            kernel_callback_table[NtUserCallVulkanDebugUtilsCallback]  = call_vulkan_debug_utils_callback;
             break;
     }
     return TRUE;

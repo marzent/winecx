@@ -105,7 +105,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(tooltips);
 
-static HICON hTooltipIcons[TTI_ERROR+1];
+static HICON hTooltipIcons[TTI_ERROR_LARGE+1];
 
 typedef struct
 {
@@ -131,6 +131,7 @@ typedef struct
     COLORREF   clrBk;
     COLORREF   clrText;
     HFONT    hFont;
+    HFONT    hStatusFont;
     HFONT    hTitleFont;
     INT      xTrackPos;
     INT      yTrackPos;
@@ -145,6 +146,8 @@ typedef struct
     BOOL     bToolBelow;
     LPWSTR   pszTitle;
     HICON    hTitleIcon;
+    int      iconWidth;
+    int      iconHeight;
 
     TTTOOL_INFO *tools;
 } TOOLTIPS_INFO;
@@ -168,8 +171,6 @@ typedef struct
 
 #define BALLOON_ICON_TITLE_SPACING 8 /* horizontal spacing between icon and title */
 #define BALLOON_TITLE_TEXT_SPACING 8 /* vertical spacing between icon/title and main text */
-#define ICON_HEIGHT 16
-#define ICON_WIDTH  16
 
 #define MAX_TEXT_SIZE_A 80 /* maximum retrieving text size by ANSI message */
 
@@ -194,14 +195,16 @@ TOOLTIPS_InitSystemSettings (TOOLTIPS_INFO *infoPtr)
     infoPtr->clrBk   = comctl32_color.clrInfoBk;
     infoPtr->clrText = comctl32_color.clrInfoText;
 
-    DeleteObject (infoPtr->hFont);
+    DeleteObject (infoPtr->hStatusFont);
     nclm.cbSize = sizeof(nclm);
     SystemParametersInfoW (SPI_GETNONCLIENTMETRICS, sizeof(nclm), &nclm, 0);
-    infoPtr->hFont = CreateFontIndirectW (&nclm.lfStatusFont);
+    infoPtr->hStatusFont = CreateFontIndirectW (&nclm.lfStatusFont);
 
     DeleteObject (infoPtr->hTitleFont);
     nclm.lfStatusFont.lfWeight = FW_BOLD;
     infoPtr->hTitleFont = CreateFontIndirectW (&nclm.lfStatusFont);
+
+    infoPtr->hFont = infoPtr->hStatusFont;
 }
 
 /* Custom draw routines */
@@ -309,11 +312,11 @@ TOOLTIPS_Refresh (const TOOLTIPS_INFO *infoPtr, HDC hdc)
             /* draw icon */
             icon_present = infoPtr->hTitleIcon && 
                 DrawIconEx(hdc, rc.left, rc.top, infoPtr->hTitleIcon,
-                           ICON_WIDTH, ICON_HEIGHT, 0, NULL, DI_NORMAL);
+                           infoPtr->iconWidth, infoPtr->iconHeight, 0, NULL, DI_NORMAL);
             if (icon_present)
-                rcTitle.left += ICON_WIDTH + BALLOON_ICON_TITLE_SPACING;
+                rcTitle.left += infoPtr->iconWidth + BALLOON_ICON_TITLE_SPACING;
 
-            rcTitle.bottom = rc.top + ICON_HEIGHT;
+            rcTitle.bottom = rc.top + infoPtr->iconHeight;
 
             /* draw title text */
             prevFont = SelectObject (hdc, infoPtr->hTitleFont);
@@ -534,8 +537,8 @@ TOOLTIPS_CalcTipSize (const TOOLTIPS_INFO *infoPtr, LPSIZE lpSize)
         TRACE("title %s\n", debugstr_w(infoPtr->pszTitle));
         if (infoPtr->hTitleIcon)
         {
-            title.cx = ICON_WIDTH;
-            title.cy = ICON_HEIGHT;
+            title.cx = infoPtr->iconWidth;
+            title.cy = infoPtr->iconHeight;
         }
         if (title.cx != 0) title.cx += BALLOON_ICON_TITLE_SPACING;
         hOldFont = SelectObject (hdc, infoPtr->hTitleFont);
@@ -1657,7 +1660,18 @@ TOOLTIPS_SetTitleT (TOOLTIPS_INFO *infoPtr, UINT_PTR uTitleIcon, LPCWSTR pszTitl
     else
         infoPtr->pszTitle = NULL;
 
-    if (uTitleIcon <= TTI_ERROR)
+    if (uTitleIcon >= TTI_INFO_LARGE && uTitleIcon <= TTI_ERROR_LARGE)
+    {
+        infoPtr->iconWidth = GetSystemMetrics(SM_CXICON);
+        infoPtr->iconHeight = GetSystemMetrics(SM_CYICON);
+    }
+    else
+    {
+        infoPtr->iconWidth = GetSystemMetrics(SM_CXSMICON);
+        infoPtr->iconHeight = GetSystemMetrics(SM_CYSMICON);
+    }
+
+    if (uTitleIcon <= TTI_ERROR_LARGE)
         infoPtr->hTitleIcon = hTooltipIcons[uTitleIcon];
     else
         infoPtr->hTitleIcon = CopyIcon((HICON)uTitleIcon);
@@ -1854,7 +1868,7 @@ TOOLTIPS_Destroy (TOOLTIPS_INFO *infoPtr)
         DeleteObject(infoPtr->hTitleIcon);
 
     /* delete fonts */
-    DeleteObject (infoPtr->hFont);
+    DeleteObject (infoPtr->hStatusFont);
     DeleteObject (infoPtr->hTitleFont);
 
     /* free tool tips info data */
@@ -1952,8 +1966,7 @@ TOOLTIPS_SetFont (TOOLTIPS_INFO *infoPtr, HFONT hFont, BOOL redraw)
     if(!GetObjectW(hFont, sizeof(lf), &lf))
         return 0;
 
-    DeleteObject (infoPtr->hFont);
-    infoPtr->hFont = CreateFontIndirectW(&lf);
+    infoPtr->hFont = hFont;
 
     DeleteObject (infoPtr->hTitleFont);
     lf.lfWeight = FW_BOLD;
@@ -2300,6 +2313,12 @@ TOOLTIPS_Register (void)
         (LPCWSTR)MAKEINTRESOURCE(IDI_TT_WARN_SM), IMAGE_ICON, 0, 0, 0);
     hTooltipIcons[TTI_ERROR] = LoadImageW(COMCTL32_hModule,
         (LPCWSTR)MAKEINTRESOURCE(IDI_TT_ERROR_SM), IMAGE_ICON, 0, 0, 0);
+    hTooltipIcons[TTI_INFO_LARGE] = LoadImageW(COMCTL32_hModule,
+        (LPCWSTR)MAKEINTRESOURCE(IDI_TT_INFO_MD), IMAGE_ICON, 0, 0, 0);
+    hTooltipIcons[TTI_WARNING_LARGE] = LoadImageW(COMCTL32_hModule,
+        (LPCWSTR)MAKEINTRESOURCE(IDI_TT_WARN_MD), IMAGE_ICON, 0, 0, 0);
+    hTooltipIcons[TTI_ERROR_LARGE] = LoadImageW(COMCTL32_hModule,
+        (LPCWSTR)MAKEINTRESOURCE(IDI_TT_ERROR_MD), IMAGE_ICON, 0, 0, 0);
 }
 
 

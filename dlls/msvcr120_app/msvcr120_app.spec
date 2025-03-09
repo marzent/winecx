@@ -33,9 +33,9 @@
 @ cdecl -arch=arm ??0_NonReentrantPPLLock@details@Concurrency@@QAA@XZ(ptr) msvcr120.??0_NonReentrantPPLLock@details@Concurrency@@QAA@XZ
 @ thiscall -arch=i386 ??0_NonReentrantPPLLock@details@Concurrency@@QAE@XZ(ptr) msvcr120.??0_NonReentrantPPLLock@details@Concurrency@@QAE@XZ
 @ cdecl -arch=win64 ??0_NonReentrantPPLLock@details@Concurrency@@QEAA@XZ(ptr) msvcr120.??0_NonReentrantPPLLock@details@Concurrency@@QEAA@XZ
-@ stub -arch=arm ??0_ReaderWriterLock@details@Concurrency@@QAA@XZ
-@ stub -arch=i386 ??0_ReaderWriterLock@details@Concurrency@@QAE@XZ
-@ stub -arch=win64 ??0_ReaderWriterLock@details@Concurrency@@QEAA@XZ
+@ cdecl -arch=arm ??0_ReaderWriterLock@details@Concurrency@@QAA@XZ(ptr) msvcr120.??0_ReaderWriterLock@details@Concurrency@@QAA@XZ
+@ thiscall -arch=i386 ??0_ReaderWriterLock@details@Concurrency@@QAE@XZ(ptr) msvcr120.??0_ReaderWriterLock@details@Concurrency@@QAE@XZ
+@ cdecl -arch=win64 ??0_ReaderWriterLock@details@Concurrency@@QEAA@XZ(ptr) msvcr120.??0_ReaderWriterLock@details@Concurrency@@QEAA@XZ
 @ cdecl -arch=arm ??0_ReentrantBlockingLock@details@Concurrency@@QAA@XZ(ptr) msvcr120.??0_ReentrantBlockingLock@details@Concurrency@@QAA@XZ
 @ thiscall -arch=i386 ??0_ReentrantBlockingLock@details@Concurrency@@QAE@XZ(ptr) msvcr120.??0_ReentrantBlockingLock@details@Concurrency@@QAE@XZ
 @ cdecl -arch=win64 ??0_ReentrantBlockingLock@details@Concurrency@@QEAA@XZ(ptr) msvcr120.??0_ReentrantBlockingLock@details@Concurrency@@QEAA@XZ
@@ -493,17 +493,17 @@
 @ stub -arch=arm ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AAAXXZ
 @ stub -arch=i386 ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AAEXXZ
 @ stub -arch=win64 ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AEAAXXZ
-@ stub -arch=i386 ?_ConcRT_Assert@details@Concurrency@@YAXPBD0H@Z
+@ stub -arch=win32 ?_ConcRT_Assert@details@Concurrency@@YAXPBD0H@Z
 @ stub -arch=win64 ?_ConcRT_Assert@details@Concurrency@@YAXPEBD0H@Z
 @ stub -arch=win32 ?_ConcRT_CoreAssert@details@Concurrency@@YAXPBD0H@Z
 @ stub -arch=win64 ?_ConcRT_CoreAssert@details@Concurrency@@YAXPEBD0H@Z
-@ stub -arch=i386 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPB_WZZ
+@ stub -arch=win32 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPB_WZZ
 @ stub -arch=win64 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPEB_WZZ
 @ stub -arch=win32 ?_ConcRT_Trace@details@Concurrency@@YAXHPB_WZZ
 @ stub -arch=win64 ?_ConcRT_Trace@details@Concurrency@@YAXHPEB_WZZ
-@ stub -arch=arm ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAA_NXZ
-@ stub -arch=i386 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAE_NXZ
-@ stub -arch=win64 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QEAA_NXZ
+@ cdecl -arch=arm ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAA_NXZ(ptr) msvcr120.?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAA_NXZ
+@ thiscall -arch=i386 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAE_NXZ(ptr) msvcr120.?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAE_NXZ
+@ cdecl -arch=win64 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QEAA_NXZ(ptr) msvcr120.?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QEAA_NXZ
 @ stub -arch=arm ?_Copy_str@exception@std@@AAAXPBD@Z
 @ stub -arch=i386 ?_Copy_str@exception@std@@AAEXPBD@Z
 @ stub -arch=win64 ?_Copy_str@exception@std@@AEAAXPEBD@Z
@@ -1815,7 +1815,7 @@
 @ cdecl fegetenv(ptr) msvcr120.fegetenv
 @ cdecl fegetexceptflag(ptr long) msvcr120.fegetexceptflag
 @ cdecl fegetround() msvcr120.fegetround
-@ stub feholdexcept
+@ cdecl feholdexcept(ptr) msvcr120.feholdexcept
 @ cdecl feof(ptr) msvcr120.feof
 @ cdecl feraiseexcept(long) msvcr120.feraiseexcept
 @ cdecl ferror(ptr) msvcr120.ferror
@@ -2013,7 +2013,7 @@
 @ varargs scanf(str) msvcr120.scanf
 @ varargs scanf_s(str) msvcr120.scanf_s
 @ cdecl setbuf(ptr ptr) msvcr120.setbuf
-@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr) msvcr120.setjmp
+@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr ptr) msvcr120.setjmp
 @ cdecl setlocale(long str) msvcr120.setlocale
 @ cdecl setvbuf(ptr str long long) msvcr120.setvbuf
 @ cdecl signal(long long) msvcr120.signal

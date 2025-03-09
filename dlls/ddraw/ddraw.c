@@ -420,6 +420,7 @@ static void ddraw_destroy_swapchain(struct ddraw *ddraw)
  *****************************************************************************/
 static void ddraw_destroy(struct ddraw *This)
 {
+    struct d3d_device *device;
     IDirectDraw7_SetCooperativeLevel(&This->IDirectDraw7_iface, NULL, DDSCL_NORMAL);
     IDirectDraw7_RestoreDisplayMode(&This->IDirectDraw7_iface);
 
@@ -437,12 +438,13 @@ static void ddraw_destroy(struct ddraw *This)
 
     if (This->wined3d_swapchain)
         ddraw_destroy_swapchain(This);
-    wined3d_stateblock_decref(This->state);
     wined3d_device_decref(This->wined3d_device);
     wined3d_decref(This->wined3d);
 
-    if (This->d3ddevice)
-        This->d3ddevice->ddraw = NULL;
+    LIST_FOR_EACH_ENTRY(device, &This->d3ddevice_list, struct d3d_device, ddraw_entry)
+    {
+        device->ddraw = NULL;
+    }
 
     /* Now free the object */
     free(This);
@@ -794,9 +796,8 @@ static HRESULT WINAPI ddraw1_RestoreDisplayMode(IDirectDraw *iface)
 static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
         DWORD cooplevel, BOOL restore_mode_on_normal)
 {
-    struct wined3d_rendertarget_view *rtv = NULL, *dsv = NULL;
-    struct wined3d_stateblock *stateblock;
     BOOL restore_state = FALSE;
+    struct d3d_device *device;
     RECT clip_rect;
     HRESULT hr;
 
@@ -937,22 +938,24 @@ static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
         {
             restore_state = TRUE;
 
-            if (FAILED(hr = wined3d_stateblock_create(ddraw->wined3d_device,
-                    ddraw->state, WINED3D_SBT_ALL, &stateblock)))
+            LIST_FOR_EACH_ENTRY(device, &ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
             {
-                ERR("Failed to create stateblock, hr %#lx.\n", hr);
-                goto done;
+                if (FAILED(hr = wined3d_stateblock_create(ddraw->wined3d_device,
+                        device->state, WINED3D_SBT_ALL, &device->saved_state)))
+                {
+                    struct list *entry;
+
+                    ERR("Failed to create stateblock, hr %#lx.\n", hr);
+                    entry = &device->ddraw_entry;
+                    while ((entry = list_prev(&ddraw->d3ddevice_list, entry)))
+                    {
+                        device = LIST_ENTRY(entry, struct d3d_device, ddraw_entry);
+                        wined3d_stateblock_decref(device->saved_state);
+                        device->saved_state = NULL;
+                    }
+                    goto done;
+                }
             }
-
-            rtv = wined3d_device_context_get_rendertarget_view(ddraw->immediate_context, 0);
-            /* Rendering to the wined3d frontbuffer. */
-            if (rtv && !wined3d_rendertarget_view_get_sub_resource_parent(rtv))
-                rtv = NULL;
-            else if (rtv)
-                wined3d_rendertarget_view_incref(rtv);
-
-            if ((dsv = wined3d_device_context_get_depth_stencil_view(ddraw->immediate_context)))
-                wined3d_rendertarget_view_incref(dsv);
         }
 
         ddraw_destroy_swapchain(ddraw);
@@ -963,20 +966,12 @@ static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
 
     if (restore_state)
     {
-        if (dsv)
+        LIST_FOR_EACH_ENTRY(device, &ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
         {
-            wined3d_device_context_set_depth_stencil_view(ddraw->immediate_context, dsv);
-            wined3d_rendertarget_view_decref(dsv);
+            wined3d_stateblock_apply(device->saved_state, device->state);
+            wined3d_stateblock_decref(device->saved_state);
+            device->saved_state = NULL;
         }
-
-        if (rtv)
-        {
-            wined3d_device_context_set_rendertarget_views(ddraw->immediate_context, 0, 1, &rtv, FALSE);
-            wined3d_rendertarget_view_decref(rtv);
-        }
-
-        wined3d_stateblock_apply(stateblock, ddraw->state);
-        wined3d_stateblock_decref(stateblock);
     }
 
     if (!(cooplevel & DDSCL_EXCLUSIVE) && (ddraw->cooperative_level & DDSCL_EXCLUSIVE))
@@ -1243,8 +1238,36 @@ void ddraw_d3dcaps1_from_7(D3DDEVICEDESC *caps1, D3DDEVICEDESC7 *caps7)
     caps1->dpcTriCaps = caps7->dpcTriCaps;
     caps1->dwDeviceRenderBitDepth = caps7->dwDeviceRenderBitDepth;
     caps1->dwDeviceZBufferBitDepth = caps7->dwDeviceZBufferBitDepth;
+
+    /* This value is zero on all Windows drivers we have seen so far. */
     caps1->dwMaxBufferSize = 0;
-    caps1->dwMaxVertexCount = 65536;
+
+    /* AMD GPUs on Windows XP and newer report 1024 for HAL devices.
+     * Nvidia GPUs report 65534. On Windows 9x we have seen 2048 on
+     * AMD cards and 32768 on Nvidia. The API defined limit is 65536
+     * because ddraw only supports 16 bit indices.
+     *
+     * Some games, for example Prince of Persia 3D (bug 44863), create a
+     * vertex buffer to hold as many vertices as we report here. The
+     * game requests a video memory buffer, maps it, writes a handful
+     * of vertices and draws. Because IDirect3DVertexBuffer::Lock does
+     * not allow passing a range, and prior to d3d7 doesn't support
+     * NOOVERWRITE/DISCARD, the upload becomes slow if the buffer is too
+     * large. So we don't want to report a value that's too high here.
+     *
+     * Why 2048? Windows 9x was the contemporaneous system when d3d 1-4
+     * titles were written.
+     *
+     * Regardless of this value, we put ddraw4 vertex buffers into
+     * system memory because games are using them poorly. This mitigates
+     * negative effects of a large vertex count.
+     *
+     * Windows doesn't enforce this limit. A larger vertex buffer can
+     * be created and used in draws. More vertices than dwMaxVertexCount
+     * can be rendered in one draw call. SetExecuteData with a vertex
+     * count exceeding dwMaxVertexCount succeeds too. */
+    caps1->dwMaxVertexCount = 2048;
+
     caps1->dwMinTextureWidth  = caps7->dwMinTextureWidth;
     caps1->dwMinTextureHeight = caps7->dwMinTextureHeight;
     caps1->dwMaxTextureWidth  = caps7->dwMaxTextureWidth;
@@ -3875,7 +3898,10 @@ static HRESULT WINAPI d3d3_EnumDevices(IDirect3D3 *iface, LPD3DENUMDEVICESCALLBA
      * never have POW2 unset in d3d7 on windows. */
     if (ddraw->d3dversion != 1)
     {
-        static CHAR reference_description[] = "RGB Direct3D emulation";
+        /* Tomb Raider 3 overwrites the reference device description buffer
+         * with its own custom string. Reserve some extra space in the array
+         * to avoid a buffer overrun. */
+        static CHAR reference_description[64] = "RGB Direct3D emulation";
 
         TRACE("Enumerating WineD3D D3DDevice interface.\n");
         hal_desc = device_desc1;
@@ -5131,15 +5157,6 @@ HRESULT ddraw_init(struct ddraw *ddraw, DWORD flags, enum wined3d_device_type de
     ddraw->immediate_context = wined3d_device_get_immediate_context(ddraw->wined3d_device);
 
     list_init(&ddraw->surface_list);
-
-    if (FAILED(hr = wined3d_stateblock_create(ddraw->wined3d_device, NULL, WINED3D_SBT_PRIMARY, &ddraw->state)))
-    {
-        ERR("Failed to create the primary stateblock, hr %#lx.\n", hr);
-        wined3d_device_decref(ddraw->wined3d_device);
-        wined3d_decref(ddraw->wined3d);
-        return hr;
-    }
-    ddraw->stateblock_state = wined3d_stateblock_get_state(ddraw->state);
-
+    list_init(&ddraw->d3ddevice_list);
     return DD_OK;
 }

@@ -1193,6 +1193,7 @@ static void test_set_getsockopt(void)
         DWORD values[3];
         BOOL accepts_large_value;
         BOOL bool_value;
+        BOOL allow_noprotoopt; /* for old windows only, must work on wine */
     }
     test_optsize[] =
     {
@@ -1210,6 +1211,9 @@ static void test_set_getsockopt(void)
         {AF_INET, SOCK_STREAM, SOL_SOCKET, SO_SNDTIMEO, FALSE, {1, 2, 4}, {0}, TRUE},
         {AF_INET, SOCK_STREAM, SOL_SOCKET, SO_OPENTYPE, FALSE, {1, 2, 4}, {0}, TRUE},
         {AF_INET, SOCK_STREAM, IPPROTO_TCP, TCP_NODELAY, TRUE, {1, 1, 1}, {0}, TRUE},
+        {AF_INET, SOCK_STREAM, IPPROTO_TCP, TCP_KEEPALIVE, FALSE, {0, 0, 4}, {0}, TRUE},
+        {AF_INET, SOCK_STREAM, IPPROTO_TCP, TCP_KEEPCNT, FALSE, {0, 0, 4}, {0}, FALSE, FALSE, TRUE}, /* win10+ */
+        {AF_INET, SOCK_STREAM, IPPROTO_TCP, TCP_KEEPINTVL, FALSE, {0, 0, 4}, {0}, TRUE, FALSE, TRUE}, /* win10+ */
         {AF_INET, SOCK_DGRAM, IPPROTO_IP, IP_MULTICAST_LOOP, TRUE, {1, 1, 4}, {0}, TRUE, TRUE},
         {AF_INET, SOCK_DGRAM, IPPROTO_IP, IP_MULTICAST_TTL, TRUE, {1, 1, 4}, {0}, FALSE},
         {AF_INET, SOCK_DGRAM, IPPROTO_IP, IP_PKTINFO, FALSE, {0, 0, 4}, {0}, TRUE, TRUE},
@@ -1453,6 +1457,36 @@ static void test_set_getsockopt(void)
     ok(!err, "getsockopt TCP_NODELAY failed\n");
     ok(!value, "TCP_NODELAY should be 0\n");
 
+    size = sizeof(DWORD);
+    value = 3600;
+    err = setsockopt(s, IPPROTO_TCP, TCP_KEEPALIVE, (char*)&value, 4);
+    ok(!err, "setsockopt TCP_KEEPALIVE failed\n");
+    value = 0;
+    err = getsockopt(s, IPPROTO_TCP, TCP_KEEPALIVE, (char*)&value, &size);
+    ok(!err, "getsockopt TCP_KEEPALIVE failed\n");
+    ok(value == 3600, "TCP_KEEPALIVE should be 3600, is %ld\n", value);
+
+    /* TCP_KEEPCNT and TCP_KEEPINTVL are supported on win10 and later */
+    value = 5;
+    err = setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, (char*)&value, 4);
+    ok(!err || broken(WSAGetLastError() == WSAENOPROTOOPT),
+        "setsockopt TCP_KEEPCNT failed: %d\n", WSAGetLastError());
+
+    if (!err)
+    {
+        value = 0;
+        err = getsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, (char*)&value, &size);
+        ok(!err, "getsockopt TCP_KEEPCNT failed\n");
+        ok(value == 5, "TCP_KEEPCNT should be 5, is %ld\n", value);
+
+        err = setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, (char*)&value, 4);
+        ok(!err, "setsockopt TCP_KEEPINTVL failed\n");
+        value = 0;
+        err = getsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, (char*)&value, &size);
+        ok(!err, "getsockopt TCP_KEEPINTVL failed\n");
+        ok(value == 5, "TCP_KEEPINTVL should be 5, is %ld\n", value);
+    }
+
     /* Test for erroneously passing a value instead of a pointer as optval */
     size = sizeof(char);
     err = setsockopt(s, SOL_SOCKET, SO_DONTROUTE, (char *)1, size);
@@ -1517,7 +1551,15 @@ static void test_set_getsockopt(void)
 
         size = sizeof(save_value);
         err = getsockopt(s2, test_optsize[i].level, test_optsize[i].optname, (char*)&save_value, &size);
-        ok(!err, "Unexpected getsockopt result %d.\n", err);
+        ok(!err || broken(test_optsize[i].allow_noprotoopt && WSAGetLastError() == WSAENOPROTOOPT),
+            "Unexpected getsockopt result %d.\n", err);
+
+        if (err)
+        {
+            closesocket(s2);
+            winetest_pop_context();
+            continue;
+        }
 
         value64 = 0xffffffff00000001;
         err = setsockopt(s2, test_optsize[i].level, test_optsize[i].optname, (char *)&value64, sizeof(value64));
@@ -3106,17 +3148,52 @@ static test_setup tests [] =
     }
 };
 
+struct send_udp_thread_param
+{
+    int sock;
+    HANDLE start_event;
+};
+
+static DWORD WINAPI send_udp_thread( void *param )
+{
+    struct send_udp_thread_param *p = param;
+    static const TIMEVAL timeout_zero = {0};
+    static char buf[256];
+    fd_set writefds;
+    unsigned int i;
+    int ret;
+
+    WaitForSingleObject( p->start_event, INFINITE );
+    for (i = 0; i < 256; ++i)
+    {
+        FD_ZERO(&writefds);
+        FD_SET(p->sock, &writefds);
+        ret = select( 1, NULL, &writefds, NULL, &timeout_zero );
+        ok( ret == 1, "got %d, i %u.\n", ret, i );
+        ret = send( p->sock, buf, sizeof(buf), 0 );
+        ok( ret == sizeof(buf), "got %d, error %u, i %u.\n", ret, WSAGetLastError(), i );
+    }
+
+    return 0;
+}
+
 static void test_UDP(void)
 {
     /* This function tests UDP sendto() and recvfrom(). UDP is unreliable, so it is
        possible that this test fails due to dropped packets. */
 
     /* peer 0 receives data from all other peers */
+    static const TIMEVAL timeout_zero = {0};
     struct sock_info peer[NUM_UDP_PEERS];
-    char buf[16];
+    char buf[16], sockaddr_buf[1024];
     int ss, i, n_recv, n_sent, ret;
+    struct sockaddr_in6 addr6;
     struct sockaddr_in addr;
     int sock;
+    struct send_udp_thread_param udp_thread_param;
+    HANDLE thread;
+    fd_set writefds;
+
 
     memset (buf,0,sizeof(buf));
     for ( i = NUM_UDP_PEERS - 1; i >= 0; i-- ) {
@@ -3139,11 +3216,38 @@ static void test_UDP(void)
         ok ( peer[i].addr.sin_port != htons ( 0 ), "UDP: bind() did not associate port\n" );
     }
 
+    /* Test that specifying a too small fromlen for recvfrom() shouldn't write unnecessary data */
+    n_sent = sendto ( peer[1].s, buf, sizeof(buf), 0, (struct sockaddr *)&peer[0].addr, sizeof(peer[0].addr) );
+    ok ( n_sent == sizeof(buf), "UDP: sendto() sent wrong amount of data or socket error: %d\n", n_sent );
+
+    sockaddr_buf[0] = 'A';
+    ss = 1;
+    n_recv = recvfrom ( peer[0].s, buf, sizeof(buf), 0, (struct sockaddr *)sockaddr_buf, &ss );
+    todo_wine
+    ok ( n_recv == SOCKET_ERROR, "UDP: recvfrom() succeeded\n" );
+    ok ( sockaddr_buf[0] == 'A', "UDP: marker got overwritten\n" );
+    if ( n_recv == SOCKET_ERROR )
+    {
+        ss = sizeof ( peer[0].addr );
+        n_recv = recvfrom ( peer[0].s, buf, sizeof(buf), 0, (struct sockaddr *)sockaddr_buf, &ss );
+        ok ( n_recv == sizeof(buf), "UDP: recvfrom() failed\n" );
+    }
+
+    /* Test that specifying a large fromlen for recvfrom() shouldn't write unnecessary data besides the socket address */
+    n_sent = sendto ( peer[1].s, buf, sizeof(buf), 0, (struct sockaddr *)&peer[0].addr, sizeof(peer[0].addr) );
+    ok ( n_sent == sizeof(buf), "UDP: sendto() sent wrong amount of data or socket error: %d\n", n_sent );
+
+    sockaddr_buf[1023] = 'B';
+    ss = sizeof(sockaddr_buf);
+    n_recv = recvfrom ( peer[0].s, buf, sizeof(buf), 0, (struct sockaddr *)sockaddr_buf, &ss );
+    ok ( n_recv == sizeof(buf), "UDP: recvfrom() received wrong amount of data or socket error: %d\n", n_recv );
+    ok ( sockaddr_buf[1023] == 'B', "UDP: marker got overwritten\n" );
+
     /* test getsockname() */
     ok ( peer[0].addr.sin_port == htons ( SERVERPORT ), "UDP: getsockname returned incorrect peer port\n" );
 
     for ( i = 1; i < NUM_UDP_PEERS; i++ ) {
-        /* send client's ip */
+        /* send client's port */
         memcpy( buf, &peer[i].addr.sin_port, sizeof(peer[i].addr.sin_port) );
         n_sent = sendto ( peer[i].s, buf, sizeof(buf), 0, (struct sockaddr*) &peer[0].addr, sizeof(peer[0].addr) );
         ok ( n_sent == sizeof(buf), "UDP: sendto() sent wrong amount of data or socket error: %d\n", n_sent );
@@ -3174,6 +3278,46 @@ static void test_UDP(void)
         ok( ret == sizeof(buf), "got %d, error %u.\n", ret, WSAGetLastError() );
     }
 
+    /* Test sending packets in parallel (mostly a regression test for Wine async handling race conditions). */
+    set_blocking( sock, FALSE );
+
+    udp_thread_param.sock = sock;
+    udp_thread_param.start_event = CreateEventW( NULL, FALSE, FALSE, NULL );
+    thread = CreateThread( NULL, 0, send_udp_thread, &udp_thread_param, 0, NULL );
+    SetEvent( udp_thread_param.start_event );
+    for (i = 0; i < 256; ++i)
+    {
+        ret = send( sock, buf, sizeof(buf), 0 );
+        ok( ret == sizeof(buf), "got %d, error %u, i %u.\n", ret, WSAGetLastError(), i );
+        FD_ZERO(&writefds);
+        FD_SET(sock, &writefds);
+        ret = select( 1, NULL, &writefds, NULL, &timeout_zero );
+        ok( ret == 1, "got %d, i %u.\n", ret, i );
+    }
+    WaitForSingleObject( thread, INFINITE );
+    CloseHandle( thread );
+    CloseHandle( udp_thread_param.start_event );
+
+    closesocket(sock);
+
+    /* Test sending to port 0. */
+    sock = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+    ok( sock != INVALID_SOCKET, "got error %u.\n", WSAGetLastError() );
+    memset( &addr, 0, sizeof(addr) );
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr( "127.0.0.1" );
+    ret = sendto( sock, buf, sizeof(buf), 0, (struct sockaddr *)&addr, sizeof(addr) );
+    ok( ret == sizeof(buf), "got ret %d, error %u.\n", ret, WSAGetLastError() );
+    closesocket(sock);
+
+    sock = socket( AF_INET6, SOCK_DGRAM, 0 );
+    ok( sock != INVALID_SOCKET, "got error %u.\n", WSAGetLastError() );
+    memset( &addr6, 0, sizeof(addr6) );
+    addr6.sin6_family = AF_INET6;
+    ret = inet_pton( AF_INET6, "::1", &addr6.sin6_addr );
+    ok( ret, "got error %u.\n", WSAGetLastError() );
+    ret = sendto( sock, buf, sizeof(buf), 0, (struct sockaddr *)&addr6, sizeof(addr6) );
+    ok( ret == sizeof(buf), "got ret %d, error %u.\n", ret, WSAGetLastError() );
     closesocket(sock);
 }
 
@@ -6739,9 +6883,9 @@ static void test_write_events(struct event_test_ctx *ctx)
 
     if (!broken(1))
     {
-        /* Windows will never send less than buffer_size bytes here, but Linux
-         * may do a short write. */
-        while ((ret = send(server, buffer, buffer_size, 0)) > 0);
+        /* Windows will never send less than buffer_size bytes here. */
+        while ((ret = send(server, buffer, buffer_size, 0)) > 0)
+            ok(ret == buffer_size, "got %d.\n", ret);
         ok(ret == -1, "got %d\n", ret);
         ok(WSAGetLastError() == WSAEWOULDBLOCK, "got error %u\n", WSAGetLastError());
 
@@ -12527,6 +12671,11 @@ static void test_bind(void)
     s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
     WSASetLastError(0xdeadbeef);
+    ret = bind(s, (const struct sockaddr *)&invalid_addr, sizeof(invalid_addr));
+    ok(ret == -1, "expected failure\n");
+    ok(WSAGetLastError() == WSAEADDRNOTAVAIL, "got error %u\n", WSAGetLastError());
+
+    WSASetLastError(0xdeadbeef);
     ret = bind(s, (const struct sockaddr *)&bind_addr, sizeof(bind_addr));
     ok(!ret, "expected success\n");
     ok(!WSAGetLastError() || WSAGetLastError() == 0xdeadbeef /* win <7 */, "got error %u\n", WSAGetLastError());
@@ -14066,6 +14215,164 @@ static void test_select_after_WSAEventSelect(void)
     closesocket(client);
 }
 
+static void test_broadcast(void)
+{
+    struct sockaddr_in bcast = {.sin_family = AF_INET, .sin_port = htons(12345), .sin_addr.s_addr = htonl(INADDR_BROADCAST)};
+    struct sockaddr_in6 mcast6;
+    int val, ret, len;
+    SOCKET s;
+
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ok(s != INVALID_SOCKET, "got error %u.\n", WSAGetLastError());
+    ret = sendto(s, "test", 4, 0, (struct sockaddr *)&bcast, sizeof(bcast));
+    ok(ret == -1, "got %d, error %u.\n", ret, WSAGetLastError());
+    val = 1;
+    ret = setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char*)&val, sizeof(val));
+    ok(!ret, "got %d, error %u.\n", ret, WSAGetLastError());
+    ret = sendto(s, "test", 4, 0, (struct sockaddr *)&bcast, sizeof(bcast));
+    ok(ret == 4, "got %d, error %u.\n", ret, WSAGetLastError());
+
+    val = 0;
+    ret = setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char*)&val, sizeof(val));
+    ok(!ret, "got %d, error %u.\n", ret, WSAGetLastError());
+    ret = sendto(s, "test", 4, 0, (struct sockaddr *)&bcast, sizeof(bcast));
+    ok(ret == -1, "got %d, error %u.\n", ret, WSAGetLastError());
+
+    ret = connect(s, (struct sockaddr *)&bcast, sizeof(bcast));
+    ok(!ret, "got error %u.\n", WSAGetLastError());
+    val = 1;
+    len = sizeof(val);
+    ret = getsockopt(s, SOL_SOCKET, SO_BROADCAST, (char*)&val, &len);
+    ok(!ret, "got %d, error %u.\n", ret, WSAGetLastError());
+    ok(!val, "got %d.\n", val);
+    ret = sendto(s, "test", 4, 0, (struct sockaddr *)&bcast, sizeof(bcast));
+    ok(ret == -1, "got %d, error %u.\n", ret, WSAGetLastError());
+    ret = send(s, "test", 4, 0);
+    ok(ret == 4, "got %d, error %u.\n", ret, WSAGetLastError());
+    closesocket(s);
+
+    s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    ok(s != INVALID_SOCKET, "got error %u.\n", WSAGetLastError());
+    memset(&mcast6, 0, sizeof(mcast6));
+    ret = inet_pton(AF_INET6, "ff01::1", &mcast6.sin6_addr);
+    ok(ret, "got error %u.\n", WSAGetLastError());
+    mcast6.sin6_family = AF_INET6;
+    mcast6.sin6_port = htons(12345);
+    ret = sendto(s, "test", 4, 0, (struct sockaddr *)&mcast6, sizeof(mcast6));
+    ok(ret == 4, "got %d, error %u.\n", ret, WSAGetLastError());
+    closesocket(s);
+}
+
+struct test_send_buffering_data
+{
+    int buffer_size;
+    int sent_size;
+    SOCKET server;
+    char *buffer;
+};
+
+static DWORD WINAPI test_send_buffering_thread(void *arg)
+{
+    struct test_send_buffering_data *d = arg;
+    int ret;
+
+    d->sent_size = 0;
+    while ((ret = send(d->server, d->buffer, d->buffer_size, 0)) > 0)
+    {
+        ok(ret == d->buffer_size, "got %d.\n", ret);
+        d->sent_size += ret;
+    }
+    ok(ret == -1, "got %d\n", ret);
+    ok(WSAGetLastError() == WSAEWOULDBLOCK, "got error %u.\n", WSAGetLastError());
+    ok(d->sent_size, "got 0.\n");
+    ret = CancelIoEx((HANDLE)d->server, NULL);
+    ok(!ret && GetLastError() == ERROR_NOT_FOUND, "got ret %d, error %lu.\n", ret, GetLastError());
+    ret = CancelIo((HANDLE)d->server);
+    ok(ret, "got error %lu.\n", GetLastError());
+    shutdown(d->server, SD_BOTH);
+    closesocket(d->server);
+    return 0;
+}
+
+static void test_send_buffering(void)
+{
+    static const char test_data[] = "abcdefg01234567";
+
+    struct test_send_buffering_data d;
+    int ret, recv_size, i;
+    SOCKET client;
+    HANDLE thread;
+
+    d.buffer_size = 1024 * 1024 * 50;
+    d.buffer = malloc(d.buffer_size);
+
+    for (i = 0; i < d.buffer_size; ++i)
+        d.buffer[i] = test_data[i % sizeof(test_data)];
+
+    tcp_socketpair(&client, &d.server);
+    set_blocking(client, FALSE);
+    set_blocking(d.server, FALSE);
+
+    d.sent_size = 0;
+    while ((ret = send(d.server, d.buffer, d.buffer_size, 0)) > 0)
+    {
+        ok(ret == d.buffer_size, "got %d.\n", ret);
+        d.sent_size += ret;
+    }
+    ok(ret == -1, "got %d\n", ret);
+    ok(WSAGetLastError() == WSAEWOULDBLOCK, "got error %u.\n", WSAGetLastError());
+    ok(d.sent_size, "got 0.\n");
+    closesocket(d.server);
+
+    recv_size = 0;
+    while ((ret = recv(client, d.buffer, d.buffer_size, 0)) > 0 || WSAGetLastError() == WSAEWOULDBLOCK)
+    {
+        if (ret < 0)
+            continue;
+        for (i = 0; i < ret; ++i)
+        {
+            if (d.buffer[i] != test_data[(recv_size + i) % sizeof(test_data)])
+                break;
+        }
+        ok(i == ret, "data mismatch.\n");
+        recv_size += ret;
+        ok(recv_size <= d.sent_size, "got ret %d, recv_size %d, sent_size %d.\n", ret, recv_size, d.sent_size);
+    }
+    ok(!ret && !WSAGetLastError(), "got ret %d, error %u.\n", ret, WSAGetLastError());
+    ok(recv_size == d.sent_size, "got %d, expected %d.\n", recv_size, d.sent_size);
+    closesocket(client);
+
+    /* Test with the other thread which terminates before the data is actually sent. */
+    for (i = 0; i < d.buffer_size; ++i)
+        d.buffer[i] = test_data[i % sizeof(test_data)];
+
+    tcp_socketpair(&client, &d.server);
+    set_blocking(client, FALSE);
+    set_blocking(d.server, FALSE);
+
+    thread = CreateThread(NULL, 0, test_send_buffering_thread, &d, 0, NULL);
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+
+    recv_size = 0;
+    while ((ret = recv(client, d.buffer, d.buffer_size, 0)) > 0 || WSAGetLastError() == WSAEWOULDBLOCK)
+    {
+        if (ret < 0)
+            continue;
+        for (i = 0; i < ret; ++i)
+        {
+            if (d.buffer[i] != test_data[(recv_size + i) % sizeof(test_data)])
+                break;
+        }
+        ok(i == ret, "data mismatch.\n");
+        recv_size += ret;
+        ok(recv_size <= d.sent_size, "got ret %d, recv_size %d, sent_size %d.\n", ret, recv_size, d.sent_size);
+    }
+    ok(!ret && !WSAGetLastError(), "got ret %d, error %u.\n", ret, WSAGetLastError());
+    ok(recv_size == d.sent_size, "got %d, expected %d.\n", recv_size, d.sent_size);
+    closesocket(client);
+}
+
 START_TEST( sock )
 {
     int i;
@@ -14148,6 +14455,8 @@ START_TEST( sock )
     test_icmp();
     test_connect_udp();
     test_tcp_sendto_recvfrom();
+    test_broadcast();
+    test_send_buffering();
 
     /* There is apparently an obscure interaction between this test and
      * test_WSAGetOverlappedResult().

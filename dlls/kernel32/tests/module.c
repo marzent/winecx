@@ -48,6 +48,8 @@ static NTSTATUS (WINAPI *pLdrGetDllFullName)( HMODULE module, UNICODE_STRING *na
 
 static BOOL (WINAPI *pIsApiSetImplemented)(LPCSTR);
 
+static NTSTATUS (WINAPI *pRtlHashUnicodeString)( const UNICODE_STRING *, BOOLEAN, ULONG, ULONG * );
+
 static BOOL is_unicode_enabled = TRUE;
 
 static BOOL cmpStrAW(const char* a, const WCHAR* b, DWORD lenA, DWORD lenB)
@@ -139,6 +141,34 @@ static void create_test_dll( const char *name )
     SetFilePointer( handle, dll_image.nt.OptionalHeader.SizeOfImage, NULL, FILE_BEGIN );
     SetEndOfFile( handle );
     CloseHandle( handle );
+}
+
+static BOOL is_old_loader_struct(void)
+{
+    LDR_DATA_TABLE_ENTRY *mod, *mod2;
+    LDR_DDAG_NODE *ddag_node;
+    NTSTATUS status;
+    HMODULE hexe;
+
+    /* Check for old LDR data strcuture. */
+    hexe = GetModuleHandleW( NULL );
+    ok( !!hexe, "Got NULL exe handle.\n" );
+    status = LdrFindEntryForAddress( hexe, &mod );
+    ok( !status, "got %#lx.\n", status );
+    if (!(ddag_node = mod->DdagNode))
+    {
+        win_skip( "DdagNode is NULL, skipping tests.\n" );
+        return TRUE;
+    }
+    ok( !!ddag_node->Modules.Flink, "Got NULL module link.\n" );
+    mod2 = CONTAINING_RECORD(ddag_node->Modules.Flink, LDR_DATA_TABLE_ENTRY, NodeModuleLink);
+    ok( mod2 == mod || broken( (void **)mod2 == (void **)mod - 1 ), "got %p, expected %p.\n", mod2, mod );
+    if (mod2 != mod)
+    {
+        win_skip( "Old LDR_DATA_TABLE_ENTRY structure, skipping tests.\n" );
+        return TRUE;
+    }
+    return FALSE;
 }
 
 static void testGetModuleFileName(const char* name)
@@ -939,6 +969,7 @@ static void init_pointers(void)
     MAKEFUNC(LdrGetDllHandle);
     MAKEFUNC(LdrGetDllHandleEx);
     MAKEFUNC(LdrGetDllFullName);
+    MAKEFUNC(RtlHashUnicodeString);
     mod = GetModuleHandleA( "kernelbase.dll" );
     MAKEFUNC(IsApiSetImplemented);
 #undef MAKEFUNC
@@ -1317,8 +1348,10 @@ static void test_LdrGetDllHandleEx(void)
 {
     HMODULE mod, loaded_mod;
     UNICODE_STRING name;
+    WCHAR path[MAX_PATH];
     NTSTATUS status;
     unsigned int i;
+    BOOL bret;
 
     if (!pLdrGetDllHandleEx)
     {
@@ -1392,6 +1425,40 @@ static void test_LdrGetDllHandleEx(void)
     winetest_push_context( "LDR_GET_DLL_HANDLE_EX_FLAG_PIN" );
     check_refcount( loaded_mod, ~0u );
     winetest_pop_context();
+
+    GetCurrentDirectoryW( ARRAY_SIZE(path), path );
+    if (pAddDllDirectory) pAddDllDirectory( path );
+    create_test_dll( "d01.dll" );
+    mod = LoadLibraryA( "d01.dll" );
+    ok( !!mod, "got error %lu.\n", GetLastError() );
+    RtlInitUnicodeString( &name, L"d01.dll" );
+    status = pLdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, NULL, &name, &loaded_mod );
+    ok( !status, "got %#lx.\n", status );
+
+    RtlInitUnicodeString( &name, L"d02.dll" );
+    status = pLdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, NULL, &name, &loaded_mod );
+    ok( status == STATUS_DLL_NOT_FOUND, "got %#lx.\n", status );
+
+    /* Same (moved) file, different name: not found in loaded modules with short name but found with path. */
+    DeleteFileA( "d02.dll" );
+    bret = MoveFileA( "d01.dll", "d02.dll" );
+    ok( bret, "got error %lu.\n", GetLastError() );
+    status = pLdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, NULL, &name, &loaded_mod );
+    ok( status == STATUS_DLL_NOT_FOUND, "got %#lx.\n", status );
+    CreateDirectoryA( "testdir", NULL );
+    DeleteFileA( "testdir\\d02.dll" );
+    bret = MoveFileA( "d02.dll", "testdir\\d02.dll" );
+    ok( bret, "got error %lu.\n", GetLastError() );
+    RtlInitUnicodeString( &name, L"testdir\\d02.dll" );
+    status = pLdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, NULL, &name, &loaded_mod );
+    ok( !status, "got %#lx.\n", status );
+    ok( loaded_mod == mod, "got %p, %p.\n", loaded_mod, mod );
+    FreeLibrary( mod );
+    status = pLdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, NULL, NULL, &name, &loaded_mod );
+    ok( status == STATUS_DLL_NOT_FOUND, "got %#lx.\n", status );
+
+    DeleteFileA( "testdir\\d02.dll" );
+    RemoveDirectoryA( "testdir" );
 }
 
 static void test_LdrGetDllFullName(void)
@@ -1627,6 +1694,164 @@ static void test_ddag_node(void)
     ok( se == node->Dependencies.Tail, "Expected end of the list.\n" );
 }
 
+static HANDLE test_tls_links_started, test_tls_links_done;
+
+static DWORD WINAPI test_tls_links_thread(void* tlsidx_v)
+{
+    SetEvent(test_tls_links_started);
+    WaitForSingleObject(test_tls_links_done, INFINITE);
+    return 0;
+}
+
+static void test_tls_links(void)
+{
+    TEB *teb = NtCurrentTeb(), *thread_teb;
+    THREAD_BASIC_INFORMATION tbi;
+    NTSTATUS status;
+    HANDLE thread;
+
+    ok(!!teb->ThreadLocalStoragePointer, "got NULL.\n");
+
+    test_tls_links_started = CreateEventW(NULL, FALSE, FALSE, NULL);
+    test_tls_links_done = CreateEventW(NULL, FALSE, FALSE, NULL);
+
+    thread = CreateThread(NULL, 0, test_tls_links_thread, NULL, CREATE_SUSPENDED, NULL);
+    do
+    {
+        /* workaround currently present Wine bug when thread teb may be not available immediately
+         * after creating a thread before it is initialized on the Unix side. */
+        Sleep(1);
+        status = NtQueryInformationThread(thread, ThreadBasicInformation, &tbi, sizeof(tbi), NULL);
+        ok(!status, "got %#lx.\n", status );
+    } while (!(thread_teb = tbi.TebBaseAddress));
+    ok(!thread_teb->ThreadLocalStoragePointer, "got %p.\n", thread_teb->ThreadLocalStoragePointer);
+    ResumeThread(thread);
+    WaitForSingleObject(test_tls_links_started, INFINITE);
+
+    ok(!!thread_teb->ThreadLocalStoragePointer, "got NULL.\n");
+    ok(!teb->TlsLinks.Flink, "got %p.\n", teb->TlsLinks.Flink);
+    ok(!teb->TlsLinks.Blink, "got %p.\n", teb->TlsLinks.Blink);
+    ok(!thread_teb->TlsLinks.Flink, "got %p.\n", thread_teb->TlsLinks.Flink);
+    ok(!thread_teb->TlsLinks.Blink, "got %p.\n", thread_teb->TlsLinks.Blink);
+    SetEvent(test_tls_links_done);
+    WaitForSingleObject(thread, INFINITE);
+
+    CloseHandle(thread);
+    CloseHandle(test_tls_links_started);
+    CloseHandle(test_tls_links_done);
+}
+
+
+static RTL_BALANCED_NODE *rtl_node_parent( RTL_BALANCED_NODE *node )
+{
+    return (RTL_BALANCED_NODE *)(node->ParentValue & ~(ULONG_PTR)RTL_BALANCED_NODE_RESERVED_PARENT_MASK);
+}
+
+static unsigned int check_address_index_tree( RTL_BALANCED_NODE *node )
+{
+    LDR_DATA_TABLE_ENTRY *mod;
+    unsigned int count;
+    char *base;
+
+    if (!node) return 0;
+    ok( (node->ParentValue & RTL_BALANCED_NODE_RESERVED_PARENT_MASK) <= 1, "got ParentValue %#Ix.\n",
+        node->ParentValue );
+
+    mod = CONTAINING_RECORD(node, LDR_DATA_TABLE_ENTRY, BaseAddressIndexNode);
+    base = mod->DllBase;
+    if (node->Left)
+    {
+        mod = CONTAINING_RECORD(node->Left, LDR_DATA_TABLE_ENTRY, BaseAddressIndexNode);
+        ok( (char *)mod->DllBase < base, "wrong ordering.\n" );
+    }
+    if (node->Right)
+    {
+        mod = CONTAINING_RECORD(node->Right, LDR_DATA_TABLE_ENTRY, BaseAddressIndexNode);
+        ok( (char *)mod->DllBase > base, "wrong ordering.\n" );
+    }
+
+    count = check_address_index_tree( node->Left );
+    count += check_address_index_tree( node->Right );
+    return count + 1;
+}
+
+static void test_base_address_index_tree(void)
+{
+    LIST_ENTRY *first = &NtCurrentTeb()->Peb->LdrData->InLoadOrderModuleList;
+    unsigned int tree_count, list_count = 0;
+    LDR_DATA_TABLE_ENTRY *mod, *mod2;
+    RTL_BALANCED_NODE *root, *node;
+    char *base;
+
+    if (is_old_loader_struct()) return;
+
+    mod = CONTAINING_RECORD(first->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    ok( mod->BaseAddressIndexNode.ParentValue || mod->BaseAddressIndexNode.Left || mod->BaseAddressIndexNode.Right,
+        "got zero BaseAddressIndexNode.\n" );
+    root = &mod->BaseAddressIndexNode;
+    while (rtl_node_parent( root ))
+        root = rtl_node_parent( root );
+    tree_count = check_address_index_tree( root );
+    for (LIST_ENTRY *entry = first->Flink; entry != first; entry = entry->Flink)
+    {
+        ++list_count;
+        mod = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+        base = mod->DllBase;
+        node = root;
+        mod2 = NULL;
+        while (1)
+        {
+            ok( !!node, "got NULL.\n" );
+            if (!node) break;
+            mod2 = CONTAINING_RECORD(node, LDR_DATA_TABLE_ENTRY, BaseAddressIndexNode);
+            if (base == (char *)mod2->DllBase) break;
+            if (base < (char *)mod2->DllBase) node = node->Left;
+            else                              node = node->Right;
+        }
+        ok( base == (char *)mod2->DllBase, "module %s not found.\n", debugstr_w(mod->BaseDllName.Buffer) );
+    }
+    ok( tree_count == list_count, "count mismatch %u, %u.\n", tree_count, list_count );
+}
+
+static ULONG hash_basename( const UNICODE_STRING *basename )
+{
+    NTSTATUS status;
+    ULONG hash;
+
+    status = pRtlHashUnicodeString( basename, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &hash );
+    ok( !status, "got %#lx.\n", status );
+    return hash & 31;
+}
+
+static void test_hash_links(void)
+{
+    LIST_ENTRY *hash_map, *entry, *entry2, *mark, *root;
+    LDR_DATA_TABLE_ENTRY *module;
+    const WCHAR *modname;
+    BOOL found;
+
+    /* Hash links structure is the same on older Windows loader but hashing algorithm is different. */
+    if (is_old_loader_struct()) return;
+
+    root = &NtCurrentTeb()->Peb->LdrData->InLoadOrderModuleList;
+    module = CONTAINING_RECORD(root->Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    hash_map = module->HashLinks.Blink - hash_basename( &module->BaseDllName );
+
+    for (entry = root->Flink; entry != root; entry = entry->Flink)
+    {
+        module = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+        modname = module->BaseDllName.Buffer;
+        mark = &hash_map[hash_basename( &module->BaseDllName )];
+        found = FALSE;
+        for (entry2 = mark->Flink; entry2 != mark; entry2 = entry2->Flink)
+        {
+            module = CONTAINING_RECORD(entry2, LDR_DATA_TABLE_ENTRY, HashLinks);
+            if ((found = !lstrcmpiW( module->BaseDllName.Buffer, modname ))) break;
+        }
+        ok( found, "Could not find %s.\n", debugstr_w(modname) );
+    }
+}
+
 START_TEST(module)
 {
     WCHAR filenameW[MAX_PATH];
@@ -1663,4 +1888,7 @@ START_TEST(module)
     test_LdrGetDllFullName();
     test_apisets();
     test_ddag_node();
+    test_tls_links();
+    test_base_address_index_tree();
+    test_hash_links();
 }

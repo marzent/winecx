@@ -118,6 +118,32 @@ static inline void *wine_server_get_ptr( client_ptr_t ptr )
     return (void *)(ULONG_PTR)ptr;
 }
 
+/* convert a server struct rectangle to a RECT */
+static inline RECT wine_server_get_rect( struct rectangle rectangle )
+{
+    RECT rect =
+    {
+        .left = rectangle.left,
+        .top = rectangle.top,
+        .right = rectangle.right,
+        .bottom = rectangle.bottom,
+    };
+    return rect;
+}
+
+/* convert a RECT to a server struct rectangle */
+static inline struct rectangle wine_server_rectangle( RECT rect )
+{
+    struct rectangle rectangle =
+    {
+        .left = rect.left,
+        .top = rect.top,
+        .right = rect.right,
+        .bottom = rect.bottom,
+    };
+    return rectangle;
+}
+
 
 /* macros for server requests */
 

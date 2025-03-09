@@ -1767,6 +1767,33 @@ static path_test_t widenline_capsquareanchor_multifigure_path[] = {
     {57.071068, 17.071068, PathPointTypeLine|PathPointTypeCloseSubpath, 0, 0}, /*23*/
     };
 
+static path_test_t widenline_customarrow_multifigure_path[] = {
+    {6.0, 9.5,          PathPointTypeStart}, /*0*/
+    {24.0, 9.5,         PathPointTypeLine}, /*1*/
+    {24.0, 10.5,        PathPointTypeLine}, /*2*/
+    {6.0, 10.5,         PathPointTypeLine|PathPointTypeCloseSubpath}, /*3*/
+    {30.5, 11.0,        PathPointTypeStart}, /*4*/
+    {30.5, 29.0,        PathPointTypeLine}, /*5*/
+    {29.5, 29.0,        PathPointTypeLine}, /*6*/
+    {29.5, 11.0,        PathPointTypeLine|PathPointTypeCloseSubpath}, /*7*/
+    {13.0, 14.0,        PathPointTypeStart}, /*8*/
+    {5.0, 10.0,         PathPointTypeLine}, /*9*/
+    {13.0, 6.0,         PathPointTypeLine}, /*10*/
+    {11.0, 10.0,        PathPointTypeLine|PathPointTypeCloseSubpath}, /*11*/
+    {17.0, 6.0,         PathPointTypeStart}, /*12*/
+    {25.0, 10.0,        PathPointTypeLine}, /*13*/
+    {17.0, 14.0,        PathPointTypeLine}, /*14*/
+    {19.0, 10.0,        PathPointTypeLine|PathPointTypeCloseSubpath}, /*15*/
+    {26.0, 18.0,        PathPointTypeStart}, /*16*/
+    {30.0, 10.0,        PathPointTypeLine}, /*17*/
+    {34.0, 18.0,        PathPointTypeLine}, /*18*/
+    {30.0, 16.0,        PathPointTypeLine|PathPointTypeCloseSubpath}, /*19*/
+    {34.0, 22.0,        PathPointTypeStart}, /*20*/
+    {30.0, 30.0,        PathPointTypeLine}, /*21*/
+    {26.0, 22.0,        PathPointTypeLine}, /*22*/
+    {30.0, 24.0,        PathPointTypeLine|PathPointTypeCloseSubpath}, /*23*/
+    };
+
 static void test_widen_cap(void)
 {
     struct
@@ -1873,14 +1900,28 @@ static void test_widen_cap(void)
     ok_path_fudge(path, widenline_capsquareanchor_multifigure_path,
         ARRAY_SIZE(widenline_capsquareanchor_multifigure_path), FALSE, 0.000005);
 
+    status = GdipResetPath(path);
+    expect(Ok, status);
+    status = GdipAddPathLine(path, 5.0, 10.0, 25.0, 10.0);
+    expect(Ok, status);
+    status = GdipStartPathFigure(path);
+    expect(Ok, status);
+    status = GdipAddPathLine(path, 30.0, 10.0, 30.0, 30.0);
+    expect(Ok, status);
     status = GdipCreateAdjustableArrowCap(4.0, 4.0, TRUE, &arrowcap);
     ok(status == Ok, "Failed to create adjustable cap, %d\n", status);
     status = GdipSetAdjustableArrowCapMiddleInset(arrowcap, 1.0);
     ok(status == Ok, "Failed to set middle inset inadjustable cap, %d\n", status);
+    status = GdipSetPenCustomStartCap(pen, (GpCustomLineCap*)arrowcap);
+    ok(status == Ok, "Failed to create custom end cap, %d\n", status);
     status = GdipSetPenCustomEndCap(pen, (GpCustomLineCap*)arrowcap);
     ok(status == Ok, "Failed to create custom end cap, %d\n", status);
+    status = GdipSetPenWidth(pen, 1.0);
+    expect(Ok, status);
     status = GdipWidenPath(path, pen, NULL, FlatnessDefault);
     expect(Ok, status);
+    ok_path_fudge(path, widenline_customarrow_multifigure_path,
+        ARRAY_SIZE(widenline_customarrow_multifigure_path), FALSE, 0.000005);
 
     GdipDeletePen(pen);
 
@@ -2144,6 +2185,33 @@ static void test_empty_rect(void)
     GdipDeletePath(path);
 }
 
+static path_test_t rect_line_path[] = {
+    {1.0, 4.0, PathPointTypeStart, 0, 0}, /*0*/
+    {17.0, 4.0, PathPointTypeLine, 0, 0}, /*1*/
+    {17.0, 68.0, PathPointTypeLine, 0, 0}, /*2*/
+    {1.0, 68.0, PathPointTypeLine | PathPointTypeCloseSubpath, 0, 0}, /*3*/
+    {1.0, 8.0, PathPointTypeStart, 0, 0}, /*4*/
+    {17.0, 8.0, PathPointTypeLine, 0, 0} /*5*/
+    };
+
+static void test_rect_line(void)
+{
+    GpStatus status;
+    GpPath* path;
+
+    GdipCreatePath(FillModeAlternate, &path);
+
+    status = GdipAddPathRectangleI(path, 1, 4, 16, 64);
+    expect(Ok, status);
+
+    status = GdipAddPathLineI(path, 1, 8, 17, 8);
+    expect(Ok, status);
+
+    ok_path(path, rect_line_path, ARRAY_SIZE(rect_line_path), FALSE);
+
+    GdipDeletePath(path);
+}
+
 START_TEST(graphicspath)
 {
     struct GdiplusStartupInput gdiplusStartupInput;
@@ -2187,6 +2255,7 @@ START_TEST(graphicspath)
     test_isvisible();
     test_is_outline_visible_path_point();
     test_empty_rect();
+    test_rect_line();
 
     GdiplusShutdown(gdiplusToken);
 }

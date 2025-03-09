@@ -18,57 +18,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "x11drv_dll.h"
+#include <stdarg.h>
+#include "windef.h"
+#include "winbase.h"
+#include "ntgdi.h"
+#include "unixlib.h"
 #include "wine/debug.h"
-
-
-HMODULE x11drv_module = 0;
-
-
-typedef NTSTATUS (*callback_func)( UINT arg );
-static const callback_func callback_funcs[] =
-{
-    x11drv_dnd_drop_event,
-    x11drv_dnd_leave_event,
-};
-
-C_ASSERT( ARRAYSIZE(callback_funcs) == client_funcs_count );
-
-static NTSTATUS WINAPI x11drv_callback( void *arg, ULONG size )
-{
-    struct client_callback_params *params = arg;
-    return callback_funcs[params->id]( params->arg );
-}
-
-typedef NTSTATUS (WINAPI *kernel_callback)( void *params, ULONG size );
-static const kernel_callback kernel_callbacks[] =
-{
-    x11drv_callback,
-    x11drv_dnd_enter_event,
-    x11drv_dnd_position_event,
-    x11drv_dnd_post_drop,
-};
-
-C_ASSERT( NtUserDriverCallbackFirst + ARRAYSIZE(kernel_callbacks) == client_func_last );
-
 
 BOOL WINAPI DllMain( HINSTANCE instance, DWORD reason, void *reserved )
 {
-    void **callback_table;
-    struct init_params params =
-    {
-        foreign_window_proc,
-    };
-
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
 
     DisableThreadLibraryCalls( instance );
-    x11drv_module = instance;
     if (__wine_init_unix_call()) return FALSE;
-    if (X11DRV_CALL( init, &params )) return FALSE;
+    if (X11DRV_CALL( init, NULL )) return FALSE;
 
-    callback_table = NtCurrentTeb()->Peb->KernelCallbackTable;
-    memcpy( callback_table + NtUserDriverCallbackFirst, kernel_callbacks, sizeof(kernel_callbacks) );
     return TRUE;
 }
 

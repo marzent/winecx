@@ -42,6 +42,9 @@
 #ifdef HAVE_NETINET_TCP_H
 # include <netinet/tcp.h>
 #endif
+#ifdef HAVE_NETINET_TCP_FSM_H
+#include <netinet/tcp_fsm.h>
+#endif
 #include <poll.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -92,6 +95,7 @@
 #define USE_WS_PREFIX
 #include "winsock2.h"
 #include "ws2tcpip.h"
+#include "tcpmib.h"
 #include "wsipx.h"
 #include "af_irda.h"
 #include "wine/afd.h"
@@ -106,6 +110,20 @@
 
 #if defined(linux) && !defined(IP_UNICAST_IF)
 #define IP_UNICAST_IF 50
+#endif
+
+#ifndef HAVE_NETINET_TCP_FSM_H
+#define TCPS_ESTABLISHED  1
+#define TCPS_SYN_SENT     2
+#define TCPS_SYN_RECEIVED 3
+#define TCPS_FIN_WAIT_1   4
+#define TCPS_FIN_WAIT_2   5
+#define TCPS_TIME_WAIT    6
+#define TCPS_CLOSED       7
+#define TCPS_CLOSE_WAIT   8
+#define TCPS_LAST_ACK     9
+#define TCPS_LISTEN      10
+#define TCPS_CLOSING     11
 #endif
 
 static const char magic_loopback_addr[] = {127, 12, 34, 56};
@@ -453,8 +471,6 @@ static const struct object_ops sock_ops =
     add_queue,                    /* add_queue */
     remove_queue,                 /* remove_queue */
     default_fd_signaled,          /* signaled */
-    NULL,                         /* get_esync_fd */
-    NULL,                         /* get_msync_idx */
     no_satisfied,                 /* satisfied */
     no_signal,                    /* signal */
     sock_get_fd,                  /* get_fd */
@@ -815,7 +831,7 @@ static void post_sock_messages( struct sock *sock )
     }
 }
 
-static inline int sock_error( struct sock *sock )
+static inline int sock_error( struct sock *sock, int *poll_event )
 {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -841,8 +857,14 @@ static inline int sock_error( struct sock *sock )
             error = sock->errors[AFD_POLL_BIT_ACCEPT];
         break;
 
-    case SOCK_CONNECTED:
     case SOCK_CONNECTIONLESS:
+        if (error == ENETUNREACH || error == EHOSTUNREACH || error == ECONNRESET)
+        {
+            if (poll_event) *poll_event &= ~POLLERR;
+            return 0;
+        }
+        /* fallthrough */
+    case SOCK_CONNECTED:
         if (error == ECONNRESET || error == EPIPE)
         {
             sock->reset = 1;
@@ -1233,7 +1255,7 @@ static int sock_dispatch_asyncs( struct sock *sock, int event, int error )
         event &= ~(POLLIN | POLLPRI);
     }
 
-    if ((event & POLLOUT) && async_queued( &sock->write_q ))
+    if ((event & POLLOUT) && async_queue_has_waiting_asyncs( &sock->write_q ))
     {
         if (async_waiting( &sock->write_q ))
         {
@@ -1348,7 +1370,7 @@ static void sock_poll_event( struct fd *fd, int event )
         fprintf(stderr, "socket %p select event: %x\n", sock, event);
 
     if (event & (POLLERR | POLLHUP))
-        error = sock_error( sock );
+        error = sock_error( sock, &event );
 
     switch (sock->state)
     {
@@ -2041,6 +2063,7 @@ static struct sock *accept_socket( struct sock *sock )
             release_object( acceptsock );
             return NULL;
         }
+        allow_fd_caching( acceptsock->fd );
         unix_len = sizeof(unix_addr);
         if (!getsockname( acceptfd, &unix_addr.addr, &unix_len ))
         {
@@ -2089,6 +2112,7 @@ static int accept_into_socket( struct sock *sock, struct sock *acceptsock )
                                             get_fd_options( acceptsock->fd ) )))
             return FALSE;
     }
+    allow_fd_caching( newfd );
 
     acceptsock->state = SOCK_CONNECTED;
     acceptsock->bound = 1;
@@ -2233,7 +2257,7 @@ static int bind_to_interface( struct sock *sock, const struct sockaddr_in *addr 
     in_addr_t bind_addr = addr->sin_addr.s_addr;
     struct ifaddrs *ifaddrs, *ifaddr;
     int fd = get_unix_fd( sock->fd );
-    int err = 0;
+    int err = -1;
 
     if (bind_addr == htonl( INADDR_ANY ) || bind_addr == htonl( INADDR_LOOPBACK ))
         return 0;
@@ -2662,6 +2686,25 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
             ret = connect( unix_fd, &unix_addr.addr, unix_len );
         }
 
+        if (ret < 0 && errno == EACCES && sock->state == SOCK_CONNECTIONLESS && unix_addr.addr.sa_family == AF_INET)
+        {
+            int broadcast, saved_errno;
+            socklen_t len = sizeof(broadcast);
+
+            broadcast = 1;
+            getsockopt( unix_fd, SOL_SOCKET, SO_BROADCAST, &broadcast, &len );
+            if (!broadcast)
+            {
+                broadcast = 1;
+                setsockopt( unix_fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast) );
+                ret = connect( unix_fd, &unix_addr.addr, unix_len );
+                saved_errno = errno;
+                broadcast = 0;
+                setsockopt( unix_fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast) );
+                errno = saved_errno;
+            }
+        }
+
         if (ret < 0 && errno != EINPROGRESS)
         {
             set_error( sock_get_ntstatus( errno ) );
@@ -2949,6 +2992,18 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
 
         if (unix_addr.addr.sa_family == AF_INET)
         {
+#if defined(__APPLE__)
+            /* CW Hack 24472. macOS does not support binding to any loopback
+             * address other than 127.0.0.1. This is an incomplete and incorrect
+             * rewrite, but it's enough to satisfy GOG Galaxy. */
+            if ((unix_addr.in.sin_addr.s_addr & 0xff) == 127 &&
+                unix_addr.in.sin_addr.s_addr != htonl( INADDR_LOOPBACK ))
+            {
+                fprintf(stderr, "HACK: rewriting bind loopback address to 127.0.0.1\n");
+                bind_addr.in.sin_addr.s_addr = htonl( INADDR_LOOPBACK );
+            }
+#endif
+
             if (!memcmp( &unix_addr.in.sin_addr, magic_loopback_addr, 4 )
                     || bind_to_interface( sock, &unix_addr.in ))
                 bind_addr.in.sin_addr.s_addr = htonl( INADDR_ANY );
@@ -3117,7 +3172,7 @@ static void sock_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
             return;
         }
 
-        error = sock_error( sock );
+        error = sock_error( sock, NULL );
         if (!error)
         {
             for (i = 0; i < ARRAY_SIZE( sock->errors ); ++i)
@@ -3556,8 +3611,6 @@ static const struct object_ops ifchange_ops =
     no_add_queue,            /* add_queue */
     NULL,                    /* remove_queue */
     NULL,                    /* signaled */
-    NULL,                    /* get_esync_fd */
-    NULL,                    /* get_msync_idx */
     no_satisfied,            /* satisfied */
     no_signal,               /* signal */
     ifchange_get_fd,         /* get_fd */
@@ -3779,8 +3832,6 @@ static const struct object_ops socket_device_ops =
     no_add_queue,               /* add_queue */
     NULL,                       /* remove_queue */
     NULL,                       /* signaled */
-    NULL,                       /* get_esync_fd */
-    NULL,                       /* get_msync_idx */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -3876,7 +3927,7 @@ DECL_HANDLER(recv_socket)
     sock->pending_events &= ~(req->oob ? AFD_POLL_OOB : AFD_POLL_READ);
     sock->reported_events &= ~(req->oob ? AFD_POLL_OOB : AFD_POLL_READ);
 
-    if ((async = create_request_async( fd, get_fd_comp_flags( fd ), &req->async )))
+    if ((async = create_request_async( fd, get_fd_comp_flags( fd ), &req->async, 0 )))
     {
         set_error( status );
 
@@ -3924,6 +3975,7 @@ DECL_HANDLER(send_socket)
     struct async *async;
     struct fd *fd;
     int bind_errno = 0;
+    BOOL force_async = req->flags & SERVER_SOCKET_IO_FORCE_ASYNC;
 
     if (!sock) return;
     fd = sock->fd;
@@ -3946,18 +3998,18 @@ DECL_HANDLER(send_socket)
         else if (!bind_errno) bind_errno = errno;
     }
 
-    if (!req->force_async && !sock->nonblocking && is_fd_overlapped( fd ))
+    if (!force_async && !sock->nonblocking && is_fd_overlapped( fd ))
         timeout = (timeout_t)sock->sndtimeo * -10000;
 
     if (bind_errno) status = sock_get_ntstatus( bind_errno );
     else if (sock->wr_shutdown) status = STATUS_PIPE_DISCONNECTED;
-    else if (!async_queued( &sock->write_q ))
+    else if (!async_queue_has_waiting_asyncs( &sock->write_q ))
     {
         /* If write_q is not empty, we cannot really tell if the already queued
          * asyncs will not consume all available space; if there's no space
          * available, the current request won't be immediately satiable.
          */
-        if ((!req->force_async && sock->nonblocking) || check_fd_events( sock->fd, POLLOUT ))
+        if ((!force_async && sock->nonblocking) || check_fd_events( sock->fd, POLLOUT ))
         {
             /* Give the client opportunity to complete synchronously.
              * If it turns out that the I/O request is not actually immediately satiable,
@@ -3982,10 +4034,11 @@ DECL_HANDLER(send_socket)
         }
     }
 
-    if (status == STATUS_PENDING && !req->force_async && sock->nonblocking)
+    if (status == STATUS_PENDING && !force_async && sock->nonblocking)
         status = STATUS_DEVICE_NOT_READY;
 
-    if ((async = create_request_async( fd, get_fd_comp_flags( fd ), &req->async )))
+    if ((async = create_request_async( fd, get_fd_comp_flags( fd ), &req->async,
+                                       req->flags & SERVER_SOCKET_IO_SYSTEM )))
     {
         struct send_req *send_req;
         struct iosb *iosb = async_get_iosb( async );
@@ -4104,4 +4157,196 @@ DECL_HANDLER(socket_get_icmp_id)
 
     set_error( STATUS_NOT_FOUND );
     release_object( sock );
+}
+
+static inline MIB_TCP_STATE tcp_state_to_mib_state( int state )
+{
+   switch (state)
+   {
+      case TCPS_ESTABLISHED: return MIB_TCP_STATE_ESTAB;
+      case TCPS_SYN_SENT: return MIB_TCP_STATE_SYN_SENT;
+      case TCPS_SYN_RECEIVED: return MIB_TCP_STATE_SYN_RCVD;
+      case TCPS_FIN_WAIT_1: return MIB_TCP_STATE_FIN_WAIT1;
+      case TCPS_FIN_WAIT_2: return MIB_TCP_STATE_FIN_WAIT2;
+      case TCPS_TIME_WAIT: return MIB_TCP_STATE_TIME_WAIT;
+      case TCPS_CLOSE_WAIT: return MIB_TCP_STATE_CLOSE_WAIT;
+      case TCPS_LAST_ACK: return MIB_TCP_STATE_LAST_ACK;
+      case TCPS_LISTEN: return MIB_TCP_STATE_LISTEN;
+      case TCPS_CLOSING: return MIB_TCP_STATE_CLOSING;
+      default:
+      case TCPS_CLOSED: return MIB_TCP_STATE_CLOSED;
+   }
+}
+
+static MIB_TCP_STATE get_tcp_socket_state( int fd )
+{
+#ifdef __APPLE__
+    /* The macOS getsockopt name and struct are compatible with those on Linux
+       and FreeBSD, just named differently. */
+    #define TCP_INFO TCP_CONNECTION_INFO
+    #define tcp_info tcp_connection_info
+#endif
+
+    struct tcp_info info;
+    socklen_t info_len = sizeof(info);
+    if (getsockopt( fd, IPPROTO_TCP, TCP_INFO, &info, &info_len ) == 0)
+        return tcp_state_to_mib_state( info.tcpi_state );
+
+    if (debug_level)
+        fprintf( stderr, "getsockopt TCP_INFO failed: %s\n", strerror( errno ) );
+
+    return MIB_TCP_STATE_ESTAB;
+}
+
+struct enum_tcp_connection_info
+{
+    MIB_TCP_STATE state_filter;
+    unsigned int count;
+    union tcp_connection *conn;
+};
+
+static int enum_tcp_connections( struct process *process, struct object *obj, void *user )
+{
+    struct sock *sock = (struct sock *)obj;
+    struct enum_tcp_connection_info *info = user;
+    MIB_TCP_STATE socket_state;
+    union tcp_connection *conn;
+
+    assert( obj->ops == &sock_ops );
+
+    if (sock->type != WS_SOCK_STREAM || !(sock->family == WS_AF_INET || sock->family == WS_AF_INET6))
+        return 0;
+
+    socket_state = get_tcp_socket_state( get_unix_fd(sock->fd) );
+    if (info->state_filter && socket_state != info->state_filter)
+        return 0;
+
+    if (!info->conn)
+    {
+        info->count++;
+        return 0;
+    }
+
+    assert( info->count );
+    conn = info->conn++;
+    memset( conn, 0, sizeof(*conn) );
+
+    conn->common.family = sock->family;
+    conn->common.state = socket_state;
+    conn->common.owner = process->id;
+
+    if (sock->family == WS_AF_INET)
+    {
+        conn->ipv4.local_addr = sock->addr.in.sin_addr.WS_s_addr;
+        conn->ipv4.local_port = sock->addr.in.sin_port;
+        if (sock->peer_addr_len)
+        {
+            conn->ipv4.remote_addr = sock->peer_addr.in.sin_addr.WS_s_addr;
+            conn->ipv4.remote_port = sock->peer_addr.in.sin_port;
+        }
+    }
+    else
+    {
+        memcpy( &conn->ipv6.local_addr, &sock->addr.in6.sin6_addr, 16 );
+        conn->ipv6.local_scope_id = sock->addr.in6.sin6_scope_id;
+        conn->ipv6.local_port = sock->addr.in6.sin6_port;
+        if (sock->peer_addr_len)
+        {
+            memcpy( &conn->ipv6.remote_addr, &sock->peer_addr.in6.sin6_addr, 16 );
+            conn->ipv6.remote_scope_id = sock->peer_addr.in6.sin6_scope_id;
+            conn->ipv6.remote_port = sock->peer_addr.in6.sin6_port;
+        }
+    }
+
+    info->count--;
+
+    return 0;
+}
+
+DECL_HANDLER(get_tcp_connections)
+{
+    struct enum_tcp_connection_info info;
+    union tcp_connection *conn;
+    data_size_t max_conns = get_reply_max_size() / sizeof(*conn);
+
+    info.state_filter = req->state_filter;
+    info.conn = NULL;
+    info.count = 0;
+    enum_handles_of_type( &sock_ops, enum_tcp_connections, &info );
+    reply->count = info.count;
+
+    if (max_conns < info.count)
+        set_error( STATUS_BUFFER_TOO_SMALL );
+    else if ((conn = set_reply_data_size( info.count * sizeof(*conn) )))
+    {
+        info.conn = conn;
+        enum_handles_of_type( &sock_ops, enum_tcp_connections, &info );
+    }
+}
+
+struct enum_udp_endpoint_info
+{
+    unsigned int count;
+    union udp_endpoint *endpt;
+};
+
+static int enum_udp_endpoints( struct process *process, struct object *obj, void *user )
+{
+    struct sock *sock = (struct sock *)obj;
+    struct enum_udp_endpoint_info *info = user;
+    union udp_endpoint *endpt;
+
+    assert( obj->ops == &sock_ops );
+
+    if (sock->type != WS_SOCK_DGRAM || !(sock->family == WS_AF_INET || sock->family == WS_AF_INET6))
+        return 0;
+
+    if (!info->endpt)
+    {
+        info->count++;
+        return 0;
+    }
+
+    assert( info->count );
+    endpt = info->endpt++;
+    memset( endpt, 0, sizeof(*endpt) );
+
+    endpt->common.family = sock->family;
+    endpt->common.owner = process->id;
+
+    if (sock->family == WS_AF_INET)
+    {
+        endpt->ipv4.addr = sock->addr.in.sin_addr.WS_s_addr;
+        endpt->ipv4.port = sock->addr.in.sin_port;
+    }
+    else
+    {
+        memcpy( &endpt->ipv6.addr, &sock->addr.in6.sin6_addr, 16 );
+        endpt->ipv6.scope_id = sock->addr.in6.sin6_scope_id;
+        endpt->ipv6.port = sock->addr.in6.sin6_port;
+    }
+
+    info->count--;
+
+    return 0;
+}
+
+DECL_HANDLER(get_udp_endpoints)
+{
+    struct enum_udp_endpoint_info info;
+    union udp_endpoint *endpt;
+    data_size_t max_endpts = get_reply_max_size() / sizeof(*endpt);
+
+    info.endpt = NULL;
+    info.count = 0;
+    enum_handles_of_type( &sock_ops, enum_udp_endpoints, &info );
+    reply->count = info.count;
+
+    if (max_endpts < info.count)
+        set_error( STATUS_BUFFER_TOO_SMALL );
+    else if ((endpt = set_reply_data_size( info.count * sizeof(*endpt) )))
+    {
+        info.endpt = endpt;
+        enum_handles_of_type( &sock_ops, enum_udp_endpoints, &info );
+    }
 }

@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 #include "user_private.h"
 #include "controls.h"
 #include "dbt.h"
@@ -696,7 +698,7 @@ static LRESULT WINPROC_CallProcWtoA( winproc_callback_t callback, HWND hwnd, UIN
 
 LRESULT dispatch_win_proc_params( struct win_proc_params *params )
 {
-    DPI_AWARENESS_CONTEXT context = SetThreadDpiAwarenessContext( params->dpi_awareness );
+    DPI_AWARENESS_CONTEXT context = SetThreadDpiAwarenessContext( ULongToHandle( params->dpi_context ) );
     LRESULT result = 0;
 
     if (!params->ansi)
@@ -802,8 +804,9 @@ void unpack_message( HWND hwnd, UINT message, WPARAM *wparam, LPARAM *lparam, vo
     *lparam = (LPARAM)buffer;
 }
 
-BOOL WINAPI User32CallWindowProc( struct win_proc_params *params, ULONG size )
+NTSTATUS WINAPI User32CallWindowProc( void *args, ULONG size )
 {
+    struct win_proc_params *params = args;
     size_t packed_size = 0;
     void *buffer = NULL;
     LRESULT result;
@@ -824,15 +827,16 @@ BOOL WINAPI User32CallWindowProc( struct win_proc_params *params, ULONG size )
     {
         LRESULT *result_ptr = (LRESULT *)buffer - 1;
         *result_ptr = result;
-        return NtCallbackReturn( result_ptr, sizeof(*result_ptr) + packed_size, TRUE );
+        return NtCallbackReturn( result_ptr, sizeof(*result_ptr) + packed_size, STATUS_SUCCESS );
     }
-    return NtCallbackReturn( &result, sizeof(result), TRUE );
+    return NtCallbackReturn( &result, sizeof(result), STATUS_SUCCESS );
 }
 
-BOOL WINAPI User32CallSendAsyncCallback( const struct send_async_params *params, ULONG size )
+NTSTATUS WINAPI User32CallSendAsyncCallback( void *args, ULONG size )
 {
+    const struct send_async_params *params = args;
     params->callback( params->hwnd, params->msg, params->data, params->result );
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 /**********************************************************************
@@ -1019,6 +1023,57 @@ static LRESULT WINAPI StaticWndProcW( HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     return wow_handlers.static_proc( hwnd, msg, wParam, lParam, TRUE );
 }
 
+#ifndef _WIN64
+
+static inline void *user32_rva( DWORD va )
+{
+    return (void *)((char *)user32_module + va);
+}
+
+/**********************************************************************
+ *		fixup_forwards
+ *
+ * Replace the DefWindowProcA etc. NTDLL forwards with a real RVA.
+ * Many broken apps resolve functions by hand and don't handle forwards correctly.
+ */
+static void fixup_forwards(void)
+{
+    IMAGE_EXPORT_DIRECTORY *exp;
+    ULONG i, size;
+    DWORD old_prot;
+    DWORD *functions, *names;
+    WORD *ordinals;
+    const char *procs[] = { "DefDlgProcA", "DefDlgProcW", "DefWindowProcA", "DefWindowProcW" };
+
+    if (!(exp = RtlImageDirectoryEntryToData( user32_module, TRUE, IMAGE_DIRECTORY_ENTRY_EXPORT, &size )))
+        return;
+    functions = user32_rva( exp->AddressOfFunctions );
+    ordinals = user32_rva( exp->AddressOfNameOrdinals );
+    names = user32_rva( exp->AddressOfNames );
+
+    VirtualProtect( functions, exp->NumberOfFunctions * sizeof(*functions), PAGE_READWRITE, &old_prot );
+    for (i = 0; i < ARRAY_SIZE(procs); i++)
+    {
+        void *dest = GetProcAddress( user32_module, procs[i] ); /* resolve the forward */
+        int min = 0, max = exp->NumberOfNames - 1;
+
+        while (min <= max)
+        {
+            int res, pos = (min + max) / 2;
+            if (!(res = strcmp( user32_rva( names[pos] ), procs[i] )))
+            {
+                functions[ordinals[pos]] = (char *)dest - (char *)user32_module;
+                break;
+            }
+            if (res > 0) max = pos - 1;
+            else min = pos + 1;
+        }
+    }
+    VirtualProtect( functions, exp->NumberOfFunctions * sizeof(*functions), old_prot, &old_prot );
+}
+
+#endif
+
 /**********************************************************************
  *		UserRegisterWowHandlers (USER32.@)
  *
@@ -1057,39 +1112,30 @@ struct wow_handlers16 wow_handlers =
     NULL,  /* call_dialog_proc */
 };
 
-static const struct user_client_procs client_procsA =
-{
-    .pButtonWndProc = ButtonWndProcA,
-    .pComboWndProc = ComboWndProcA,
-    .pDefWindowProc = DefWindowProcA,
-    .pDefDlgProc = DefDlgProcA,
-    .pEditWndProc = EditWndProcA,
-    .pListBoxWndProc = ListBoxWndProcA,
-    .pMDIClientWndProc = MDIClientWndProcA,
-    .pScrollBarWndProc = ScrollBarWndProcA,
-    .pStaticWndProc = StaticWndProcA,
-    .pImeWndProc = ImeWndProcA,
-};
+#define MessageWndProcA MessageWndProc
+#define MessageWndProcW MessageWndProc
+#define ComboLBoxWndProcA ListBoxWndProcA
+#define ComboLBoxWndProcW ListBoxWndProcW
+#define GhostWndProcA DefWindowProcA
+#define GhostWndProcW DefWindowProcW
 
-static const struct user_client_procs client_procsW =
+static const struct ntuser_client_procs_table client_procs =
 {
-    .pButtonWndProc = ButtonWndProcW,
-    .pComboWndProc = ComboWndProcW,
-    .pDefWindowProc = DefWindowProcW,
-    .pDefDlgProc = DefDlgProcW,
-    .pEditWndProc = EditWndProcW,
-    .pListBoxWndProc = ListBoxWndProcW,
-    .pMDIClientWndProc = MDIClientWndProcW,
-    .pScrollBarWndProc = ScrollBarWndProcW,
-    .pStaticWndProc = StaticWndProcW,
-    .pImeWndProc = ImeWndProcW,
-    .pDesktopWndProc = DesktopWndProc,
-    .pIconTitleWndProc = IconTitleWndProc,
-    .pPopupMenuWndProc = PopupMenuWndProc,
-    .pMessageWndProc = MessageWndProc,
+#define USER_FUNC(name,proc) .A[proc] = { name##A }, .W[proc] = { name##W },
+    ALL_NTUSER_CLIENT_PROCS
+#undef USER_FUNC
 };
 
 void winproc_init(void)
 {
-    NtUserInitializeClientPfnArrays( &client_procsA, &client_procsW, NULL, user32_module );
+    const ntuser_client_func_ptr *ptr_A, *ptr_W, *ptr_workers;
+
+    RtlInitializeNtUserPfn( client_procs.A, sizeof(client_procs.A),
+                            client_procs.W, sizeof(client_procs.W),
+                            client_procs.workers, sizeof(client_procs.workers) );
+    RtlRetrieveNtUserPfn( (const void **)&ptr_A, (const void **)&ptr_W, (const void **)&ptr_workers );
+    NtUserInitializeClientPfnArrays( ptr_A, ptr_W, ptr_workers, user32_module );
+#ifndef _WIN64
+    fixup_forwards();
+#endif
 }

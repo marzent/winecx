@@ -113,7 +113,8 @@ struct ddraw
 
     /* D3D things */
     HWND                    d3d_window;
-    struct d3d_device *d3ddevice;
+    struct list             d3ddevice_list;
+    struct d3d_device      *device_last_applied_state;
     int                     d3dversion;
 
     /* Various HWNDs */
@@ -131,9 +132,6 @@ struct ddraw
     /* FVF management */
     struct FvfToDecl       *decls;
     UINT                    numConvertedDecls, declArraySize;
-
-    struct wined3d_stateblock *state;
-    const struct wined3d_stateblock_state *stateblock_state;
 
     unsigned int frames;
     DWORD prev_frame_time;
@@ -314,6 +312,7 @@ void ddraw_handle_table_destroy(struct ddraw_handle_table *t);
 DWORD ddraw_allocate_handle(struct ddraw_handle_table *t, void *object, enum ddraw_handle_type type);
 void *ddraw_free_handle(struct ddraw_handle_table *t, DWORD handle, enum ddraw_handle_type type);
 void *ddraw_get_object(struct ddraw_handle_table *t, DWORD handle, enum ddraw_handle_type type);
+extern struct ddraw_handle_table global_handle_table;
 
 struct d3d_device
 {
@@ -332,7 +331,9 @@ struct d3d_device
     struct wined3d_device *wined3d_device;
     struct wined3d_device_context *immediate_context;
     struct ddraw *ddraw;
+    struct list ddraw_entry;
     IUnknown *rt_iface;
+    struct ddraw_surface *target, *target_ds;
 
     struct wined3d_streaming_buffer vertex_buffer, index_buffer;
 
@@ -367,6 +368,9 @@ struct d3d_device
 
     struct wined3d_stateblock *recording, *state, *update_state;
     const struct wined3d_stateblock_state *stateblock_state;
+
+    /* For temporary saving state during reset. */
+    struct wined3d_stateblock *saved_state;
 };
 
 HRESULT d3d_device_create(struct ddraw *ddraw, const GUID *guid, struct ddraw_surface *target, IUnknown *rt_iface,
@@ -596,6 +600,7 @@ struct d3d_vertex_buffer
     DWORD                size;
     BOOL                 dynamic;
     bool discarded;
+    bool sysmem;
 };
 
 HRESULT d3d_vertex_buffer_create(struct d3d_vertex_buffer **buffer, struct ddraw *ddraw,
@@ -701,7 +706,8 @@ static inline struct wined3d_texture *ddraw_surface_get_draw_texture(struct ddra
 
 static inline struct wined3d_texture *ddraw_surface_get_any_texture(struct ddraw_surface *surface, unsigned int flags)
 {
-    if (surface->texture_location & DDRAW_SURFACE_LOCATION_DEFAULT)
+    if ((surface->texture_location & DDRAW_SURFACE_LOCATION_DEFAULT)
+            || (surface->surface_desc.ddsCaps.dwCaps & DDSCAPS_SYSTEMMEMORY))
         return ddraw_surface_get_default_texture(surface, flags);
 
     assert(surface->texture_location & DDRAW_SURFACE_LOCATION_DRAW);
@@ -709,6 +715,7 @@ static inline struct wined3d_texture *ddraw_surface_get_any_texture(struct ddraw
 }
 
 void d3d_device_sync_surfaces(struct d3d_device *device);
+void d3d_device_apply_state(struct d3d_device *device, BOOL clear_state);
 
 /* Used for generic dumping */
 struct flag_info

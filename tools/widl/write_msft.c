@@ -1229,6 +1229,9 @@ static void write_default_value(msft_typelib_t *typelib, type_t *type, expr_t *e
         case VT_UINT:
         case VT_HRESULT:
             break;
+        case VT_USERDEFINED:
+            vt = VT_I4;
+            break;
         case VT_VARIANT: {
             switch (expr->type) {
             case EXPR_DOUBLE:
@@ -1296,9 +1299,8 @@ static void set_custdata_attr(msft_typelib_t *typelib, attr_custdata_t *custdata
         case EXPR_WSTRLIT:
             set_custdata(typelib, &custdata->id, VT_BSTR, custdata->pval->u.sval, offset);
             break;
-        case EXPR_HEXNUM:
         case EXPR_NUM:
-            set_custdata(typelib, &custdata->id, VT_I4, &custdata->pval->u.lval, offset);
+            set_custdata(typelib, &custdata->id, VT_I4, &custdata->pval->u.integer.value, offset);
             break;
         default:
             error("custom() attribute with unknown type\n");
@@ -1392,7 +1394,7 @@ static int add_func_desc(msft_typeinfo_t* typeinfo, var_t *func, int index)
             break;
         case ATTR_HELPCONTEXT:
             extra_attr = max(extra_attr, 1);
-            help_context = expr->u.lval;
+            help_context = expr->u.integer.value;
             break;
         case ATTR_HELPSTRING:
             extra_attr = max(extra_attr, 2);
@@ -1400,7 +1402,7 @@ static int add_func_desc(msft_typeinfo_t* typeinfo, var_t *func, int index)
             break;
         case ATTR_HELPSTRINGCONTEXT:
             extra_attr = max(extra_attr, 6);
-            help_string_context = expr->u.lval;
+            help_string_context = expr->u.integer.value;
             break;
         case ATTR_HIDDEN:
             funcflags |= 0x40; /* FUNCFLAG_FHIDDEN */
@@ -2739,7 +2741,7 @@ static void save_all_changes(msft_typelib_t *typelib)
 
         expr_t *expr = get_attrp( typelib->typelib->attrs, ATTR_ID );
         if (expr)
-            sprintf( typelib_id, "#%d", expr->cval );
+            snprintf( typelib_id, sizeof(typelib_id), "#%d", expr->cval );
         add_output_to_resources( "TYPELIB", typelib_id );
         if (strendswith( typelib_name, "_t.res" ))  /* add typelib registration */
             output_typelib_regscript( typelib->typelib );
@@ -2754,7 +2756,6 @@ int create_msft_typelib(typelib_t *typelib)
     const statement_t *stmt;
     const attr_t *attr;
     time_t cur_time;
-    char *time_override;
     unsigned int version = 7 << 24 | 555; /* 7.00.0555 */
     static const struct uuid midl_time_guid    = {0xde77ba63,0x517c,0x11d1,{0xa2,0xda,0x00,0x00,0xf8,0x77,0x3c,0xe9}};
     static const struct uuid midl_version_guid = {0xde77ba64,0x517c,0x11d1,{0xa2,0xda,0x00,0x00,0xf8,0x77,0x3c,0xe9}};
@@ -2810,11 +2811,13 @@ int create_msft_typelib(typelib_t *typelib)
         }
     }
 
-    /* midl adds two sets of custom data to the library: the current unix time
-       and midl's version number */
-    time_override = getenv( "WIDL_TIME_OVERRIDE");
-    cur_time = time_override ? atol( time_override) : time(NULL);
-    sprintf(info_string, "Created by WIDL version %s at %s", PACKAGE_VERSION, ctime(&cur_time));
+    /* midl adds three sets of custom data to the library:
+     * - 2147483647 (INT_MAX, previously the current Unix time)
+     * - midl's version number
+     * - a string representation of those
+     */
+    cur_time = 2147483647;
+    snprintf(info_string, sizeof(info_string), "Created by WIDL version %s at %s", PACKAGE_VERSION, asctime(gmtime(&cur_time)));
     set_custdata(msft, &midl_info_guid, VT_BSTR, info_string, &msft->typelib_header.CustomDataOffset);
     set_custdata(msft, &midl_time_guid, VT_UI4, &cur_time, &msft->typelib_header.CustomDataOffset);
     set_custdata(msft, &midl_version_guid, VT_UI4, &version, &msft->typelib_header.CustomDataOffset);

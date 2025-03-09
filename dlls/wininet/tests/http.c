@@ -529,11 +529,13 @@ typedef struct {
     HINTERNET request;
 } test_request_t;
 
-#define open_simple_request(a,b,c,d,e) _open_simple_request(__LINE__,a,b,c,d,e)
+#define open_simple_request(a,b,c,d,e) _open_simple_request(__LINE__,a,b,c,d,e,FALSE)
+#define open_simple_request_proxy(a,b,c,d,e) _open_simple_request(__LINE__,a,b,c,d,e,TRUE)
 static void _open_simple_request(unsigned line, test_request_t *req, const char *host,
-        int port, const char *verb, const char *url)
+        int port, const char *verb, const char *url, BOOL use_proxy)
 {
-    req->session = InternetOpenA(NULL, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    req->session = InternetOpenA(NULL, use_proxy ? INTERNET_OPEN_TYPE_PRECONFIG : INTERNET_OPEN_TYPE_DIRECT,
+                                 NULL, NULL, 0);
     ok_(__FILE__,line)(req->session != NULL, "InternetOpenA failed: %lu\n", GetLastError());
 
     req->connection = InternetConnectA(req->session, host, port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
@@ -1134,6 +1136,22 @@ static void InternetReadFile_test(int flags, const test_data_t *test)
     ok(GetLastError() == ERROR_INVALID_HANDLE,
         "InternetReadFile should have set last error to ERROR_INVALID_HANDLE instead of %lu\n",
         GetLastError());
+
+    SetLastError(0xdeadbeef);
+    res = InternetReadFile(hor, buffer, 100, NULL);
+    ok(!res && GetLastError() == ERROR_INVALID_PARAMETER, "got res %d, error %lu.\n", res, GetLastError());
+
+    SetLastError(0xdeadbeef);
+    length = 0xdeadbeef;
+    res = InternetReadFile(hor, NULL, 100, &length);
+    ok(!res && GetLastError() == ERROR_INVALID_PARAMETER, "got res %d, error %lu.\n", res, GetLastError());
+    ok(!length, "got %lu.\n", length);
+
+    SetLastError(0xdeadbeef);
+    length = 0xdeadbeef;
+    res = InternetReadFile(hor, NULL, 0, &length);
+    ok(!res && GetLastError() == ERROR_INVALID_PARAMETER, "got res %d, error %lu.\n", res, GetLastError());
+    ok(!length, "got %lu.\n", length);
 
     length = 100;
     if(winetest_debug > 1)
@@ -2394,6 +2412,7 @@ static const char okmsg2[] =
 "Content-Length: 0\r\n"
 "Set-Cookie: one\r\n"
 "Set-Cookie: two\r\n"
+"Last-Modified: Mon, 01 Dec 2008 13:44:34 UTC\r\n"
 "\r\n";
 
 static DWORD64 content_length;
@@ -2444,6 +2463,11 @@ static const char ok_with_length2[] =
 "Connection: Keep-Alive\r\n"
 "Content-Length: 19\r\n\r\n"
 "HTTP/1.1 211 OK\r\n\r\n";
+
+static const char proxy_pac[] =
+"function FindProxyForURL(url, host) {\r\n"
+"    return 'PROXY localhost:%d';\r\n"
+"}\r\n\r\n";
 
 struct server_info {
     HANDLE hEvent;
@@ -2857,6 +2881,18 @@ static DWORD CALLBACK server_thread(LPVOID param)
             char msg[sizeof(largemsg) + 16];
             sprintf(msg, largemsg, content_length);
             send(c, msg, strlen(msg), 0);
+        }
+        if (strstr(buffer, "GET /proxy.pac"))
+        {
+            char script[sizeof(proxy_pac) + 16];
+            sprintf(script, proxy_pac, si->port);
+            send(c, okmsg, sizeof(okmsg)-1, 0);
+            send(c, script, strlen(script), 0);
+        }
+        if (strstr(buffer, "GET http://test.winehq.org/tests/hello.html"))
+        {
+            send(c, okmsg, sizeof(okmsg)-1, 0);
+            send(c, page1, sizeof(page1)-1, 0);
         }
         shutdown(c, 2);
         closesocket(c);
@@ -4531,9 +4567,11 @@ static void test_head_request(int port)
 
 static void test_HttpQueryInfo(int port)
 {
+    static const SYSTEMTIME expect = {2008, 12, 1, 1, 13, 44, 34};
     test_request_t req;
     DWORD size, index, error;
     char buffer[1024];
+    SYSTEMTIME st;
     BOOL ret;
 
     open_simple_request(&req, "localhost", port, NULL, "/testD");
@@ -4554,9 +4592,27 @@ static void test_HttpQueryInfo(int port)
     ok(index == 1, "expected 1 got %lu\n", index);
 
     index = 0;
-    size = sizeof(buffer);
-    ret = HttpQueryInfoA(req.request, HTTP_QUERY_DATE | HTTP_QUERY_FLAG_SYSTEMTIME, buffer, &size, &index);
+    size = 0;
+    ret = HttpQueryInfoA(req.request, HTTP_QUERY_DATE | HTTP_QUERY_FLAG_SYSTEMTIME, &st, &size, &index);
+    ok(!ret && GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError());
+    ok(size == sizeof(st), "got %lu\n", size);
+
+    index = 0;
+    size = sizeof(st) + 1;
+    memset(&st, 0, sizeof(st));
+    ret = HttpQueryInfoA(req.request, HTTP_QUERY_DATE | HTTP_QUERY_FLAG_SYSTEMTIME, &st, &size, &index);
     ok(ret, "HttpQueryInfo failed %lu\n", GetLastError());
+    ok(!memcmp(&st, &expect, sizeof(st)), "wrong time\n");
+    ok(size == sizeof(st), "got %lu\n", size);
+    ok(index == 1, "expected 1 got %lu\n", index);
+
+    index = 0;
+    size = sizeof(st);
+    memset(&st, 0, sizeof(st));
+    ret = HttpQueryInfoA(req.request, HTTP_QUERY_LAST_MODIFIED | HTTP_QUERY_FLAG_SYSTEMTIME, &st, &size, &index);
+    ok(ret, "HttpQueryInfo failed %lu\n", GetLastError());
+    ok(!memcmp(&st, &expect, sizeof(st)), "wrong time\n");
+    ok(size == sizeof(st), "got %lu\n", size);
     ok(index == 1, "expected 1 got %lu\n", index);
 
     index = 0;
@@ -6625,6 +6681,52 @@ static void test_header_length(int port)
     close_request(&req);
 }
 
+static void test_pac(int port)
+{
+    static const WCHAR autoconf_url_fmt[] = L"http://localhost:%d/proxy.pac?ver=1";
+    INTERNET_PER_CONN_OPTION_LISTW option_list;
+    INTERNET_PER_CONN_OPTIONW options[2];
+    WCHAR autoconf_url[64];
+    test_request_t req;
+    char buf[1000];
+    DWORD len;
+    BOOL r;
+
+    open_simple_request_proxy(&req, "test.winehq.org", INTERNET_DEFAULT_HTTP_PORT, "GET", "/tests/hello.html");
+
+    swprintf(autoconf_url, ARRAY_SIZE(autoconf_url), autoconf_url_fmt, port);
+    memset(&option_list, 0, sizeof(option_list));
+    option_list.dwSize = sizeof(option_list);
+    option_list.dwOptionCount = ARRAY_SIZE(options);
+    option_list.pOptions = options;
+    options[0].dwOption = INTERNET_PER_CONN_AUTOCONFIG_URL;
+    options[0].Value.pszValue = autoconf_url;
+    options[1].dwOption = INTERNET_PER_CONN_FLAGS;
+    options[1].Value.dwValue = PROXY_TYPE_AUTO_PROXY_URL;
+    r = InternetSetOptionW(req.session, INTERNET_OPTION_PER_CONNECTION_OPTION, (void*)&option_list, sizeof(option_list));
+    ok(r, "InternetSetOptionW failed: %lu\n", GetLastError());
+
+    r = HttpSendRequestW(req.request, NULL, 0, NULL, 0);
+    ok(r, "HttpSendRequestW failed: %lu\n", GetLastError());
+
+    test_status_code(req.request, 200);
+    len = receive_simple_request(req.request, buf, sizeof(buf));
+    todo_wine
+    ok(len == sizeof(page1) - 1, "unexpected buffer size\n");
+    buf[len] = 0;
+    todo_wine
+    ok(!strcmp(buf, page1), "unexpected buffer content\n");
+
+    len = sizeof(option_list);
+    r = InternetQueryOptionW(NULL, INTERNET_OPTION_PER_CONNECTION_OPTION, (void*)&option_list, &len);
+    ok(r, "InternetGetOptionW failed: %lu\n", GetLastError());
+    r = InternetSetOptionW(req.session, INTERNET_OPTION_PER_CONNECTION_OPTION, (void*)&option_list, sizeof(option_list));
+    ok(r, "InternetSetOptionW failed: %lu\n", GetLastError());
+    GlobalFree(options[0].Value.pszValue);
+
+    close_request(&req);
+}
+
 static void test_http_connection(void)
 {
     struct server_info si;
@@ -6692,6 +6794,7 @@ static void test_http_connection(void)
     test_remove_dot_segments(si.port);
     test_large_content(si.port);
     test_header_length(si.port);
+    test_pac(si.port);
 
     /* send the basic request again to shutdown the server thread */
     test_basic_request(si.port, "GET", "/quit");
@@ -6716,11 +6819,10 @@ typedef struct {
 } cert_struct_test_t;
 
 static const cert_struct_test_t test_winehq_org_cert = {
-    "winehq.org",
+    "test.winehq.org",
 
     "US\r\n"
     "Let's Encrypt\r\n"
-    "R3"
 };
 
 static const cert_struct_test_t test_winehq_com_cert = {
@@ -6813,7 +6915,7 @@ static void test_cert_struct(HINTERNET req, const cert_struct_test_t *test)
     ok(size == sizeof(info), "size = %lu\n", size);
 
     ok(!strcmp(info.lpszSubjectInfo, test->ex_subject), "lpszSubjectInfo = %s\n", info.lpszSubjectInfo);
-    ok(!strcmp(info.lpszIssuerInfo, test->ex_issuer), "lpszIssuerInfo = %s\n", info.lpszIssuerInfo);
+    ok(!strncmp(info.lpszIssuerInfo, test->ex_issuer, strlen(test->ex_issuer)), "lpszIssuerInfo = %s\n", info.lpszIssuerInfo);
     ok(!info.lpszSignatureAlgName, "lpszSignatureAlgName = %s\n", info.lpszSignatureAlgName);
     ok(!info.lpszEncryptionAlgName, "lpszEncryptionAlgName = %s\n", info.lpszEncryptionAlgName);
     ok(!info.lpszProtocolName, "lpszProtocolName = %s\n", info.lpszProtocolName);
@@ -7458,35 +7560,148 @@ static void test_user_agent_header(void)
     char buffer[64];
     BOOL ret;
 
-    ses = InternetOpenA("Gizmo5", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    ses = InternetOpenA("", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     ok(ses != NULL, "InternetOpen failed\n");
 
     con = InternetConnectA(ses, "test.winehq.org", 80, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     ok(con != NULL, "InternetConnect failed\n");
 
+    /* If the user agent string provided by the session handle is empty and none
+     * is explicitly set for the request handle, then there should be no user
+     * agent header present in the request when it is sent. */
     req = HttpOpenRequestA(con, "GET", "/tests/hello.html", "HTTP/1.0", NULL, NULL, 0, 0);
     ok(req != NULL, "HttpOpenRequest failed\n");
 
     size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
     ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
     err = GetLastError();
     ok(!ret, "HttpQueryInfo succeeded\n");
     ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
 
-    ret = HttpAddRequestHeadersA(req, "User-Agent: Gizmo Project\r\n", ~0u, HTTP_ADDREQ_FLAG_ADD_IF_NEW);
-    ok(ret, "HttpAddRequestHeaders succeeded\n");
+    ret = HttpSendRequestA(req, NULL, 0, NULL, 0);
+    ok(ret, "HttpSendRequest failed\n");
 
     size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
     ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
     err = GetLastError();
-    ok(ret, "HttpQueryInfo failed\n");
+    ok(!ret, "HttpQueryInfo succeeded\n");
+    ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
 
     InternetCloseHandle(req);
 
+    /* Set the user agent string in the session handle to something non-empty. */
+    strcpy(buffer, "Gizmo5");
+    ret = InternetSetOptionA(ses, INTERNET_OPTION_USER_AGENT, buffer, sizeof("Gizmo5") - 1);
+    ok(ret, "InternetSetOptionA failed to set user agent for session\n");
+
+    /* The connection handle still retains the previous user agent string, so
+     * the change to the user agent string in the session handle will not be
+     * visible in requests created from the existing connection. */
+    req = HttpOpenRequestA(con, "GET", "/tests/hello.html", "HTTP/1.0", NULL, NULL, 0, 0);
+    ok(req != NULL, "HttpOpenRequest failed\n");
+
+    size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    err = GetLastError();
+    ok(!ret, "HttpQueryInfo succeeded\n");
+    ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
+
+    ret = HttpSendRequestA(req, NULL, 0, NULL, 0);
+    ok(ret, "HttpSendRequest failed: %lu\n", GetLastError());
+
+    size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    err = GetLastError();
+    todo_wine
+    ok(!ret, "HttpQueryInfo succeeded\n");
+    todo_wine
+    ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
+
+    InternetCloseHandle(req);
+    InternetCloseHandle(con);
+
+    /* Recreate the connection so the updated user agent string from the session
+     * handle is picked up by new requests for subsequent tests. */
+    con = InternetConnectA(ses, "test.winehq.org", 80, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    ok(con != NULL, "InternetConnect failed\n");
+
+    /* If a user agent string is not explicitly set for the request handle, then
+     * the user agent string from the session handle will be used for the header
+     * when the request is sent. */
+    req = HttpOpenRequestA(con, "GET", "/tests/hello.html", "HTTP/1.0", NULL, NULL, 0, 0);
+    ok(req != NULL, "HttpOpenRequest failed\n");
+
+    size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    err = GetLastError();
+    ok(!ret, "HttpQueryInfo succeeded\n");
+    ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
+
+    ret = HttpSendRequestA(req, NULL, 0, NULL, 0);
+    ok(ret, "HttpSendRequest failed: %lu\n", GetLastError());
+
+
+    buffer[0] = 0;
+    size = sizeof(buffer);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    ok(ret, "HttpQueryInfo failed\n");
+    ok(!strcmp(buffer, "Gizmo5"), "got %s\n", buffer);
+    ok(size == strlen("Gizmo5"), "got %lu\n", size);
+
+    InternetCloseHandle(req);
+
+    /* Adding a User-Agent header with an empty value is not permitted. */
+    req = HttpOpenRequestA(con, "GET", "/tests/hello.html", "HTTP/1.0", NULL, NULL, 0, 0);
+    ok(req != NULL, "HttpOpenRequest failed\n");
+
+    SetLastError(0xdeadbeef);
+    ret = HttpAddRequestHeadersA(req, "User-Agent: \r\n", ~0u, HTTP_ADDREQ_FLAG_ADD_IF_NEW);
+    err = GetLastError();
+    todo_wine
+    ok(!ret, "HttpAddRequestHeaders succeeded\n");
+    todo_wine
+    ok(err == ERROR_HTTP_HEADER_NOT_FOUND, "expected ERROR_HTTP_HEADER_NOT_FOUND, got %lu\n", err);
+
+    InternetCloseHandle(req);
+
+    /* A User-Agent header explicitly added to a request overrides the user
+     * agent string from the session handle. */
+    req = HttpOpenRequestA(con, "GET", "/tests/hello.html", "HTTP/1.0", NULL, NULL, 0, 0);
+    ok(req != NULL, "HttpOpenRequest failed\n");
+
+    ret = HttpAddRequestHeadersA(req, "User-Agent: Gizmo Project\r\n", ~0u, HTTP_ADDREQ_FLAG_ADD_IF_NEW);
+    ok(ret, "HttpAddRequestHeaders failed\n");
+
+    buffer[0] = 0;
+    size = sizeof(buffer);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    ok(ret, "HttpQueryInfo failed\n");
+    ok(!strcmp(buffer, "Gizmo Project"), "got %s\n", buffer);
+    ok(size == strlen("Gizmo Project"), "got %lu\n", size);
+
+    ret = HttpSendRequestA(req, NULL, 0, NULL, 0);
+    ok(ret, "HttpSendRequest failed: %lu\n", GetLastError());
+
+    buffer[0] = 0;
+    size = sizeof(buffer);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    ok(ret, "HttpQueryInfo failed\n");
+    ok(!strcmp(buffer, "Gizmo Project"), "got %s\n", buffer);
+    ok(size == strlen("Gizmo Project"), "got %lu\n", size);
+
+    InternetCloseHandle(req);
+
+    /* Explicitly adding both Accept and User-Agent headers at once is permitted. */
     req = HttpOpenRequestA(con, "GET", "/", "HTTP/1.0", NULL, NULL, 0, 0);
     ok(req != NULL, "HttpOpenRequest failed\n");
 
     size = sizeof(buffer);
+    SetLastError(0xdeadbeef);
     ret = HttpQueryInfoA(req, HTTP_QUERY_ACCEPT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
     err = GetLastError();
     ok(!ret, "HttpQueryInfo succeeded\n");
@@ -7500,6 +7715,13 @@ static void test_user_agent_header(void)
     ret = HttpQueryInfoA(req, HTTP_QUERY_ACCEPT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
     ok(ret, "HttpQueryInfo failed: %lu\n", GetLastError());
     ok(!strcmp(buffer, "audio/*, image/*, text/*"), "got '%s' expected 'audio/*, image/*, text/*'\n", buffer);
+
+    buffer[0] = 0;
+    size = sizeof(buffer);
+    ret = HttpQueryInfoA(req, HTTP_QUERY_USER_AGENT | HTTP_QUERY_FLAG_REQUEST_HEADERS, buffer, &size, NULL);
+    ok(ret, "HttpQueryInfo failed: %lu\n", GetLastError());
+    ok(!strcmp(buffer, "Gizmo Project"), "got %s\n", buffer);
+    ok(size == strlen("Gizmo Project"), "got %lu\n", size);
 
     InternetCloseHandle(req);
     InternetCloseHandle(con);

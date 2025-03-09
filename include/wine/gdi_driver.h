@@ -25,6 +25,13 @@
 #error The GDI driver can only be used on the Unix side
 #endif
 
+#include <stdarg.h>
+#include <stddef.h>
+
+#include <pthread.h>
+
+#include "windef.h"
+#include "winbase.h"
 #include "winternl.h"
 #include "ntuser.h"
 #include "immdev.h"
@@ -32,10 +39,50 @@
 #include "ddk/d3dkmthk.h"
 #include "kbd.h"
 #include "wine/list.h"
+#include "wine/debug.h"
 
 struct gdi_dc_funcs;
 struct opengl_funcs;
 struct vulkan_funcs;
+
+struct window_rects
+{
+    RECT window;    /* window area, including non-client frame */
+    RECT client;    /* client area, excluding non-client frame */
+    RECT visible;   /* area currently visible on the host screen, backed with a surface */
+};
+
+static inline const char *debugstr_window_rects( const struct window_rects *rects )
+{
+    return wine_dbg_sprintf( "{ window %s, client %s, visible %s }", wine_dbgstr_rect( &rects->window ),
+                             wine_dbgstr_rect( &rects->client ), wine_dbgstr_rect( &rects->visible ) );
+}
+
+/* convert a visible rect to the corresponding window rect, using the window_rects offsets */
+static inline RECT window_rect_from_visible( const struct window_rects *rects, RECT visible_rect )
+{
+    RECT rect = visible_rect;
+
+    rect.left += rects->window.left - rects->visible.left;
+    rect.top += rects->window.top - rects->visible.top;
+    rect.right += rects->window.right - rects->visible.right;
+    rect.bottom += rects->window.bottom - rects->visible.bottom;
+
+    return rect;
+}
+
+/* convert a window rect to the corresponding visible rect, using the window_rects offsets */
+static inline RECT visible_rect_from_window( struct window_rects *rects, RECT window_rect )
+{
+    RECT rect = window_rect;
+
+    rect.left += rects->visible.left - rects->window.left;
+    rect.top += rects->visible.top - rects->window.top;
+    rect.right += rects->visible.right - rects->window.right;
+    rect.bottom += rects->visible.bottom - rects->window.bottom;
+
+    return rect;
+}
 
 typedef struct gdi_physdev
 {
@@ -166,18 +213,13 @@ struct gdi_dc_funcs
     BOOL     (*pStrokeAndFillPath)(PHYSDEV);
     BOOL     (*pStrokePath)(PHYSDEV);
     BOOL     (*pUnrealizePalette)(HPALETTE);
-    NTSTATUS (*pD3DKMTCheckVidPnExclusiveOwnership)(const D3DKMT_CHECKVIDPNEXCLUSIVEOWNERSHIP *);
-    NTSTATUS (*pD3DKMTCloseAdapter)(const D3DKMT_CLOSEADAPTER *);
-    NTSTATUS (*pD3DKMTOpenAdapterFromLuid)(D3DKMT_OPENADAPTERFROMLUID *);
-    NTSTATUS (*pD3DKMTQueryVideoMemoryInfo)(D3DKMT_QUERYVIDEOMEMORYINFO *);
-    NTSTATUS (*pD3DKMTSetVidPnSourceOwner)(const D3DKMT_SETVIDPNSOURCEOWNER *);
 
     /* priority order for the driver on the stack */
     UINT       priority;
 };
 
 /* increment this when you change the DC function table */
-#define WINE_GDI_DRIVER_VERSION 83
+#define WINE_GDI_DRIVER_VERSION 102
 
 #define GDI_PRIORITY_NULL_DRV        0  /* null driver */
 #define GDI_PRIORITY_FONT_DRV      100  /* any font driver */
@@ -209,12 +251,10 @@ struct window_surface;
 
 struct window_surface_funcs
 {
-    void  (*lock)( struct window_surface *surface );
-    void  (*unlock)( struct window_surface *surface );
-    void* (*get_info)( struct window_surface *surface, BITMAPINFO *info );
-    RECT* (*get_bounds)( struct window_surface *surface );
-    void  (*set_region)( struct window_surface *surface, HRGN region );
-    void  (*flush)( struct window_surface *surface );
+    void  (*set_clip)( struct window_surface *surface, const RECT *rects, UINT count );
+    BOOL  (*flush)( struct window_surface *surface, const RECT *rect, const RECT *dirty,
+                    const BITMAPINFO *color_info, const void *color_bits, BOOL shape_changed,
+                    const BITMAPINFO *shape_info, const void *shape_bits );
     void  (*destroy)( struct window_surface *surface );
 };
 
@@ -223,63 +263,63 @@ struct window_surface
     const struct window_surface_funcs *funcs; /* driver-specific implementations  */
     struct list                        entry; /* entry in global list managed by user32 */
     LONG                               ref;   /* reference count */
+    HWND                               hwnd;  /* window the surface was created for */
     RECT                               rect;  /* constant, no locking needed */
+
+    pthread_mutex_t                    mutex;        /* mutex needed for any field below */
+    RECT                               bounds;       /* dirty area rectangle */
+    HRGN                               clip_region;  /* visible region of the surface, fully visible if 0 */
     DWORD                              draw_start_ticks; /* start ticks of fresh draw */
+    COLORREF                           color_key;    /* layered window surface color key, invalid if CLR_INVALID */
+    UINT                               alpha_bits;   /* layered window global alpha bits, invalid if -1 */
+    UINT                               alpha_mask;   /* layered window per-pixel alpha mask, invalid if 0 */
+    HRGN                               shape_region; /* shape of the window surface, unshaped if 0 */
+    HBITMAP                            shape_bitmap; /* bitmap for the surface shape (1bpp) */
+    HBITMAP                            color_bitmap; /* bitmap for the surface colors */
     /* driver-specific fields here */
 };
 
-static inline ULONG window_surface_add_ref( struct window_surface *surface )
-{
-    return InterlockedIncrement( &surface->ref );
-}
-
-static inline ULONG window_surface_release( struct window_surface *surface )
-{
-    ULONG ret = InterlockedDecrement( &surface->ref );
-    if (!ret) surface->funcs->destroy( surface );
-    return ret;
-}
+W32KAPI struct window_surface *window_surface_create( UINT size, const struct window_surface_funcs *funcs, HWND hwnd,
+                                                      const RECT *rect, BITMAPINFO *info, HBITMAP bitmap );
+W32KAPI void window_surface_add_ref( struct window_surface *surface );
+W32KAPI void window_surface_release( struct window_surface *surface );
+W32KAPI void window_surface_lock( struct window_surface *surface );
+W32KAPI void window_surface_unlock( struct window_surface *surface );
+W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask );
+W32KAPI void window_surface_flush( struct window_surface *surface );
+W32KAPI void window_surface_set_clip( struct window_surface *surface, HRGN clip_region );
+W32KAPI void window_surface_set_shape( struct window_surface *surface, HRGN shape_region );
+W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask );
 
 /* display manager interface, used to initialize display device registry data */
 
-struct gdi_gpu
+struct pci_id
 {
-    ULONG_PTR id;
-    WCHAR name[128];      /* name */
-    UINT vendor_id;       /* PCI ID */
-    UINT device_id;
-    UINT subsys_id;
-    UINT revision_id;
-    GUID vulkan_uuid;     /* Vulkan device UUID */
-    ULONGLONG memory_size;
-};
-
-struct gdi_adapter
-{
-    ULONG_PTR id;
-    DWORD state_flags;
+    UINT16 vendor;
+    UINT16 device;
+    UINT16 subsystem;
+    UINT16 revision;
 };
 
 struct gdi_monitor
 {
     RECT rc_monitor;      /* RcMonitor in MONITORINFO struct */
     RECT rc_work;         /* RcWork in MONITORINFO struct */
-    DWORD state_flags;    /* StateFlags in DISPLAY_DEVICE struct */
     unsigned char *edid;  /* Extended Device Identification Data */
     UINT edid_len;
 };
 
 struct gdi_device_manager
 {
-    void (*add_gpu)( const struct gdi_gpu *gpu, void *param );
-    void (*add_adapter)( const struct gdi_adapter *adapter, void *param );
+    void (*add_gpu)( const char *name, const struct pci_id *pci_id, const GUID *vulkan_uuid, void *param );
+    void (*add_source)( const char *name, UINT state_flags, UINT dpi, void *param );
     void (*add_monitor)( const struct gdi_monitor *monitor, void *param );
-    void (*add_mode)( const DEVMODEW *mode, BOOL current, void *param );
+    void (*add_modes)( const DEVMODEW *current, UINT modes_count, const DEVMODEW *modes, void *param );
 };
 
 #define WINE_DM_UNSUPPORTED 0x80000000
 
-struct tagUPDATELAYEREDWINDOWINFO;
+struct vulkan_driver_funcs;
 
 struct user_driver_funcs
 {
@@ -299,8 +339,8 @@ struct user_driver_funcs
     void    (*pReleaseKbdTables)(const KBDTABLES *);
     /* IME functions */
     UINT    (*pImeProcessKey)(HIMC,UINT,UINT,const BYTE*);
-    UINT    (*pImeToAsciiEx)(UINT,UINT,const BYTE*,COMPOSITIONSTRING*,HIMC);
     void    (*pNotifyIMEStatus)(HWND,UINT);
+    BOOL    (*pSetIMECompositionRect)(HWND,RECT);
     /* cursor/icon functions */
     void    (*pDestroyCursorIcon)(HCURSOR);
     void    (*pSetCursor)(HWND,HCURSOR);
@@ -319,9 +359,7 @@ struct user_driver_funcs
     void    (*pUpdateClipboard)(void);
     /* display modes */
     LONG    (*pChangeDisplaySettings)(LPDEVMODEW,LPCWSTR,HWND,DWORD,LPVOID);
-    BOOL    (*pGetCurrentDisplaySettings)(LPCWSTR,BOOL,LPDEVMODEW);
-    INT     (*pGetDisplayDepth)(LPCWSTR,BOOL);
-    BOOL    (*pUpdateDisplayDevices)(const struct gdi_device_manager *,BOOL,void*);
+    UINT    (*pUpdateDisplayDevices)(const struct gdi_device_manager *,void*);
     /* windowing functions */
     BOOL    (*pCreateDesktop)(const WCHAR *,UINT,UINT);
     BOOL    (*pCreateWindow)(HWND);
@@ -342,17 +380,19 @@ struct user_driver_funcs
     void    (*pSetWindowStyle)(HWND,INT,STYLESTRUCT*);
     void    (*pSetWindowText)(HWND,LPCWSTR);
     UINT    (*pShowWindow)(HWND,INT,RECT*,UINT);
-    LRESULT (*pSysCommand)(HWND,WPARAM,LPARAM);
-    BOOL    (*pUpdateLayeredWindow)(HWND,const struct tagUPDATELAYEREDWINDOWINFO *,const RECT *);
+    LRESULT (*pSysCommand)(HWND,WPARAM,LPARAM,const POINT*);
+    void    (*pUpdateLayeredWindow)(HWND,UINT);
     LRESULT (*pWindowMessage)(HWND,UINT,WPARAM,LPARAM);
-    BOOL    (*pWindowPosChanging)(HWND,HWND,UINT,const RECT *,const RECT *,RECT *,
-                                  struct window_surface**);
-    void    (*pWindowPosChanged)(HWND,HWND,UINT,const RECT *,const RECT *,const RECT *,
-                                 const RECT *,struct window_surface*);
+    BOOL    (*pWindowPosChanging)(HWND,UINT,BOOL,const struct window_rects *);
+    BOOL    (*pGetWindowStyleMasks)(HWND,UINT,UINT,UINT*,UINT*);
+    BOOL    (*pGetWindowStateUpdates)(HWND,UINT*,UINT*,RECT*);
+    BOOL    (*pCreateWindowSurface)(HWND,BOOL,const RECT *,struct window_surface**);
+    void    (*pMoveWindowBits)(HWND,const struct window_rects *,const struct window_rects *,const RECT *);
+    void    (*pWindowPosChanged)(HWND,HWND,HWND,UINT,BOOL,const struct window_rects*,struct window_surface*);
     /* system parameters */
     BOOL    (*pSystemParametersInfo)(UINT,UINT,void*,UINT);
     /* vulkan support */
-    const struct vulkan_funcs * (*pwine_get_vulkan_driver)(UINT);
+    UINT    (*pVulkanInit)(UINT,void *,const struct vulkan_driver_funcs **);
     /* opengl support */
     struct opengl_funcs * (*pwine_get_wgl_driver)(UINT);
     /* thread management */

@@ -1931,6 +1931,36 @@ int WINAPI getsockopt( SOCKET s, int level, int optname, char *optval, int *optl
             *optlen = 1;
             return server_getsockopt( s, IOCTL_AFD_WINE_GET_TCP_NODELAY, optval, optlen );
 
+        case TCP_KEEPALIVE:
+            if (*optlen < sizeof(DWORD) || !optval)
+            {
+                *optlen = 0;
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            *optlen = sizeof(DWORD);
+            return server_getsockopt( s, IOCTL_AFD_WINE_GET_TCP_KEEPALIVE, optval, optlen );
+
+        case TCP_KEEPCNT:
+            if (*optlen < sizeof(DWORD) || !optval)
+            {
+                *optlen = 0;
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            *optlen = sizeof(DWORD);
+            return server_getsockopt( s, IOCTL_AFD_WINE_GET_TCP_KEEPCNT, optval, optlen );
+
+        case TCP_KEEPINTVL:
+            if (*optlen < sizeof(DWORD) || !optval)
+            {
+                *optlen = 0;
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            *optlen = sizeof(DWORD);
+            return server_getsockopt( s, IOCTL_AFD_WINE_GET_TCP_KEEPINTVL, optval, optlen );
+
         default:
             FIXME( "unrecognized TCP option %#x\n", optname );
             SetLastError( WSAENOPROTOOPT );
@@ -3325,6 +3355,12 @@ int WINAPI setsockopt( SOCKET s, int level, int optname, const char *optval, int
         break; /* case NSPROTO_IPX */
 
     case IPPROTO_TCP:
+        if (optlen < 0)
+        {
+            SetLastError(WSAENOBUFS);
+            return SOCKET_ERROR;
+        }
+
         switch(optname)
         {
         case TCP_NODELAY:
@@ -3335,6 +3371,33 @@ int WINAPI setsockopt( SOCKET s, int level, int optname, const char *optval, int
             }
             value = *optval;
             return server_setsockopt( s, IOCTL_AFD_WINE_SET_TCP_NODELAY, (char*)&value, sizeof(value) );
+
+        case TCP_KEEPALIVE:
+            if (optlen < sizeof(DWORD) || !optval)
+            {
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            value = *(DWORD*)optval;
+            return server_setsockopt( s, IOCTL_AFD_WINE_SET_TCP_KEEPALIVE, (char*)&value, sizeof(value) );
+
+        case TCP_KEEPCNT:
+            if (optlen < sizeof(DWORD) || !optval)
+            {
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            value = *(DWORD*)optval;
+            return server_setsockopt( s, IOCTL_AFD_WINE_SET_TCP_KEEPCNT, (char*)&value, sizeof(value) );
+
+        case TCP_KEEPINTVL:
+            if (optlen < sizeof(DWORD) || !optval)
+            {
+                SetLastError( WSAEFAULT );
+                return SOCKET_ERROR;
+            }
+            value = *(DWORD*)optval;
+            return server_setsockopt( s, IOCTL_AFD_WINE_SET_TCP_KEEPINTVL, (char*)&value, sizeof(value) );
 
         default:
             FIXME("Unknown IPPROTO_TCP optname 0x%08x\n", optname);
@@ -3815,30 +3878,6 @@ SOCKET WINAPI WSASocketA(int af, int type, int protocol,
     return WSASocketW(af, type, protocol, &info, g, dwFlags);
 }
 
-#ifdef _WIN64
-static BOOL WINAPI check_is_eabackgroundservice( INIT_ONCE *once, void *param, void **ctx )
-{
-    BOOL *is_eabs = param;
-    WCHAR name[MAX_PATH], *module_exe;
-    if (GetModuleFileNameW(NULL, name, ARRAYSIZE(name)))
-    {
-        module_exe = wcsrchr(name, '\\');
-        module_exe = module_exe ? module_exe + 1 : name;
-        *is_eabs = !wcsicmp(module_exe, L"EABackgroundService.exe");
-    }
-
-    return TRUE;
-}
-
-static BOOL is_eabackgroundservice(void)
-{
-    static BOOL is_eabs = FALSE;
-    static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
-    InitOnceExecuteOnce( &once, check_is_eabackgroundservice, &is_eabs, NULL );
-    return is_eabs;
-}
-#endif
-
 /***********************************************************************
  *      WSASocketW          (WS2_32.79)
  *
@@ -3965,17 +4004,6 @@ SOCKET WINAPI WSASocketW(int af, int type, int protocol,
         CloseHandle(handle);
         return INVALID_SOCKET;
     }
-
-#ifdef _WIN64
-    if (is_eabackgroundservice())
-    {
-        DWORD value = 0x400000;
-        FIXME( "CXHACK 22475: changing SO_SNDBUF\n" );
-        err = setsockopt( ret, SOL_SOCKET, SO_SNDBUF, (char *)&value, sizeof(value) );
-        if (err) ERR( "setsockopt failed: %u\n", WSAGetLastError() );
-    }
-#endif
-
     WSASetLastError(0);
     return ret;
 }

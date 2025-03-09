@@ -75,6 +75,7 @@ static ULONG WINAPI d3d_vertex_buffer7_Release(IDirect3DVertexBuffer7 *iface)
 {
     struct d3d_vertex_buffer *buffer = impl_from_IDirect3DVertexBuffer7(iface);
     ULONG ref = InterlockedDecrement(&buffer->ref);
+    struct d3d_device *device;
 
     TRACE("%p decreasing refcount to %lu.\n", buffer, ref);
 
@@ -85,8 +86,12 @@ static ULONG WINAPI d3d_vertex_buffer7_Release(IDirect3DVertexBuffer7 *iface)
          * stream source in wined3d and they should get unset there before
          * they are destroyed. */
         wined3d_mutex_lock();
-        if (buffer->ddraw->stateblock_state->streams[0].buffer == buffer->wined3d_buffer)
-            wined3d_stateblock_set_stream_source(buffer->ddraw->state, 0, NULL, 0, 0);
+
+        LIST_FOR_EACH_ENTRY(device, &buffer->ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
+        {
+            if (device->stateblock_state->streams[0].buffer == buffer->wined3d_buffer)
+                wined3d_stateblock_set_stream_source(device->state, 0, NULL, 0, 0);
+        }
 
         wined3d_vertex_declaration_decref(buffer->wined3d_declaration);
         wined3d_buffer_decref(buffer->wined3d_buffer);
@@ -115,7 +120,7 @@ static HRESULT d3d_vertex_buffer_create_wined3d_buffer(struct d3d_vertex_buffer 
     if (dynamic)
         desc.usage |= WINED3DUSAGE_DYNAMIC;
     desc.bind_flags = WINED3D_BIND_VERTEX_BUFFER;
-    if (buffer->Caps & D3DVBCAPS_SYSTEMMEMORY)
+    if (buffer->sysmem)
         desc.access = WINED3D_RESOURCE_ACCESS_CPU | WINED3D_RESOURCE_ACCESS_MAP_R | WINED3D_RESOURCE_ACCESS_MAP_W;
     else
         desc.access = WINED3D_RESOURCE_ACCESS_GPU | WINED3D_RESOURCE_ACCESS_MAP_R | WINED3D_RESOURCE_ACCESS_MAP_W;
@@ -299,8 +304,7 @@ static HRESULT WINAPI d3d_vertex_buffer7_ProcessVertices(IDirect3DVertexBuffer7 
     wined3d_stateblock_set_stream_source(device_impl->state,
             0, src_buffer_impl->wined3d_buffer, 0, get_flexible_vertex_size(src_buffer_impl->fvf));
     wined3d_stateblock_set_vertex_declaration(device_impl->state, src_buffer_impl->wined3d_declaration);
-    wined3d_device_apply_stateblock(device_impl->wined3d_device, device_impl->state);
-    hr = wined3d_device_process_vertices(device_impl->wined3d_device, src_idx, dst_idx,
+    hr = wined3d_device_process_vertices(device_impl->wined3d_device, device_impl->state, src_idx, dst_idx,
             count, dst_buffer_impl->wined3d_buffer, NULL, flags, dst_buffer_impl->fvf);
 
     /* Restore the states if needed */
@@ -460,6 +464,19 @@ HRESULT d3d_vertex_buffer_create(struct d3d_vertex_buffer **vertex_buf,
     buffer->Caps = desc->dwCaps;
     buffer->fvf = desc->dwFVF;
     buffer->size = get_flexible_vertex_size(desc->dwFVF) * desc->dwNumVertices;
+
+    /* ddraw4 vertex buffers ignore DISCARD and NOOVERWRITE, even on
+     * pretransformed geometry, which means that a GPU-based buffer cannot
+     * perform well.
+     *
+     * While at least one contemporaneous card (Geforce 4) does seem to show a
+     * difference in its performance characteristics based on whether
+     * D3DVBCAPS_SYSTEMMEMORY is set, it also doesn't *improve* performance to
+     * use a non-SYSTEMMEMORY buffer with ddraw4. For wined3d it should always
+     * be better to use sysmem.
+     *
+     * This improves performance in Prince of Persia 3D. */
+    buffer->sysmem = ((buffer->Caps & D3DVBCAPS_SYSTEMMEMORY) || buffer->version < 7);
 
     wined3d_mutex_lock();
 

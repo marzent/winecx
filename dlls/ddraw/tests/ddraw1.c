@@ -1403,6 +1403,26 @@ static BOOL compare_mode_rect(const DEVMODEW *mode1, const DEVMODEW *mode2)
             && mode1->dmPelsHeight == mode2->dmPelsHeight;
 }
 
+static void init_format_b5g6r5(DDPIXELFORMAT *format)
+{
+    format->dwSize = sizeof(*format);
+    format->dwFlags = DDPF_RGB;
+    format->dwRGBBitCount = 16;
+    format->dwRBitMask = 0xf800;
+    format->dwGBitMask = 0x07e0;
+    format->dwBBitMask = 0x001f;
+}
+
+static void init_format_b8g8r8x8(DDPIXELFORMAT *format)
+{
+    format->dwSize = sizeof(*format);
+    format->dwFlags = DDPF_RGB;
+    format->dwRGBBitCount = 32;
+    format->dwRBitMask = 0x00ff0000;
+    format->dwGBitMask = 0x0000ff00;
+    format->dwBBitMask = 0x000000ff;
+}
+
 static ULONG get_refcount(IUnknown *test_iface)
 {
     IUnknown_AddRef(test_iface);
@@ -3005,6 +3025,12 @@ static void test_coop_level_mode_set(void)
         {0,                     FALSE,  0},
     };
 
+    static const struct message release_messages[] =
+    {
+        {WM_PAINT,              FALSE,  0},
+        {0,                     FALSE,  0},
+    };
+
     memset(&devmode, 0, sizeof(devmode));
     devmode.dmSize = sizeof(devmode);
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
@@ -3108,7 +3134,13 @@ static void test_coop_level_mode_set(void)
             param.user32_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.user32_height, "Expected surface height %lu, got %lu.\n",
             param.user32_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3125,6 +3157,7 @@ static void test_coop_level_mode_set(void)
             param.ddraw_height, ddsd.dwHeight);
 
     GetWindowRect(window, &r);
+    flaky /* win10 21H2 with QXL driver */
     ok(EqualRect(&r, &ddraw_rect), "Expected %s, got %s.\n", wine_dbgstr_rect(&ddraw_rect),
             wine_dbgstr_rect(&r));
 
@@ -3232,11 +3265,25 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     /* For Wine. */
     change_ret = ChangeDisplaySettingsW(NULL, CDS_FULLSCREEN);
     ok(change_ret == DISP_CHANGE_SUCCESSFUL, "Failed to change display mode, ret %#lx.\n", change_ret);
+    flush_events();
+
+    if (IsIconic(window)) /* make sure the window is restored, working around some Wine/X11 race condition */
+    {
+        ShowWindow(window, SW_RESTORE);
+        flush_events();
+    }
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3271,7 +3318,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3352,7 +3406,13 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3400,7 +3460,14 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
     ok(ret, "Failed to get display mode.\n");
@@ -3448,7 +3515,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3522,7 +3596,13 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3570,7 +3650,14 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
     ok(ret, "Failed to get display mode.\n");
@@ -3595,7 +3682,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     GetWindowRect(window, &r);
     flaky /* win8 */
@@ -3624,7 +3718,14 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
+
     hr = IDirectDraw_RestoreDisplayMode(ddraw);
     ok(SUCCEEDED(hr), "RestoreDisplayMode failed, hr %#lx.\n", hr);
 
@@ -3632,6 +3733,7 @@ static void test_coop_level_mode_set(void)
     ok(!ref, "Unexpected refcount %lu.\n", ref);
 
     GetWindowRect(window, &r);
+    flaky /* win10 21H2 with QXL driver */
     ok(EqualRect(&r, &ddraw_rect), "Expected %s, got %s.\n", wine_dbgstr_rect(&ddraw_rect),
             wine_dbgstr_rect(&r));
 
@@ -4553,6 +4655,7 @@ static void test_unsupported_formats(void)
 
 static void test_rt_caps(const GUID *device_guid)
 {
+    DWORD fourcc_codes[64], fourcc_code_count;
     PALETTEENTRY palette_entries[256];
     IDirectDrawPalette *palette;
     IDirect3DDevice *device;
@@ -4569,6 +4672,12 @@ static void test_rt_caps(const GUID *device_guid)
     {
         sizeof(DDPIXELFORMAT), DDPF_PALETTEINDEXED8 | DDPF_RGB, 0,
         {8}, {0x00000000}, {0x00000000}, {0x00000000}, {0x00000000},
+    };
+    static const DDPIXELFORMAT fourcc_fmt =
+    {
+        .dwSize = sizeof(DDPIXELFORMAT),
+        .dwFlags = DDPF_FOURCC,
+        .dwFourCC = MAKEFOURCC('Y','U','Y','2'),
     };
 
     static const struct
@@ -4700,6 +4809,12 @@ static void test_rt_caps(const GUID *device_guid)
             DDERR_INVALIDCAPS,
             TRUE /* Nvidia Kepler */,
         },
+        {
+            &fourcc_fmt,
+            DDSCAPS_FLIP | DDSCAPS_COMPLEX | DDSCAPS_OFFSCREENPLAIN,
+            DDERR_INVALIDCAPS,
+            FALSE,
+        },
     };
 
     software_device = is_software_device_type(device_guid);
@@ -4727,6 +4842,10 @@ static void test_rt_caps(const GUID *device_guid)
     hr = IDirectDraw_GetCaps(ddraw, &hal_caps, NULL);
     ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
 
+    fourcc_code_count = ARRAY_SIZE(fourcc_codes);
+    hr = IDirectDraw4_GetFourCCCodes(ddraw, &fourcc_code_count, fourcc_codes);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
     for (i = 0; i < ARRAY_SIZE(test_data); ++i)
     {
         DWORD caps_in, expected_caps;
@@ -4743,6 +4862,21 @@ static void test_rt_caps(const GUID *device_guid)
         surface_desc.ddsCaps.dwCaps = caps_in;
         if (test_data[i].pf)
         {
+            if (test_data[i].pf->dwFlags & DDPF_FOURCC)
+            {
+                unsigned int j;
+
+                for (j = 0; j < fourcc_code_count; ++j)
+                {
+                    if (test_data[i].pf->dwFourCC == fourcc_codes[j])
+                        break;
+                }
+                if (j == fourcc_code_count)
+                {
+                    skip("Fourcc format %#lx is not supported, skipping test.\n", test_data[i].pf->dwFourCC);
+                    continue;
+                }
+            }
             surface_desc.dwFlags |= DDSD_PIXELFORMAT;
             surface_desc.ddpfPixelFormat = *test_data[i].pf;
         }
@@ -4750,6 +4884,11 @@ static void test_rt_caps(const GUID *device_guid)
         {
             surface_desc.dwFlags |= DDSD_ZBUFFERBITDEPTH;
             surface_desc.dwZBufferBitDepth = z_depth;
+        }
+        if (caps_in & DDSCAPS_FLIP)
+        {
+            surface_desc.dwFlags |= DDSD_BACKBUFFERCOUNT;
+            surface_desc.dwBackBufferCount = 1;
         }
         surface_desc.dwWidth = 640;
         surface_desc.dwHeight = 480;
@@ -4773,6 +4912,9 @@ static void test_rt_caps(const GUID *device_guid)
             expected_caps = caps_in | DDSCAPS_SYSTEMMEMORY;
         else
             expected_caps = caps_in | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM;
+
+        if (caps_in & DDSCAPS_FLIP)
+            expected_caps |= DDSCAPS_FRONTBUFFER;
 
         ok(surface_desc.ddsCaps.dwCaps == expected_caps || (test_data[i].pf == &p8_fmt
                 && surface_desc.ddsCaps.dwCaps == (caps_in | DDSCAPS_SYSTEMMEMORY))
@@ -15457,6 +15599,342 @@ static void test_enum_devices(void)
     ok(!refcount, "Device has %lu references left.\n", refcount);
 }
 
+/* Emperor: Rise of the Middle Kingdom locks a sysmem surface and then accesses
+ * the pointer after unlocking it. This test roughly replicates the calls that
+ * it makes. */
+static void test_pinned_sysmem(void)
+{
+    DDBLTFX fx = {.dwSize = sizeof(fx), .dwFillColor = 0xface};
+    IDirectDrawSurface *surface, *surface2;
+    DDSURFACEDESC surface_desc;
+    unsigned int color;
+    IDirectDraw *ddraw;
+    ULONG refcount;
+    HWND window;
+    HRESULT hr;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    hr = IDirectDraw_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.dwSize = sizeof(surface_desc);
+    surface_desc.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    surface_desc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+    surface_desc.dwWidth = 32;
+    surface_desc.dwHeight = 32;
+    init_format_b5g6r5(&surface_desc.ddpfPixelFormat);
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &surface2, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface_Lock(surface, NULL, &surface_desc, DDLOCK_WAIT, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    hr = IDirectDrawSurface_Unlock(surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface_Blt(surface, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    color = ((unsigned short *)surface_desc.lpSurface)[0];
+    ok(color == 0xface, "Got color %04x.\n", color);
+
+    memset(surface_desc.lpSurface, 0x55, 32 * 16 * 2);
+
+    hr = IDirectDrawSurface_BltFast(surface2, 0, 0, surface, NULL, DDBLTFAST_WAIT);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface_Lock(surface2, NULL, &surface_desc, DDLOCK_WAIT, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    color = ((unsigned short *)surface_desc.lpSurface)[0];
+    ok(color == 0x5555, "Got color %04x.\n", color);
+    color = ((unsigned short *)surface_desc.lpSurface)[32 * 16];
+    ok(color == 0xface, "Got color %04x.\n", color);
+    hr = IDirectDrawSurface_Unlock(surface2, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    IDirectDrawSurface_Release(surface2);
+    IDirectDrawSurface_Release(surface);
+    refcount = IDirectDraw_Release(ddraw);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+    DestroyWindow(window);
+}
+
+static void test_multiple_devices(void)
+{
+    D3DRECT clear_rect = {{0}, {0}, {640}, {480}};
+    static D3DMATRIX test_matrix =
+    {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 2.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 3.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 4.0f,
+    };
+    static D3DLVERTEX quad[] =
+    {
+        {{-1.0f}, {-1.0f}, {0.1f}, 0, {0x800000ff}},
+        {{-1.0f}, { 1.0f}, {0.1f}, 0, {0x800000ff}},
+        {{ 1.0f}, {-1.0f}, {0.1f}, 0, {0x800000ff}},
+        {{ 1.0f}, { 1.0f}, {0.1f}, 0, {0x800000ff}},
+    };
+
+    D3DTEXTUREHANDLE texture_handle, texture_handle2, texture_handle3;
+    IDirectDrawSurface *texture_surf, *texture_surf2, *rt, *rt2;
+    IDirect3DExecuteBuffer *execute_buffer, *execute_buffer2;
+    D3DMATERIALHANDLE mat_handle, mat_handle2;
+    IDirect3DViewport *viewport, *viewport2;
+    IDirect3DTexture *texture, *texture2;
+    IDirect3DDevice *device, *device2;
+    D3DEXECUTEBUFFERDESC exec_desc;
+    D3DMATRIXHANDLE matrix_handle;
+    IDirectDraw *ddraw, *ddraw2;
+    IDirect3DMaterial *material;
+    DDSURFACEDESC surface_desc;
+    D3DMATRIX matrix;
+    UINT inst_length;
+    ULONG refcount;
+    DWORD colour;
+    HWND window;
+    HRESULT hr;
+    void *ptr;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    ok(!!ddraw, "Failed to create a ddraw object.\n");
+
+    if (!(device = create_device_ex(ddraw, window, DDSCL_NORMAL, &IID_IDirect3DHALDevice)))
+    {
+        skip("Failed to create a 3D device, skipping test.\n");
+        DestroyWindow(window);
+        return;
+    }
+
+    ddraw2 = create_ddraw();
+    ok(!!ddraw2, "Failed to create a ddraw object.\n");
+
+    device2 = create_device_ex(ddraw2, window, DDSCL_NORMAL, &IID_IDirect3DHALDevice);
+    ok(!!device2, "got NULL.\n");
+
+    hr = IDirect3DDevice_QueryInterface(device, &IID_IDirectDrawSurface, (void **)&rt);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_QueryInterface(device2, &IID_IDirectDrawSurface, (void **)&rt2);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    viewport = create_viewport(device, 0, 0, 640, 480);
+    viewport2 = create_viewport(device2, 0, 0, 640, 480);
+
+    material = create_diffuse_material(device, 1.0f, 0.0f, 0.0f, 1.0f);
+    hr = IDirect3DMaterial2_GetHandle(material, device, &mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DMaterial2_GetHandle(material, device, &mat_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(mat_handle == mat_handle2, "got different handles.\n");
+
+    hr = IDirect3DMaterial_GetHandle(material, device2, &mat_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    todo_wine ok(mat_handle != mat_handle2, "got same handles.\n");
+
+    hr = IDirect3DViewport_SetBackground(viewport, mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DViewport_SetBackground(viewport2, mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.dwSize = sizeof(surface_desc);
+    surface_desc.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+    surface_desc.ddsCaps.dwCaps = DDSCAPS_TEXTURE;
+    surface_desc.dwWidth = 256;
+    surface_desc.dwHeight = 256;
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &texture_surf, NULL);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirectDrawSurface_QueryInterface(texture_surf, &IID_IDirect3DTexture, (void **)&texture);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &texture_surf2, NULL);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirectDrawSurface_QueryInterface(texture_surf2, &IID_IDirect3DTexture, (void **)&texture2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    hr = IDirect3DDevice_SwapTextureHandles(device, texture, texture2);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+    hr = IDirect3DTexture_GetHandle(texture, device, &texture_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice_SwapTextureHandles(device, texture, texture2);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+    hr = IDirect3DTexture_GetHandle(texture, device2, &texture_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(texture_handle == texture_handle2, "got same handles.\n");
+    hr = IDirect3DDevice_SwapTextureHandles(device, texture, texture2);
+    ok(hr == E_INVALIDARG, "got %#lx.\n", hr);
+    hr = IDirect3DTexture_GetHandle(texture2, device, &texture_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice_SwapTextureHandles(device, texture, texture2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DTexture_GetHandle(texture, device, &texture_handle3);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(texture_handle3 == texture_handle2, "got different handles.\n");
+    hr = IDirect3DTexture_GetHandle(texture2, device2, &texture_handle3);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(texture_handle3 == texture_handle, "got different handles.\n");
+
+    hr = IDirect3DDevice_CreateMatrix(device, &matrix_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice_SetMatrix(device, matrix_handle, &test_matrix);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    memset(&matrix, 0xcc, sizeof(matrix));
+    hr = IDirect3DDevice_GetMatrix(device2, matrix_handle, &matrix);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(!memcmp(&matrix, &test_matrix, sizeof(matrix)), "matrix does not match.\n");
+
+    memset(&exec_desc, 0, sizeof(exec_desc));
+    exec_desc.dwSize = sizeof(exec_desc);
+    exec_desc.dwFlags = D3DDEB_BUFSIZE | D3DDEB_CAPS;
+    exec_desc.dwBufferSize = 1024;
+    exec_desc.dwCaps = D3DDEBCAPS_SYSTEMMEMORY;
+    hr = IDirect3DDevice_CreateExecuteBuffer(device, &exec_desc, &execute_buffer, NULL);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DExecuteBuffer_Lock(execute_buffer, &exec_desc);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    memcpy(exec_desc.lpData, quad, sizeof(quad));
+    ptr = ((BYTE *)exec_desc.lpData) + sizeof(quad);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ZENABLE, FALSE);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ALPHATESTENABLE, FALSE);
+    emit_process_vertices(&ptr, D3DPROCESSVERTICES_TRANSFORM, 0, ARRAY_SIZE(quad));
+    emit_tquad(&ptr, 0);
+    emit_end(&ptr);
+    inst_length = (BYTE *)ptr - (BYTE *)exec_desc.lpData;
+    inst_length -= sizeof(quad);
+    hr = IDirect3DExecuteBuffer_Unlock(execute_buffer);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    set_execute_data(execute_buffer, ARRAY_SIZE(quad), sizeof(quad), inst_length);
+
+    memset(&exec_desc, 0, sizeof(exec_desc));
+    exec_desc.dwSize = sizeof(exec_desc);
+    exec_desc.dwFlags = D3DDEB_BUFSIZE | D3DDEB_CAPS;
+    exec_desc.dwBufferSize = 1024;
+    exec_desc.dwCaps = D3DDEBCAPS_SYSTEMMEMORY;
+    hr = IDirect3DDevice_CreateExecuteBuffer(device2, &exec_desc, &execute_buffer2, NULL);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DExecuteBuffer_Lock(execute_buffer2, &exec_desc);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    memcpy(exec_desc.lpData, quad, sizeof(quad));
+    ptr = ((BYTE *)exec_desc.lpData) + sizeof(quad);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ZENABLE, FALSE);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ALPHATESTENABLE, TRUE);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ALPHAFUNC, D3DCMP_LESS);
+    emit_set_rs(&ptr, D3DRENDERSTATE_ALPHAREF, 0x70);
+    emit_process_vertices(&ptr, D3DPROCESSVERTICES_TRANSFORM, 0, ARRAY_SIZE(quad));
+    emit_tquad(&ptr, 0);
+    emit_end(&ptr);
+    inst_length = (BYTE *)ptr - (BYTE *)exec_desc.lpData;
+    inst_length -= sizeof(quad);
+    hr = IDirect3DExecuteBuffer_Unlock(execute_buffer2);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    set_execute_data(execute_buffer2, ARRAY_SIZE(quad), sizeof(quad), inst_length);
+
+    hr = IDirect3DViewport_Clear(viewport, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt, 320, 240);
+    hr = IDirect3DDevice_BeginScene(device);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_Execute(device, execute_buffer, viewport, D3DEXECUTE_CLIPPED);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_EndScene(device);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt, 320, 240);
+    ok(colour == 0x0000ff, "got %#lx.\n", colour);
+
+    hr = IDirect3DViewport_Clear(viewport2, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt2, 320, 240);
+    hr = IDirect3DDevice_BeginScene(device2);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_Execute(device2, execute_buffer2, viewport2, D3DEXECUTE_CLIPPED);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_EndScene(device2);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt2, 320, 240);
+    ok(colour == 0xff0000, "got %#lx.\n", colour);
+
+    hr = IDirect3DViewport_Clear(viewport, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt, 320, 240);
+    hr = IDirect3DDevice_BeginScene(device);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_Execute(device, execute_buffer, viewport, D3DEXECUTE_CLIPPED);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice_EndScene(device);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    colour = get_surface_color(rt, 320, 240);
+    ok(colour == 0x0000ff, "got %#lx.\n", colour);
+
+    IDirect3DExecuteBuffer_Release(execute_buffer);
+    IDirect3DExecuteBuffer_Release(execute_buffer2);
+
+    IDirect3DTexture_Release(texture2);
+    IDirectDrawSurface_Release(texture_surf2);
+    IDirect3DTexture_Release(texture);
+    IDirectDrawSurface_Release(texture_surf);
+    IDirect3DMaterial_Release(material);
+    IDirect3DViewport_Release(viewport);
+    IDirect3DViewport_Release(viewport2);
+
+    IDirectDrawSurface_Release(rt);
+    IDirectDrawSurface_Release(rt2);
+
+    refcount = IDirect3DDevice_Release(device);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+    refcount = IDirect3DDevice_Release(device2);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+
+    IDirectDraw_Release(ddraw);
+    IDirectDraw_Release(ddraw2);
+    DestroyWindow(window);
+}
+
+/* The Egyptian Prophecy: The Fate of Ramses does this. */
+static void test_sysmem_x_channel(void)
+{
+    DDSURFACEDESC surface_desc = {sizeof(surface_desc)};
+    DDBLTFX fx = {.dwSize = sizeof(fx)};
+    unsigned int colour, refcount;
+    IDirectDrawSurface *surface;
+    IDirectDraw *ddraw;
+    HWND window;
+    HRESULT hr;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    hr = IDirectDraw_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    surface_desc.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    surface_desc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+    surface_desc.dwWidth = 32;
+    surface_desc.dwHeight = 32;
+    init_format_b8g8r8x8(&surface_desc.ddpfPixelFormat);
+    hr = IDirectDraw_CreateSurface(ddraw, &surface_desc, &surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    fx.dwFillColor = 0x0000ff00;
+    hr = IDirectDrawSurface_Blt(surface, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface_Lock(surface, NULL, &surface_desc, DDLOCK_READONLY, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    colour = *(unsigned int *)surface_desc.lpSurface;
+    ok(colour == 0x0000ff00, "Got colour %08x.\n", colour);
+    hr = IDirectDrawSurface_Unlock(surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    IDirectDrawSurface_Release(surface);
+    refcount = IDirectDraw_Release(ddraw);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+    DestroyWindow(window);
+}
+
 START_TEST(ddraw1)
 {
     DDDEVICEIDENTIFIER identifier;
@@ -15576,4 +16054,7 @@ START_TEST(ddraw1)
     run_for_each_device_type(test_texture_wrong_caps);
     test_filling_convention();
     test_enum_devices();
+    test_pinned_sysmem();
+    test_multiple_devices();
+    test_sysmem_x_channel();
 }

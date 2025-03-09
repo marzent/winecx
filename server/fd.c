@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <poll.h>
 #ifdef HAVE_LINUX_MAJOR_H
 #include <linux/major.h>
@@ -72,9 +73,6 @@
 #include <sys/event.h>
 #undef LIST_INIT
 #undef LIST_ENTRY
-#endif
-#ifdef HAVE_STDINT_H
-#include <stdint.h>
 #endif
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -173,8 +171,6 @@ static const struct object_ops fd_ops =
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
-    NULL,                     /* get_esync_fd */
-    NULL,                     /* get_msync_idx */
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
@@ -216,8 +212,6 @@ static const struct object_ops device_ops =
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
-    NULL,                     /* get_esync_fd */
-    NULL,                     /* get_msync_idx */
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
@@ -258,8 +252,6 @@ static const struct object_ops inode_ops =
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
-    NULL,                     /* get_esync_fd */
-    NULL,                     /* get_msync_idx */
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
@@ -302,8 +294,6 @@ static const struct object_ops file_lock_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     file_lock_signaled,         /* signaled */
-    NULL,                       /* get_esync_fd */
-    NULL,                       /* get_msync_idx */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -477,7 +467,7 @@ const char *get_timeout_str( timeout_t timeout )
     {
         secs = -timeout / TICKS_PER_SEC;
         nsecs = -timeout % TICKS_PER_SEC;
-        sprintf( buffer, "+%ld.%07ld", secs, nsecs );
+        snprintf( buffer, sizeof(buffer), "+%ld.%07ld", secs, nsecs );
     }
     else  /* absolute */
     {
@@ -489,12 +479,12 @@ const char *get_timeout_str( timeout_t timeout )
             secs--;
         }
         if (secs >= 0)
-            sprintf( buffer, "%x%08x (+%ld.%07ld)",
-                     (unsigned int)(timeout >> 32), (unsigned int)timeout, secs, nsecs );
+            snprintf( buffer, sizeof(buffer), "%x%08x (+%ld.%07ld)",
+                      (unsigned int)(timeout >> 32), (unsigned int)timeout, secs, nsecs );
         else
-            sprintf( buffer, "%x%08x (-%ld.%07ld)",
-                     (unsigned int)(timeout >> 32), (unsigned int)timeout,
-                     -(secs + 1), TICKS_PER_SEC - nsecs );
+            snprintf( buffer, sizeof(buffer), "%x%08x (-%ld.%07ld)",
+                      (unsigned int)(timeout >> 32), (unsigned int)timeout,
+                      -(secs + 1), TICKS_PER_SEC - nsecs );
     }
     return buffer;
 }
@@ -1183,6 +1173,15 @@ static struct inode *get_inode( dev_t dev, ino_t ino, int unix_fd )
     return inode;
 }
 
+static int inode_has_pending_close( struct inode *inode, const char *path )
+{
+    struct closed_fd *fd;
+
+    LIST_FOR_EACH_ENTRY( fd, &inode->closed, struct closed_fd, entry )
+        if (!strcmp( fd->unix_name, path )) return 1;
+    return 0;
+}
+
 /* add fd to the inode list of file descriptors to close */
 static void inode_add_closed_fd( struct inode *inode, struct closed_fd *fd )
 {
@@ -1199,7 +1198,7 @@ static void inode_add_closed_fd( struct inode *inode, struct closed_fd *fd )
         free( fd->unix_name );
         free( fd );
     }
-    else if (fd->disp_flags & FILE_DISPOSITION_DELETE)
+    else if ((fd->disp_flags & FILE_DISPOSITION_DELETE) && !inode_has_pending_close( inode, fd->unix_name ))
     {
         /* close the fd but keep the structure around for unlink */
         if (fd->unix_fd != -1) close( fd->unix_fd );
@@ -1866,8 +1865,7 @@ char *dup_fd_name( struct fd *root, const char *name )
 
 static WCHAR *dup_nt_name( struct fd *root, struct unicode_str name, data_size_t *len )
 {
-    WCHAR *ret;
-    data_size_t retlen;
+    WCHAR *ptr, *ret;
 
     if (!root)
     {
@@ -1876,7 +1874,6 @@ static WCHAR *dup_nt_name( struct fd *root, struct unicode_str name, data_size_t
         return memdup( name.str, name.len );
     }
     if (!root->nt_namelen) return NULL;
-    retlen = root->nt_namelen;
 
     /* skip . prefix */
     if (name.len && name.str[0] == '.' && (name.len == sizeof(WCHAR) || name.str[1] == '\\'))
@@ -1884,17 +1881,12 @@ static WCHAR *dup_nt_name( struct fd *root, struct unicode_str name, data_size_t
         name.str++;
         name.len -= sizeof(WCHAR);
     }
-    if ((ret = malloc( retlen + name.len + sizeof(WCHAR) )))
+    if ((ret = malloc( root->nt_namelen + name.len + sizeof(WCHAR) )))
     {
-        memcpy( ret, root->nt_name, root->nt_namelen );
-        if (name.len && name.str[0] != '\\' &&
-            root->nt_namelen && root->nt_name[root->nt_namelen / sizeof(WCHAR) - 1] != '\\')
-        {
-            ret[retlen / sizeof(WCHAR)] = '\\';
-            retlen += sizeof(WCHAR);
-        }
-        memcpy( ret + retlen / sizeof(WCHAR), name.str, name.len );
-        *len = retlen + name.len;
+        ptr = mem_append( ret, root->nt_name, root->nt_namelen );
+        if (name.len && name.str[0] != '\\' && ptr[-1] != '\\') *ptr++ = '\\';
+        ptr = mem_append( ptr, name.str, name.len );
+        *len = (ptr - ret) * sizeof(WCHAR);
     }
     return ret;
 }
@@ -1977,7 +1969,7 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
         if (fd->unix_fd == -1)
         {
             /* check for trailing slash on file path */
-            if ((errno == ENOENT || errno == ENOTDIR) && name[strlen(name) - 1] == '/')
+            if ((errno == ENOENT || (errno == ENOTDIR && !(options & FILE_DIRECTORY_FILE))) && name[strlen(name) - 1] == '/')
                 set_error( STATUS_OBJECT_NAME_INVALID );
             else
                 file_set_error();
@@ -1987,15 +1979,6 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
 
     fd->nt_name = dup_nt_name( root, nt_name, &fd->nt_namelen );
     fd->unix_name = NULL;
-    if ((path = dup_fd_name( root, name )))
-    {
-        fd->unix_name = realpath( path, NULL );
-        free( path );
-    }
-
-    closed_fd->unix_fd = fd->unix_fd;
-    closed_fd->disp_flags = 0;
-    closed_fd->unix_name = fd->unix_name;
     fstat( fd->unix_fd, &st );
     *mode = st.st_mode;
 
@@ -2012,6 +1995,16 @@ struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_nam
              */
             goto error;
         }
+
+        if ((path = dup_fd_name( root, name )))
+        {
+            fd->unix_name = realpath( path, NULL );
+            free( path );
+        }
+
+        closed_fd->unix_fd = fd->unix_fd;
+        closed_fd->unix_name = fd->unix_name;
+        closed_fd->disp_flags = 0;
         fd->inode = inode;
         fd->closed = closed_fd;
         fd->cacheable = !inode->device->removable;
@@ -2785,7 +2778,7 @@ DECL_HANDLER(flush)
 
     if (!fd) return;
 
-    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async, 0 )))
     {
         fd->fd_ops->flush( fd, async );
         reply->event = async_handoff( async, NULL, 1 );
@@ -2814,7 +2807,7 @@ DECL_HANDLER(get_volume_info)
 
     if (!fd) return;
 
-    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async, 0 )))
     {
         fd->fd_ops->get_volume_info( fd, async, req->info_class );
         reply->wait = async_handoff( async, NULL, 1 );
@@ -2890,7 +2883,7 @@ DECL_HANDLER(read)
 
     if (!fd) return;
 
-    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async, 0 )))
     {
         fd->fd_ops->read( fd, async, req->pos );
         reply->wait = async_handoff( async, NULL, 0 );
@@ -2908,7 +2901,7 @@ DECL_HANDLER(write)
 
     if (!fd) return;
 
-    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async, 0 )))
     {
         fd->fd_ops->write( fd, async, req->pos );
         reply->wait = async_handoff( async, &reply->size, 0 );
@@ -2927,7 +2920,7 @@ DECL_HANDLER(ioctl)
 
     if (!fd) return;
 
-    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async, 0 )))
     {
         fd->fd_ops->ioctl( fd, req->code, async );
         reply->wait = async_handoff( async, NULL, 0 );
@@ -2979,6 +2972,7 @@ DECL_HANDLER(set_completion_info)
         {
             fd->completion = get_completion_obj( current->process, req->chandle, IO_COMPLETION_MODIFY_STATE );
             fd->comp_key = req->ckey;
+            set_fd_signaled( fd, 1 );
         }
         else set_error( STATUS_INVALID_PARAMETER );
         release_object( fd );

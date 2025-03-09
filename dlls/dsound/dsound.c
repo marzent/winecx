@@ -177,7 +177,7 @@ static HRESULT DirectSoundDevice_Create(DirectSoundDevice ** ppDevice)
     device->primary_pwfx->nAvgBytesPerSec = device->primary_pwfx->nSamplesPerSec * device->primary_pwfx->nBlockAlign;
     device->primary_pwfx->cbSize = 0;
 
-    InitializeCriticalSection(&(device->mixlock));
+    InitializeCriticalSectionEx(&(device->mixlock), 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     device->mixlock.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": DirectSoundDevice.mixlock");
 
     InitializeSRWLock(&device->buffer_list_lock);
@@ -230,6 +230,8 @@ static ULONG DirectSoundDevice_Release(DirectSoundDevice * device)
             WaitForSingleObject(device->thread, INFINITE);
             CloseHandle(device->thread);
         }
+        if (device->mta_cookie)
+            CoDecrementMTAUsage(device->mta_cookie);
 
         EnterCriticalSection(&DSOUND_renderers_lock);
         list_remove(&device->entry);
@@ -355,6 +357,7 @@ static HRESULT DirectSoundDevice_Initialize(DirectSoundDevice ** ppDevice, LPCGU
         WARN("DSOUND_ReopenDevice failed: %08lx\n", hr);
         return hr;
     }
+    CoIncrementMTAUsage(&device->mta_cookie);
 
     ZeroMemory(&device->drvcaps, sizeof(device->drvcaps));
 
@@ -512,6 +515,9 @@ static HRESULT DirectSoundDevice_CreateSoundBuffer(
             WARN("Format inconsistency\n");
             return DSERR_INVALIDPARAM;
         }
+
+        if (dsbd->lpwfxFormat->nChannels > 2 && dsbd->lpwfxFormat->wFormatTag != WAVE_FORMAT_EXTENSIBLE)
+            return DSERR_INVALIDPARAM;
 
         if (dsbd->lpwfxFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
         {

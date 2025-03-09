@@ -21,40 +21,12 @@
 
 enum macdrv_funcs
 {
-    unix_dnd_get_data,
-    unix_dnd_get_formats,
-    unix_dnd_have_format,
-    unix_dnd_release,
-    unix_dnd_retain,
     unix_init,
     unix_quit_result,
     unix_funcs_count
 };
 
 #define MACDRV_CALL(func, params) WINE_UNIX_CALL(unix_ ## func, params)
-
-/* macdrv_dnd_get_data params */
-struct dnd_get_data_params
-{
-    UINT64 handle;
-    UINT format;
-    size_t size;
-    void *data;
-};
-
-/* macdrv_dnd_get_formats params */
-struct dnd_get_formats_params
-{
-    UINT64 handle;
-    UINT formats[64];
-};
-
-/* macdrv_dnd_have_format params */
-struct dnd_have_format_params
-{
-    UINT64 handle;
-    UINT format;
-};
 
 /* macdrv_init params */
 struct localized_string
@@ -67,26 +39,17 @@ struct localized_string
 struct init_params
 {
     struct localized_string *strings;
+    UINT64 app_icon_callback;
+    UINT64 app_quit_request_callback;
+    UINT64 regcreateopenkeyexa_callback;
+    UINT64 regqueryvalueexa_callback;
+    UINT64 regsetvalueexa_callback;
 };
 
 /* macdrv_quit_result params */
 struct quit_result_params
 {
     int result;
-};
-
-/* driver client callbacks exposed with KernelCallbackTable interface */
-enum macdrv_client_funcs
-{
-    client_func_app_icon = NtUserDriverCallbackFirst,
-    client_func_app_quit_request,
-    client_func_dnd_query_drag,
-    client_func_dnd_query_drop,
-    client_func_dnd_query_exited,
-    client_func_regcreateopenkeyexa,
-    client_func_regqueryvalueexa,
-    client_func_regsetvalueexa,
-    client_func_last
 };
 
 /* macdrv_app_icon result */
@@ -102,38 +65,21 @@ struct app_icon_entry
 /* macdrv_app_quit_request params */
 struct app_quit_request_params
 {
+    struct dispatch_callback_params dispatch;
     UINT flags;
-};
-
-/* macdrv_dnd_query_drag params */
-struct dnd_query_drag_params
-{
-    UINT32 hwnd;
-    UINT32 effect;
-    INT32 x;
-    INT32 y;
-    UINT64 handle;
-};
-
-/* macdrv_dnd_query_drop params */
-struct dnd_query_drop_params
-{
-    UINT32 hwnd;
-    UINT32 effect;
-    INT32 x;
-    INT32 y;
-    UINT64 handle;
 };
 
 /* macdrv_dnd_query_exited params */
 struct dnd_query_exited_params
 {
+    struct dispatch_callback_params dispatch;
     UINT32 hwnd;
 };
 
 /* macdrv_regcreateopenkeyexa params */
 struct regcreateopenkeyexa_params
 {
+    struct dispatch_callback_params dispatch;
     UINT32 create;
     UINT32 hkey;
     UINT64 name;
@@ -150,6 +96,7 @@ struct regcreateopenkeyexa_params
 /* macdrv_regqueryvalueexa params */
 struct regqueryvalueexa_params
 {
+    struct dispatch_callback_params dispatch;
     UINT32 hkey;
     UINT64 name;
     UINT64 reserved;
@@ -162,6 +109,7 @@ struct regqueryvalueexa_params
 /* macdrv_regsetvalueexa params */
 struct regsetvalueexa_params
 {
+    struct dispatch_callback_params dispatch;
     UINT32 hkey;
     UINT64 name;
     UINT32 reserved;
@@ -175,5 +123,3 @@ static inline void *param_ptr(UINT64 param)
 {
     return (void *)(UINT_PTR)param;
 }
-
-C_ASSERT(client_func_last <= NtUserDriverCallbackLast + 1);

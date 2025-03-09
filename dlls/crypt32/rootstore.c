@@ -613,7 +613,8 @@ static void add_ms_root_certs(HCERTSTORE to, HCERTSTORE cached)
         if ((existing = CertFindCertificateInStore(cached, X509_ASN_ENCODING, 0, CERT_FIND_EXISTING, cert, NULL)))
         {
             CertDeleteCertificateFromStore(existing);
-            CertFreeCertificateContext(existing);
+            if (!is_bnet())
+                CertFreeCertificateContext(existing);
         }
         CertFreeCertificateContext(cert);
     }
@@ -624,7 +625,7 @@ static void add_ms_root_certs(HCERTSTORE to, HCERTSTORE cached)
  * adding redundant certificates, e.g. when both a certificate bundle and
  * individual certificates exist in the same directory.
  */
-static void read_trusted_roots_from_known_locations(HCERTSTORE store, HCERTSTORE cached, BOOL *delete)
+static void read_trusted_roots_from_known_locations(HCERTSTORE store, HCERTSTORE cached)
 {
     HCERTSTORE new;
     DWORD needed, size;
@@ -687,24 +688,6 @@ static void read_trusted_roots_from_known_locations(HCERTSTORE store, HCERTSTORE
     CryptMemFree( params.buffer );
     CryptReleaseContext( prov, 0 );
 
-    if (existing_count < cached_count)
-    {
-        /* Some certs were removed on host. Clean up the cache and add all the certificates so cert chains
-         * get revalidated. The certs present on host are now in 'cached' store and are marked with
-         * CERT_FIRST_USER_PROP_ID property. */
-        TRACE( "Some keys were removed, reimporting, cached %u, existing %u, new %u.\n",
-                cached_count, existing_count, new_count );
-        *delete = TRUE;
-        existing_count = 0;
-        existing = NULL;
-        while ((existing = CertEnumCertificatesInStore( cached, existing )))
-        {
-            if (!CertGetCertificateContextProperty( existing, CERT_FIRST_USER_PROP_ID, NULL, &size ))
-                continue;
-            CertAddCertificateContextToStore( new, existing, CERT_STORE_ADD_NEW, NULL );
-            ++new_count;
-        }
-    }
     if (new_count)
     {
         /* Clear custom property so it is not serialized and seen by apps. */
@@ -715,20 +698,19 @@ static void read_trusted_roots_from_known_locations(HCERTSTORE store, HCERTSTORE
     }
 
     CertCloseStore( new, 0 );
-    TRACE( "existing %u, new %u.\n", existing_count, new_count );
+    TRACE( "cached_count %u, existing on host %u, new %u.\n", cached_count, existing_count, new_count );
 }
 
-static HCERTSTORE create_root_store(HCERTSTORE cached, BOOL *delete)
+static HCERTSTORE create_root_store(HCERTSTORE cached)
 {
     HCERTSTORE memStore = CertOpenStore(CERT_STORE_PROV_MEMORY,
      X509_ASN_ENCODING, 0, CERT_STORE_CREATE_NEW_FLAG, NULL);
 
 
-    *delete = FALSE;
     if (memStore)
     {
         add_ms_root_certs(memStore, cached);
-        read_trusted_roots_from_known_locations(memStore, cached, delete);
+        read_trusted_roots_from_known_locations(memStore, cached);
     }
 
     TRACE("returning %p\n", memStore);
@@ -741,7 +723,6 @@ void CRYPT_ImportSystemRootCertsToReg(void)
     HKEY key = NULL;
     LONG rc;
     HANDLE hsem;
-    BOOL delete;
 
     static BOOL root_certs_imported = FALSE;
 
@@ -773,13 +754,11 @@ void CRYPT_ImportSystemRootCertsToReg(void)
     }
     CRYPT_RegReadSerializedFromReg(key, CERT_STORE_CERTIFICATE_CONTEXT_FLAG, reg, CERT_STORE_ADD_ALWAYS);
 
-    if (!(store = create_root_store(reg, &delete)))
+    if (!(store = create_root_store(reg)))
     {
         ERR("Failed to create root store\n");
         goto done;
     }
-    if (delete && RegDeleteTreeW(key, NULL))
-        ERR("Error deleting key.\n");
     if (!CRYPT_SerializeContextsToReg(key, 0, pCertInterface, store))
         ERR("Failed to import system certs into registry, %08lx\n", GetLastError());
 

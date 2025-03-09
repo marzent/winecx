@@ -24,7 +24,6 @@
 #include "limits.h"
 #include "math.h"
 #include "mbctype.h"
-#include "stdio.h"
 #include "wchar.h"
 #include "wctype.h"
 #include "uchar.h"
@@ -52,9 +51,7 @@ wchar_t* __cdecl _W_Getdays(void);
 char* __cdecl _Getmonths(void);
 wchar_t* __cdecl _W_Getmonths(void);
 void* __cdecl _Gettnames(void);
-unsigned int __cdecl ___lc_codepage_func(void);
 int __cdecl ___lc_collate_cp_func(void);
-const unsigned short* __cdecl __pctype_func(void);
 const locale_facet* __thiscall locale__Getfacet(const locale*, size_t);
 const locale* __cdecl locale_classic(void);
 
@@ -6126,7 +6123,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_get_float(const num_get *thi
 static istreambuf_iterator_wchar* num_get_do_get_uint64(const num_get *this,
         istreambuf_iterator_wchar *ret, istreambuf_iterator_wchar first,
         istreambuf_iterator_wchar last, ios_base *base, int *state,
-        ULONGLONG *pval, numpunct_wchar *numpunct)
+        unsigned __int64 *pval, numpunct_wchar *numpunct)
 {
     unsigned __int64 v;
     char tmp[25], *end;
@@ -6152,16 +6149,16 @@ static istreambuf_iterator_wchar* num_get_do_get_uint64(const num_get *this,
 /* ?do_get@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@0AEAVios_base@2@AEAHAEA_K@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_wchar_do_get_uint64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 20, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, ULONGLONG*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, unsigned __int64*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_wchar_do_get_uint64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 28, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, ULONGLONG*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, unsigned __int64*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_wchar_do_get_uint64,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_uint64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, ULONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, unsigned __int64 *pval)
 {
     return num_get_do_get_uint64(this, ret, first, last, base,
             state, pval, numpunct_wchar_use_facet(IOS_LOCALE(base)));
@@ -6171,7 +6168,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_uint64(const num_get 
 /* ?do_get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_short_do_get_uint64,36)
 istreambuf_iterator_wchar *__thiscall num_get_short_do_get_uint64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, ULONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, unsigned __int64 *pval)
 {
     return num_get_do_get_uint64(this, ret, first, last, base,
             state, pval, numpunct_short_use_facet(IOS_LOCALE(base)));
@@ -6183,7 +6180,7 @@ istreambuf_iterator_wchar *__thiscall num_get_short_do_get_uint64(const num_get 
 /* ?get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_wchar_get_uint64,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_get_uint64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, ULONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, unsigned __int64 *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_wchar_do_get_uint64(this, ret, first, last, base, state, pval);
@@ -6192,7 +6189,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_get_uint64(const num_get *th
 static istreambuf_iterator_wchar* num_get_do_get_int64(const num_get *this,
         istreambuf_iterator_wchar *ret, istreambuf_iterator_wchar first,
         istreambuf_iterator_wchar last, ios_base *base, int *state,
-        LONGLONG *pval, numpunct_wchar *numpunct)
+        __int64 *pval, numpunct_wchar *numpunct)
 {
     __int64 v;
     char tmp[25], *end;
@@ -6218,16 +6215,16 @@ static istreambuf_iterator_wchar* num_get_do_get_int64(const num_get *this,
 /* ?do_get@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@0AEAVios_base@2@AEAHAEA_J@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_wchar_do_get_int64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 24, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, LONGLONG*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, __int64*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_wchar_do_get_int64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 32, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, LONGLONG*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, __int64*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_wchar_do_get_int64,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_int64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, LONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, __int64 *pval)
 {
     return num_get_do_get_int64(this, ret, first, last, base,
             state, pval, numpunct_wchar_use_facet(IOS_LOCALE(base)));
@@ -6237,7 +6234,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_int64(const num_get *
 /* ?do_get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_J@Z */
 DEFINE_THISCALL_WRAPPER(num_get_short_do_get_int64,36)
 istreambuf_iterator_wchar *__thiscall num_get_short_do_get_int64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, LONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, __int64 *pval)
 {
     return num_get_do_get_int64(this, ret, first, last, base,
             state, pval, numpunct_short_use_facet(IOS_LOCALE(base)));
@@ -6249,7 +6246,7 @@ istreambuf_iterator_wchar *__thiscall num_get_short_do_get_int64(const num_get *
 /* ?get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_J@Z */
 DEFINE_THISCALL_WRAPPER(num_get_wchar_get_int64,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_get_int64(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, LONGLONG *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, __int64 *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_wchar_do_get_int64(this, ret, first, last, base, state, pval);
@@ -7201,16 +7198,16 @@ istreambuf_iterator_char *__thiscall num_get_char_get_float(const num_get *this,
 /* ?do_get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_K@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_char_do_get_uint64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 20, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, ULONGLONG*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, unsigned __int64*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_char_do_get_uint64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 28, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, ULONGLONG*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, unsigned __int64*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_char_do_get_uint64,36)
 istreambuf_iterator_char *__thiscall num_get_char_do_get_uint64(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, ULONGLONG *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, unsigned __int64 *pval)
 {
     unsigned __int64 v;
     char tmp[25], *end;
@@ -7236,7 +7233,7 @@ istreambuf_iterator_char *__thiscall num_get_char_do_get_uint64(const num_get *t
 /* ?get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_char_get_uint64,36)
 istreambuf_iterator_char *__thiscall num_get_char_get_uint64(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, ULONGLONG *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, unsigned __int64 *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_char_do_get_uint64(this, ret, first, last, base, state, pval);
@@ -7246,16 +7243,16 @@ istreambuf_iterator_char *__thiscall num_get_char_get_uint64(const num_get *this
 /* ?do_get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_J@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_char_do_get_int64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 24, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, LONGLONG*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, __int64*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_char_do_get_int64(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 32, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, LONGLONG*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, __int64*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_char_do_get_int64,36)
 istreambuf_iterator_char *__thiscall num_get_char_do_get_int64(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, LONGLONG *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, __int64 *pval)
 {
     __int64 v;
     char tmp[25], *end;
@@ -7281,7 +7278,7 @@ istreambuf_iterator_char *__thiscall num_get_char_do_get_int64(const num_get *th
 /* ?get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_J@Z */
 DEFINE_THISCALL_WRAPPER(num_get_char_get_int64,36)
 istreambuf_iterator_char *__thiscall num_get_char_get_int64(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, LONGLONG *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, __int64 *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_char_do_get_int64(this, ret, first, last, base, state, pval);
@@ -7829,6 +7826,7 @@ static ostreambuf_iterator_char* num_put_char_fput(const num_put *this, ostreamb
     if((adjustfield & FMTFLAG_internal) && (buf[0]=='-' || buf[0]=='+')) {
         num_put_char__Putc(this, &dest, dest, buf, 1);
         buf++;
+        count--;
     }
     if(adjustfield != FMTFLAG_left) {
         num_put_char__Rep(this, ret, dest, fill, pad);
@@ -7914,9 +7912,11 @@ ostreambuf_iterator_char* __cdecl num_put_char__Iput(const num_put *this, ostrea
     if((adjustfield & FMTFLAG_internal) && (buf[0]=='-' || buf[0]=='+')) {
         num_put_char__Putc(this, &dest, dest, buf, 1);
         buf++;
+        count--;
     }else if((adjustfield & FMTFLAG_internal) && (buf[1]=='x' || buf[1]=='X')) {
         num_put_char__Putc(this, &dest, dest, buf, 2);
         buf += 2;
+        count -= 2;
     }
     if(adjustfield != FMTFLAG_left) {
         num_put_char__Rep(this, ret, dest, fill, pad);
@@ -8697,6 +8697,7 @@ static ostreambuf_iterator_wchar* num_put__fput(const num_put *this, ostreambuf_
     if((adjustfield & FMTFLAG_internal) && (buf[0]=='-' || buf[0]=='+')) {
         num_put_wchar_wide_put(this, &dest, base, buf, 1);
         buf++;
+        count--;
     }
     if(adjustfield != FMTFLAG_left) {
         num_put_wchar__Rep(this, ret, dest, fill, pad);
@@ -8790,9 +8791,11 @@ static ostreambuf_iterator_wchar* num_put__Iput(const num_put *this, ostreambuf_
     if((adjustfield & FMTFLAG_internal) && (buf[0]=='-' || buf[0]=='+')) {
         num_put_wchar_wide_put(this, &dest, base, buf, 1);
         buf++;
+        count--;
     }else if((adjustfield & FMTFLAG_internal) && (buf[1]=='x' || buf[1]=='X')) {
         num_put_wchar_wide_put(this, &dest, base, buf, 2);
         buf += 2;
+        count -= 2;
     }
     if(adjustfield != FMTFLAG_left) {
         num_put_wchar__Rep(this, ret, dest, fill, pad);
@@ -12799,18 +12802,27 @@ size_t __cdecl wcsrtombs(char *dst, const wchar_t **pstr, size_t n, mbstate_t *s
     char buffer[MB_LEN_MAX];
     size_t ret = 0;
 
+    if (state) *state = 0;
     src = *pstr;
 
     while (!dst || n > ret)
     {
         int len = _Wcrtomb( buffer, *src, state, NULL );
         if (len <= 0) return -1;
-        if (n < ret + len) break;
-        memcpy( dst + ret, buffer, len );
+        if (dst)
+        {
+            if (n < ret + len) break;
+            memcpy( dst + ret, buffer, len );
+        }
+        if (!buffer[0])
+        {
+            src = NULL;
+            break;
+        }
         ret += len;
-        if (!buffer[0]) break;
         src++;
     }
+    if (dst) *pstr = src;
     return ret;
 }
 #endif
@@ -13336,7 +13348,7 @@ __ASM_BLOCK_END
 
 void init_locale(void *base)
 {
-#ifdef __x86_64__
+#ifdef RTTI_USE_RVA
     init__Facet_base_rtti(base);
     init_locale_facet_rtti(base);
     init_locale__Locimp_rtti(base);

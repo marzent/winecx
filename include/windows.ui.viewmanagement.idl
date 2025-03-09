@@ -20,6 +20,7 @@
 #pragma winrt ns_prefix
 #endif
 
+#ifndef DO_NO_IMPORTS
 import "inspectable.idl";
 import "asyncinfo.idl";
 import "eventtoken.idl";
@@ -31,12 +32,14 @@ import "windows.ui.idl";
 import "windows.ui.core.idl";
 /* import "windows.ui.popups.idl"; */
 /* import "windows.ui.windowmanagement.idl"; */
+#endif
 
 namespace Windows.UI.ViewManagement
 {
     typedef enum HandPreference HandPreference;
     typedef enum UIColorType UIColorType;
     typedef enum UIElementType UIElementType;
+    typedef enum UserInteractionMode UserInteractionMode;
 
     interface IUISettings;
     interface IUISettings2;
@@ -44,11 +47,34 @@ namespace Windows.UI.ViewManagement
     interface IUISettings4;
     interface IUISettings5;
     interface IUISettings6;
+    interface IUISettingsAnimationsEnabledChangedEventArgs;
+    interface IUISettingsAutoHideScrollBarsChangedEventArgs;
+    interface IUISettingsMessageDurationChangedEventArgs;
+
+    interface IUIViewSettings;
+    interface IUIViewSettingsStatics;
+
+    interface IInputPane;
+    interface IInputPane2;
+    interface IInputPaneControl;
+    interface IInputPaneVisibilityEventArgs;
+    interface IInputPaneStatics;
+    interface IInputPaneStatics2;
 
     runtimeclass UISettings;
+    runtimeclass UISettingsAnimationsEnabledChangedEventArgs;
+    runtimeclass UISettingsAutoHideScrollBarsChangedEventArgs;
+    runtimeclass UISettingsMessageDurationChangedEventArgs;
+    runtimeclass UIViewSettings;
+    runtimeclass InputPane;
+    runtimeclass InputPaneVisibilityEventArgs;
 
     declare {
         interface Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, IInspectable *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsAnimationsEnabledChangedEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsAutoHideScrollBarsChangedEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsMessageDurationChangedEventArgs *>;
+        interface Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.InputPane*, Windows.UI.ViewManagement.InputPaneVisibilityEventArgs*>;
     }
 
     [
@@ -124,6 +150,15 @@ namespace Windows.UI.ViewManagement
     };
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    enum UserInteractionMode
+    {
+        Mouse = 0,
+        Touch = 1,
+    };
+
+    [
         contract(Windows.Foundation.UniversalApiContract, 1.0),
         exclusiveto(Windows.UI.ViewManagement.UISettings),
         uuid(85361600-1c63-4627-bcb1-3a89e0bc9c55)
@@ -172,6 +207,166 @@ namespace Windows.UI.ViewManagement
     }
 
     [
+        contract(Windows.Foundation.UniversalApiContract, 4.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettings),
+        uuid(52bb3002-919b-4d6b-9b78-8dd66ff4b93b)
+    ]
+    interface IUISettings4 : IInspectable
+    {
+        [propget] HRESULT AdvancedEffectsEnabled([out, retval] boolean *value);
+        [eventadd] HRESULT AdvancedEffectsEnabledChanged(
+            [in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, IInspectable *> *handler,
+            [out, retval] EventRegistrationToken *cookie);
+        [eventremove] HRESULT AdvancedEffectsEnabledChanged([in] EventRegistrationToken cookie);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettings),
+        uuid(5349d588-0cb5-5f05-bd34-706b3231f0bd)
+    ]
+    interface IUISettings5 : IInspectable
+    {
+        [propget] HRESULT AutoHideScrollBars([out, retval] boolean *value);
+        [eventadd] HRESULT AutoHideScrollBarsChanged(
+            [in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsAutoHideScrollBarsChangedEventArgs *> *handler,
+            [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT AutoHideScrollBarsChanged([in] EventRegistrationToken token);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettings),
+        uuid(aef19bd7-fe31-5a04-ada4-469aaec6dfa9)
+    ]
+    interface IUISettings6 : IInspectable
+    {
+        [eventadd] HRESULT AnimationsEnabledChanged(
+            [in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsAnimationsEnabledChangedEventArgs *> *handler,
+            [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT AnimationsEnabledChanged([in] EventRegistrationToken token);
+        [eventadd] HRESULT MessageDurationChanged(
+            [in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.UISettings *, Windows.UI.ViewManagement.UISettingsMessageDurationChangedEventArgs *> *handler,
+            [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT MessageDurationChanged([in] EventRegistrationToken token);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettingsAnimationsEnabledChangedEventArgs),
+        uuid(0c7b4b3d-2ea1-533e-894d-415bc5243c29)
+    ]
+    interface IUISettingsAnimationsEnabledChangedEventArgs : IInspectable
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettingsAutoHideScrollBarsChangedEventArgs),
+        uuid(87afd4b2-9146-5f02-8f6b-06d454174c0f)
+    ]
+    interface IUISettingsAutoHideScrollBarsChangedEventArgs : IInspectable
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        exclusiveto(Windows.UI.ViewManagement.UISettingsMessageDurationChangedEventArgs),
+        uuid(338aad52-4a5d-5b59-8002-d930f608fd6e)
+    ]
+    interface IUISettingsMessageDurationChangedEventArgs : IInspectable
+    {
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.UIViewSettings),
+        uuid(c63657f6-8850-470d-88f8-455e16ea2c26)
+    ]
+    interface IUIViewSettings : IInspectable
+    {
+        [propget] HRESULT UserInteractionMode([out, retval] Windows.UI.ViewManagement.UserInteractionMode *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.UIViewSettings),
+        uuid(595c97a5-f8f6-41cf-b0fb-aacdb81fd5f6)
+    ]
+    interface IUIViewSettingsStatics : IInspectable
+    {
+        HRESULT GetForCurrentView([out, retval] Windows.UI.ViewManagement.UIViewSettings **current);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPane),
+        uuid(640ada70-06f3-4c87-a678-9829c9127c28)
+    ]
+    interface IInputPane : IInspectable
+    {
+        [eventadd] HRESULT Showing([in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.InputPane*, Windows.UI.ViewManagement.InputPaneVisibilityEventArgs*> *handler, [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT Showing([in] EventRegistrationToken token);
+        [eventadd] HRESULT Hiding([in] Windows.Foundation.TypedEventHandler<Windows.UI.ViewManagement.InputPane*, Windows.UI.ViewManagement.InputPaneVisibilityEventArgs*> *handler, [out, retval] EventRegistrationToken *token);
+        [eventremove] HRESULT Hiding([in] EventRegistrationToken token);
+        [propget] HRESULT OccludedRect([out, retval] Windows.Foundation.Rect *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPane),
+        uuid(8a6b3f26-7090-4793-944c-c3f2cde26276)
+    ]
+    interface IInputPane2 : IInspectable
+    {
+        HRESULT TryShow([out, retval] boolean *result);
+        HRESULT TryHide([out, retval] boolean *result);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPane),
+        uuid(088bb24f-962f-489d-aa6e-c6be1a0a6e52)
+    ]
+    interface IInputPaneControl : IInspectable
+    {
+        [propget] HRESULT Visible([out, retval] boolean *value);
+        [propput] HRESULT Visible([in] boolean value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPaneVisibilityEventArgs),
+        uuid(d243e016-d907-4fcc-bb8d-f77baa5028f1)
+    ]
+    interface IInputPaneVisibilityEventArgs : IInspectable
+    {
+        [propget] HRESULT OccludedRect([out, retval] Windows.Foundation.Rect *value);
+        [propput] HRESULT EnsuredFocusedElementInView([in] boolean value);
+        [propget] HRESULT EnsuredFocusedElementInView([out, retval] boolean *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPane),
+        uuid(95f4af3a-ef47-424a-9741-fd2815eba2bd)
+    ]
+    interface IInputPaneStatics : IInspectable
+    {
+        HRESULT GetForCurrentView([out, retval] Windows.UI.ViewManagement.InputPane **input_pane);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        exclusiveto(Windows.UI.ViewManagement.InputPane),
+        uuid(1b63529b-d9ec-4531-8445-71bab9fb828e)
+    ]
+    interface IInputPaneStatics2 : IInspectable
+    {
+        HRESULT GetForUIContext([in] Windows.UI.UIContext *context, [out, retval] Windows.UI.ViewManagement.InputPane **result);
+    }
+
+    [
         activatable(Windows.Foundation.UniversalApiContract, 1.0),
         contract(Windows.Foundation.UniversalApiContract, 1.0),
         marshaling_behavior(agile)
@@ -181,5 +376,67 @@ namespace Windows.UI.ViewManagement
         [default] interface Windows.UI.ViewManagement.IUISettings;
         [contract(Windows.Foundation.UniversalApiContract, 1.0)] interface Windows.UI.ViewManagement.IUISettings2;
         [contract(Windows.Foundation.UniversalApiContract, 1.0)] interface Windows.UI.ViewManagement.IUISettings3;
+        [contract(Windows.Foundation.UniversalApiContract, 4.0)] interface Windows.UI.ViewManagement.IUISettings4;
+        [contract(Windows.Foundation.UniversalApiContract, 8.0)] interface Windows.UI.ViewManagement.IUISettings5;
+        [contract(Windows.Foundation.UniversalApiContract, 10.0)] interface Windows.UI.ViewManagement.IUISettings6;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass UISettingsAnimationsEnabledChangedEventArgs
+    {
+        [default] interface Windows.UI.ViewManagement.IUISettingsAnimationsEnabledChangedEventArgs;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 8.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass UISettingsAutoHideScrollBarsChangedEventArgs
+    {
+        [default] interface Windows.UI.ViewManagement.IUISettingsAutoHideScrollBarsChangedEventArgs;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 10.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass UISettingsMessageDurationChangedEventArgs
+    {
+        [default] interface Windows.UI.ViewManagement.IUISettingsMessageDurationChangedEventArgs;
+    }
+
+    [
+        static(Windows.UI.ViewManagement.IUIViewSettingsStatics, Windows.Foundation.UniversalApiContract, 1.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass UIViewSettings
+    {
+        [default] interface Windows.UI.ViewManagement.IUIViewSettings;
+    }
+
+    [
+        static(Windows.UI.ViewManagement.IInputPaneStatics, Windows.Foundation.UniversalApiContract, 1.0),
+        static(Windows.UI.ViewManagement.IInputPaneStatics2, Windows.Foundation.UniversalApiContract, 8.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(standard)
+    ]
+    runtimeclass InputPane
+    {
+        [default] interface Windows.UI.ViewManagement.IInputPane;
+        [contract(Windows.Foundation.UniversalApiContract, 1.0)] interface Windows.UI.ViewManagement.IInputPane2;
+        [contract(Windows.Foundation.UniversalApiContract, 1.0)] interface Windows.UI.ViewManagement.IInputPaneControl;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(standard)
+    ]
+    runtimeclass InputPaneVisibilityEventArgs
+    {
+        [default] interface Windows.UI.ViewManagement.IInputPaneVisibilityEventArgs;
     }
 }

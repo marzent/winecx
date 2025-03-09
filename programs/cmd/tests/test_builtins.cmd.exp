@@ -202,8 +202,8 @@ fooc@space@
 food1
 food2
 food21
-@todo_wine@foo7@space@@space@@or_broken@not supported@space@
-@todo_wine@foo@or_broken@not supported
+foo7@space@@space@@or_broken@not supported@space@
+foo@or_broken@not supported
 --- redirect at beginning of line
 foo
 foo1
@@ -229,6 +229,8 @@ foo
 A
 B
 C
+--- multiredirections
+cc2@space@
 ------------ Testing circumflex escape character ------------
 hello, world
 hello, world
@@ -262,7 +264,7 @@ a2
 b1
 b2
 c1
-@todo_wine@---
+---
 d1
 d2
 d3
@@ -271,7 +273,7 @@ e2
 e3
 f1
 f2
-@todo_wine@---
+---
 g1
 g2
 g3
@@ -280,19 +282,19 @@ h2
 h3
 i1
 i2
-@todo_wine@---
+---
 j1
-@todo_wine@j3
-@todo_wine@---
+j3
+---
 k1
-@todo_wine@---
+---
 l1
-@todo_wine@---
+---
 --- chain failure
 a1
 a2
 b1
-@todo_wine@---
+---
 c1
 c2
 d1
@@ -300,24 +302,24 @@ d2
 d3
 e1
 e2
-@todo_wine@---
+---
 f1
 f2
 f3
 g1
-@todo_wine@g3
-@todo_wine@---
+g3
+---
 h1
-@todo_wine@---
+---
 i1
-@todo_wine@i3
-@todo_wine@---
+i3
+---
 j1
 j2
 j3
 k1
 k2
-@todo_wine@---
+---
 l1
 l2
 l3
@@ -330,7 +332,7 @@ b2
 b3
 c1
 c2
-@todo_wine@---
+---
 d1
 d2
 d3
@@ -339,52 +341,52 @@ e2
 e3
 f1
 f2
-@todo_wine@---
+---
 g1
-@todo_wine@---
+---
 h1
-@todo_wine@---
+---
 i1
-@todo_wine@---
+---
 j1
 j2
 j3
 k1
 k2
-@todo_wine@---
+---
 l1
 l2
 l3
 m1
-@todo_wine@---
+---
 n1
-@todo_wine@---
+---
 o1
-@todo_wine@---
+---
 p1
 p2
 p3
 q1
 q2
-@todo_wine@---
+---
 r1
 r2
 r3
 --- chain pipe
-@todo_wine@a@space@
-@todo_wine@a@space@
+a@space@
+a@space@
 ---
 b2
 c1
 c3
 d1
-@todo_wine@---
+---
 e1
 e3
 f2
 f3
 g2
-@todo_wine@---
+---
 h2
 h3
 i3
@@ -398,44 +400,44 @@ f4:[f3:[f2:[f1,f2],f3],f4]@or_broken@f4:[f3:[f2:,f3],f4]@or_broken@f4:[f3:,f4]
 --- chain else
 a1
 b2
-@todo_wine@---
-@todo_wine@c3
-@todo_wine@---
-@todo_wine@d3
-@todo_wine@---
-@todo_wine@---
-@todo_wine@---
-@todo_wine@---
-@todo_wine@---
+---
+c3
+---
+d3
+---
+---
+---
+---
+---
 --- chain else (if true)
 a1 else echo a2
 b2 else echo b3
 c1
 c2 else echo c3
 d1
-@todo_wine@---
+---
 e1
 e2 else echo e3
 f3
 g1 else echo g2
 g3
 h1 else echo h2
-@todo_wine@---
+---
 i1 else echo i2
 i3
 @todo_wine@j2@space@
-@todo_wine@---
+---
 k1
 k2
 l1
-@todo_wine@---
+---
 m1
 m2
 n1
 o1
 p1
 q1
-@todo_wine@---
+---
 --- chain else (if false)
 j3
 ---
@@ -446,9 +448,240 @@ n3
 o2
 o3
 p2
-@todo_wine@---
+---
 q2
 q3
+------------- Testing internal commands return codes
+--- success/failure for basics
+SUCCESS 0
+FAILURE 33
+foo@space@
+SUCCESS 666
+FAILURE 1
+ERRORLEVEL 666
+--- success/failure for IF/FOR blocks
+SUCCESS 666
+SUCCESS 666
+FAILURE 33
+FAILURE 34
+SUCCESS 666
+SUCCESS 666
+SUCCESS 0
+FAILURE 33
+--- success/failure for external command
+FAILURE 1
+@todo_wine@ERRORLEVEL 3
+FAILURE 1
+ERRORLEVEL 9009
+foo@space@
+SUCCESS 0
+foo@space@
+FAILURE 1024
+FAILURE 1
+--- success/failure for CALL command
+FAILURE 1
+SUCCESS 0
+FAILURE 1024
+SUCCESS 0
+SUCCESS 0
+FAILURE 666
+FAILURE 2
+FAILURE 666
+FAILURE 666
+FAILURE 1
+FAILURE 666
+FAILURE 666
+FAILURE 1
+foo@space@
+SUCCESS 0
+foo@space@
+FAILURE 1025
+FAILURE 2
+--- success/failure for pipes
+b
+SUCCESS 0
+FAILURE 1
+a
+SUCCESS 0
+FAILURE 3
+a
+SUCCESS 0
+FAILURE 255
+FAILURE 255
+--- success/failure for START command
+@todo_wine@FAILURE 1
+foo@space@
+SUCCESS 1024
+@todo_wine@SUCCESS 666
+--- success/failure for TYPE command
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+@todo_wine@a@space@
+@todo_wine@b@space@
+@todo_wine@FAILURE 1
+@todo_wine@---
+FAILURE 1
+--- success/failure for COPY command
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+FAILURE 1
+--- success/failure for MOVE command
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+FAILURE 1
+--- success/failure for RENAME command
+FAILURE 1
+FAILURE 1
+FAILURE 1
+FAILURE 1
+SUCCESS 0
+--- success/failure for ERASE command
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+--- success/failure for change drive command
+SUCCESS 666
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+--- success/failure for MKDIR,MD command
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+SUCCESS 0
+--- success/failure for CD command
+SUCCESS 0
+FAILURE 1
+SUCCESS 0
+SUCCESS 0
+--- success/failure for PUSHD/POPD commands
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+SUCCESS 666
+FAILURE 1
+ERRORLEVEL 666
+--- success/failure for DIR command
+FAILURE 1
+FAILURE 1
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+SUCCESS 0
+--- success/failure for RMDIR/RD command
+FAILURE 1
+FAILURE 145
+FAILURE 267
+SUCCESS 666
+FAILURE 2
+FAILURE 3
+ERRORLEVEL 666
+ERRORLEVEL 666
+ERRORLEVEL 666
+ERRORLEVEL 666
+ERRORLEVEL 666
+ERRORLEVEL 666
+--- success/failure for MKLINK command
+FAILURE 1
+FAILURE 1
+FAILURE 1
+FAILURE 1
+FAILURE 1
+SUCCESS 0
+FAILURE 1
+--- success/failure for SETLOCAL/ENDLOCAL commands
+FAILURE 1
+SUCCESS 0
+SUCCESS 666
+@todo_wine@SUCCESS@space@
+SUCCESS 0
+--- success/failure for DATE command
+SUCCESS 0
+FAILURE 1
+--- success/failure for TIME command
+SUCCESS 0
+FAILURE 1
+--- success/failure for BREAK command
+@todo_wine@SUCCESS 666
+@todo_wine@SUCCESS 666
+--- success/failure for VER command
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+--- success/failure for VERIFY command
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+--- success/failure for VOL command
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+--- success/failure for LABEL command
+FAILURE 1
+--- success/failure for PATH command
+SUCCESS 0
+SUCCESS 0
+PATH=@:\I\dont\Exist@space@
+SUCCESS 0
+PATH=(null)
+SUCCESS 0
+--- success/failure for SET command
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+SUCCESS 0
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+--- success/failure for ASSOC command
+SUCCESS 0
+FAILURE 1
+FAILURE 1
+--- success/failure for FTYPE command
+SUCCESS 0
+FAILURE 2
+FAILURE 2
+--- success/failure for SHIFT command
+FAILURE 1
+SUCCESS 666
+SUCCESS 666
+--- success/failure for HELP command
+FAILURE 1
+FAILURE 1
+SUCCESS 0
+--- success/failure for PROMPT command
+SUCCESS 0
+--- success/failure for CLS command
+@todo_wine@@formfeed@SUCCESS 666
+@todo_wine@@formfeed@SUCCESS 666
+FAILURE 1
+--- success/failure for COLOR command
+FAILURE 1
+--- success/failure for TITLE command
+SUCCESS 666
+SUCCESS 666
+--- success/failure for CHOICE command
+FAILURE 1
+FAILURE 1
+FAILURE 2
+FAILURE 1
+--- success/failure for MORE command
+SUCCESS 0
+SUCCESS 0
+foo@space@
+
+SUCCESS 0
+--- success/failure for PAUSE command
+FAILURE 1
+---
 ------------ Testing 'set' ------------
 1
 0
@@ -485,20 +718,24 @@ foo
 I'm here!@space@
 I'm here!@space@
 I'm here!@space@
+prompt XbarX
+prompt YfooY
+'prompt' YfooY
+promptYfooY
 ------------ Testing 'choice' ------------
-@todo_wine@Example message [A,B,C]?A@or_broken@choice unavailable
-@todo_wine@1@or_broken@9009
-@todo_wine@Example message [A,B,C]?B@or_broken@choice unavailable
-@todo_wine@2@or_broken@9009
-@todo_wine@[D,E,F]?F@or_broken@choice unavailable
-@todo_wine@3@or_broken@9009
-@todo_wine@[A,B,C,X,Y,Z]?Y@or_broken@choice unavailable
-@todo_wine@5@or_broken@9009
-@todo_wine@A@or_broken@choice unavailable
-@todo_wine@1@or_broken@9009
-@todo_wine@[a,b,c,A,B,C]?A@or_broken@choice unavailable
-@todo_wine@4@or_broken@9009
-@todo_wine@255@or_broken@9009
+Example message [A,B,C]?A@or_broken@choice unavailable
+1@or_broken@9009
+Example message [A,B,C]?B@or_broken@choice unavailable
+2@or_broken@9009
+[D,E,F]?F@or_broken@choice unavailable
+3@or_broken@9009
+[A,B,C,X,Y,Z]?Y@or_broken@choice unavailable
+5@or_broken@9009
+A@or_broken@choice unavailable
+1@or_broken@9009
+[a,b,c,A,B,C]?A@or_broken@choice unavailable
+4@or_broken@9009
+255@or_broken@9009
 ------------ Testing variable expansion ------------
 ~p0 should be path containing batch file
 @path@
@@ -532,6 +769,13 @@ ert@or_broken@qwerty
 e@or_broken@qwerty
 ''@or_broken@'qwerty'
 r@or_broken@qwerty
+ty
+azertyazERTY
+ertyERTY
+=_QWERTY
+QWERTY
+@drive@@path@dummydir
+mmydir
 ------------ Testing variable substitution ------------
 --- in FOR variables
 "A B"
@@ -598,6 +842,14 @@ N
 @drive@
 ''
 '.eh'@or_broken@''
+"foo bar"
+foo
+bar
+before!
+@todo_wine@after!
+--- in digit variables
+a %1 %2
+b %1 %2
 ------------ Testing parameter zero ------------
 :func parm1
 [:func] [@drive@] [@path@] [test] [.cmd] [@drive@@shortpath@test.cmd]
@@ -612,10 +864,12 @@ foo
 foo@or_broken@!WINE_FOO!
 foo
 bar@or_broken@foo
-0
+gotitright
+33
 0@or_broken@1
 foo
 !WINE_FOO!
+not empty
 --- using /V cmd flag
 foo
 foo@or_broken@!WINE_FOO!
@@ -628,13 +882,13 @@ bar2@space@
 foo2
 foobar deleted
 --- on success conditional and
-@todo_wine@foo3 not created
+foo3 not created
 bar4@space@
 foo4
 --- on failure conditional or
 foo5
 foo6@space@
-@todo_wine@------------ Testing cd ------------
+------------ Testing cd ------------
 singleFile
 Current dir: @drive@@path@foobar@or_broken@Current dir:@space@
 @drive@@path@foobar
@@ -707,6 +961,17 @@ comparison operators surrounded by brackets seem to work
 comparison operators surrounded by brackets seem to work
 windir is defined
 windir does exist
+block containing a line with just space seems to work
+block containing a line with just tab seems to work
+block containing a line with just space and tab seems to work
+block containing a line with just tab and space seems to work
+block containing two lines with just space seems to work
+block containing two lines with just tab seems to work
+with closing bracket
+0 ok
+255 two lines
+before both blocks
+255 nested
 --- case sensitivity with and without /i option
 if seems to default to case sensitivity
 if /i seems to work
@@ -834,6 +1099,9 @@ exist subdir with /. ok
 exist subdir with / ok
 exist subdir with / and quotes ok
 exist empty string works
+ok
+ok
+ok
 ------ for numbers
 negative numbers handled
 negative numbers handled
@@ -984,6 +1252,26 @@ A C
 A D
 B C
 B D
+--- nested FORs and args tempering
+inner argument {-foo, bar}
+inner argument {-x, y}
+--- nesting and delayed expansion
+a 1 2
+1-A2
+1-B1
+2-A1
+2-B2
+b 1 3
+1-A2
+1-B1
+2-A2
+2-B2
+3-A1
+3-B2
+--- nesting if/for
+"f"
+"g"
+"h"
 --- basic wildcards
 bazbaz
 --- wildcards in subdirs
@@ -1065,6 +1353,9 @@ d3
 a4
 c4
 d4
+--- EXIT /B inside FOR loops
+1
+2
 --- set /a
 ------ individual operations
 WINE_foo correctly 3
@@ -1270,6 +1561,16 @@ kkk
 a
 b
 c
+------ quoting and file access
+Aa
+Ab
+Bf.zzz
+Df2.zzz
+Ea
+Eb
+Fa
+Fb
+Jf*.zzz
 ------ command argument
 Passed1@or_broken@Missing functionality - Broken1
 Passed2@or_broken@Missing functionality - Broken2
@@ -1297,6 +1598,7 @@ foo bar baz
 c:\
 ------ skip option
 c
+c
 no output
 no output
 c
@@ -1312,11 +1614,15 @@ h=%h i=f j=i k=j k l m  n;;==  o p q r s t u v w x y z l=%l m=%m o=%o
 h=%h i=a j=b k=c l=d e f g m=%m n=%n o=%o
 h=%h i=a j=b k=c l=d e f g m=%m n=%n o=%o
 h=%h i=a j=b k= l= m=%m n=%n o=%o
+failure %i
 h=%h i=a j=e k=y l=z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z m=%m n=%n o=%o
 h=%h i=a j=b k= l= m= n=%n o=%o
 h=%h i=a j=b k= l= m= n= o=%o
 u=a v=b w=c x=d y=e z=f A=%A a=%a
-@todo_wine@U=a V=b W=c X=d Y=e Z=f A=%A a=m
+U=a V=b W=c X=d Y=e Z=f [=g \=h ]=i ^=j _=k `=l A=%A a=m
+U=u V=v W=w X=x Y=y Z=z [=A \=B ]=C ^=D _=E `=%` A=a a=%a
+failure %A
+}=a ~=b
 h=%h i=a j=b k=c l=e m=%m o=%o@or_broken@h=%h i=a j=b k=c l=e m= o=%o
 h=%h i=e j=%j k=%k l=%l m=%m o=%o
 h=%h i=a j=b k=c l=d e f g m=%m n=%n o=%o@or_broken@h=%h i=a j=b k=c l=d e f g m= n=%n o=%o
@@ -1488,8 +1794,14 @@ footype=foo_opencmd
 footype=foo_opencmd
 +++
 footype=foo_opencmd
+--- testing association
+footype=cmd.exe /c "echo '%1'"
+'@drive@@path@foobar\test.foo'@or_broken@Skipped as not enough permissions
+footype=cmd.exe /c "echo '%*'"
+@todo_wine@' one two three'@or_broken@Skipped as not enough permissions
+foobar@or_broken@Skipped as not enough permissions
 --- resetting association
-@todo_wine@original value@or_broken@buggyXP@or_broken@!WINE_FOO!
+original value@or_broken@buggyXP@or_broken@!WINE_FOO!
 ------------ Testing CALL ------------
 --- external script
 foo@space@
@@ -1514,6 +1826,8 @@ foo created
 Should expand foobaz
 batfile
 robinfile
+0
+@todo_wine@1
 1
 1
 non-builtin dir
@@ -1522,6 +1836,34 @@ Line two
 Get if
 ... and else!
 passed
+abc
+abc
+%WINE_BAR%
+abc
+abc %WINE_BAR% %WINE_BAR%
+abc def def
+--- search with dots
+a
+b
+fail2
+--- builtin in expansions
+bar p1 echo
+bar cp1 echo
+bar cp2 echo
+@todo_wine@cp3
+bar b1 echo
+bar b2 echo
+bar b3 echo
+bar cb1 echo
+--- mixing batch and builtins
+bar@space@
+foo
+foo
+foo
+bar@space@
+bat bar@space@
+bar@space@
+bat bar@space@
 ------------ Testing SHIFT ------------
 'p1' 'p2' 'p3' 'p4' 'p5'
 'p2' 'p3' 'p4' 'p5' ''
@@ -1661,6 +2003,7 @@ value1
 1
 ------------ Testing Errorlevel ------------
 9009
+-9999
 1
 errorlevel just right, good
 errorlevel with leading zero just right, good
@@ -1719,6 +2062,7 @@ Normal+tab+garbage
 @todo_wine@21
 Success
 @todo_wine@Success
+---- Testing nasty bits ----
 ------------ Testing combined CALLs/GOTOs ------------
 world
 cheball

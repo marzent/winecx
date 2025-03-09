@@ -230,13 +230,6 @@ typedef struct
 
 typedef struct
 {
-    ULONG Version;
-    ULONG Reserved;
-    ULONG Callback;
-} PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION32;
-
-typedef struct
-{
     ULONG ReserveSize;
     ULONG ZeroBits;
     ULONG StackBase;
@@ -366,6 +359,11 @@ typedef struct
     ULONG Sid;
     DWORD Attributes;
 } SID_AND_ATTRIBUTES32;
+
+typedef struct
+{
+    SID_AND_ATTRIBUTES32 Label;
+} TOKEN_MANDATORY_LABEL32;
 
 typedef struct
 {
@@ -523,6 +521,12 @@ typedef struct
     ULONG TransitionRePurposeCount;
     ULONG Flags;
 } SYSTEM_CACHE_INFORMATION32;
+
+typedef struct
+{
+    ULONG ProcessId;
+    UNICODE_STRING32 ImageName;
+} SYSTEM_PROCESS_ID_INFORMATION32;
 
 typedef struct
 {
@@ -721,5 +725,21 @@ typedef struct DECLSPEC_ALIGN(8)
         ULONG   ULong;
     };
 } MEM_EXTENDED_PARAMETER32;
+
+typedef struct
+{
+    ULONG Token;
+    ULONG Thread;
+} PROCESS_ACCESS_TOKEN32;
+
+typedef struct
+{
+    ULONG PagedPoolLimit;
+    ULONG NonPagedPoolLimit;
+    ULONG MinimumWorkingSetSize;
+    ULONG MaximumWorkingSetSize;
+    ULONG PagefileLimit;
+    LARGE_INTEGER TimeLimit;
+} QUOTA_LIMITS32;
 
 #endif /* __WOW64_STRUCT32_H */

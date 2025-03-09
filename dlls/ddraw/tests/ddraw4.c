@@ -450,7 +450,8 @@ static IDirectDraw4 *create_ddraw(void)
     return ddraw4;
 }
 
-static IDirect3DDevice3 *create_device_ex(HWND window, DWORD coop_level, const GUID *device_guid)
+static IDirect3DDevice3 *create_device_ex(HWND window, DWORD coop_level, const GUID *device_guid,
+        IDirectDrawSurface4 **ret_surface)
 {
     IDirectDrawSurface4 *surface, *ds;
     IDirect3DDevice3 *device = NULL;
@@ -539,16 +540,22 @@ static IDirect3DDevice3 *create_device_ex(HWND window, DWORD coop_level, const G
 
     hr = IDirect3D3_CreateDevice(d3d3, device_guid, surface, &device, NULL);
     IDirect3D3_Release(d3d3);
-    IDirectDrawSurface4_Release(surface);
     if (FAILED(hr))
+    {
+        IDirectDrawSurface4_Release(surface);
         return NULL;
+    }
+    if (ret_surface)
+        *ret_surface = surface;
+    else
+        IDirectDrawSurface4_Release(surface);
 
     return device;
 }
 
 static IDirect3DDevice3 *create_device(HWND window, DWORD coop_level)
 {
-    return create_device_ex(window, coop_level, &IID_IDirect3DHALDevice);
+    return create_device_ex(window, coop_level, &IID_IDirect3DHALDevice, NULL);
 }
 
 static IDirect3DViewport3 *create_viewport(IDirect3DDevice3 *device, UINT x, UINT y, UINT w, UINT h)
@@ -1506,7 +1513,7 @@ static void test_depth_blit(const GUID *device_guid)
     D3DRECT d3drect;
 
     window = create_window();
-    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid)))
+    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid, NULL)))
     {
         skip("Failed to create a 3D device, skipping test.\n");
         DestroyWindow(window);
@@ -1758,6 +1765,16 @@ static BOOL compare_mode_rect(const DEVMODEW *mode1, const DEVMODEW *mode2)
             && mode1->dmPosition.y == mode2->dmPosition.y
             && mode1->dmPelsWidth == mode2->dmPelsWidth
             && mode1->dmPelsHeight == mode2->dmPelsHeight;
+}
+
+static void init_format_b8g8r8x8(DDPIXELFORMAT *format)
+{
+    format->dwSize = sizeof(*format);
+    format->dwFlags = DDPF_RGB;
+    format->dwRGBBitCount = 32;
+    format->dwRBitMask = 0x00ff0000;
+    format->dwGBitMask = 0x0000ff00;
+    format->dwBBitMask = 0x000000ff;
 }
 
 static ULONG get_refcount(IUnknown *test_iface)
@@ -2101,7 +2118,7 @@ static void test_zenable(const GUID *device_guid)
     HRESULT hr;
 
     window = create_window();
-    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid)))
+    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid, NULL)))
     {
         skip("Failed to create a 3D device, skipping test.\n");
         DestroyWindow(window);
@@ -2213,7 +2230,7 @@ static void test_ck_rgba(const GUID *device_guid)
     HRESULT hr;
 
     window = create_window();
-    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid)))
+    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid, NULL)))
     {
         skip("Failed to create a 3D device, skipping test.\n");
         DestroyWindow(window);
@@ -3340,6 +3357,12 @@ static void test_coop_level_mode_set(void)
         {0,                     FALSE,  0},
     };
 
+    static const struct message release_messages[] =
+    {
+        {WM_PAINT,              FALSE,  0},
+        {0,                     FALSE,  0},
+    };
+
     memset(&devmode, 0, sizeof(devmode));
     devmode.dmSize = sizeof(devmode);
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
@@ -3448,7 +3471,13 @@ static void test_coop_level_mode_set(void)
             param.user32_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.user32_height, "Expected surface height %lu, got %lu.\n",
             param.user32_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3465,6 +3494,7 @@ static void test_coop_level_mode_set(void)
             param.ddraw_height, ddsd.dwHeight);
 
     GetWindowRect(window, &r);
+    flaky /* win10 21H2 with QXL driver */
     ok(EqualRect(&r, &ddraw_rect), "Expected %s, got %s.\n", wine_dbgstr_rect(&ddraw_rect),
             wine_dbgstr_rect(&r));
 
@@ -3575,11 +3605,25 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     /* For Wine. */
     change_ret = ChangeDisplaySettingsW(NULL, CDS_FULLSCREEN);
     ok(change_ret == DISP_CHANGE_SUCCESSFUL, "Failed to change display mode, ret %#lx.\n", change_ret);
+    flush_events();
+
+    if (IsIconic(window)) /* make sure the window is restored, working around some Wine/X11 race condition */
+    {
+        ShowWindow(window, SW_RESTORE);
+        flush_events();
+    }
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3614,7 +3658,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3688,7 +3739,13 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3736,7 +3793,14 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
     ok(ret, "Failed to get display mode.\n");
@@ -3784,7 +3848,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3858,7 +3929,13 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -3906,7 +3983,14 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
     ok(ret, "Failed to get display mode.\n");
@@ -3931,7 +4015,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     GetWindowRect(window, &r);
     flaky /* win8 */
@@ -3977,7 +4068,14 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     /* The screen restore is a property of DDSCL_EXCLUSIVE  */
     hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL | DDSCL_FULLSCREEN);
@@ -4001,10 +4099,18 @@ static void test_coop_level_mode_set(void)
             param.ddraw_width, ddsd.dwWidth);
     ok(ddsd.dwHeight == param.ddraw_height, "Expected surface height %lu, got %lu.\n",
             param.ddraw_height, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    ok(!expect_messages->message, "Expected message %#x, but didn't receive it.\n", expect_messages->message);
+    expect_messages = NULL;
 
     hr = IDirectDraw4_RestoreDisplayMode(ddraw);
     ok(SUCCEEDED(hr), "RestoreDisplayMode failed, hr %#lx.\n", hr);
+
+    flush_events(); /* flush any pending window resize X11 event */
 
     /* If the window is changed at the same time, messages are sent to the new window. */
     hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN);
@@ -4031,6 +4137,7 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, registry_mode.dmPelsHeight, screen_size2.cx, screen_size2.cy);
 
     GetWindowRect(window, &r);
+    flaky /* win10 21H2 with QXL driver */
     ok(EqualRect(&r, &ddraw_rect), "Expected %s, got %s.\n", wine_dbgstr_rect(&ddraw_rect),
             wine_dbgstr_rect(&r));
     GetWindowRect(window2, &r);
@@ -4050,12 +4157,20 @@ static void test_coop_level_mode_set(void)
             registry_mode.dmPelsWidth, ddsd.dwWidth);
     ok(ddsd.dwHeight == registry_mode.dmPelsHeight, "Expected surface height %lu, got %lu.\n",
             registry_mode.dmPelsHeight, ddsd.dwHeight);
+
+    flush_events();
+    expect_messages = release_messages;
     IDirectDrawSurface4_Release(primary);
+    flush_events();
+    flaky /* win10 21H2 with QXL driver */
+    ok(expect_messages->message == WM_PAINT, "Unexpected WM_PAINT.\n");
+    expect_messages = NULL;
 
     ref = IDirectDraw4_Release(ddraw);
     ok(!ref, "Unexpected refcount %lu.\n", ref);
 
     GetWindowRect(window, &r);
+    flaky /* win10 21H2 with QXL driver */
     ok(EqualRect(&r, &ddraw_rect), "Expected %s, got %s.\n", wine_dbgstr_rect(&ddraw_rect),
             wine_dbgstr_rect(&r));
 
@@ -6615,6 +6730,7 @@ static void test_unsupported_formats(void)
 
 static void test_rt_caps(const GUID *device_guid)
 {
+    DWORD fourcc_codes[64], fourcc_code_count;
     PALETTEENTRY palette_entries[256];
     IDirectDrawPalette *palette;
     BOOL software_device;
@@ -6631,6 +6747,12 @@ static void test_rt_caps(const GUID *device_guid)
     {
         sizeof(DDPIXELFORMAT), DDPF_PALETTEINDEXED8 | DDPF_RGB, 0,
         {8}, {0x00000000}, {0x00000000}, {0x00000000}, {0x00000000},
+    };
+    static const DDPIXELFORMAT fourcc_fmt =
+    {
+        .dwSize = sizeof(DDPIXELFORMAT),
+        .dwFlags = DDPF_FOURCC,
+        .dwFourCC = MAKEFOURCC('Y','U','Y','2'),
     };
 
     const struct
@@ -6819,6 +6941,14 @@ static void test_rt_caps(const GUID *device_guid)
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
+        {
+            &fourcc_fmt,
+            DDSCAPS_FLIP | DDSCAPS_COMPLEX | DDSCAPS_OFFSCREENPLAIN,
+            0,
+            DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
+        },
     };
 
     software_device = is_software_device_type(device_guid);
@@ -6853,6 +6983,10 @@ static void test_rt_caps(const GUID *device_guid)
     hr = IDirectDraw4_GetCaps(ddraw, &hal_caps, NULL);
     ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
 
+    fourcc_code_count = ARRAY_SIZE(fourcc_codes);
+    hr = IDirectDraw4_GetFourCCCodes(ddraw, &fourcc_code_count, fourcc_codes);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
     for (i = 0; i < ARRAY_SIZE(test_data); ++i)
     {
         IDirectDrawSurface4 *surface, *rt, *expected_rt, *tmp;
@@ -6870,8 +7004,28 @@ static void test_rt_caps(const GUID *device_guid)
         surface_desc.ddsCaps.dwCaps2 = test_data[i].caps2_in;
         if (test_data[i].pf)
         {
+            if (test_data[i].pf->dwFlags & DDPF_FOURCC)
+            {
+                unsigned int j;
+
+                for (j = 0; j < fourcc_code_count; ++j)
+                {
+                    if (test_data[i].pf->dwFourCC == fourcc_codes[j])
+                        break;
+                }
+                if (j == fourcc_code_count)
+                {
+                    skip("Fourcc format %#lx is not supported, skipping test.\n", test_data[i].pf->dwFourCC);
+                    continue;
+                }
+            }
             surface_desc.dwFlags |= DDSD_PIXELFORMAT;
             surface_desc.ddpfPixelFormat = *test_data[i].pf;
+        }
+        if (caps_in & DDSCAPS_FLIP)
+        {
+            surface_desc.dwFlags |= DDSD_BACKBUFFERCOUNT;
+            surface_desc.dwBackBufferCount = 1;
         }
         surface_desc.dwWidth = 640;
         surface_desc.dwHeight = 480;
@@ -6897,6 +7051,9 @@ static void test_rt_caps(const GUID *device_guid)
             expected_caps = caps_in | DDSCAPS_SYSTEMMEMORY;
         else
             expected_caps = caps_in | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM;
+
+        if (caps_in & DDSCAPS_FLIP)
+            expected_caps |= DDSCAPS_FRONTBUFFER;
 
         ok(surface_desc.ddsCaps.dwCaps == expected_caps || (test_data[i].pf == &p8_fmt
                 && surface_desc.ddsCaps.dwCaps == (caps_in | DDSCAPS_SYSTEMMEMORY))
@@ -6961,6 +7118,11 @@ static void test_rt_caps(const GUID *device_guid)
         {
             surface_desc.dwFlags |= DDSD_PIXELFORMAT;
             surface_desc.ddpfPixelFormat = *test_data[i].pf;
+        }
+        if (caps_in & DDSCAPS_FLIP)
+        {
+            surface_desc.dwFlags |= DDSD_BACKBUFFERCOUNT;
+            surface_desc.dwBackBufferCount = 1;
         }
         surface_desc.dwWidth = 640;
         surface_desc.dwHeight = 480;
@@ -17055,7 +17217,7 @@ static void test_viewport(void)
 
         for (j = 0; j < ARRAY_SIZE(tests); ++j)
         {
-            winetest_push_context(tests[j].message);
+            winetest_push_context("%s", tests[j].message);
 
             expected_failure = tests[j].vp.dwX + tests[j].vp.dwWidth > rt_sizes[i].x
                     || tests[j].vp.dwY + tests[j].vp.dwHeight > rt_sizes[i].y;
@@ -18750,7 +18912,7 @@ static void test_texture_wrong_caps(const GUID *device_guid)
     HRESULT hr;
 
     window = create_window();
-    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid)))
+    if (!(device = create_device_ex(window, DDSCL_NORMAL, device_guid, NULL)))
     {
         skip("Failed to create a 3D device, skipping test.\n");
         DestroyWindow(window);
@@ -19506,6 +19668,378 @@ static void test_enum_devices(void)
     ok(!refcount, "Device has %lu references left.\n", refcount);
 }
 
+static void test_multiple_devices(void)
+{
+    D3DRECT clear_rect = {{0}, {0}, {640}, {480}};
+    static struct
+    {
+        struct vec3 position;
+        DWORD diffuse;
+    }
+    quad[] =
+    {
+        {{-1.0f, -1.0f, 0.1f}, 0xff0000ff},
+        {{-1.0f,  1.0f, 0.1f}, 0xff0000ff},
+        {{ 1.0f, -1.0f, 0.1f}, 0xff0000ff},
+        {{ 1.0f,  1.0f, 0.1f}, 0xff0000ff},
+    };
+
+    IDirect3DDevice3 *device, *device2, *device3;
+    D3DMATERIALHANDLE mat_handle, mat_handle2;
+    IDirect3DViewport3 *viewport, *viewport2;
+    IDirect3DMaterial3 *material;
+    IDirectDrawSurface4 *surface;
+    IDirectDraw4 *ddraw;
+    IDirect3D3 *d3d;
+    ULONG refcount;
+    DWORD colour;
+    DWORD value;
+    HWND window;
+    HRESULT hr;
+
+    window = create_window();
+    if (!(device = create_device_ex(window, DDSCL_NORMAL, &IID_IDirect3DHALDevice, &surface)))
+    {
+        skip("Failed to create a 3D device, skipping test.\n");
+        DestroyWindow(window);
+        return;
+    }
+
+    hr = IDirect3DDevice3_GetDirect3D(device, &d3d);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice3_QueryInterface(d3d, &IID_IDirectDraw4, (void **)&ddraw);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3D3_CreateDevice(d3d, &IID_IDirect3DHALDevice, surface, &device2, NULL);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    device3 = create_device(window, DDSCL_NORMAL);
+    ok(!!device3, "got NULL.\n");
+
+    viewport = create_viewport(device, 0, 0, 640, 480);
+    viewport2 = create_viewport(device2, 0, 0, 640, 480);
+    hr = IDirect3DDevice3_SetCurrentViewport(device, viewport);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetCurrentViewport(device2, viewport);
+    ok(hr == DDERR_INVALIDPARAMS, "got %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetCurrentViewport(device2, viewport2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    material = create_diffuse_material(device, 1.0f, 0.0f, 0.0f, 1.0f);
+    hr = IDirect3DMaterial3_GetHandle(material, device, &mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DMaterial3_GetHandle(material, device, &mat_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    ok(mat_handle == mat_handle2, "got different handles.\n");
+
+    hr = IDirect3DMaterial3_GetHandle(material, device2, &mat_handle2);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    todo_wine ok(mat_handle != mat_handle2, "got same handles.\n");
+
+    hr = IDirect3DDevice3_SetLightState(device, D3DLIGHTSTATE_MATERIAL, mat_handle);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetLightState(device2, D3DLIGHTSTATE_MATERIAL, mat_handle);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetLightState(device3, D3DLIGHTSTATE_MATERIAL, mat_handle);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetLightState(device, D3DLIGHTSTATE_MATERIAL, mat_handle2);
+    ok(hr == D3D_OK, "Got unexpected hr %#lx.\n", hr);
+
+    hr = IDirect3DViewport3_SetBackground(viewport, mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+    hr = IDirect3DViewport3_SetBackground(viewport2, mat_handle);
+    ok(hr == D3D_OK, "got %#lx.\n", hr);
+
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device2, D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device3, D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_ALPHABLENDENABLE, TRUE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    value = 0xdeadbeef;
+    hr = IDirect3DDevice3_GetRenderState(device, D3DRENDERSTATE_ALPHABLENDENABLE, &value);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(value == TRUE, "got %#lx.\n", value);
+    hr = IDirect3DDevice3_GetRenderState(device2, D3DRENDERSTATE_ALPHABLENDENABLE, &value);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(!value, "got %#lx.\n", value);
+    hr = IDirect3DDevice3_GetRenderState(device3, D3DRENDERSTATE_ALPHABLENDENABLE, &value);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(!value, "got %#lx.\n", value);
+
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_ZENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_LIGHTING, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    hr = IDirect3DDevice3_SetRenderState(device2, D3DRENDERSTATE_ZENABLE, TRUE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device2, D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device2, D3DRENDERSTATE_LIGHTING, FALSE);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+
+    hr = IDirect3DViewport3_Clear2(viewport, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffff0000, 0.0f, 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_BeginScene(device);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_DrawPrimitive(device, D3DPT_TRIANGLESTRIP,
+            D3DFVF_XYZ | D3DFVF_DIFFUSE, quad, ARRAY_SIZE(quad), 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_EndScene(device);
+    colour = get_surface_color(surface, 320, 240);
+    ok(colour == 0x0000ff, "got %#lx.\n", colour);
+
+    hr = IDirect3DViewport3_Clear2(viewport2, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffff0000, 0.0f, 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_BeginScene(device2);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_DrawPrimitive(device2, D3DPT_TRIANGLESTRIP,
+            D3DFVF_XYZ | D3DFVF_DIFFUSE, quad, ARRAY_SIZE(quad), 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_EndScene(device2);
+    colour = get_surface_color(surface, 320, 240);
+    ok(colour == 0xff0000, "got %#lx.\n", colour);
+
+    hr = IDirect3DViewport3_Clear2(viewport, 1, &clear_rect, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffff0000, 0.0f, 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_BeginScene(device);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_DrawPrimitive(device, D3DPT_TRIANGLESTRIP,
+            D3DFVF_XYZ | D3DFVF_DIFFUSE, quad, ARRAY_SIZE(quad), 0);
+    ok(hr == DD_OK, "Got unexpected hr %#lx.\n", hr);
+    hr = IDirect3DDevice3_EndScene(device);
+    colour = get_surface_color(surface, 320, 240);
+    ok(colour == 0x0000ff, "got %#lx.\n", colour);
+
+    IDirect3DMaterial3_Release(material);
+    IDirect3DViewport3_Release(viewport);
+    IDirect3DViewport3_Release(viewport2);
+
+    refcount = IDirect3DDevice3_Release(device);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+    refcount = IDirect3DDevice3_Release(device2);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+    refcount = IDirect3DDevice3_Release(device3);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+    refcount = IDirectDrawSurface4_Release(surface);
+    ok(!refcount, "Surface has %lu references left.\n", refcount);
+    IDirectDraw4_Release(ddraw);
+    IDirect3D3_Release(d3d);
+    DestroyWindow(window);
+}
+
+static void test_vb_desc(void)
+{
+    IDirect3DVertexBuffer *vb;
+    D3DVERTEXBUFFERDESC desc;
+    IDirectDraw4 *ddraw;
+    IDirect3D3 *d3d;
+    ULONG refcount;
+    HWND window;
+    HRESULT hr;
+
+    static const DWORD caps_tests[] =
+    {
+        0,
+        D3DVBCAPS_WRITEONLY,
+        D3DVBCAPS_SYSTEMMEMORY,
+        D3DVBCAPS_SYSTEMMEMORY | D3DVBCAPS_WRITEONLY
+    };
+
+    static const DWORD fvf_tests[] = {D3DFVF_XYZ, D3DFVF_XYZRHW};
+
+    ddraw = create_ddraw();
+    ok(!!ddraw, "Failed to create a ddraw object.\n");
+    window = create_window();
+    ok(!!window, "Failed to create a window.\n");
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN);
+    ok(hr == DD_OK, "SetCooperativeLevel failed, hr %#lx.\n", hr);
+
+    hr = IDirectDraw4_QueryInterface(ddraw, &IID_IDirect3D3, (void **)&d3d);
+    if (FAILED(hr))
+    {
+        skip("D3D interface is not available, skipping test.\n");
+        IDirectDraw4_Release(ddraw);
+        return;
+    }
+
+    for (unsigned int i = 0; i < ARRAY_SIZE(caps_tests); ++i)
+    {
+        for (unsigned int j = 0; j < ARRAY_SIZE(fvf_tests); ++j)
+        {
+            winetest_push_context("caps %#lx, fvf %#lx", caps_tests[i], fvf_tests[j]);
+
+            desc.dwSize = sizeof(desc);
+            desc.dwCaps = caps_tests[i];
+            desc.dwFVF = fvf_tests[j];
+            desc.dwNumVertices = 256;
+
+            hr = IDirect3D3_CreateVertexBuffer(d3d, &desc, &vb, 0, NULL);
+            ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+            memset(&desc, 0, sizeof(desc));
+            hr = IDirect3DVertexBuffer_GetVertexBufferDesc(vb, &desc);
+            ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+            ok(!desc.dwSize, "Got size %lu.\n", desc.dwSize);
+            ok(desc.dwCaps == caps_tests[i], "Got caps %#lx.\n", desc.dwCaps);
+            ok(desc.dwFVF == fvf_tests[j], "Got FVF %#lx.\n", desc.dwFVF);
+            ok(desc.dwNumVertices == 256, "Got %lu vertices.\n", desc.dwNumVertices);
+
+            IDirect3DVertexBuffer_Release(vb);
+
+            winetest_pop_context();
+        }
+    }
+
+    IDirect3D3_Release(d3d);
+    DestroyWindow(window);
+    refcount = IDirectDraw4_Release(ddraw);
+    ok(!refcount, "Device has %lu references left.\n", refcount);
+}
+
+static void test_d3d_state_reset(void)
+{
+    struct find_different_mode_param param;
+    IDirect3DViewport3 *viewport;
+    IDirectDrawSurface4 *surface;
+    IDirect3DDevice3 *device;
+    D3DVIEWPORT2 vp1, vp2;
+    IDirectDraw4 *ddraw;
+    DDSURFACEDESC2 ddsd;
+    IDirect3D3 *d3d;
+    DWORD state;
+    HWND window;
+    HRESULT hr;
+
+    window = CreateWindowA("static", "ddraw_test", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, 0, 0, 0, 0);
+
+    if (!(device = create_device(window, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN)))
+    {
+        skip("Failed to create 3D device.\n");
+        DestroyWindow(window);
+        return;
+    }
+
+    hr = IDirect3DDevice3_GetDirect3D(device, &d3d);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    hr = IDirect3D3_QueryInterface(d3d, &IID_IDirectDraw4, (void **)&ddraw);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_FOGCOLOR, 0x00282828);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice3_SetRenderState(device, D3DRENDERSTATE_ZENABLE, TRUE);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    hr = IDirect3DDevice3_BeginScene(device);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    memset(&param, 0, sizeof(param));
+    hr = IDirectDraw4_EnumDisplayModes(ddraw, 0, NULL, &param, find_different_mode_callback);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    viewport = create_viewport(device, 0, 0, param.old_width, param.old_height);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    vp1.dwSize = sizeof(vp1);
+    vp2.dwSize = sizeof(vp2);
+
+    hr = IDirect3DDevice3_SetCurrentViewport(device, viewport);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    hr = IDirect3DViewport3_GetViewport2(viewport, &vp1);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    hr = set_display_mode(ddraw, param.new_width, param.new_height);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    hr = IDirect3DViewport3_GetViewport2(viewport, &vp2);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    ok(vp2.dwWidth == vp1.dwWidth, "got %ld, expected %ld.\n", vp2.dwWidth, vp1.dwWidth);
+    ok(vp2.dwHeight == vp1.dwHeight, "got %ld, expected %ld.\n", vp2.dwHeight, vp1.dwHeight);
+
+    memset(&ddsd, 0, sizeof(ddsd));
+    ddsd.dwSize = sizeof(ddsd);
+    ddsd.dwFlags = DDSD_CAPS;
+    ddsd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+
+    hr = IDirectDraw4_CreateSurface(ddraw, &ddsd, &surface, NULL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    hr = IDirectDrawSurface4_GetSurfaceDesc(surface, &ddsd);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    ok(ddsd.dwWidth == param.new_width, "got %ld, expected %d.\n", ddsd.dwWidth, param.new_width);
+    ok(ddsd.dwHeight == param.new_height, "got %ld, expected %d.\n", ddsd.dwHeight, param.new_height);
+
+    hr = IDirect3DViewport3_GetViewport2(viewport, &vp2);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    ok(vp2.dwWidth == vp1.dwWidth, "got %ld, expected %ld.\n", vp2.dwWidth, vp1.dwWidth);
+    ok(vp2.dwHeight == vp1.dwHeight, "got %ld, expected %ld.\n", vp2.dwHeight, vp1.dwHeight);
+
+    hr = IDirect3DDevice3_GetRenderState(device, D3DRENDERSTATE_FOGCOLOR, &state);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    ok(state == 0x00282828, "got %#lx.\n", state);
+    hr = IDirect3DDevice3_GetRenderState(device, D3DRENDERSTATE_ZENABLE, &state);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+    ok(state == TRUE, "got %#lx.\n", state);
+    hr = IDirect3DDevice3_BeginScene(device);
+    ok(hr == D3DERR_SCENE_IN_SCENE, "Unexpected hr %#lx.\n", hr);
+
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, NULL, DDSCL_NORMAL);
+    ok(hr == DD_OK, "got %#lx.\n", hr);
+
+    IDirect3DViewport3_Release(viewport);
+    IDirectDrawSurface4_Release(surface);
+    IDirectDraw4_Release(ddraw);
+    IDirect3D3_Release(d3d);
+    IDirect3DDevice3_Release(device);
+    DestroyWindow(window);
+}
+
+/* The Egyptian Prophecy: The Fate of Ramses does this. */
+static void test_sysmem_x_channel(void)
+{
+    DDSURFACEDESC2 surface_desc = {sizeof(surface_desc)};
+    DDBLTFX fx = {.dwSize = sizeof(fx)};
+    unsigned int colour, refcount;
+    IDirectDrawSurface4 *surface;
+    IDirectDraw4 *ddraw;
+    HWND window;
+    HRESULT hr;
+
+    window = create_window();
+    ddraw = create_ddraw();
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    surface_desc.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    surface_desc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+    surface_desc.dwWidth = 32;
+    surface_desc.dwHeight = 32;
+    init_format_b8g8r8x8(&surface_desc.ddpfPixelFormat);
+    hr = IDirectDraw4_CreateSurface(ddraw, &surface_desc, &surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    fx.dwFillColor = 0x0000ff00;
+    hr = IDirectDrawSurface4_Blt(surface, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    hr = IDirectDrawSurface4_Lock(surface, NULL, &surface_desc, DDLOCK_READONLY, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    colour = *(unsigned int *)surface_desc.lpSurface;
+    ok(colour == 0x0000ff00, "Got colour %08x.\n", colour);
+    hr = IDirectDrawSurface4_Unlock(surface, NULL);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    IDirectDrawSurface4_Release(surface);
+    refcount = IDirectDraw4_Release(ddraw);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+    DestroyWindow(window);
+}
+
 START_TEST(ddraw4)
 {
     DDDEVICEIDENTIFIER identifier;
@@ -19647,4 +20181,8 @@ START_TEST(ddraw4)
     run_for_each_device_type(test_texture_wrong_caps);
     test_filling_convention();
     test_enum_devices();
+    test_multiple_devices();
+    test_vb_desc();
+    test_d3d_state_reset();
+    test_sysmem_x_channel();
 }

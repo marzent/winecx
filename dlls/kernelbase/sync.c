@@ -246,6 +246,32 @@ void WINAPI DECLSPEC_HOTPATCH QueryUnbiasedInterruptTimePrecise( ULONGLONG *time
 
 
 /***********************************************************************
+ *           QueryIdleProcessorCycleTime  (kernelbase.@)
+ */
+BOOL WINAPI QueryIdleProcessorCycleTime( ULONG *size, ULONG64 *times )
+{
+    ULONG ret_size;
+    NTSTATUS status = NtQuerySystemInformation( SystemProcessorIdleCycleTimeInformation, times, *size, &ret_size );
+
+    if (!*size || !status) *size = ret_size;
+    return TRUE;
+}
+
+
+/***********************************************************************
+ *           QueryIdleProcessorCycleTimeEx  (kernelbase.@)
+ */
+BOOL WINAPI QueryIdleProcessorCycleTimeEx( USHORT group_id, ULONG *size, ULONG64 *times )
+{
+    ULONG ret_size;
+    NTSTATUS status = NtQuerySystemInformationEx( SystemProcessorIdleCycleTimeInformation, &group_id, sizeof(group_id),
+                                                  times, *size, &ret_size );
+    if (!*size || !status) *size = ret_size;
+    return TRUE;
+}
+
+
+/***********************************************************************
  * Waits
  ***********************************************************************/
 
@@ -1171,7 +1197,8 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetQueuedCompletionStatus( HANDLE port, LPDWORD co
         return FALSE;
     }
 
-    if (status == STATUS_TIMEOUT) SetLastError( WAIT_TIMEOUT );
+    if (status == STATUS_TIMEOUT)        SetLastError( WAIT_TIMEOUT );
+    else if (status == STATUS_ABANDONED) SetLastError( ERROR_ABANDONED_WAIT_0 );
     else SetLastError( RtlNtStatusToDosError(status) );
     return FALSE;
 }
@@ -1191,8 +1218,9 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetQueuedCompletionStatusEx( HANDLE port, OVERLAPP
     ret = NtRemoveIoCompletionEx( port, (FILE_IO_COMPLETION_INFORMATION *)entries, count,
                                   written, get_nt_timeout( &time, timeout ), alertable );
     if (ret == STATUS_SUCCESS) return TRUE;
-    else if (ret == STATUS_TIMEOUT) SetLastError( WAIT_TIMEOUT );
-    else if (ret == STATUS_USER_APC) SetLastError( WAIT_IO_COMPLETION );
+    else if (ret == STATUS_TIMEOUT)   SetLastError( WAIT_TIMEOUT );
+    else if (ret == STATUS_USER_APC)  SetLastError( WAIT_IO_COMPLETION );
+    else if (ret == STATUS_ABANDONED) SetLastError( ERROR_ABANDONED_WAIT_0 );
     else SetLastError( RtlNtStatusToDosError(ret) );
     return FALSE;
 }

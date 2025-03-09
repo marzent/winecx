@@ -553,7 +553,7 @@ void bus_device_stop(void)
     ok( ret || GetLastError() == ERROR_FILE_NOT_FOUND, "Failed to delete file, error %lu\n", GetLastError() );
 }
 
-static BOOL find_hid_device_path( WCHAR *device_path )
+BOOL find_hid_device_path( WCHAR *device_path )
 {
     char buffer[FIELD_OFFSET( SP_DEVICE_INTERFACE_DETAIL_DATA_W, DevicePath[MAX_PATH] )] = {0};
     SP_DEVICE_INTERFACE_DATA iface = {sizeof(SP_DEVICE_INTERFACE_DATA)};
@@ -730,12 +730,11 @@ void hid_device_stop( struct hid_device_desc *desc, UINT count )
     for (i = 0; i < count; ++i)
     {
         ret = WaitForSingleObject( device_removed, i > 0 ? 500 : 5000 );
-        todo_wine_if(i > 0)
         ok( !ret, "WaitForSingleObject returned %#lx\n", ret );
     }
 }
 
-BOOL hid_device_start( struct hid_device_desc *desc, UINT count )
+BOOL hid_device_start_( struct hid_device_desc *desc, UINT count, DWORD timeout )
 {
     HANDLE control;
     DWORD ret, i;
@@ -754,8 +753,7 @@ BOOL hid_device_start( struct hid_device_desc *desc, UINT count )
 
     for (i = 0; i < count; ++i)
     {
-        ret = WaitForSingleObject( device_added, 1000 );
-        todo_wine_if(i > 0)
+        ret = WaitForSingleObject( device_added, timeout );
         ok( !ret, "WaitForSingleObject returned %#lx\n", ret );
     }
 
@@ -1001,6 +999,24 @@ void send_hid_input_( const char *file, int line, HANDLE device, struct hid_devi
     ok_(file, line)( ret, "IOCTL_WINETEST_HID_SEND_INPUT failed, last error %lu\n", GetLastError() );
 }
 
+void wait_hid_input_( const char *file, int line, HANDLE device, struct hid_device_desc *desc,
+                      DWORD timeout, BOOL todo )
+{
+    char buffer[sizeof(*desc)];
+    SIZE_T size;
+
+    if (desc) memcpy( buffer, desc, sizeof(*desc) );
+    else memset( buffer, 0, sizeof(*desc) );
+    size = sizeof(*desc);
+
+    todo_wine_if(todo) {
+    BOOL ret = sync_ioctl_( file, line, device, IOCTL_WINETEST_HID_WAIT_INPUT, buffer, size, NULL, 0, timeout );
+    ok_(file, line)( ret, "IOCTL_WINETEST_HID_WAIT_INPUT failed, last error %lu\n", GetLastError() );
+    }
+
+    set_hid_expect_( file, line, device, desc, NULL, 0 );
+}
+
 static void test_hidp_get_input( HANDLE file, int report_id, ULONG report_len, PHIDP_PREPARSED_DATA preparsed )
 {
     struct hid_expect expect[] =
@@ -1048,7 +1064,7 @@ static void test_hidp_get_input( HANDLE file, int report_id, ULONG report_len, P
         struct hid_expect broken_expect =
         {
             .code = IOCTL_HID_GET_INPUT_REPORT,
-            .broken = TRUE,
+            .broken_id = -1,
             .report_len = report_len - 1,
             .report_buf =
             {
@@ -1142,7 +1158,7 @@ static void test_hidp_get_feature( HANDLE file, int report_id, ULONG report_len,
         struct hid_expect broken_expect =
         {
             .code = IOCTL_HID_GET_FEATURE,
-            .broken = TRUE,
+            .broken_id = -1,
             .report_len = report_len - 1,
             .report_buf =
             {
@@ -1240,7 +1256,7 @@ static void test_hidp_set_feature( HANDLE file, int report_id, ULONG report_len,
         struct hid_expect broken_expect =
         {
             .code = IOCTL_HID_SET_FEATURE,
-            .broken = TRUE,
+            .broken_id = -1,
             .report_len = report_len - 1,
             .report_buf =
             {
@@ -1341,7 +1357,7 @@ static void test_hidp_set_output( HANDLE file, int report_id, ULONG report_len, 
         struct hid_expect broken_expect =
         {
             .code = IOCTL_HID_SET_OUTPUT_REPORT,
-            .broken = TRUE,
+            .broken_id = -1,
             .report_len = report_len - 1,
             .report_buf = {0x5a,0x5a},
             .ret_length = 3,
@@ -4017,8 +4033,27 @@ static void test_hid_multiple_tlc(void)
             .usage_page = 0x01,
         },
     };
+    struct hid_expect input[] =
+    {
+        {
+            .code = IOCTL_HID_READ_REPORT,
+            .report_len = desc.caps.InputReportByteLength,
+            .report_buf = {1,0x01,0x02,0x03,0x04,0x05,0x06},
+            .ret_length = 6,
+            .ret_status = STATUS_SUCCESS,
+        },
+        {
+            .code = IOCTL_HID_READ_REPORT,
+            .report_len = desc.caps.InputReportByteLength,
+            .report_buf = {2,0x11,0x12,0x13,0x14,0x15,0x16},
+            .ret_length = 6,
+            .ret_status = STATUS_SUCCESS,
+        },
+    };
 
     WCHAR device_path[MAX_PATH];
+    char report[16];
+    ULONG value;
     HANDLE file;
     BOOL ret;
 
@@ -4031,15 +4066,24 @@ static void test_hid_multiple_tlc(void)
     swprintf( device_path, MAX_PATH, L"\\\\?\\hid#vid_%04x&pid_%04x&col01", desc.attributes.VendorID,
               desc.attributes.ProductID );
     ret = find_hid_device_path( device_path );
-    todo_wine
     ok( ret, "Failed to find HID device matching %s\n", debugstr_w( device_path ) );
-    if (!ret) goto done;
 
     file = CreateFileW( device_path, FILE_READ_ACCESS | FILE_WRITE_ACCESS,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL );
     ok( file != INVALID_HANDLE_VALUE, "got error %lu\n", GetLastError() );
     check_preparsed_data( file, &expect_kdr_joystick, ARRAY_SIZE(expect_caps_joystick), expect_caps_joystick,
                           ARRAY_SIZE(expect_nodes_joystick), expect_nodes_joystick );
+
+    send_hid_input( file, input, sizeof(input) );
+
+    memset( report, 0xcd, sizeof(report) );
+    SetLastError( 0xdeadbeef );
+    ret = ReadFile( file, report, desc.caps.InputReportByteLength, &value, NULL );
+    ok( ret, "ReadFile failed, last error %lu\n", GetLastError() );
+    ok( value == 6, "ReadFile returned %lx\n", value );
+    ok( report[0] == 1, "unexpected report data\n" );
+    ok( report[1] == 0x01, "unexpected report data\n" );
+
     CloseHandle( file );
 
     swprintf( device_path, MAX_PATH, L"\\\\?\\hid#vid_%04x&pid_%04x&col02", desc.attributes.VendorID,
@@ -4052,6 +4096,17 @@ static void test_hid_multiple_tlc(void)
     ok( file != INVALID_HANDLE_VALUE, "got error %lu\n", GetLastError() );
     check_preparsed_data( file, &expect_kdr_gamepad, ARRAY_SIZE(expect_caps_gamepad), expect_caps_gamepad,
                           ARRAY_SIZE(expect_nodes_gamepad), expect_nodes_gamepad );
+
+    send_hid_input( file, input, sizeof(input) );
+
+    memset( report, 0xcd, sizeof(report) );
+    SetLastError( 0xdeadbeef );
+    ret = ReadFile( file, report, desc.caps.InputReportByteLength, &value, NULL );
+    ok( ret, "ReadFile failed, last error %lu\n", GetLastError() );
+    ok( value == 6, "ReadFile returned %lx\n", value );
+    ok( report[0] == 2, "unexpected report data\n" );
+    ok( report[1] == 0x11, "unexpected report data\n" );
+
     CloseHandle( file );
 
     swprintf( device_path, MAX_PATH, L"\\\\?\\hid#vid_%04x&pid_%04x&col03", desc.attributes.VendorID,

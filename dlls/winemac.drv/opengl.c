@@ -1625,8 +1625,8 @@ static BOOL sync_context_rect(struct wgl_context *context)
 
         if (data && data->client_cocoa_view == context->draw_view)
         {
-            RECT rect = data->client_rect;
-            OffsetRect(&rect, -data->whole_rect.left, -data->whole_rect.top);
+            RECT rect = data->rects.client;
+            OffsetRect(&rect, -data->rects.visible.left, -data->rects.visible.top);
             if (!EqualRect(&context->draw_rect, &rect))
             {
                 context->draw_rect = rect;
@@ -2703,17 +2703,23 @@ cant_match:
     return TRUE;
 }
 
-/* CX HACK 23422 */
-static int is_tomb_raider_remastered(void)
+/* CX HACK 23422, 23422, 24717, 24896 */
+static int needs_fwd_compat_context_hack(void)
 {
     static const WCHAR tomb123_exeW[] = {'t','o','m','b','1','2','3','.','e','x','e',0};
+    static const WCHAR tomb456_exeW[] = {'t','o','m','b','4','5','6','.','e','x','e',0};
+    static const WCHAR srx_exeW[] = {'S','R','X','.','e','x','e',0};
+    static const WCHAR knightsprovince_exeW[] = {'K','n','i','g','h','t','s','P','r','o','v','i','n','c','e','.','e','x','e',0};
     WCHAR *name, *module_exe;
 
     name = NtCurrentTeb()->Peb->ProcessParameters->ImagePathName.Buffer;
     module_exe = wcsrchr(name, '\\');
     module_exe = module_exe ? module_exe + 1 : name;
 
-    return !wcsicmp(module_exe, tomb123_exeW);
+    return !wcsicmp(module_exe, tomb123_exeW) ||
+           !wcsicmp(module_exe, tomb456_exeW) ||
+           !wcsicmp(module_exe, srx_exeW) ||
+           !wcsicmp(module_exe, knightsprovince_exeW);
 }
 
 
@@ -2841,8 +2847,10 @@ static struct wgl_context *macdrv_wglCreateContextAttribsARB(HDC hdc,
         /* CX HACK 23422:
          * Tomb Raider 1-3 Remastered requests a non-forward-compatible 3.2 core context, but works
          * with a forward-compatible context.
+         * CX HACK 24666:
+         * Same goes for Legacy of Kain Soul Reaver 1 & 2 Remastered.
          */
-        if (is_tomb_raider_remastered())
+        if (needs_fwd_compat_context_hack())
         {
             if (!(flags & WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB))
                 flags |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
@@ -3416,45 +3424,6 @@ invalid_layer:
 
 
 /**********************************************************************
- *              macdrv_wglGetPixelFormatAttribfvARB
- *
- * WGL_ARB_pixel_format: wglGetPixelFormatAttribfvARB
- */
-static BOOL macdrv_wglGetPixelFormatAttribfvARB(HDC hdc, int iPixelFormat, int iLayerPlane,
-                                                UINT nAttributes, const int *piAttributes, FLOAT *pfValues)
-{
-    int *attr;
-    int ret;
-
-    TRACE("hdc %p iPixelFormat %d iLayerPlane %d nAttributes %u piAttributes %p pfValues %p\n",
-          hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, pfValues);
-
-    /* Allocate a temporary array to store integer values */
-    attr = malloc(nAttributes * sizeof(int));
-    if (!attr)
-    {
-        ERR("couldn't allocate %d array\n", nAttributes);
-        return GL_FALSE;
-    }
-
-    /* Piggy-back on wglGetPixelFormatAttribivARB */
-    ret = macdrv_wglGetPixelFormatAttribivARB(hdc, iPixelFormat, iLayerPlane, nAttributes, piAttributes, attr);
-    if (ret)
-    {
-        UINT i;
-
-        /* Convert integer values to float. Should also check for attributes
-           that can give decimal values here */
-        for (i = 0; i < nAttributes; i++)
-            pfValues[i] = attr[i];
-    }
-
-    free(attr);
-    return ret;
-}
-
-
-/**********************************************************************
  *              macdrv_wglGetSwapIntervalEXT
  *
  * WGL_EXT_swap_control: wglGetSwapIntervalEXT
@@ -3544,8 +3513,8 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
 
         context->draw_hwnd = hwnd;
         context->draw_view = data->client_cocoa_view;
-        context->draw_rect = data->client_rect;
-        OffsetRect(&context->draw_rect, -data->whole_rect.left, -data->whole_rect.top);
+        context->draw_rect = data->rects.client;
+        OffsetRect(&context->draw_rect, -data->rects.visible.left, -data->rects.visible.top);
         context->draw_pbuffer = NULL;
         release_win_data(data);
     }
@@ -3593,8 +3562,8 @@ static BOOL macdrv_wglMakeContextCurrentARB(HDC draw_hdc, HDC read_hdc, struct w
                 if (data->client_cocoa_view != context->draw_view)
                 {
                     context->read_view = data->client_cocoa_view;
-                    context->read_rect = data->client_rect;
-                    OffsetRect(&context->read_rect, -data->whole_rect.left, -data->whole_rect.top);
+                    context->read_rect = data->rects.client;
+                    OffsetRect(&context->read_rect, -data->rects.visible.left, -data->rects.visible.top);
                 }
                 release_win_data(data);
             }
@@ -4249,7 +4218,7 @@ static void load_extensions(void)
 
     register_extension("WGL_ARB_pixel_format");
     opengl_funcs.ext.p_wglChoosePixelFormatARB      = macdrv_wglChoosePixelFormatARB;
-    opengl_funcs.ext.p_wglGetPixelFormatAttribfvARB = macdrv_wglGetPixelFormatAttribfvARB;
+    opengl_funcs.ext.p_wglGetPixelFormatAttribfvARB = (void *)1; /* never called */
     opengl_funcs.ext.p_wglGetPixelFormatAttribivARB = macdrv_wglGetPixelFormatAttribivARB;
 
     if (gluCheckExtension((GLubyte*)"GL_ARB_color_buffer_float", (GLubyte*)gl_info.glExtensions))
@@ -4403,14 +4372,14 @@ failed:
  * Synchronize the Mac GL view position with the Windows child window
  * position.
  */
-void sync_gl_view(struct macdrv_win_data* data, const RECT* old_whole_rect, const RECT* old_client_rect)
+void sync_gl_view(struct macdrv_win_data* data, const struct window_rects *old_rects)
 {
     if (data->client_cocoa_view && data->pixel_format)
     {
-        RECT old = *old_client_rect, new = data->client_rect;
+        RECT old = old_rects->client, new = data->rects.client;
 
-        OffsetRect(&old, -old_whole_rect->left, -old_whole_rect->top);
-        OffsetRect(&new, -data->whole_rect.left, -data->whole_rect.top);
+        OffsetRect(&old, -old_rects->visible.left, -old_rects->visible.top);
+        OffsetRect(&new, -data->rects.visible.left, -data->rects.visible.top);
         if (!EqualRect(&old, &new))
         {
             TRACE("GL view %p changed position; marking contexts\n", data->client_cocoa_view);
@@ -4420,21 +4389,9 @@ void sync_gl_view(struct macdrv_win_data* data, const RECT* old_whole_rect, cons
 }
 
 
-/**********************************************************************
- *              macdrv_wglDescribePixelFormat
- */
-static int macdrv_wglDescribePixelFormat(HDC hdc, int fmt, UINT size, PIXELFORMATDESCRIPTOR *descr)
+static void describe_pixel_format(const pixel_format *pf, PIXELFORMATDESCRIPTOR *descr)
 {
-    const pixel_format *pf;
     const struct color_mode *mode;
-
-    TRACE("hdc %p fmt %d size %u descr %p\n", hdc, fmt, size, descr);
-
-    if (!descr) return nb_displayable_formats;
-    if (size < sizeof(*descr)) return 0;
-
-    if (!(pf = get_pixel_format(fmt, FALSE)))
-        return 0;
 
     memset(descr, 0, sizeof(*descr));
     descr->nSize            = sizeof(*descr);
@@ -4482,9 +4439,6 @@ static int macdrv_wglDescribePixelFormat(HDC hdc, int fmt, UINT size, PIXELFORMA
     descr->cStencilBits     = pf->stencil_bits;
     descr->cAuxBuffers      = pf->aux_buffers;
     descr->iLayerType       = PFD_MAIN_PLANE;
-
-    TRACE("%s\n", debugstr_pf(pf));
-    return nb_displayable_formats;
 }
 
 /***********************************************************************
@@ -4722,19 +4676,37 @@ static BOOL macdrv_wglSwapBuffers(HDC hdc)
     return TRUE;
 }
 
+/**********************************************************************
+ *              macdrv_get_pixel_formats
+ */
+static void macdrv_get_pixel_formats(struct wgl_pixel_format *formats,
+                                     UINT max_formats, UINT *num_formats,
+                                     UINT *num_onscreen_formats)
+{
+    UINT i;
+
+    if (formats)
+    {
+        for (i = 0; i < min(max_formats, nb_formats); ++i)
+            describe_pixel_format(&pixel_formats[i], &formats[i].pfd);
+    }
+    *num_formats = nb_formats;
+    *num_onscreen_formats = nb_displayable_formats;
+}
+
 static struct opengl_funcs opengl_funcs =
 {
     {
         macdrv_wglCopyContext,          /* p_wglCopyContext */
         macdrv_wglCreateContext,        /* p_wglCreateContext */
         macdrv_wglDeleteContext,        /* p_wglDeleteContext */
-        macdrv_wglDescribePixelFormat,  /* p_wglDescribePixelFormat */
         macdrv_wglGetPixelFormat,       /* p_wglGetPixelFormat */
         macdrv_wglGetProcAddress,       /* p_wglGetProcAddress */
         macdrv_wglMakeCurrent,          /* p_wglMakeCurrent */
         macdrv_wglSetPixelFormat,       /* p_wglSetPixelFormat */
         macdrv_wglShareLists,           /* p_wglShareLists */
         macdrv_wglSwapBuffers,          /* p_wglSwapBuffers */
+        macdrv_get_pixel_formats,       /* p_get_pixel_formats */
     }
 };
 

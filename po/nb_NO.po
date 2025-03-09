@@ -94,8 +94,8 @@ msgstr "Støtteinformasjon"
 #: dlls/mshtml/mshtml.rc:47 dlls/mshtml/mshtml.rc:57 dlls/msvfw32/msvfw32.rc:36
 #: dlls/oledlg/oledlg.rc:62 dlls/oledlg/oledlg.rc:94
 #: dlls/serialui/serialui.rc:41 dlls/setupapi/setupapi.rc:59
-#: dlls/shell32/shell32.rc:274 dlls/shell32/shell32.rc:298
-#: dlls/shell32/shell32.rc:320 dlls/shell32/shell32.rc:339
+#: dlls/shell32/shell32.rc:278 dlls/shell32/shell32.rc:302
+#: dlls/shell32/shell32.rc:324 dlls/shell32/shell32.rc:343
 #: dlls/shlwapi/shlwapi.rc:44 dlls/twain_32/twain.rc:32
 #: dlls/user32/user32.rc:94 dlls/user32/user32.rc:109 dlls/user32/user32.rc:73
 #: dlls/wininet/wininet.rc:62 dlls/wininet/wininet.rc:82
@@ -165,16 +165,17 @@ msgid ""
 "install it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Gecko\">https://wiki.winehq.org/Gecko</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://gitlab."
+"winehq.org/wine/wine/-/wikis/Gecko</a> for details."
 msgstr ""
 "Wine fant ikke Gecko-pakken, som er nødvendig for at programmer som bruker "
 "HTML skal fungere ordentlig. Wine kan laste ned og installere denne "
 "automatisk.\n"
 "\n"
 "Merk: det anbefales at du bruker Gecko-pakken som følger med "
-"operativsystemet ditt. Se <a href=\"https://wiki.winehq.org/Gecko\">https://"
-"wiki.winehq.org/Gecko</a> for flere detaljer."
+"operativsystemet ditt. Se <a href=\"https://gitlab.winehq.org/wine/wine/-/"
+"wikis/Gecko\">https://gitlab.winehq.org/wine/wine/-/wikis/Gecko</a> for "
+"flere detaljer."
 
 #: dlls/appwiz.cpl/appwiz.rc:110 dlls/appwiz.cpl/appwiz.rc:125
 msgid "&Install"
@@ -199,9 +200,9 @@ msgstr "&Installer"
 #: dlls/mshtml/mshtml.rc:48 dlls/mshtml/mshtml.rc:58 dlls/msvfw32/msvfw32.rc:37
 #: dlls/oledlg/oledlg.rc:63 dlls/oledlg/oledlg.rc:95
 #: dlls/serialui/serialui.rc:42 dlls/setupapi/setupapi.rc:42
-#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:275
-#: dlls/shell32/shell32.rc:299 dlls/shell32/shell32.rc:310
-#: dlls/shell32/shell32.rc:340 dlls/shlwapi/shlwapi.rc:45
+#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:279
+#: dlls/shell32/shell32.rc:303 dlls/shell32/shell32.rc:314
+#: dlls/shell32/shell32.rc:344 dlls/shlwapi/shlwapi.rc:45
 #: dlls/twain_32/twain.rc:33 dlls/user32/user32.rc:95 dlls/user32/user32.rc:110
 #: dlls/user32/user32.rc:74 dlls/wininet/wininet.rc:63
 #: dlls/wininet/wininet.rc:83 dlls/winspool.drv/winspool.rc:43
@@ -234,16 +235,17 @@ msgid ""
 "it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Mono\">https://wiki.winehq.org/Mono</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> for details."
 msgstr ""
 "Wine fant ikke wine-mono pakken, som er nødvendig for at .NET programmer "
 "skal fungere ordentlig. Wine kan laste ned og installere denne pakken for "
 "deg.\n"
 "\n"
 "Merk: det anbefales at du bruker Mono-pakken som følger med operativsystemet "
-"ditt. Se <a href=\"https://wiki.winehq.org/Mono\">https://wiki.winehq.org/"
-"Mono</a> for flere detaljer."
+"ditt. Se <a href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-"
+"Mono\">https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> for flere "
+"detaljer."
 
 #: dlls/appwiz.cpl/appwiz.rc:31
 msgid "Add/Remove Programs"
@@ -273,7 +275,7 @@ msgid "Not specified"
 msgstr "Ikke oppgitt"
 
 #: dlls/appwiz.cpl/appwiz.rc:38 dlls/oledb32/version.rc:38
-#: dlls/shell32/shell32.rc:144 dlls/shell32/shell32.rc:239
+#: dlls/shell32/shell32.rc:141 dlls/shell32/shell32.rc:243
 #: programs/regedit/regedit.rc:150 programs/winefile/winefile.rc:106
 msgid "Name"
 msgstr "Navn"
@@ -295,7 +297,7 @@ msgid "Programs (*.exe)"
 msgstr "Programmer (*.exe)"
 
 #: dlls/appwiz.cpl/appwiz.rc:43 dlls/avifil32/avifil32.rc:33
-#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:197
+#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:199
 #: programs/notepad/notepad.rc:81 programs/oleview/oleview.rc:103
 #: programs/progman/progman.rc:82 programs/regedit/regedit.rc:230
 #: programs/winedbg/winedbg.rc:43 programs/winhlp32/winhlp32.rc:90
@@ -407,6 +409,7 @@ msgid "Properties for %s"
 msgstr "Egenskaper for %s"
 
 #: dlls/comctl32/comctl32.rc:73 dlls/comdlg32/comdlg32.rc:265
+#: dlls/desk.cpl/desk.rc:41
 msgid "&Apply"
 msgstr "&Bruk"
 
@@ -455,7 +458,7 @@ msgstr "Tilbak&estill"
 #: dlls/comdlg32/comdlg32.rc:482 dlls/comdlg32/comdlg32.rc:508
 #: dlls/comdlg32/comdlg32.rc:531 dlls/ieframe/ieframe.rc:58
 #: dlls/msacm32/msacm32.rc:52 dlls/oledlg/oledlg.rc:96
-#: dlls/shell32/shell32.rc:128 programs/clock/clock.rc:44
+#: dlls/shell32/shell32.rc:125 programs/clock/clock.rc:44
 #: programs/notepad/notepad.rc:65 programs/notepad/notepad.rc:126
 #: programs/oleview/oleview.rc:72 programs/progman/progman.rc:55
 #: programs/progman/progman.rc:108 programs/progman/progman.rc:126
@@ -501,12 +504,12 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "Ingen"
 
-#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:307
+#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:311
 #: dlls/shlwapi/shlwapi.rc:46 dlls/user32/user32.rc:90 dlls/user32/user32.rc:78
 msgid "&Yes"
 msgstr "&Ja"
 
-#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:309
+#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:313
 #: dlls/shlwapi/shlwapi.rc:47 dlls/user32/user32.rc:91 dlls/user32/user32.rc:79
 msgid "&No"
 msgstr "&Nei"
@@ -541,8 +544,7 @@ msgstr "Gå til idag"
 
 #: dlls/comdlg32/comdlg32.rc:158 dlls/comdlg32/comdlg32.rc:171
 #: dlls/comdlg32/comdlg32.rc:462 dlls/comdlg32/comdlg32.rc:487
-#: dlls/comdlg32/comdlg32.rc:514 dlls/shell32/shell32.rc:165
-#: programs/oleview/oleview.rc:101
+#: dlls/comdlg32/comdlg32.rc:514 programs/oleview/oleview.rc:101
 msgid "Open"
 msgstr "Åpne"
 
@@ -563,7 +565,7 @@ msgid "Dri&ves:"
 msgstr "&Stasjoner:"
 
 #: dlls/comdlg32/comdlg32.rc:174 dlls/comdlg32/comdlg32.rc:196
-#: dlls/shell32/shell32.rc:368 dlls/shell32/shell32.rc:405
+#: dlls/shell32/shell32.rc:372 dlls/shell32/shell32.rc:409
 #: programs/winefile/winefile.rc:172
 msgid "&Read Only"
 msgstr "Sk&rivebeskyttet"
@@ -822,7 +824,7 @@ msgstr "Erstatt &alle"
 
 #: dlls/comdlg32/comdlg32.rc:363 dlls/comdlg32/comdlg32.rc:403
 #: dlls/ieframe/ieframe.rc:42 dlls/shdoclc/shdoclc.rc:61
-#: dlls/shell32/shell32.rc:108 programs/clock/clock.rc:31
+#: dlls/shell32/shell32.rc:105 programs/clock/clock.rc:31
 #: programs/conhost/conhost.rc:34
 msgid "&Properties"
 msgstr "&Egenskaper"
@@ -946,7 +948,7 @@ msgstr "Åpne som sk&rivebeskyttet"
 
 #: dlls/comdlg32/comdlg32.rc:480 dlls/comdlg32/comdlg32.rc:506
 #: dlls/comdlg32/comdlg32.rc:524 dlls/shdoclc/shdoclc.rc:127
-#: dlls/shell32/shell32.rc:99
+#: dlls/shell32/shell32.rc:165
 msgid "&Open"
 msgstr "&Åpne"
 
@@ -2249,8 +2251,8 @@ msgid "Notice Text="
 msgstr "Notistekst="
 
 #: dlls/cryptui/cryptui.rc:185 dlls/cryptui/cryptui.rc:240
-#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:346
-#: dlls/shell32/shell32.rc:375
+#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:350
+#: dlls/shell32/shell32.rc:379
 msgid "General"
 msgstr "Generelt"
 
@@ -2468,7 +2470,7 @@ msgid "Certificate intended purposes"
 msgstr "Sertifikatets tiltenkte formål"
 
 #: dlls/cryptui/cryptui.rc:355 dlls/ieframe/ieframe.rc:45
-#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:120
+#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:117
 #: programs/notepad/notepad.rc:61 programs/oleview/oleview.rc:59
 #: programs/oleview/oleview.rc:61 programs/oleview/oleview.rc:85
 #: programs/regedit/regedit.rc:65 programs/taskmgr/taskmgr.rc:52
@@ -2751,7 +2753,7 @@ msgstr "Utvidet nøkkelbruk (egenskap)"
 msgid "Friendly name"
 msgstr "Vennlig navn"
 
-#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:240
+#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:244
 #: programs/ipconfig/ipconfig.rc:45
 msgid "Description"
 msgstr "Beskrivelse"
@@ -2848,7 +2850,7 @@ msgstr "Sertifikatlager valgt"
 msgid "Automatically determined by the program"
 msgstr "Bestemt av programmet"
 
-#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:137
+#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:134
 msgid "File"
 msgstr "Fil"
 
@@ -3141,7 +3143,7 @@ msgstr ""
 msgid "Intended Use"
 msgstr "Tiltenkt formål"
 
-#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:150
+#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:147
 msgid "Location"
 msgstr "Plassering"
 
@@ -3153,6 +3155,40 @@ msgstr "Velg et sertifikat"
 #: programs/winhlp32/winhlp32.rc:110 programs/winhlp32/winhlp32.rc:85
 msgid "Not yet implemented"
 msgstr "Ikke implementert ennå"
+
+#: dlls/desk.cpl/desk.rc:35
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Desktop"
+msgstr "Skrivebord"
+
+#: dlls/desk.cpl/desk.rc:38
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Virtual Desktop"
+msgstr "Skrivebord"
+
+#: dlls/desk.cpl/desk.rc:40 dlls/joy.cpl/joy.rc:41
+#, fuzzy
+#| msgid "Reset"
+msgid "&Reset"
+msgstr "Tilbakestill"
+
+#: dlls/desk.cpl/desk.rc:42
+msgid "Emulate display mode changes (requires restart)"
+msgstr ""
+
+#: dlls/desk.cpl/desk.rc:29
+#, fuzzy
+#| msgid "Default Settings"
+msgid "Display Settings"
+msgstr "Globale innstillinger"
+
+#: dlls/desk.cpl/desk.rc:30
+msgid "Configure monitors and display devices."
+msgstr ""
 
 #: dlls/dinput/dinput.rc:34
 msgid "Configure Devices"
@@ -3367,7 +3403,7 @@ msgstr "Klipp u&t"
 #: dlls/hhctrl.ocx/hhctrl.rc:88 dlls/shdoclc/shdoclc.rc:80
 #: dlls/shdoclc/shdoclc.rc:94 dlls/shdoclc/shdoclc.rc:118
 #: dlls/shdoclc/shdoclc.rc:133 dlls/shdoclc/shdoclc.rc:160
-#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:102
+#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:98
 #: dlls/user32/user32.rc:61 programs/conhost/conhost.rc:36
 #: programs/winhlp32/winhlp32.rc:40 programs/wordpad/wordpad.rc:113
 msgid "&Copy"
@@ -3379,6 +3415,7 @@ msgid "Paste"
 msgstr "Lim inn"
 
 #: dlls/hhctrl.ocx/hhctrl.rc:91 dlls/shdoclc/shdoclc.rc:121
+#: dlls/shell32/shell32.rc:166
 msgid "&Print"
 msgstr "Skriv &ut"
 
@@ -3445,7 +3482,7 @@ msgstr "Fram"
 msgid "Cinepak Video codec"
 msgstr "Cinepak videokodeks"
 
-#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:114
+#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:111
 #: programs/notepad/notepad.rc:29 programs/oleview/oleview.rc:30
 #: programs/oleview/oleview.rc:80 programs/progman/progman.rc:32
 #: programs/taskmgr/taskmgr.rc:35 programs/view/view.rc:31
@@ -3741,67 +3778,71 @@ msgstr "Styrespaker"
 msgid "&Disable"
 msgstr "&Deaktiver"
 
-#: dlls/joy.cpl/joy.rc:41
-#, fuzzy
-#| msgid "Reset"
-msgid "&Reset"
-msgstr "Tilbakestill"
-
 #: dlls/joy.cpl/joy.rc:42
-msgid "&Enable"
-msgstr "Sl&å på"
-
-#: dlls/joy.cpl/joy.rc:43
 #, fuzzy
 #| msgid "Edit Override"
 msgid "&Override"
 msgstr "Rediger overstyring"
 
+#: dlls/joy.cpl/joy.rc:43
+msgid "&Enable"
+msgstr "Sl&å på"
+
 #: dlls/joy.cpl/joy.rc:44
-msgid "Connected"
-msgstr "Tilkoblet"
+#, fuzzy
+#| msgid "Voice input device:"
+msgid "Connected (DirectInput devices)"
+msgstr "Inn-enhet for tale:"
 
 #: dlls/joy.cpl/joy.rc:46
 #, fuzzy
 #| msgid "Voice input device:"
-msgid "Connected (xinput device)"
+msgid "Connected (XInput devices)"
 msgstr "Inn-enhet for tale:"
 
 #: dlls/joy.cpl/joy.rc:48
 msgid "Disabled"
 msgstr "Slått av"
 
-#: dlls/joy.cpl/joy.rc:50
-msgid ""
-"After disabling or enabling a device, the connected joysticks won't be "
-"updated here until you restart this applet."
+#: dlls/joy.cpl/joy.rc:51
+msgid "Advanced settings (restart prefix required to take effect)"
 msgstr ""
-"Etter at en enhet er slått på eller av vil ikke styrespaken bli oppdatert "
-"her før programmet startes på nytt."
 
-#: dlls/joy.cpl/joy.rc:55
+#: dlls/joy.cpl/joy.rc:52
+#, fuzzy
+#| msgid "&Enable"
+msgid "Enable SDL"
+msgstr "Sl&å på"
+
+#: dlls/joy.cpl/joy.rc:53
+#, fuzzy
+#| msgid "Disabled"
+msgid "Disable hidraw"
+msgstr "Slått av"
+
+#: dlls/joy.cpl/joy.rc:58
 msgid "DInput"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:59
+#: dlls/joy.cpl/joy.rc:62
 msgid "Axes"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:60
+#: dlls/joy.cpl/joy.rc:63
 msgid "POVs"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:61
+#: dlls/joy.cpl/joy.rc:64
 msgid "Buttons"
 msgstr "Knapper"
 
-#: dlls/joy.cpl/joy.rc:62
+#: dlls/joy.cpl/joy.rc:65
 #, fuzzy
 #| msgid "Test Force Feedback"
 msgid "Force Feedback Effect"
 msgstr "Test Force Feedback"
 
-#: dlls/joy.cpl/joy.rc:64
+#: dlls/joy.cpl/joy.rc:67
 msgid ""
 "Press any button in the controller to activate the chosen effect. The effect "
 "direction can be changed with the controller axis."
@@ -3809,60 +3850,60 @@ msgstr ""
 "Trykk en knapp på kontrolleren for å aktivere den valgte effekten. Effektens "
 "retning kan endres med kontrollerens akse."
 
-#: dlls/joy.cpl/joy.rc:70
+#: dlls/joy.cpl/joy.rc:73
 msgid "XInput"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:73
+#: dlls/joy.cpl/joy.rc:76
 #, fuzzy
 #| msgid "User"
 msgid "User #0"
 msgstr "Bruker"
 
-#: dlls/joy.cpl/joy.rc:74
+#: dlls/joy.cpl/joy.rc:77
 #, fuzzy
 #| msgid "User"
 msgid "User #1"
 msgstr "Bruker"
 
-#: dlls/joy.cpl/joy.rc:75
+#: dlls/joy.cpl/joy.rc:78
 #, fuzzy
 #| msgid "User"
 msgid "User #2"
 msgstr "Bruker"
 
-#: dlls/joy.cpl/joy.rc:76
+#: dlls/joy.cpl/joy.rc:79
 #, fuzzy
 #| msgid "User"
 msgid "User #3"
 msgstr "Bruker"
 
-#: dlls/joy.cpl/joy.rc:78
+#: dlls/joy.cpl/joy.rc:81
 msgid ""
 "No user detected on slot #0, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:82
+#: dlls/joy.cpl/joy.rc:85
 msgid ""
 "No user detected on slot #1, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:86
+#: dlls/joy.cpl/joy.rc:89
 msgid ""
 "No user detected on slot #2, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:90
+#: dlls/joy.cpl/joy.rc:93
 msgid ""
 "No user detected on slot #3, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:95 dlls/joy.cpl/joy.rc:96 dlls/joy.cpl/joy.rc:97
-#: dlls/joy.cpl/joy.rc:98
+#: dlls/joy.cpl/joy.rc:98 dlls/joy.cpl/joy.rc:99 dlls/joy.cpl/joy.rc:100
+#: dlls/joy.cpl/joy.rc:101
 msgid "Rumble"
 msgstr ""
 
@@ -3912,213 +3953,243 @@ msgstr "Objektet støtter ikke denne handlingen"
 msgid "Argument not optional"
 msgstr "Argumentet er ikke valgfritt"
 
-#: dlls/jscript/jscript.rc:37
+#: dlls/jscript/jscript.rc:37 dlls/vbscript/vbscript.rc:56
+#, fuzzy
+#| msgid "Object Class Violation"
+msgid "Object not a collection"
+msgstr "Objektklasseovertredelse"
+
+#: dlls/jscript/jscript.rc:38
 msgid "Syntax error"
 msgstr "Syntaksfeil"
 
-#: dlls/jscript/jscript.rc:38
+#: dlls/jscript/jscript.rc:39
 msgid "Expected ';'"
 msgstr "Forventet ';'"
 
-#: dlls/jscript/jscript.rc:39
+#: dlls/jscript/jscript.rc:40
 msgid "Expected '('"
 msgstr "Forventet '('"
 
-#: dlls/jscript/jscript.rc:40
+#: dlls/jscript/jscript.rc:41
 msgid "Expected ')'"
 msgstr "Forventet ')'"
 
-#: dlls/jscript/jscript.rc:41
+#: dlls/jscript/jscript.rc:42
 msgid "Expected identifier"
 msgstr "Forventet identifiserer"
 
-#: dlls/jscript/jscript.rc:42
+#: dlls/jscript/jscript.rc:43
 msgid "Expected '='"
 msgstr "Forventet '='"
 
-#: dlls/jscript/jscript.rc:43
+#: dlls/jscript/jscript.rc:44
 msgid "Invalid character"
 msgstr "Ugyldig tegn"
 
-#: dlls/jscript/jscript.rc:44
+#: dlls/jscript/jscript.rc:45
 msgid "Unterminated string constant"
 msgstr "Uavsluttet strengkonstant"
 
-#: dlls/jscript/jscript.rc:45
+#: dlls/jscript/jscript.rc:46
 msgid "'return' statement outside of function"
 msgstr "'return' utenfor en funksjon"
 
-#: dlls/jscript/jscript.rc:46
+#: dlls/jscript/jscript.rc:47
 msgid "Can't have 'break' outside of loop"
 msgstr "'break' kan kun forekomme i en løkke"
 
-#: dlls/jscript/jscript.rc:47
+#: dlls/jscript/jscript.rc:48
 msgid "Can't have 'continue' outside of loop"
 msgstr "'continue' kan kun forekomme i en løkke"
 
-#: dlls/jscript/jscript.rc:48
+#: dlls/jscript/jscript.rc:49
 msgid "Label redefined"
 msgstr "Etiketten ble omdefinert"
 
-#: dlls/jscript/jscript.rc:49
+#: dlls/jscript/jscript.rc:50
 msgid "Label not found"
 msgstr "Fant ikke etiketten"
 
-#: dlls/jscript/jscript.rc:50
+#: dlls/jscript/jscript.rc:51
 msgid "Expected '@end'"
 msgstr "Forventet '@end'"
 
-#: dlls/jscript/jscript.rc:51
+#: dlls/jscript/jscript.rc:52
 msgid "Conditional compilation is turned off"
 msgstr "Avhengig kompilering er skrudd av"
 
-#: dlls/jscript/jscript.rc:52
+#: dlls/jscript/jscript.rc:53
 msgid "Expected '@'"
 msgstr "Forventet '@'"
 
-#: dlls/jscript/jscript.rc:84
+#: dlls/jscript/jscript.rc:90
 msgid "Microsoft JScript compilation error"
 msgstr "Microsoft JScript kompileringsfeil"
 
-#: dlls/jscript/jscript.rc:85
+#: dlls/jscript/jscript.rc:91
 msgid "Microsoft JScript runtime error"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:86 dlls/vbscript/vbscript.rc:64
+#: dlls/jscript/jscript.rc:92 dlls/vbscript/vbscript.rc:64
 #, fuzzy
 #| msgid "Unknown error"
 msgid "Unknown runtime error"
 msgstr "Ukjent feil"
 
-#: dlls/jscript/jscript.rc:55
+#: dlls/jscript/jscript.rc:56
 msgid "Number expected"
 msgstr "Forventet nummer"
 
-#: dlls/jscript/jscript.rc:53
+#: dlls/jscript/jscript.rc:54
 msgid "Function expected"
 msgstr "Forventet funksjon"
 
-#: dlls/jscript/jscript.rc:54
+#: dlls/jscript/jscript.rc:55
 msgid "'[object]' is not a date object"
 msgstr "'[object]' er ikke et dataobjekt"
 
-#: dlls/jscript/jscript.rc:56
+#: dlls/jscript/jscript.rc:57
 msgid "Object expected"
 msgstr "Forventet objekt"
 
-#: dlls/jscript/jscript.rc:57
+#: dlls/jscript/jscript.rc:58
 msgid "Illegal assignment"
 msgstr "Ugyldig tilordning"
 
-#: dlls/jscript/jscript.rc:58
+#: dlls/jscript/jscript.rc:59
 msgid "'|' is undefined"
 msgstr "'|' er udefinert"
 
-#: dlls/jscript/jscript.rc:59
+#: dlls/jscript/jscript.rc:60
 msgid "Boolean object expected"
 msgstr "Forventet boolsk verdi"
 
-#: dlls/jscript/jscript.rc:60
+#: dlls/jscript/jscript.rc:61
 msgid "Cannot delete '|'"
 msgstr "Kan ikke slette '|'"
 
-#: dlls/jscript/jscript.rc:61
+#: dlls/jscript/jscript.rc:62
 msgid "VBArray object expected"
 msgstr "Forventet et VBArray-objekt"
 
-#: dlls/jscript/jscript.rc:62
+#: dlls/jscript/jscript.rc:63
 msgid "JScript object expected"
 msgstr "Forventet JScript-objekt"
 
-#: dlls/jscript/jscript.rc:63
+#: dlls/jscript/jscript.rc:64
 #, fuzzy
 #| msgid "Array object expected"
 msgid "Enumerator object expected"
 msgstr "Forventet rekke-objekt"
 
-#: dlls/jscript/jscript.rc:64
+#: dlls/jscript/jscript.rc:65
 #, fuzzy
 #| msgid "Boolean object expected"
 msgid "Regular Expression object expected"
 msgstr "Forventet boolsk verdi"
 
-#: dlls/jscript/jscript.rc:65
+#: dlls/jscript/jscript.rc:66
 msgid "Syntax error in regular expression"
 msgstr "Syntaksfeil i regulært uttrykk"
 
-#: dlls/jscript/jscript.rc:66
+#: dlls/jscript/jscript.rc:67
 #, fuzzy
 #| msgid "Expected identifier"
 msgid "Unexpected quantifier"
 msgstr "Forventet identifiserer"
 
-#: dlls/jscript/jscript.rc:67
+#: dlls/jscript/jscript.rc:68
 msgid "Exception thrown and not caught"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:69
+#: dlls/jscript/jscript.rc:70
 msgid "URI to be encoded contains invalid characters"
 msgstr "URI'en som skal kodes inneholder ugyldige tegn"
 
-#: dlls/jscript/jscript.rc:68
+#: dlls/jscript/jscript.rc:69
 msgid "URI to be decoded is incorrect"
 msgstr "URI'en som skal dekodes er feil"
 
-#: dlls/jscript/jscript.rc:70
+#: dlls/jscript/jscript.rc:71
 msgid "Number of fraction digits is out of range"
 msgstr "Antall brøktegn er utenfor rekken av gyldige verdier"
 
-#: dlls/jscript/jscript.rc:71
+#: dlls/jscript/jscript.rc:72
 msgid "Precision is out of range"
 msgstr "Presisjonen er utenfor rekken av gyldige verdier"
 
-#: dlls/jscript/jscript.rc:72
+#: dlls/jscript/jscript.rc:73
 msgid "Array length must be a finite positive integer"
 msgstr "Rekkens lengde må være et endelig, positivt tall"
 
-#: dlls/jscript/jscript.rc:73
+#: dlls/jscript/jscript.rc:74
 msgid "Array object expected"
 msgstr "Forventet rekke-objekt"
 
-#: dlls/jscript/jscript.rc:74
+#: dlls/jscript/jscript.rc:75
 msgid ""
 "'writable' attribute on the property descriptor cannot be set to 'true' on "
 "this object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:75
+#: dlls/jscript/jscript.rc:76
 msgid "Cyclic __proto__ value"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:76
+#: dlls/jscript/jscript.rc:77
 msgid "Cannot create property for a non-extensible object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:77
+#: dlls/jscript/jscript.rc:78
 msgid "Cannot define property '|': object is not extensible"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:78
+#: dlls/jscript/jscript.rc:79
 msgid "Cannot redefine non-configurable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:79
+#: dlls/jscript/jscript.rc:80
 msgid "Cannot modify non-writable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:80
+#: dlls/jscript/jscript.rc:81
+#, fuzzy
+#| msgid "'[object]' is not a date object"
+msgid "'this' is not a DataView object"
+msgstr "'[object]' er ikke et dataobjekt"
+
+#: dlls/jscript/jscript.rc:82
+msgid "Required argument offset or value in DataView method is not specified"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:83
+msgid "DataView operation access beyond specified buffer length"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:84
+msgid "DataView constructor argument offset is invalid"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:85
 #, fuzzy
 #| msgid "'[object]' is not a date object"
 msgid "'this' is not a | object"
 msgstr "'[object]' er ikke et dataobjekt"
 
-#: dlls/jscript/jscript.rc:81
+#: dlls/jscript/jscript.rc:86
 #, fuzzy
 #| msgid "'[object]' is not a date object"
 msgid "'key' is not an object"
 msgstr "'[object]' er ikke et dataobjekt"
 
-#: dlls/jscript/jscript.rc:82
+#: dlls/jscript/jscript.rc:87
+#, fuzzy
+#| msgid "Array object expected"
+msgid "ArrayBuffer object expected"
+msgstr "Forventet rekke-objekt"
+
+#: dlls/jscript/jscript.rc:88
 msgid "Property cannot have both accessors and a value"
 msgstr ""
 
@@ -4791,7 +4862,7 @@ msgstr "Fant ikke miljøvariablen.\n"
 msgid "No signal sent.\n"
 msgstr "Intet signal sendt.\n"
 
-#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:410
+#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:406
 msgid "File name is too long.\n"
 msgstr "Filnavnet er for langt.\n"
 
@@ -5539,7 +5610,7 @@ msgstr "Operasjonen ble avbrutt av brukeren.\n"
 msgid "File has a user-mapped section.\n"
 msgstr "En del av filen er tilordnet brukeren.\n"
 
-#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3783
+#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3788
 msgid "Connection refused.\n"
 msgstr "Tilkobling nektet.\n"
 
@@ -7148,48 +7219,52 @@ msgid "Invalid argument.\n"
 msgstr "Ugyldig navn.\n"
 
 #: dlls/kernelbase/winerror.mc:3778
+msgid "Cannot assign requested address.\n"
+msgstr ""
+
+#: dlls/kernelbase/winerror.mc:3783
 msgid "Connection reset by peer.\n"
 msgstr "Tilkobling nullstilt av likemann.\n"
 
-#: dlls/kernelbase/winerror.mc:3788
+#: dlls/kernelbase/winerror.mc:3793
 #, fuzzy
 #| msgid "Point not found.\n"
 msgid "Host not found.\n"
 msgstr "Fant ikke punktet.\n"
 
-#: dlls/kernelbase/winerror.mc:3793
+#: dlls/kernelbase/winerror.mc:3798
 #, fuzzy
 #| msgid "Attribute is not found.\n"
 msgid "Nonauthoritative host not found.\n"
 msgstr "Fant ikke egenskapen.\n"
 
-#: dlls/kernelbase/winerror.mc:3798
+#: dlls/kernelbase/winerror.mc:3803
 #, fuzzy
 #| msgid "Unrecoverable error occurred.\n"
 msgid "Nonrecoverable error.\n"
 msgstr "En ugjenopprettelig feil har oppstått.\n"
 
-#: dlls/kernelbase/winerror.mc:3803
+#: dlls/kernelbase/winerror.mc:3808
 msgid "Name valid, no data record.\n"
 msgstr ""
 
-#: dlls/kernelbase/winerror.mc:3817
+#: dlls/kernelbase/winerror.mc:3822
 msgid "Not implemented.\n"
 msgstr "Ikke implementert.\n"
 
-#: dlls/kernelbase/winerror.mc:3838
+#: dlls/kernelbase/winerror.mc:3843
 msgid "Call failed.\n"
 msgstr "Kall feilet.\n"
 
-#: dlls/kernelbase/winerror.mc:3810
+#: dlls/kernelbase/winerror.mc:3815
 msgid "No Signature found in file.\n"
 msgstr "Fant ingen signatur i filen.\n"
 
-#: dlls/kernelbase/winerror.mc:3824
+#: dlls/kernelbase/winerror.mc:3829
 msgid "Invalid call.\n"
 msgstr "Ugyldig kall.\n"
 
-#: dlls/kernelbase/winerror.mc:3831
+#: dlls/kernelbase/winerror.mc:3836
 msgid "Resource is not currently available.\n"
 msgstr "Ressursen er for øyeblikket ikke tilgjengelig.\n"
 
@@ -8464,7 +8539,7 @@ msgstr "Egenskap fra:"
 msgid "choose which folder contains %s"
 msgstr "Velg katalogen som inneholder %s"
 
-#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:236
+#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:238
 msgid "New Folder"
 msgstr "Ny mappe"
 
@@ -9613,8 +9688,9 @@ msgstr "Kilde:"
 #: dlls/oledlg/oledlg.rc:86 dlls/shdoclc/shdoclc.rc:50
 #: dlls/shdoclc/shdoclc.rc:82 dlls/shdoclc/shdoclc.rc:95
 #: dlls/shdoclc/shdoclc.rc:135 dlls/shdoclc/shdoclc.rc:162
-#: dlls/shdoclc/shdoclc.rc:186 dlls/user32/user32.rc:62
-#: programs/conhost/conhost.rc:37 programs/wordpad/wordpad.rc:114
+#: dlls/shdoclc/shdoclc.rc:186 dlls/shell32/shell32.rc:99
+#: dlls/user32/user32.rc:62 programs/conhost/conhost.rc:37
+#: programs/wordpad/wordpad.rc:114
 msgid "&Paste"
 msgstr "&Lim inn"
 
@@ -9646,7 +9722,7 @@ msgstr ""
 "Sett filens innhold inn som et objekt i dokumentet, slik at du kan aktivere "
 "det ved hjelp av programmet som laget den."
 
-#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:195
+#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:197
 msgid "Browse"
 msgstr "Bla gjennom"
 
@@ -9943,12 +10019,12 @@ msgstr "Egenskape&r"
 msgid "&Undo"
 msgstr "&Angre"
 
-#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:105
+#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:102
 #: dlls/user32/user32.rc:63
 msgid "&Delete"
 msgstr "&Slett"
 
-#: dlls/shdoclc/shdoclc.rc:103 dlls/shell32/shell32.rc:97
+#: dlls/shdoclc/shdoclc.rc:103
 msgid "&Select"
 msgstr "&Merk"
 
@@ -10117,26 +10193,26 @@ msgid "&w&bPage &p"
 msgstr "&w&bSide &p"
 
 #: dlls/shell32/shell32.rc:30 dlls/shell32/shell32.rc:45
-#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
+#: dlls/shell32/shell32.rc:119 dlls/shell32/shell32.rc:157
 #: programs/taskmgr/taskmgr.rc:65 programs/taskmgr/taskmgr.rc:110
 #: programs/taskmgr/taskmgr.rc:252
 msgid "Lar&ge Icons"
 msgstr "S&tore ikoner"
 
 #: dlls/shell32/shell32.rc:31 dlls/shell32/shell32.rc:46
-#: dlls/shell32/shell32.rc:123 dlls/shell32/shell32.rc:161
+#: dlls/shell32/shell32.rc:120 dlls/shell32/shell32.rc:158
 #: programs/taskmgr/taskmgr.rc:66 programs/taskmgr/taskmgr.rc:111
 #: programs/taskmgr/taskmgr.rc:253
 msgid "S&mall Icons"
 msgstr "S&må ikoner"
 
 #: dlls/shell32/shell32.rc:32 dlls/shell32/shell32.rc:47
-#: dlls/shell32/shell32.rc:124 dlls/shell32/shell32.rc:162
+#: dlls/shell32/shell32.rc:121 dlls/shell32/shell32.rc:159
 msgid "&List"
 msgstr "&Liste"
 
 #: dlls/shell32/shell32.rc:33 dlls/shell32/shell32.rc:48
-#: dlls/shell32/shell32.rc:125 dlls/shell32/shell32.rc:163
+#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
 #: programs/taskmgr/taskmgr.rc:67 programs/taskmgr/taskmgr.rc:112
 #: programs/taskmgr/taskmgr.rc:254
 msgid "&Details"
@@ -10179,7 +10255,7 @@ msgstr "Lim inn som snarvei"
 msgid "New"
 msgstr "Ny"
 
-#: dlls/shell32/shell32.rc:69
+#: dlls/shell32/shell32.rc:69 dlls/shell32/shell32.rc:240
 msgid "New &Folder"
 msgstr "Ny &mappe"
 
@@ -10196,23 +10272,19 @@ msgstr "Gjenopp&rett"
 msgid "&Erase"
 msgstr "Fj&ern"
 
-#: dlls/shell32/shell32.rc:98
-msgid "E&xplore"
-msgstr "&Utforsk"
-
-#: dlls/shell32/shell32.rc:101
+#: dlls/shell32/shell32.rc:97
 msgid "C&ut"
 msgstr "Klipp &ut"
 
-#: dlls/shell32/shell32.rc:104
+#: dlls/shell32/shell32.rc:101
 msgid "Create &Link"
 msgstr "&Opprett snarvei"
 
-#: dlls/shell32/shell32.rc:106
+#: dlls/shell32/shell32.rc:103
 msgid "&Rename"
 msgstr "&Gi nytt navn"
 
-#: dlls/shell32/shell32.rc:117 programs/notepad/notepad.rc:39
+#: dlls/shell32/shell32.rc:114 programs/notepad/notepad.rc:39
 #: programs/oleview/oleview.rc:38 programs/regedit/regedit.rc:41
 #: programs/view/view.rc:34 programs/winefile/winefile.rc:40
 #: programs/winemine/winemine.rc:51 programs/winhlp32/winhlp32.rc:37
@@ -10220,51 +10292,51 @@ msgstr "&Gi nytt navn"
 msgid "E&xit"
 msgstr "&Avslutt"
 
-#: dlls/shell32/shell32.rc:130
+#: dlls/shell32/shell32.rc:127
 msgid "&About Control Panel"
 msgstr "&Om Kontrollpanel"
 
-#: dlls/shell32/shell32.rc:271 dlls/shell32/shell32.rc:286
+#: dlls/shell32/shell32.rc:275 dlls/shell32/shell32.rc:290
 msgid "Browse for Folder"
 msgstr "Bla etter mappe"
 
-#: dlls/shell32/shell32.rc:291
+#: dlls/shell32/shell32.rc:295
 msgid "Folder:"
 msgstr "Mappe:"
 
-#: dlls/shell32/shell32.rc:297
+#: dlls/shell32/shell32.rc:301
 msgid "&Make New Folder"
 msgstr "Ny &mappe"
 
-#: dlls/shell32/shell32.rc:304
+#: dlls/shell32/shell32.rc:308
 msgid "Message"
 msgstr "Melding"
 
-#: dlls/shell32/shell32.rc:308
+#: dlls/shell32/shell32.rc:312
 msgid "Yes to &all"
 msgstr "Ja til &alt"
 
-#: dlls/shell32/shell32.rc:317
+#: dlls/shell32/shell32.rc:321
 msgid "About %s"
 msgstr "Om %s"
 
-#: dlls/shell32/shell32.rc:321
+#: dlls/shell32/shell32.rc:325
 msgid "Wine &license"
 msgstr "Wine &lisens"
 
-#: dlls/shell32/shell32.rc:326
+#: dlls/shell32/shell32.rc:330
 msgid "Running on %s"
 msgstr "Kjører på %s"
 
-#: dlls/shell32/shell32.rc:327
+#: dlls/shell32/shell32.rc:331
 msgid "Wine was brought to you by:"
 msgstr "Wine er laget av:"
 
-#: dlls/shell32/shell32.rc:332
+#: dlls/shell32/shell32.rc:336
 msgid "Run"
 msgstr "Kjør"
 
-#: dlls/shell32/shell32.rc:336
+#: dlls/shell32/shell32.rc:340
 msgid ""
 "Type the name of a program, folder, document, or Internet resource, and Wine "
 "will open it for you."
@@ -10272,287 +10344,295 @@ msgstr ""
 "Skriv inn navnet på programmet, mappen, dokumentet, eller Internett-"
 "ressursen du ønsker å åpne."
 
-#: dlls/shell32/shell32.rc:337
+#: dlls/shell32/shell32.rc:341
 msgid "&Open:"
 msgstr "&Åpne:"
 
-#: dlls/shell32/shell32.rc:341 programs/progman/progman.rc:182
+#: dlls/shell32/shell32.rc:345 programs/progman/progman.rc:182
 #: programs/progman/progman.rc:201 programs/progman/progman.rc:218
 #: programs/winecfg/winecfg.rc:247 programs/winefile/winefile.rc:129
 msgid "&Browse..."
 msgstr "&Bla..."
 
-#: dlls/shell32/shell32.rc:353 dlls/shell32/shell32.rc:382
+#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:386
 msgid "File type:"
 msgstr "Filtype:"
 
-#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:390
+#: dlls/shell32/shell32.rc:361 dlls/shell32/shell32.rc:394
 #: dlls/urlmon/urlmon.rc:37 programs/explorer/explorer.rc:33
 msgid "Location:"
 msgstr "Plassering:"
 
-#: dlls/shell32/shell32.rc:359 dlls/shell32/shell32.rc:392
+#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
 #: programs/winefile/winefile.rc:169
 msgid "Size:"
 msgstr "Størrelse:"
 
-#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
+#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:400
 msgid "Creation date:"
 msgstr "Dato opprettet:"
 
-#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:404
+#: dlls/shell32/shell32.rc:371 dlls/shell32/shell32.rc:408
 msgid "Attributes:"
 msgstr "Egenskaper:"
 
-#: dlls/shell32/shell32.rc:369 dlls/shell32/shell32.rc:406
+#: dlls/shell32/shell32.rc:373 dlls/shell32/shell32.rc:410
 #: programs/winefile/winefile.rc:173
 msgid "H&idden"
 msgstr "Sk&jult"
 
-#: dlls/shell32/shell32.rc:370 dlls/shell32/shell32.rc:407
+#: dlls/shell32/shell32.rc:374 dlls/shell32/shell32.rc:411
 #: programs/winefile/winefile.rc:174
 msgid "&Archive"
 msgstr "&Arkiv"
 
-#: dlls/shell32/shell32.rc:384
+#: dlls/shell32/shell32.rc:388
 msgid "Open with:"
 msgstr "Åpne med:"
 
-#: dlls/shell32/shell32.rc:387
+#: dlls/shell32/shell32.rc:391
 msgid "&Change..."
 msgstr "&Endre..."
 
-#: dlls/shell32/shell32.rc:398
+#: dlls/shell32/shell32.rc:402
 msgid "Last modified:"
 msgstr "Sist endret:"
 
-#: dlls/shell32/shell32.rc:400
+#: dlls/shell32/shell32.rc:404
 msgid "Last accessed:"
 msgstr "Siste tilgang:"
 
-#: dlls/shell32/shell32.rc:138 dlls/shell32/shell32.rc:142
+#: dlls/shell32/shell32.rc:135 dlls/shell32/shell32.rc:139
 #: programs/winefile/winefile.rc:107
 msgid "Size"
 msgstr "Størrelse"
 
-#: dlls/shell32/shell32.rc:139 programs/regedit/regedit.rc:151
+#: dlls/shell32/shell32.rc:136 programs/regedit/regedit.rc:151
 msgid "Type"
 msgstr "Type"
 
-#: dlls/shell32/shell32.rc:140
+#: dlls/shell32/shell32.rc:137
 msgid "Modified"
 msgstr "Endret"
 
-#: dlls/shell32/shell32.rc:141 programs/winefile/winefile.rc:171
+#: dlls/shell32/shell32.rc:138 programs/winefile/winefile.rc:171
 #: programs/winefile/winefile.rc:113
 msgid "Attributes"
 msgstr "Egenskaper"
 
-#: dlls/shell32/shell32.rc:143
+#: dlls/shell32/shell32.rc:140
 msgid "Size available"
 msgstr "Ledig plass"
 
-#: dlls/shell32/shell32.rc:145
+#: dlls/shell32/shell32.rc:142
 msgid "Comments"
 msgstr "Kommentarer"
 
-#: dlls/shell32/shell32.rc:146
+#: dlls/shell32/shell32.rc:143
 msgid "Original location"
 msgstr "Opprinnelig plassering"
 
-#: dlls/shell32/shell32.rc:147
+#: dlls/shell32/shell32.rc:144
 msgid "Date deleted"
 msgstr "Dato slettet"
 
-#: dlls/shell32/shell32.rc:154 programs/winecfg/winecfg.rc:106
+#: dlls/shell32/shell32.rc:151 programs/winecfg/winecfg.rc:106
 #: programs/winefile/winefile.rc:99
 msgctxt "display name"
 msgid "Desktop"
 msgstr "Skrivebord"
 
-#: dlls/shell32/shell32.rc:155 programs/regedit/regedit.rc:243
+#: dlls/shell32/shell32.rc:152 programs/regedit/regedit.rc:243
 msgid "My Computer"
 msgstr "Min datamaskin"
 
-#: dlls/shell32/shell32.rc:157
+#: dlls/shell32/shell32.rc:154
 msgid "Control Panel"
 msgstr "Kontrollpanel"
 
-#: dlls/shell32/shell32.rc:164
-msgid "Select"
-msgstr "Velg"
+#: dlls/shell32/shell32.rc:162
+msgid "Ne&w"
+msgstr ""
 
-#: dlls/shell32/shell32.rc:187
+#: dlls/shell32/shell32.rc:164
+msgid "E&xplore"
+msgstr "&Utforsk"
+
+#: dlls/shell32/shell32.rc:167
+msgid "Run as &Administrator"
+msgstr ""
+
+#: dlls/shell32/shell32.rc:189
 msgid "Restart"
 msgstr "Starte på nytt"
 
-#: dlls/shell32/shell32.rc:188
+#: dlls/shell32/shell32.rc:190
 msgid "Do you want to simulate a Windows reboot?"
 msgstr "Vil du simulere en omstart av Windows?"
 
-#: dlls/shell32/shell32.rc:189
+#: dlls/shell32/shell32.rc:191
 msgid "Shutdown"
 msgstr "Avslutt"
 
-#: dlls/shell32/shell32.rc:190
+#: dlls/shell32/shell32.rc:192
 msgid "Do you want to shutdown your Wine session?"
 msgstr "Vil du avslutte Wine-økten?"
 
-#: dlls/shell32/shell32.rc:201 programs/progman/progman.rc:83
+#: dlls/shell32/shell32.rc:203 programs/progman/progman.rc:83
 msgid "Programs"
 msgstr "Programmer"
 
-#: dlls/shell32/shell32.rc:202 dlls/shell32/shell32.rc:217
-#: dlls/shell32/shell32.rc:148 dlls/shell32/shell32.rc:233
+#: dlls/shell32/shell32.rc:204 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:145 dlls/shell32/shell32.rc:235
 msgid "Documents"
 msgstr "Dokumenter"
 
-#: dlls/shell32/shell32.rc:203
+#: dlls/shell32/shell32.rc:205
 msgid "Favorites"
 msgstr "Favoritter"
 
-#: dlls/shell32/shell32.rc:204
+#: dlls/shell32/shell32.rc:206
 msgid "StartUp"
 msgstr "Oppstart"
 
-#: dlls/shell32/shell32.rc:205
+#: dlls/shell32/shell32.rc:207
 msgid "Start Menu"
 msgstr "Start-meny"
 
-#: dlls/shell32/shell32.rc:206 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:208 dlls/shell32/shell32.rc:221
 msgid "Music"
 msgstr "Musikk"
 
-#: dlls/shell32/shell32.rc:207 dlls/shell32/shell32.rc:221
+#: dlls/shell32/shell32.rc:209 dlls/shell32/shell32.rc:223
 msgid "Videos"
 msgstr "Video"
 
-#: dlls/shell32/shell32.rc:208
+#: dlls/shell32/shell32.rc:210
 msgctxt "directory"
 msgid "Desktop"
 msgstr "Skrivebord"
 
-#: dlls/shell32/shell32.rc:209
+#: dlls/shell32/shell32.rc:211
 msgid "NetHood"
 msgstr "NetHood"
 
-#: dlls/shell32/shell32.rc:210
+#: dlls/shell32/shell32.rc:212
 msgid "Templates"
 msgstr "Maler"
 
-#: dlls/shell32/shell32.rc:211
+#: dlls/shell32/shell32.rc:213
 msgid "PrintHood"
 msgstr "Skrivere"
 
-#: dlls/shell32/shell32.rc:212 programs/winhlp32/winhlp32.rc:49
+#: dlls/shell32/shell32.rc:214 programs/winhlp32/winhlp32.rc:49
 msgid "History"
 msgstr "Historikk"
 
-#: dlls/shell32/shell32.rc:213
+#: dlls/shell32/shell32.rc:215
 msgid "Program Files"
 msgstr "Programfiler"
 
-#: dlls/shell32/shell32.rc:215 dlls/shell32/shell32.rc:220
+#: dlls/shell32/shell32.rc:217 dlls/shell32/shell32.rc:222
 msgid "Pictures"
 msgstr "Bilder"
 
-#: dlls/shell32/shell32.rc:216
+#: dlls/shell32/shell32.rc:218
 msgid "Common Files"
 msgstr "Fellesfiler"
 
-#: dlls/shell32/shell32.rc:218
+#: dlls/shell32/shell32.rc:220
 msgid "Administrative Tools"
 msgstr "Administrative verktøy"
 
-#: dlls/shell32/shell32.rc:214
+#: dlls/shell32/shell32.rc:216
 msgid "Program Files (x86)"
 msgstr "Programfiler (x86)"
 
-#: dlls/shell32/shell32.rc:222
+#: dlls/shell32/shell32.rc:224
 msgid "Contacts"
 msgstr "Kontakter"
 
-#: dlls/shell32/shell32.rc:223 programs/winefile/winefile.rc:112
+#: dlls/shell32/shell32.rc:225 programs/winefile/winefile.rc:112
 msgid "Links"
 msgstr "Koblinger"
 
-#: dlls/shell32/shell32.rc:224
+#: dlls/shell32/shell32.rc:226
 msgid "Slide Shows"
 msgstr "Lysbildevisninger"
 
-#: dlls/shell32/shell32.rc:225
+#: dlls/shell32/shell32.rc:227
 msgid "Playlists"
 msgstr "Spillelister"
 
-#: dlls/shell32/shell32.rc:149 programs/taskmgr/taskmgr.rc:326
+#: dlls/shell32/shell32.rc:146 programs/taskmgr/taskmgr.rc:326
 msgid "Status"
 msgstr "Status"
 
-#: dlls/shell32/shell32.rc:151
+#: dlls/shell32/shell32.rc:148
 msgid "Model"
 msgstr "Modell"
 
-#: dlls/shell32/shell32.rc:226
+#: dlls/shell32/shell32.rc:228
 msgid "Sample Music"
 msgstr "Eksempelmusikk"
 
-#: dlls/shell32/shell32.rc:227
+#: dlls/shell32/shell32.rc:229
 msgid "Sample Pictures"
 msgstr "Eksempelbilder"
 
-#: dlls/shell32/shell32.rc:228
+#: dlls/shell32/shell32.rc:230
 msgid "Sample Playlists"
 msgstr "Eksempelspillelister"
 
-#: dlls/shell32/shell32.rc:229
+#: dlls/shell32/shell32.rc:231
 msgid "Sample Videos"
 msgstr "Eksempelvideo"
 
-#: dlls/shell32/shell32.rc:230
+#: dlls/shell32/shell32.rc:232
 msgid "Saved Games"
 msgstr "Lagrede spill"
 
-#: dlls/shell32/shell32.rc:231
+#: dlls/shell32/shell32.rc:233
 msgid "Searches"
 msgstr "Søk"
 
-#: dlls/shell32/shell32.rc:232
+#: dlls/shell32/shell32.rc:234
 msgid "Users"
 msgstr "Brukere"
 
-#: dlls/shell32/shell32.rc:234
+#: dlls/shell32/shell32.rc:236
 msgid "Downloads"
 msgstr "Nedlastinger"
 
-#: dlls/shell32/shell32.rc:167
+#: dlls/shell32/shell32.rc:169
 msgid "Unable to create new Folder: Permission denied."
 msgstr "Kunne ikke opprette ny mappe: Tilgang nektet."
 
-#: dlls/shell32/shell32.rc:168
+#: dlls/shell32/shell32.rc:170
 msgid "Error during creation of a new folder"
 msgstr "Klarte ikke opprette ny mappe"
 
-#: dlls/shell32/shell32.rc:169
+#: dlls/shell32/shell32.rc:171
 msgid "Confirm file deletion"
 msgstr "Bekreft filsletting"
 
-#: dlls/shell32/shell32.rc:170
+#: dlls/shell32/shell32.rc:172
 msgid "Confirm folder deletion"
 msgstr "Bekreft sletting av mappe"
 
-#: dlls/shell32/shell32.rc:171
+#: dlls/shell32/shell32.rc:173
 msgid "Are you sure you want to delete '%1'?"
 msgstr "Vil du virkelig slette %1?"
 
-#: dlls/shell32/shell32.rc:172
+#: dlls/shell32/shell32.rc:174
 msgid "Are you sure you want to delete these %1 items?"
 msgstr "Vil du virkelig slette disse %1 elementene?"
 
-#: dlls/shell32/shell32.rc:179
+#: dlls/shell32/shell32.rc:181
 msgid "Confirm file overwrite"
 msgstr "Bekreft overskriving av fil"
 
-#: dlls/shell32/shell32.rc:178
+#: dlls/shell32/shell32.rc:180
 msgid ""
 "This folder already contains a file called '%1'.\n"
 "\n"
@@ -10562,29 +10642,29 @@ msgstr ""
 "\n"
 "Vil du erstatte den?"
 
-#: dlls/shell32/shell32.rc:173
+#: dlls/shell32/shell32.rc:175
 msgid "Are you sure you want to delete the selected item(s)?"
 msgstr "Vil du virkelig slette valgte element(er)??"
 
-#: dlls/shell32/shell32.rc:175
+#: dlls/shell32/shell32.rc:177
 msgid ""
 "Are you sure that you want to send '%1' and all its content to the Trash?"
 msgstr "Vil du virkelig legge %1 og alt innholdet i papirkurven?"
 
-#: dlls/shell32/shell32.rc:174
+#: dlls/shell32/shell32.rc:176
 msgid "Are you sure that you want to send '%1' to the Trash?"
 msgstr "Vil du virkelig legge %1 i papirkurven?"
 
-#: dlls/shell32/shell32.rc:176
+#: dlls/shell32/shell32.rc:178
 msgid "Are you sure that you want to send these %1 items to the Trash?"
 msgstr "Vil du virkelig legge disse %1 valgte elementene i papirkurven?"
 
-#: dlls/shell32/shell32.rc:177
+#: dlls/shell32/shell32.rc:179
 msgid "The item '%1' can't be sent to Trash. Do you want to delete it instead?"
 msgstr ""
 "Elementet %1 kan ikke legges i papirkurven. Vil du slette det i stedet?"
 
-#: dlls/shell32/shell32.rc:184
+#: dlls/shell32/shell32.rc:186
 msgid ""
 "This folder already contains a folder named '%1'.\n"
 "\n"
@@ -10599,39 +10679,39 @@ msgstr ""
 "kopiere\n"
 "denne mappen?"
 
-#: dlls/shell32/shell32.rc:238
+#: dlls/shell32/shell32.rc:242
 msgid "Wine Control Panel"
 msgstr "Wine Kontrollpanel"
 
-#: dlls/shell32/shell32.rc:193
+#: dlls/shell32/shell32.rc:195
 msgid "Unable to display Run dialog box (internal error)"
 msgstr "Klarte ikke vise Kjør-vinduet (intern feil)"
 
-#: dlls/shell32/shell32.rc:194
+#: dlls/shell32/shell32.rc:196
 msgid "Unable to display Browse dialog box (internal error)"
 msgstr "Klarte ikke vise Bla gjennom-vinduet (intern feil)"
 
-#: dlls/shell32/shell32.rc:196
+#: dlls/shell32/shell32.rc:198
 msgid "Executable files (*.exe)"
 msgstr "Programfiler (*.exe)"
 
-#: dlls/shell32/shell32.rc:242
+#: dlls/shell32/shell32.rc:246
 msgid "There is no Windows program configured to open this type of file."
 msgstr "Intet Windows-program er satt opp til å åpne denne filtypen."
 
-#: dlls/shell32/shell32.rc:244
+#: dlls/shell32/shell32.rc:248
 msgid "Are you sure you wish to permanently delete '%1'?"
 msgstr "Vil du virkelig slette %1 permanent?"
 
-#: dlls/shell32/shell32.rc:245
+#: dlls/shell32/shell32.rc:249
 msgid "Are you sure you wish to permanently delete these %1 items?"
 msgstr "Vil du virkelig slette disse %1 elementene permanent?"
 
-#: dlls/shell32/shell32.rc:246
+#: dlls/shell32/shell32.rc:250
 msgid "Confirm deletion"
 msgstr "Bekreft sletting"
 
-#: dlls/shell32/shell32.rc:247
+#: dlls/shell32/shell32.rc:251
 msgid ""
 "A file already exists at the path %1.\n"
 "\n"
@@ -10641,7 +10721,7 @@ msgstr ""
 "\n"
 "Vil du overskrive den?"
 
-#: dlls/shell32/shell32.rc:248
+#: dlls/shell32/shell32.rc:252
 msgid ""
 "A folder already exists at the path %1.\n"
 "\n"
@@ -10651,11 +10731,11 @@ msgstr ""
 "\n"
 "Vil du erstatte den?"
 
-#: dlls/shell32/shell32.rc:249
+#: dlls/shell32/shell32.rc:253
 msgid "Confirm overwrite"
 msgstr "Bekreft overskriving"
 
-#: dlls/shell32/shell32.rc:266
+#: dlls/shell32/shell32.rc:270
 msgid ""
 "Wine is free software; you can redistribute it and/or modify it under the "
 "terms of the GNU Lesser General Public License as published by the Free "
@@ -10684,11 +10764,11 @@ msgstr ""
 "med dette programmet; hvis ikke, skriv til: Free Software Foundation, Inc., "
 "51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA."
 
-#: dlls/shell32/shell32.rc:254
+#: dlls/shell32/shell32.rc:258
 msgid "Wine License"
 msgstr "Lisensbetingelser"
 
-#: dlls/shell32/shell32.rc:156
+#: dlls/shell32/shell32.rc:153
 msgid "Trash"
 msgstr "Papirkurv"
 
@@ -13351,12 +13431,6 @@ msgstr "Kan ikke finne elementet.\n"
 msgid "Wrong number of arguments or invalid property assignment"
 msgstr ""
 
-#: dlls/vbscript/vbscript.rc:56
-#, fuzzy
-#| msgid "Object Class Violation"
-msgid "Object not a collection"
-msgstr "Objektklasseovertredelse"
-
 #: dlls/vbscript/vbscript.rc:57
 #, fuzzy
 #| msgid "Specified control was not found in message"
@@ -14412,7 +14486,7 @@ msgstr "Løkke under håndtering av henvisninger"
 msgid "Referral hop limit exceeded"
 msgstr "Grense for henvisningshopp overskredet"
 
-#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:373
+#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:370
 msgid ""
 "Not Yet Implemented\n"
 "\n"
@@ -14420,7 +14494,7 @@ msgstr ""
 "Ikke implementert ennå\n"
 "\n"
 
-#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:376
+#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:373
 msgid "%1: File Not Found\n"
 msgstr "%1: fant ikke filen\n"
 
@@ -14563,22 +14637,18 @@ msgid "COPY <filename> copies a file.\n"
 msgstr "COPY <filnavn> kopierer en fil.\n"
 
 #: programs/cmd/cmd.rc:56
-msgid "CTTY changes the input/output device.\n"
-msgstr "CTTY endrer inn/ut-enhet.\n"
-
-#: programs/cmd/cmd.rc:59
 msgid "DATE shows or changes the system date.\n"
 msgstr "DATE viser eller endrer systemets dato.\n"
 
-#: programs/cmd/cmd.rc:62
+#: programs/cmd/cmd.rc:59
 msgid "DEL <filename> deletes a file or set of files.\n"
 msgstr "DEL <filnavn> fjerner én eller flere filer.\n"
 
-#: programs/cmd/cmd.rc:65
+#: programs/cmd/cmd.rc:62
 msgid "DIR lists the contents of a directory.\n"
 msgstr "DIR viser innholdet i en katalog.\n"
 
-#: programs/cmd/cmd.rc:75
+#: programs/cmd/cmd.rc:72
 msgid ""
 "ECHO <string> displays <string> on the current terminal device.\n"
 "\n"
@@ -14598,11 +14668,11 @@ msgstr ""
 "standard). ECHO OFF-kommandoen kan hindres fra å vises ved å plassere\n"
 "et @-tegn foran den.\n"
 
-#: programs/cmd/cmd.rc:78
+#: programs/cmd/cmd.rc:75
 msgid "ERASE <filename> deletes a file or set of files.\n"
 msgstr "ERASE <filnavn> sletter én eller flere filer.\n"
 
-#: programs/cmd/cmd.rc:85
+#: programs/cmd/cmd.rc:82
 msgid ""
 "The FOR command is used to execute a command for each of a set of files.\n"
 "\n"
@@ -14616,7 +14686,7 @@ msgstr ""
 "\n"
 "%-tegnet må være dobbelt hvis FOR brukes i en satsvis (.bat) fil.\n"
 
-#: programs/cmd/cmd.rc:97
+#: programs/cmd/cmd.rc:94
 msgid ""
 "The GOTO command transfers execution to another statement within a batch\n"
 "file.\n"
@@ -14639,7 +14709,7 @@ msgstr ""
 "\n"
 "GOTO har ingen effekt når den brukes interaktivt.\n"
 
-#: programs/cmd/cmd.rc:101
+#: programs/cmd/cmd.rc:98
 msgid ""
 "HELP <command> shows brief help details on a topic.\n"
 "HELP without an argument shows all CMD built-in commands.\n"
@@ -14647,7 +14717,7 @@ msgstr ""
 "HELP <kommando> viser en kort hjelpetekst for et emne.\n"
 "HELP uten noen argumenter viser alle innebygde kommandoer.\n"
 
-#: programs/cmd/cmd.rc:111
+#: programs/cmd/cmd.rc:108
 msgid ""
 "IF is used to conditionally execute a command.\n"
 "\n"
@@ -14667,7 +14737,7 @@ msgstr ""
 "I kommandoform nummer to må streng1 og streng2 omsluttes av doble\n"
 "anførselstegn. Det skilles ikke mellom store og små bokstaver.\n"
 
-#: programs/cmd/cmd.rc:118
+#: programs/cmd/cmd.rc:115
 msgid ""
 "LABEL is used to set a disk volume label.\n"
 "\n"
@@ -14681,16 +14751,16 @@ msgstr ""
 "Kommandoen vil be om det nye volumnavnet for stasjonen.\n"
 "Du kan vise en stasjons volumnavn med VOL-kommandoen.\n"
 
-#: programs/cmd/cmd.rc:121
+#: programs/cmd/cmd.rc:118
 msgid "MD <name> is the short version of MKDIR. It creates a subdirectory.\n"
 msgstr ""
 "MD <navn> er en korte versjonen av MKDIR. Den oprretter en underkatalog.\n"
 
-#: programs/cmd/cmd.rc:123
+#: programs/cmd/cmd.rc:120
 msgid "MKDIR <name> creates a subdirectory.\n"
 msgstr "MKDIR <navn> oppretter en underkatalog.\n"
 
-#: programs/cmd/cmd.rc:131
+#: programs/cmd/cmd.rc:128
 msgid ""
 "MOVE relocates a file or directory to a new point within the file system.\n"
 "\n"
@@ -14707,7 +14777,7 @@ msgstr ""
 "MOVE feiler hvis den gamle og nye plasseringen har forskjellige\n"
 "stasjonsbokstaver.\n"
 
-#: programs/cmd/cmd.rc:142
+#: programs/cmd/cmd.rc:139
 msgid ""
 "PATH displays or changes the cmd search path.\n"
 "\n"
@@ -14729,7 +14799,7 @@ msgstr ""
 "eksempel:\n"
 "PATH %PATH%;c:\\temp\n"
 
-#: programs/cmd/cmd.rc:148
+#: programs/cmd/cmd.rc:145
 msgid ""
 "PAUSE displays a message on the screen asking the user to press a key.\n"
 "\n"
@@ -14741,7 +14811,7 @@ msgstr ""
 "Den er hovedsakelig nyttig i satsvise (.bat) filer, for å la brukeren lese\n"
 "utdata fra en tidligere kommando før det ruller bort fra skjermen.\n"
 
-#: programs/cmd/cmd.rc:169
+#: programs/cmd/cmd.rc:166
 msgid ""
 "PROMPT sets the command-line prompt.\n"
 "\n"
@@ -14783,7 +14853,7 @@ msgstr ""
 "Klartegnet kan også endres ved å endre miljøvariabelen PROMPT, så\n"
 "kommandoen 'SET PROMPT=tekst' har samme effekt som 'PROMPT tekst'.\n"
 
-#: programs/cmd/cmd.rc:173
+#: programs/cmd/cmd.rc:170
 msgid ""
 "A command line beginning with REM (followed by a space) performs no action,\n"
 "and can therefore be used as a comment in a batch file.\n"
@@ -14791,26 +14861,26 @@ msgstr ""
 "En kommandolinje som begynner med REM (etterfulgt av et mellomrom) utfører\n"
 "ingen handling, og kan derfor brukes som kommentar i en satsvis fil.\n"
 
-#: programs/cmd/cmd.rc:176
+#: programs/cmd/cmd.rc:173
 msgid "REN <filename> is the short version of RENAME. It renames a file.\n"
 msgstr ""
 "REN <filnavn> er den korte versjonen av RENAME. Den gir nytt navn til en "
 "fil.\n"
 
-#: programs/cmd/cmd.rc:178
+#: programs/cmd/cmd.rc:175
 msgid "RENAME <filename> renames a file.\n"
 msgstr "RENAME <filnavn> gir nytt navn til en fil.\n"
 
-#: programs/cmd/cmd.rc:181
+#: programs/cmd/cmd.rc:178
 msgid "RD <directory> is the short version of RMDIR. It deletes a directory.\n"
 msgstr ""
 "RD <katalog> er den korte versjonen av RMDIR. Den sletter en katalog.\n"
 
-#: programs/cmd/cmd.rc:183
+#: programs/cmd/cmd.rc:180
 msgid "RMDIR <directory> deletes a directory.\n"
 msgstr "RMDIR <katalog> sletter en katalog.\n"
 
-#: programs/cmd/cmd.rc:229
+#: programs/cmd/cmd.rc:226
 msgid ""
 "SET displays or changes the cmd environment variables.\n"
 "\n"
@@ -14844,7 +14914,7 @@ msgstr ""
 "vanlig Win32-miljø. Vær oppmerksom på at det ikke går an å endre mijøet i\n"
 "det underliggende operativsystemet fra cmd.\n"
 
-#: programs/cmd/cmd.rc:234
+#: programs/cmd/cmd.rc:231
 msgid ""
 "SHIFT is used in a batch file to remove one parameter from the head of the\n"
 "list, so parameter 2 becomes parameter 1 and so on. It has no effect if\n"
@@ -14854,7 +14924,7 @@ msgstr ""
 "liste, sånn at parameter 2 blir parameter 1 og så videre. Det har ingen\n"
 "effekt hvis det brukes fra kommandolinjen.\n"
 
-#: programs/cmd/cmd.rc:212
+#: programs/cmd/cmd.rc:209
 msgid ""
 "Start a program, or open a document in the program normally used for files\n"
 "with that suffix.\n"
@@ -14912,15 +14982,15 @@ msgstr ""
 "/ProgIDOpen     Åpne et dokument med angitt progID.\n"
 "/?              Vis denne hjelpeteksten og avslutt.\n"
 
-#: programs/cmd/cmd.rc:237
+#: programs/cmd/cmd.rc:234
 msgid "TIME sets or shows the current system time.\n"
 msgstr "TIME angir eller viser systemets tid.\n"
 
-#: programs/cmd/cmd.rc:240
+#: programs/cmd/cmd.rc:237
 msgid "TITLE <string> sets the window title for the cmd window.\n"
 msgstr "TITLE <streng> angir tittelen for cmd-vinduet.\n"
 
-#: programs/cmd/cmd.rc:244
+#: programs/cmd/cmd.rc:241
 msgid ""
 "TYPE <filename> copies <filename> to the console device (or elsewhere if\n"
 "redirected). No check is made that the file is readable text.\n"
@@ -14928,7 +14998,7 @@ msgstr ""
 "TYPE <filnavn> kopierer <filnavn> til konsollenheten (eller et annet sted\n"
 "hvis det omdirigeres). Det kontrolleres ikke om filen er leselig tekst.\n"
 
-#: programs/cmd/cmd.rc:253
+#: programs/cmd/cmd.rc:250
 msgid ""
 "VERIFY is used to set, clear or test the verify flag. Valid forms are:\n"
 "\n"
@@ -14947,15 +15017,15 @@ msgstr ""
 "\n"
 "Verify-flagget har ingen funksjon i Wine.\n"
 
-#: programs/cmd/cmd.rc:256
+#: programs/cmd/cmd.rc:253
 msgid "VER displays the version of cmd you are running.\n"
 msgstr "VER viser versjonnummeret til cmd.\n"
 
-#: programs/cmd/cmd.rc:259
+#: programs/cmd/cmd.rc:256
 msgid "VOL shows the volume label of a disk device.\n"
 msgstr "VOL viser volumnavnet for en diskenhet.\n"
 
-#: programs/cmd/cmd.rc:263
+#: programs/cmd/cmd.rc:260
 msgid ""
 "ENDLOCAL ends localization of environment changes in a batch file which\n"
 "were introduced by a preceding SETLOCAL.\n"
@@ -14963,7 +15033,7 @@ msgstr ""
 "ENDLOCAL avslutter lokalisering av endringer i miljøet i statsvise filer,\n"
 "hvor lokaliseringen tidligere ble startet med SETLOCAL.\n"
 
-#: programs/cmd/cmd.rc:271
+#: programs/cmd/cmd.rc:268
 msgid ""
 "SETLOCAL starts localization of environment changes in a batch file.\n"
 "\n"
@@ -14979,7 +15049,7 @@ msgstr ""
 "hvis ENDLOCAL ikke oppgis). Etter ENDLOCAL gjenopprettes det opprinnelige\n"
 "miljøet.\n"
 
-#: programs/cmd/cmd.rc:275
+#: programs/cmd/cmd.rc:272
 msgid ""
 "PUSHD <directory> saves the current directory onto a stack, and then\n"
 "changes the current directory to the supplied one.\n"
@@ -14987,11 +15057,11 @@ msgstr ""
 "PUSHD <katalog> lagrer arbeidskatalogen i en stabel, og endrer deretter\n"
 "arbeidskatalog til den som er oppgitt.\n"
 
-#: programs/cmd/cmd.rc:278
+#: programs/cmd/cmd.rc:275
 msgid "POPD changes current directory to the last one saved with PUSHD.\n"
 msgstr "POPD endrer arbeidskatalog til den som sist ble angitt med PUSHD.\n"
 
-#: programs/cmd/cmd.rc:288
+#: programs/cmd/cmd.rc:285
 msgid ""
 "ASSOC shows or modifies file extension associations.\n"
 "\n"
@@ -15011,7 +15081,7 @@ msgstr ""
 "Hvis ingen filtype oppgis etter likhetstegnet fjernes gjeldende "
 "assosiasjon.\n"
 
-#: programs/cmd/cmd.rc:300
+#: programs/cmd/cmd.rc:297
 msgid ""
 "FTYPE shows or modifies open commands associated with file types.\n"
 "\n"
@@ -15033,11 +15103,11 @@ msgstr ""
 "Hvis ingen åpne-kommando angis etter likhetstegnet fjernes den tilordnede\n"
 "åpne-kommandoen.\n"
 
-#: programs/cmd/cmd.rc:303
+#: programs/cmd/cmd.rc:300
 msgid "MORE displays output of files or piped input in pages.\n"
 msgstr "MORE lar deg bla gjennom innholdet i filer eller inndata i rør.\n"
 
-#: programs/cmd/cmd.rc:308
+#: programs/cmd/cmd.rc:305
 msgid ""
 "CHOICE displays a text and waits, until the User presses an allowed Key\n"
 "from a selectable list.\n"
@@ -15047,7 +15117,7 @@ msgstr ""
 "knappene.\n"
 "CHOICE brukes for det meste til å lage menyer i satsvise filer.\n"
 
-#: programs/cmd/cmd.rc:324
+#: programs/cmd/cmd.rc:321
 msgid ""
 "Create a symbolic link.\n"
 "\n"
@@ -15071,7 +15141,7 @@ msgstr ""
 "lenke_navn er navnet på den nye symbolske lenken.\n"
 "mål er stien som lenke_navn peker til.\n"
 
-#: programs/cmd/cmd.rc:312
+#: programs/cmd/cmd.rc:309
 msgid ""
 "EXIT terminates the current command session and returns to the operating\n"
 "system or shell from which you invoked cmd.\n"
@@ -15079,7 +15149,7 @@ msgstr ""
 "EXIT avslutter gjeldende kommandoøkt og returnerer til operativsystemet\n"
 "eller skallet CMD ble startet fra.\n"
 
-#: programs/cmd/cmd.rc:364
+#: programs/cmd/cmd.rc:361
 msgid ""
 "CMD built-in commands are:\n"
 "ASSOC\t\tShow or modify file extension associations\n"
@@ -15163,110 +15233,110 @@ msgstr ""
 "\n"
 "Skriv HELP <kommando> for mer informasjon om kommandoene ovenfor.\n"
 
-#: programs/cmd/cmd.rc:365
+#: programs/cmd/cmd.rc:362
 msgid "Are you sure?"
 msgstr "Er du sikker?"
 
-#: programs/cmd/cmd.rc:366 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
+#: programs/cmd/cmd.rc:363 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
 msgctxt "Yes key"
 msgid "Y"
 msgstr "J"
 
-#: programs/cmd/cmd.rc:367 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
+#: programs/cmd/cmd.rc:364 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
 msgctxt "No key"
 msgid "N"
 msgstr "N"
 
-#: programs/cmd/cmd.rc:368
+#: programs/cmd/cmd.rc:365
 msgid "File association missing for extension %1\n"
 msgstr "Fant ingen filtilknytning for filtypen \"%1\"\n"
 
-#: programs/cmd/cmd.rc:369
+#: programs/cmd/cmd.rc:366
 msgid "No open command associated with file type '%1'\n"
 msgstr "Ingen åpne-kommando er tilknyttet filtypen \"%1\"\n"
 
-#: programs/cmd/cmd.rc:370
+#: programs/cmd/cmd.rc:367
 msgid "Overwrite %1?"
 msgstr "Skrive over %1?"
 
-#: programs/cmd/cmd.rc:371
+#: programs/cmd/cmd.rc:368
 msgid "More..."
 msgstr "Mer..."
 
-#: programs/cmd/cmd.rc:372
+#: programs/cmd/cmd.rc:369
 msgid "Line in Batch processing possibly truncated. Using:\n"
 msgstr "Deler av linje i satsvis fil mangler muligens. Bruker:\n"
 
-#: programs/cmd/cmd.rc:374
+#: programs/cmd/cmd.rc:371
 msgid "Argument missing\n"
 msgstr "Manglende argument\n"
 
-#: programs/cmd/cmd.rc:375
+#: programs/cmd/cmd.rc:372
 msgid "Syntax error\n"
 msgstr "Syntaksfeil\n"
 
-#: programs/cmd/cmd.rc:377
+#: programs/cmd/cmd.rc:374
 msgid "No help available for %1\n"
 msgstr "Ingen hjelp tilgjengelig for %1\n"
 
-#: programs/cmd/cmd.rc:378
+#: programs/cmd/cmd.rc:375
 msgid "Target to GOTO not found\n"
 msgstr "Målet for GOTO ble ikke funnet\n"
 
-#: programs/cmd/cmd.rc:379
+#: programs/cmd/cmd.rc:376
 msgid "Current Date is %1\n"
 msgstr "Gjeldende dato er %1\n"
 
-#: programs/cmd/cmd.rc:380
+#: programs/cmd/cmd.rc:377
 msgid "Current Time is %1\n"
 msgstr "Gjeldende tid er %1\n"
 
-#: programs/cmd/cmd.rc:381
+#: programs/cmd/cmd.rc:378
 msgid "Enter new date: "
 msgstr "Angi ny dato: "
 
-#: programs/cmd/cmd.rc:382
+#: programs/cmd/cmd.rc:379
 msgid "Enter new time: "
 msgstr "Angi ny tid: "
 
-#: programs/cmd/cmd.rc:383
+#: programs/cmd/cmd.rc:380
 msgid "Environment variable %1 not defined\n"
 msgstr "Miljøvariabelen %1 er ikke definert\n"
 
-#: programs/cmd/cmd.rc:384 programs/xcopy/xcopy.rc:41
+#: programs/cmd/cmd.rc:381 programs/xcopy/xcopy.rc:41
 msgid "Failed to open '%1'\n"
 msgstr "Klarte ikke åpne %1\n"
 
-#: programs/cmd/cmd.rc:385
+#: programs/cmd/cmd.rc:382
 msgid "Cannot call batch label outside of a batch script\n"
 msgstr "En merkelapp kan ikke kalles utenfor en satsvis fil\n"
 
-#: programs/cmd/cmd.rc:386 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
+#: programs/cmd/cmd.rc:383 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
 msgctxt "All key"
 msgid "A"
 msgstr "A"
 
-#: programs/cmd/cmd.rc:387
+#: programs/cmd/cmd.rc:384
 msgid "Delete %1?"
 msgstr "Slette %1?"
 
-#: programs/cmd/cmd.rc:388
+#: programs/cmd/cmd.rc:385
 msgid "Echo is %1\n"
 msgstr "Echo er %1\n"
 
-#: programs/cmd/cmd.rc:389
+#: programs/cmd/cmd.rc:386
 msgid "Verify is %1\n"
 msgstr "Bekreft er %1\n"
 
-#: programs/cmd/cmd.rc:390
+#: programs/cmd/cmd.rc:387
 msgid "Verify must be ON or OFF\n"
 msgstr "Bekreft må være PÅ eller AV\n"
 
-#: programs/cmd/cmd.rc:391
+#: programs/cmd/cmd.rc:388
 msgid "Parameter error\n"
 msgstr "Feil i parameter\n"
 
-#: programs/cmd/cmd.rc:392
+#: programs/cmd/cmd.rc:389
 msgid ""
 "Volume Serial Number is %1!04x!-%2!04x!\n"
 "\n"
@@ -15274,78 +15344,92 @@ msgstr ""
 "Volumets serienummer er %1!04x!-%2!04x!\n"
 "\n"
 
-#: programs/cmd/cmd.rc:393
+#: programs/cmd/cmd.rc:390
 msgid "Volume label (11 characters, <Enter> for none)?"
 msgstr "Volumnavn (11 tegn, <Enter> for intet navn)?"
 
-#: programs/cmd/cmd.rc:394
-msgid "PATH not found\n"
-msgstr "Fant ikke PATH\n"
-
-#: programs/cmd/cmd.rc:395
+#: programs/cmd/cmd.rc:391
 msgid "Press any key to continue... "
 msgstr "Trykk en tast for å fortsette ... "
 
-#: programs/cmd/cmd.rc:396
+#: programs/cmd/cmd.rc:392
 msgid "Wine Command Prompt"
 msgstr "Wine Kommandolinje"
 
-#: programs/cmd/cmd.rc:397
+#: programs/cmd/cmd.rc:393
 msgid "Microsoft Windows %1!S!\n"
 msgstr "Microsoft Windows %1!S!\n"
 
-#: programs/cmd/cmd.rc:398
+#: programs/cmd/cmd.rc:394
 msgid "More? "
 msgstr "Mer? "
 
-#: programs/cmd/cmd.rc:399
+#: programs/cmd/cmd.rc:395
 msgid "The input line is too long.\n"
 msgstr "Inndatalinjen er for lang.\n"
 
-#: programs/cmd/cmd.rc:400
+#: programs/cmd/cmd.rc:396
 msgid "Volume in drive %1!c! is %2\n"
 msgstr "Volumet i stasjon %1!c! er %2\n"
 
-#: programs/cmd/cmd.rc:401
+#: programs/cmd/cmd.rc:397
 msgid "Volume in drive %1!c! has no label.\n"
 msgstr "Volumet i stasjon %1!c! har ikke et navn.\n"
 
-#: programs/cmd/cmd.rc:402 programs/reg/reg.rc:129
+#: programs/cmd/cmd.rc:398 programs/reg/reg.rc:129
 msgid " (Yes|No)"
 msgstr " (Ja|Nei)"
 
-#: programs/cmd/cmd.rc:403 programs/reg/reg.rc:130
+#: programs/cmd/cmd.rc:399 programs/reg/reg.rc:130
 msgid " (Yes|No|All)"
 msgstr " (Ja|Nei|Alle)"
 
-#: programs/cmd/cmd.rc:404
+#: programs/cmd/cmd.rc:400
 msgid ""
 "Can't recognize '%1' as an internal or external command, or batch script.\n"
 msgstr "%1 er ikke en intern eller ekstern kommando, eller en satsvis fil.\n"
 
-#: programs/cmd/cmd.rc:405
+#: programs/cmd/cmd.rc:401
 msgid "Division by zero error.\n"
 msgstr "Feil: Deling på null.\n"
 
-#: programs/cmd/cmd.rc:406
+#: programs/cmd/cmd.rc:402
 msgid "Expected an operand.\n"
 msgstr "Forventet en operand.\n"
 
-#: programs/cmd/cmd.rc:407
+#: programs/cmd/cmd.rc:403
 msgid "Expected an operator.\n"
 msgstr "Forventet en operator.\n"
 
-#: programs/cmd/cmd.rc:408
+#: programs/cmd/cmd.rc:404
 msgid "Mismatch in parentheses.\n"
 msgstr "Feil i parenteser.\n"
 
-#: programs/cmd/cmd.rc:409
+#: programs/cmd/cmd.rc:405
 msgid ""
 "Badly formed number - must be one of decimal (12),\n"
 " hexadecimal (0x34) or octal (056).\n"
 msgstr ""
 "Ugyldig tallformat - må være enten desimal (12),\n"
 "heksadesimal (0x34) eller oktal (056).\n"
+
+#: programs/cmd/cmd.rc:407
+#, fuzzy
+#| msgid "Syntax error\n"
+msgid "Syntax error: unexpected %1\n"
+msgstr "Syntaksfeil\n"
+
+#: programs/cmd/cmd.rc:408
+#, fuzzy
+#| msgid "End of file.\n"
+msgid "End of line"
+msgstr "Enden av filen.\n"
+
+#: programs/cmd/cmd.rc:409
+#, fuzzy
+#| msgid "End of file.\n"
+msgid "End of file"
+msgstr "Enden av filen.\n"
 
 #: programs/conhost/conhost.rc:54
 msgid "Cursor size"
@@ -15533,6 +15617,13 @@ msgid ""
 "Are you sure you want to close all programs and exit the virtual desktop?"
 msgstr "Virkelig slette disse verdiene?"
 
+#: programs/explorer/explorer.rc:38
+#, fuzzy
+#| msgctxt "display name"
+#| msgid "Desktop"
+msgid "Wine Desktop"
+msgstr "Skrivebord"
+
 #: programs/findstr/findstr.rc:28
 #, fuzzy
 #| msgid "Reset Connections"
@@ -15708,6 +15799,12 @@ msgstr "Krypterer filsystem"
 #| msgid "Current Connections"
 msgid "Current LogonId is"
 msgstr "Gjeldende tilkoblinger"
+
+#: programs/klist/klist.rc:38
+#, fuzzy
+#| msgid "client"
+msgid "Client"
+msgstr "klient"
 
 #: programs/msinfo32/msinfo32.rc:28
 msgid "System Information"
@@ -20071,7 +20168,9 @@ msgid "Help topics: "
 msgstr "Emner i Hjelp: "
 
 #: programs/wmic/wmic.rc:28
-msgid "Error: Command line not supported\n"
+#, fuzzy
+#| msgid "Error: Command line not supported\n"
+msgid "Error: Command not supported\n"
 msgstr "Feil: Kommandolinjen støttes ikke\n"
 
 #: programs/wmic/wmic.rc:29
@@ -20085,6 +20184,12 @@ msgstr "Feil: Ugyldig spørring\n"
 #: programs/wmic/wmic.rc:31
 msgid "Error: Invalid syntax for PATH\n"
 msgstr "Feil: Ugyldig syntaks for PATH\n"
+
+#: programs/wmic/wmic.rc:32
+#, fuzzy
+#| msgid "Bad command.\n"
+msgid "Supply a command\n"
+msgstr "Ugyldig kommando.\n"
 
 #: programs/wordpad/wordpad.rc:31
 msgid "&New...\tCtrl+N"

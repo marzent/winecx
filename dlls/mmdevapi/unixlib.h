@@ -140,6 +140,15 @@ struct is_format_supported_params
     HRESULT result;
 };
 
+struct get_loopback_capture_device_params
+{
+    const WCHAR *name;
+    const char *device;
+    char *ret_device;
+    UINT32 ret_device_len;
+    HRESULT result;
+};
+
 struct get_mix_format_params
 {
     const char *device;
@@ -213,6 +222,13 @@ struct set_event_handle_params
 {
     stream_handle stream;
     HANDLE event;
+    HRESULT result;
+};
+
+struct set_sample_rate_params
+{
+    stream_handle stream;
+    float rate;
     HRESULT result;
 };
 
@@ -313,6 +329,7 @@ enum unix_funcs
     get_capture_buffer,
     release_capture_buffer,
     is_format_supported,
+    get_loopback_capture_device,
     get_mix_format,
     get_device_period,
     get_buffer_size,
@@ -323,6 +340,7 @@ enum unix_funcs
     get_position,
     set_volumes,
     set_event_handle,
+    set_sample_rate,
     test_connect,
     is_started,
     get_prop_value,

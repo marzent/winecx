@@ -357,6 +357,7 @@ enum wined3d_sm4_register_type
     WINED3D_SM5_RT_GS_INSTANCE_ID          = 0x25,
     WINED3D_SM5_RT_DEPTHOUT_GREATER_EQUAL  = 0x26,
     WINED3D_SM5_RT_DEPTHOUT_LESS_EQUAL     = 0x27,
+    WINED3D_SM5_RT_OUTPUT_STENCIL_REF      = 0x29,
 };
 
 enum wined3d_sm4_output_primitive_type
@@ -1184,6 +1185,8 @@ static const enum wined3d_shader_register_type register_type_table[] =
     /* WINED3D_SM5_RT_GS_INSTANCE_ID */          WINED3DSPR_GSINSTID,
     /* WINED3D_SM5_RT_DEPTHOUT_GREATER_EQUAL */  WINED3DSPR_DEPTHOUTGE,
     /* WINED3D_SM5_RT_DEPTHOUT_LESS_EQUAL */     WINED3DSPR_DEPTHOUTLE,
+    /* UNKNOWN */                                ~0u,
+    /* WINED3D_SM5_RT_OUTPUT_STENCIL_REF */      WINED3DSPR_STENCILREF,
 };
 
 static const struct wined3d_sm4_opcode_info *get_opcode_info(enum wined3d_sm4_opcode opcode)
@@ -1308,7 +1311,7 @@ static void *shader_sm4_init(const DWORD *byte_code, size_t byte_code_size,
         return NULL;
     }
 
-    if (!(priv = heap_alloc(sizeof(*priv))))
+    if (!(priv = malloc(sizeof(*priv))))
     {
         ERR("Failed to allocate private data\n");
         return NULL;
@@ -1320,7 +1323,7 @@ static void *shader_sm4_init(const DWORD *byte_code, size_t byte_code_size,
     priv->shader_version.type = wined3d_get_sm4_shader_type(byte_code, byte_code_size);
     if (priv->shader_version.type == WINED3D_SHADER_TYPE_INVALID)
     {
-        heap_free(priv);
+        free(priv);
         return NULL;
     }
 
@@ -1358,9 +1361,9 @@ static void shader_sm4_free(void *data)
     list_move_head(&priv->src_free, &priv->src);
     LIST_FOR_EACH_ENTRY_SAFE(e1, e2, &priv->src_free, struct wined3d_shader_src_param_entry, entry)
     {
-        heap_free(e1);
+        free(e1);
     }
-    heap_free(priv);
+    free(priv);
 }
 
 static struct wined3d_shader_src_param *get_src_param(struct wined3d_sm4_data *priv)
@@ -1375,7 +1378,7 @@ static struct wined3d_shader_src_param *get_src_param(struct wined3d_sm4_data *p
     }
     else
     {
-        if (!(e = heap_alloc(sizeof(*e))))
+        if (!(e = malloc(sizeof(*e))))
             return NULL;
         elem = &e->entry;
     }
@@ -1919,7 +1922,7 @@ static HRESULT shader_parse_signature(DWORD tag, const char *data, unsigned int 
         return E_INVALIDARG;
     }
 
-    if (!(e = heap_calloc(count, sizeof(*e))))
+    if (!(e = calloc(count, sizeof(*e))))
     {
         ERR("Failed to allocate input signature memory.\n");
         return E_OUTOFMEMORY;
@@ -1940,7 +1943,7 @@ static HRESULT shader_parse_signature(DWORD tag, const char *data, unsigned int 
         if (!(e[i].semantic_name = shader_get_string(data, data_size, name_offset)))
         {
             WARN("Invalid name offset %#x (data size %#x).\n", name_offset, data_size);
-            heap_free(e);
+            free(e);
             return E_INVALIDARG;
         }
         e[i].semantic_idx = read_dword(&ptr);

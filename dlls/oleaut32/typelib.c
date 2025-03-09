@@ -6312,42 +6312,6 @@ static HRESULT WINAPI ITypeInfo_fnGetIDsOfNames( ITypeInfo2 *iface,
 
 extern LONGLONG call_method( void *func, int nb_args, const DWORD *args, int *stack_offset );
 extern double call_double_method( void *func, int nb_args, const DWORD *args, int *stack_offset );
-__ASM_GLOBAL_FUNC( call_method,
-                   "pushl %ebp\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
-                   __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")
-                   "movl %esp,%ebp\n\t"
-                   __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")
-                   "pushl %esi\n\t"
-                  __ASM_CFI(".cfi_rel_offset %esi,-4\n\t")
-                   "pushl %edi\n\t"
-                  __ASM_CFI(".cfi_rel_offset %edi,-8\n\t")
-                   "movl 12(%ebp),%edx\n\t"
-                   "movl %esp,%edi\n\t"
-                   "shll $2,%edx\n\t"
-                   "jz 1f\n\t"
-                   "subl %edx,%edi\n\t"
-                   "andl $~15,%edi\n\t"
-                   "movl %edi,%esp\n\t"
-                   "movl 12(%ebp),%ecx\n\t"
-                   "movl 16(%ebp),%esi\n\t"
-                   "cld\n\t"
-                   "rep; movsl\n"
-                   "1:\tcall *8(%ebp)\n\t"
-                   "subl %esp,%edi\n\t"
-                   "movl 20(%ebp),%ecx\n\t"
-                   "movl %edi,(%ecx)\n\t"
-                   "leal -8(%ebp),%esp\n\t"
-                   "popl %edi\n\t"
-                   __ASM_CFI(".cfi_same_value %edi\n\t")
-                   "popl %esi\n\t"
-                   __ASM_CFI(".cfi_same_value %esi\n\t")
-                   "popl %ebp\n\t"
-                   __ASM_CFI(".cfi_def_cfa %esp,4\n\t")
-                   __ASM_CFI(".cfi_same_value %ebp\n\t")
-                   "ret" )
-__ASM_GLOBAL_FUNC( call_double_method,
-                   "jmp " __ASM_NAME("call_method") )
 
 HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VARTYPE vtReturn,
                              UINT cActuals, VARTYPE* prgvt, VARIANTARG** prgpvarg, VARIANT* pvargResult )
@@ -6461,52 +6425,6 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
 
 extern DWORD_PTR CDECL call_method( void *func, int nb_args, const DWORD_PTR *args );
 extern double CDECL call_double_method( void *func, int nb_args, const DWORD_PTR *args );
-__ASM_GLOBAL_FUNC( call_method,
-                   "pushq %rbp\n\t"
-                   __ASM_SEH(".seh_pushreg %rbp\n\t")
-                   __ASM_CFI(".cfi_adjust_cfa_offset 8\n\t")
-                   __ASM_CFI(".cfi_rel_offset %rbp,0\n\t")
-                   "movq %rsp,%rbp\n\t"
-                   __ASM_SEH(".seh_setframe %rbp,0\n\t")
-                   __ASM_CFI(".cfi_def_cfa_register %rbp\n\t")
-                   "pushq %rsi\n\t"
-                   __ASM_SEH(".seh_pushreg %rsi\n\t")
-                   __ASM_CFI(".cfi_rel_offset %rsi,-8\n\t")
-                   "pushq %rdi\n\t"
-                   __ASM_SEH(".seh_pushreg %rdi\n\t")
-                   __ASM_CFI(".cfi_rel_offset %rdi,-16\n\t")
-                   __ASM_SEH(".seh_endprologue\n\t")
-                   "movq %rcx,%rax\n\t"
-                   "movq $4,%rcx\n\t"
-                   "cmp %rcx,%rdx\n\t"
-                   "cmovgq %rdx,%rcx\n\t"
-                   "leaq 0(,%rcx,8),%rdx\n\t"
-                   "subq %rdx,%rsp\n\t"
-                   "andq $~15,%rsp\n\t"
-                   "movq %rsp,%rdi\n\t"
-                   "movq %r8,%rsi\n\t"
-                   "rep; movsq\n\t"
-                   "movq 0(%rsp),%rcx\n\t"
-                   "movq 8(%rsp),%rdx\n\t"
-                   "movq 16(%rsp),%r8\n\t"
-                   "movq 24(%rsp),%r9\n\t"
-                   "movq 0(%rsp),%xmm0\n\t"
-                   "movq 8(%rsp),%xmm1\n\t"
-                   "movq 16(%rsp),%xmm2\n\t"
-                   "movq 24(%rsp),%xmm3\n\t"
-                   "callq *%rax\n\t"
-                   "leaq -16(%rbp),%rsp\n\t"
-                   "popq %rdi\n\t"
-                   __ASM_CFI(".cfi_same_value %rdi\n\t")
-                   "popq %rsi\n\t"
-                   __ASM_CFI(".cfi_same_value %rsi\n\t")
-                   __ASM_CFI(".cfi_def_cfa_register %rsp\n\t")
-                   "popq %rbp\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset -8\n\t")
-                   __ASM_CFI(".cfi_same_value %rbp\n\t")
-                   "ret")
-__ASM_GLOBAL_FUNC( call_double_method,
-                   "jmp " __ASM_NAME("call_method") )
 
 HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VARTYPE vtReturn,
                              UINT cActuals, VARTYPE* prgvt, VARIANTARG** prgpvarg, VARIANT* pvargResult )
@@ -6599,40 +6517,6 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
 extern LONGLONG CDECL call_method( void *func, int nb_stk_args, const DWORD *stk_args, const DWORD *reg_args );
 extern float CDECL call_float_method( void *func, int nb_stk_args, const DWORD *stk_args, const DWORD *reg_args );
 extern double CDECL call_double_method( void *func, int nb_stk_args, const DWORD *stk_args, const DWORD *reg_args );
-__ASM_GLOBAL_FUNC( call_method,
-                    /* r0 = *func
-                     * r1 = nb_stk_args
-                     * r2 = *stk_args (pointer to 'nb_stk_args' DWORD values to push on stack)
-                     * r3 = *reg_args (pointer to 8, 64-bit d0-d7 (double) values OR as 16, 32-bit s0-s15 (float) values, followed by 4, 32-bit (DWORD) r0-r3 values)
-                     */
-
-                    "push {fp, lr}\n\t"             /* Save frame pointer and return address (stack still aligned to 8 bytes) */
-                    "mov fp, sp\n\t"                /* Save stack pointer as our frame for cleaning the stack on return */
-
-                    "lsls r1, r1, #2\n\t"           /* r1 = nb_stk_args * sizeof(DWORD) */
-                    "beq 1f\n\t"                    /* Skip allocation if no stack args */
-                    "add r2, r2, r1\n"              /* Calculate ending address of incoming stack data */
-                    "2:\tldr ip, [r2, #-4]!\n\t"    /* Get next value */
-                    "str ip, [sp, #-4]!\n\t"        /* Push it on the stack */
-                    "subs r1, r1, #4\n\t"           /* Decrement count */
-                    "bgt 2b\n\t"                    /* Loop till done */
-
-                    "1:\n\t"
-#ifndef __SOFTFP__
-                    "vldm r3!, {s0-s15}\n\t"        /* Load the s0-s15/d0-d7 arguments */
-#endif
-                    "mov ip, r0\n\t"                /* Save the function call address to ip before we nuke r0 with arguments to pass */
-                    "ldm r3, {r0-r3}\n\t"           /* Load the r0-r3 arguments */
-
-                    "blx ip\n\t"                    /* Call the target function */
-
-                    "mov sp, fp\n\t"                /* Clean the stack using fp */
-                    "pop {fp, pc}\n\t"              /* Restore fp and return */
-                )
-__ASM_GLOBAL_FUNC( call_float_method,
-                   "b " __ASM_NAME("call_method") )
-__ASM_GLOBAL_FUNC( call_double_method,
-                   "b " __ASM_NAME("call_method") )
 
 HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VARTYPE vtReturn,
                              UINT cActuals, VARTYPE* prgvt, VARIANTARG** prgpvarg, VARIANT* pvargResult )
@@ -6642,19 +6526,15 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
     UINT i;
     DWORD *args;
     struct {
-#ifndef __SOFTFP__
         union {
             float s[16];
             double d[8];
         } sd;
-#endif
         DWORD r[4];
     } regs;
     int rcount;     /* 32-bit register index count */
-#ifndef __SOFTFP__
     int scount = 0; /* single-precision float register index count */
     int dcount = 0; /* double-precision float register index count */
-#endif
 
     TRACE("(%p, %Id, %d, %d, %d, %p, %p, %p (vt=%d))\n",
         pvInstance, oVft, cc, vtReturn, cActuals, prgvt, prgpvarg, pvargResult, V_VT(pvargResult));
@@ -6702,11 +6582,8 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
 
         switch (prgvt[i])
         {
-        case VT_EMPTY:
-            break;
         case VT_R8:             /* these must be 8-byte aligned, and put in 'd' regs or stack, as they are double-floats */
         case VT_DATE:
-#ifndef __SOFTFP__
             dcount = max( (scount + 1) / 2, dcount );
             if (dcount < 8)
             {
@@ -6719,7 +6596,6 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
                 argspos += sizeof(V_R8(arg)) / sizeof(DWORD);
             }
             break;
-#endif
         case VT_I8:             /* these must be 8-byte aligned, and put in 'r' regs or stack, as they are long-longs */
         case VT_UI8:
         case VT_CY:
@@ -6757,26 +6633,37 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
                 --ntemp;
             }
             break;
-        case VT_BOOL:  /* VT_BOOL is 16-bit but BOOL is 32-bit, needs to be extended */
-            if (rcount < 4)
-                regs.r[rcount++] = V_BOOL(arg);
-            else
-                args[argspos++] = V_BOOL(arg);
-            break;
         case VT_R4:             /* these must be 4-byte aligned, and put in 's' regs or stack, as they are single-floats */
-#ifndef __SOFTFP__
             if (!(scount % 2)) scount = max( scount, dcount * 2 );
             if (scount < 16)
                 regs.sd.s[scount++] = V_R4(arg);
             else
                 args[argspos++] = V_UI4(arg);
             break;
-#endif
+        /* extend parameters to 32 bits */
+        case VT_I1:
+            if (rcount < 4) regs.r[rcount++] = V_I1(arg);
+            else args[argspos++] = V_I1(arg);
+            break;
+        case VT_UI1:
+            if (rcount < 4) regs.r[rcount++] = V_UI1(arg);
+            else args[argspos++] = V_UI1(arg);
+            break;
+        case VT_I2:
+            if (rcount < 4) regs.r[rcount++] = V_I2(arg);
+            else args[argspos++] = V_I2(arg);
+            break;
+        case VT_UI2:
+            if (rcount < 4) regs.r[rcount++] = V_UI2(arg);
+            else args[argspos++] = V_UI2(arg);
+            break;
+        case VT_BOOL:
+            if (rcount < 4) regs.r[rcount++] = V_BOOL(arg);
+            else args[argspos++] = V_BOOL(arg);
+            break;
         default:
-            if (rcount < 4)
-                regs.r[rcount++] = V_UI4(arg);
-            else
-                args[argspos++] = V_UI4(arg);
+            if (rcount < 4) regs.r[rcount++] = V_UI4(arg);
+            else args[argspos++] = V_UI4(arg);
             break;
         }
         TRACE("arg %u: type %s %s\n", i, debugstr_vt(prgvt[i]), debugstr_variant(arg));
@@ -6786,7 +6673,6 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
 
     switch (vtReturn)
     {
-    case VT_EMPTY:      /* EMPTY = no return value */
     case VT_DECIMAL:    /* DECIMAL and VARIANT already have a pointer argument passed (see above) */
     case VT_VARIANT:
         call_method( func, argspos, args, (DWORD*)&regs );
@@ -6818,37 +6704,6 @@ HRESULT WINAPI DispCallFunc( void* pvInstance, ULONG_PTR oVft, CALLCONV cc, VART
 extern DWORD_PTR CDECL call_method( void *func, int nb_stk_args, const DWORD_PTR *stk_args, const DWORD_PTR *reg_args );
 extern float CDECL call_float_method( void *func, int nb_stk_args, const DWORD_PTR *stk_args, const DWORD_PTR *reg_args );
 extern double CDECL call_double_method( void *func, int nb_stk_args, const DWORD_PTR *stk_args, const DWORD_PTR *reg_args );
-__ASM_GLOBAL_FUNC( call_method,
-                   "stp x29, x30, [sp, #-16]!\n\t"
-                   __ASM_SEH(".seh_save_fplr_x 16\n\t")
-                   "mov x29, sp\n\t"
-                   __ASM_SEH(".seh_set_fp\n\t")
-                   __ASM_SEH(".seh_endprologue\n\t")
-                   "sub sp, sp, x1, lsl #3\n\t"
-                   "cbz x1, 2f\n"
-                   "1:\tsub x1, x1, #1\n\t"
-                   "ldr x4, [x2, x1, lsl #3]\n\t"
-                   "str x4, [sp, x1, lsl #3]\n\t"
-                   "cbnz x1, 1b\n"
-                   "2:\tmov x16, x0\n\t"
-                   "mov x9, x3\n\t"
-                   "ldp d0, d1, [x9]\n\t"
-                   "ldp d2, d3, [x9, #0x10]\n\t"
-                   "ldp d4, d5, [x9, #0x20]\n\t"
-                   "ldp d6, d7, [x9, #0x30]\n\t"
-                   "ldp x0, x1, [x9, #0x40]\n\t"
-                   "ldp x2, x3, [x9, #0x50]\n\t"
-                   "ldp x4, x5, [x9, #0x60]\n\t"
-                   "ldp x6, x7, [x9, #0x70]\n\t"
-                   "ldr x8, [x9, #0x80]\n\t"
-                   "blr x16\n\t"
-                   "mov sp, x29\n\t"
-                   "ldp x29, x30, [sp], #16\n\t"
-                   "ret" )
-__ASM_GLOBAL_FUNC( call_float_method,
-                   "b " __ASM_NAME("call_method") )
-__ASM_GLOBAL_FUNC( call_double_method,
-                   "b " __ASM_NAME("call_method") )
 
 HRESULT WINAPI DispCallFunc( void *instance, ULONG_PTR offset, CALLCONV cc, VARTYPE ret_type, UINT count,
                              VARTYPE *types, VARIANTARG **vargs, VARIANT *result )
@@ -7483,6 +7338,17 @@ static HRESULT WINAPI ITypeInfo_fnInvoke(
                         }
                     }
                 }
+                else if (func_desc->cParamsOpt < 0 && ((rgvt[i] & ~VT_BYREF) == (VT_VARIANT | VT_ARRAY)))
+                {
+                    hres = SafeArrayAllocDescriptorEx( VT_EMPTY, 1, &a );
+                    if (FAILED(hres)) break;
+                    if (rgvt[i] & VT_BYREF)
+                        V_BYREF(&rgvarg[i]) = &a;
+                    else
+                        V_ARRAY(&rgvarg[i]) = a;
+                    V_VT(&rgvarg[i]) = rgvt[i];
+                    prgpvarg[i] = &rgvarg[i];
+                }
                 else
                 {
                     hres = DISP_E_BADPARAMCOUNT;
@@ -7679,6 +7545,28 @@ func_fail:
         dump_VARDESC(var_desc);
         ITypeInfo2_ReleaseVarDesc(iface, var_desc);
         return E_NOTIMPL;
+    }
+
+    /* not found, check for special error cases */
+    for (fdc = 0; fdc < This->typeattr.cFuncs; ++fdc)
+    {
+        const FUNCDESC *func_desc = &This->funcdescs[fdc].funcdesc;
+        if (memid == func_desc->memid)
+        {
+            if ((wFlags & INVOKE_PROPERTYPUT) && (func_desc->invkind & INVOKE_PROPERTYGET))
+            {
+                int count_inputs = 0;
+                for (i = 0; i < func_desc->cParams; i++)
+                {
+                    USHORT wParamFlags = func_desc->lprgelemdescParam[i].paramdesc.wParamFlags;
+                    if (!(wParamFlags & PARAMFLAG_FRETVAL))
+                        count_inputs++;
+                }
+
+                if (count_inputs == 0 || pDispParams->cArgs == count_inputs + 1)
+                    return DISP_E_BADPARAMCOUNT;
+            }
+        }
     }
 
     /* not found, look for it in inherited interfaces */
@@ -9192,6 +9080,7 @@ static HRESULT WMSFT_compile_strings(ITypeLibImpl *This,
                 data + sizeof(INT16), file->string_seg.len - last_offs - sizeof(INT16), NULL, NULL);
         if (size == 0) {
             free(file->string_seg.data);
+            file->string_seg.data = NULL;
             return E_UNEXPECTED;
         }
 

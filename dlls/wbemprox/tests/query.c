@@ -140,6 +140,82 @@ static void test_select( IWbemServices *services )
     SysFreeString( query );
 }
 
+static void check_explorer_like_query( IWbemServices *services, const WCHAR *str, BOOL expect_success)
+{
+    HRESULT hr;
+    IWbemClassObject *obj[2];
+    BSTR wql = SysAllocString( L"wql" ), query = SysAllocString( str );
+    LONG flags = WBEM_FLAG_RETURN_IMMEDIATELY | WBEM_FLAG_FORWARD_ONLY;
+    ULONG count;
+    IEnumWbemClassObject *result;
+
+    hr = IWbemServices_ExecQuery( services, wql, query, flags, NULL, &result );
+    if (hr == S_OK)
+    {
+        VARIANT var;
+        IEnumWbemClassObject_Next( result, 10000, 2, obj, &count );
+
+        ok( count == (expect_success ? 1 : 0), "expected to get %d results but got %lu\n",
+                (expect_success ? 1 : 0), count);
+
+        if (count)
+        {
+            BSTR caption;
+            hr = IWbemClassObject_Get( obj[0], L"Caption", 0, &var, NULL, NULL );
+            ok( hr == WBEM_S_NO_ERROR, "IWbemClassObject_Get failed %#lx", hr);
+            caption = V_BSTR(&var);
+            ok( !wcscmp( caption, L"explorer.exe" ), "%s is not explorer.exe\n", debugstr_w(caption));
+            VariantClear( &var );
+        }
+
+        while (count--)
+            IWbemClassObject_Release( obj[count] );
+    }
+
+    SysFreeString( wql );
+    SysFreeString( query );
+}
+
+
+static void test_like_query( IWbemServices *services )
+{
+    int i;
+    WCHAR query[250];
+
+    struct {
+        BOOL expect_success;
+        const WCHAR *str;
+    } queries[] = {
+        { TRUE,  L"explorer%" },
+        { FALSE, L"xplorer.exe" },
+        { FALSE, L"explorer.ex" },
+        { TRUE,  L"%explorer%" },
+        { TRUE,  L"explorer.exe%" },
+        { TRUE,  L"%explorer.exe%" },
+        { TRUE,  L"%plorer.exe" },
+        { TRUE,  L"%plorer.exe%" },
+        { TRUE,  L"__plorer.exe" },
+        { TRUE,  L"e_plorer.exe" },
+        { FALSE, L"_plorer.exe" },
+        { TRUE,  L"%%%plorer.e%" },
+        { TRUE,  L"%plorer.e%" },
+        { TRUE,  L"%plorer.e_e" },
+        { TRUE,  L"%plorer.e_e" },
+        { TRUE,  L"explore%exe" },
+        { FALSE, L"fancy_explore.exe" },
+        { FALSE, L"fancy%xplore%exe" },
+        { FALSE, L"%%%f%xplore%exe" },
+    };
+
+    for (i = 0; i < ARRAYSIZE(queries); i++)
+    {
+        wsprintfW( query, L"SELECT * FROM Win32_Process WHERE Caption LIKE '%ls'", queries[i].str );
+        trace("%s\n", wine_dbgstr_w(query));
+        check_explorer_like_query( services, query, queries[i].expect_success );
+    }
+}
+
+
 static void test_associators( IWbemServices *services )
 {
     static const WCHAR *test[] =
@@ -407,6 +483,7 @@ static void test_Win32_Bios( IWbemServices *services )
     check_property( obj, L"SMBIOSBIOSVersion", VT_BSTR, CIM_STRING );
     check_property( obj, L"SMBIOSMajorVersion", VT_I4, CIM_UINT16 );
     check_property( obj, L"SMBIOSMinorVersion", VT_I4, CIM_UINT16 );
+    check_property( obj, L"Status", VT_BSTR, CIM_STRING );
     check_property( obj, L"Version", VT_BSTR, CIM_STRING );
 
     IWbemClassObject_Release( obj );
@@ -472,6 +549,7 @@ static void test_Win32_Process( IWbemServices *services, BOOL use_full_path )
     IWbemClassObject *process, *sig_in, *sig_out, *out, *params;
     WCHAR cmdlineW[MAX_PATH + 64 + 1];
     IWbemQualifierSet *qualifiers;
+    WCHAR executable_path[255];
     VARIANT retval, val;
     SAFEARRAY *names;
     LONG bound, i;
@@ -641,7 +719,6 @@ static void test_Win32_Process( IWbemServices *services, BOOL use_full_path )
     hr = IWbemServices_ExecMethod( services, class, method, 0, NULL, NULL, &out, NULL );
     ok( hr == S_OK, "failed to execute method %#lx\n", hr );
     SysFreeString( method );
-    SysFreeString( class );
 
     type = 0xdeadbeef;
     VariantInit( &retval );
@@ -688,8 +765,25 @@ static void test_Win32_Process( IWbemServices *services, BOOL use_full_path )
     hr = IWbemQualifierSet_Get( qualifiers, L"ID", 0, &val, &flavor );
     ok( hr == WBEM_E_NOT_FOUND, "got %#lx\n", hr );
 
+    /* Test instance properties */
+
+    hr = IWbemServices_GetObject( services, class, 0, NULL, &process, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+
+    type = 0xdeadbeef;
+    VariantInit( &val );
+    hr = IWbemClassObject_Get( process, L"ExecutablePath", 0, &val, &type, NULL );
+    ok( hr == S_OK, "IWbemClassObject_Get failed with %#lx\n", hr );
+    ok( V_VT( &val ) == VT_BSTR, "unexpected variant type 0x%x\n", V_VT( &val ) );
+    ok( type == CIM_STRING, "unexpected type %#lx\n", type );
+    GetModuleFileNameW( NULL, executable_path, ARRAY_SIZE(executable_path) );
+    ok( !lstrcmpiW( V_BSTR( &val ), executable_path ), "got %s, expected %s\n", wine_dbgstr_w(V_BSTR(&val)), wine_dbgstr_w(executable_path) );
+    VariantClear( &val );
+    IWbemClassObject_Release( process );
+
     IWbemQualifierSet_Release( qualifiers );
     IWbemClassObject_Release( out );
+    SysFreeString( class );
 }
 
 static void test_Win32_ComputerSystem( IWbemServices *services )
@@ -2210,8 +2304,7 @@ static void test_SystemRestore( IWbemServices *services )
 
 static void test_Win32_LogicalDisk( IWbemServices *services )
 {
-    BSTR wql = SysAllocString( L"wql" );
-    BSTR query = SysAllocString( L"SELECT * FROM Win32_LogicalDisk" );
+    BSTR wql = SysAllocString( L"wql" ), query = SysAllocString( L"SELECT * FROM Win32_LogicalDisk" );
     IEnumWbemClassObject *result;
     IWbemClassObject *obj;
     HRESULT hr;
@@ -2252,6 +2345,17 @@ static void test_Win32_LogicalDisk( IWbemServices *services )
     ok( count == 1, "got %lu\n", count );
     IWbemClassObject_Release( obj );
     IEnumWbemClassObject_Release( result );
+    SysFreeString( query );
+
+    query = SysAllocString( L"Win32_LogicalDisk = \"C:\"" );
+    hr = IWbemServices_GetObject( services, query, 0, NULL, &obj, NULL );
+    ok( hr == WBEM_E_INVALID_OBJECT_PATH, "got %#lx\n", hr );
+    SysFreeString( query );
+
+    query = SysAllocString( L"Win32_LogicalDisk=\"C:\"" );
+    hr = IWbemServices_GetObject( services, query, 0, NULL, &obj, NULL );
+    ok( hr == S_OK, "got %#lx\n", hr );
+    IWbemClassObject_Release( obj );
     SysFreeString( query );
     SysFreeString( wql );
 }
@@ -2366,6 +2470,7 @@ START_TEST(query)
     test_query_async( services );
     test_query_semisync( services );
     test_select( services );
+    test_like_query( services );
 
     /* classes */
     test_SoftwareLicensingProduct( services );

@@ -35,22 +35,6 @@ AS_VAR_IF([ac_cv_prog_$1],[],
      AC_CHECK_PROG([$1],[$2],[$2],[$3],[$4])])],
 [AS_VAR_COPY([$1],[ac_cv_prog_$1])])])
 
-dnl WINE_HEADER_MAJOR()
-dnl
-dnl Same as AC_HEADER_MAJOR but fixed to handle the glibc 2.25 sys/types.h breakage
-dnl
-AC_DEFUN([WINE_HEADER_MAJOR],
-[AC_CHECK_HEADER(sys/mkdev.h,
-		[AC_DEFINE(MAJOR_IN_MKDEV, 1,
-			   [Define to 1 if `major', `minor', and `makedev' are
-			    declared in <mkdev.h>.])])
-if test $ac_cv_header_sys_mkdev_h = no; then
-  AC_CHECK_HEADER(sys/sysmacros.h,
-		  [AC_DEFINE(MAJOR_IN_SYSMACROS, 1,
-			     [Define to 1 if `major', `minor', and `makedev'
-			      are declared in <sysmacros.h>.])])
-fi])
-
 dnl **** Initialize the programs used by other checks ****
 dnl
 dnl Usage: WINE_PATH_SONAME_TOOLS
@@ -214,6 +198,10 @@ ac_wine_try_cflags_saved_exeext=$ac_exeext
 CFLAGS="$CFLAGS -nostdlib -nodefaultlibs $1"
 ac_exeext=".exe"
 AC_LINK_IFELSE([AC_LANG_SOURCE([[void *__os_arm64x_dispatch_ret = 0;
+const unsigned int _load_config_used[0x50] = { sizeof(_load_config_used) };
+#if defined(__clang_major__) && defined(MIN_CLANG_VERSION) && __clang_major__ < MIN_CLANG_VERSION
+#error Too old clang version
+#endif
 int __cdecl mainCRTStartup(void) { return 0; }]])],
                [AS_VAR_SET(ac_var,yes)], [AS_VAR_SET(ac_var,no)])
 CFLAGS=$ac_wine_try_cflags_saved
@@ -266,13 +254,10 @@ dnl
 AC_DEFUN([WINE_CHECK_DEFINE],
 [AS_VAR_PUSHDEF([ac_var],[ac_cv_cpp_def_$1])dnl
 AC_CACHE_CHECK([whether we need to define $1],ac_var,
-    AC_EGREP_CPP(yes,[#ifndef $1
-yes
-#endif],
-    [AS_VAR_SET(ac_var,yes)],[AS_VAR_SET(ac_var,no)]))
-AS_VAR_IF([ac_var],[yes],
-      [CFLAGS="$CFLAGS -D$1"
-  LINTFLAGS="$LINTFLAGS -D$1"])dnl
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#ifdef $1
+#error no
+#endif])],[AS_VAR_SET([ac_var],[yes])],[AS_VAR_SET([ac_var],[no])]))
+AS_VAR_IF([ac_var],[yes],[EXTRACFLAGS="$EXTRACFLAGS -D$1"])dnl
 AS_VAR_POPDEF([ac_var])])
 
 dnl **** Check for functions with some extra libraries ****

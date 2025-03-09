@@ -25,6 +25,7 @@
 #include "winbase.h"
 #include "winuser.h"
 #include "ole2.h"
+#include "mshtmdid.h"
 
 #include "mshtml_private.h"
 #include "htmlevent.h"
@@ -201,59 +202,8 @@ static inline HTMLAnchorElement *impl_from_IHTMLAnchorElement(IHTMLAnchorElement
     return CONTAINING_RECORD(iface, HTMLAnchorElement, IHTMLAnchorElement_iface);
 }
 
-static HRESULT WINAPI HTMLAnchorElement_QueryInterface(IHTMLAnchorElement *iface,
-        REFIID riid, void **ppv)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-
-    return IHTMLDOMNode_QueryInterface(&This->element.node.IHTMLDOMNode_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLAnchorElement_AddRef(IHTMLAnchorElement *iface)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-
-    return IHTMLDOMNode_AddRef(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static ULONG WINAPI HTMLAnchorElement_Release(IHTMLAnchorElement *iface)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-
-    return IHTMLDOMNode_Release(&This->element.node.IHTMLDOMNode_iface);
-}
-
-static HRESULT WINAPI HTMLAnchorElement_GetTypeInfoCount(IHTMLAnchorElement *iface, UINT *pctinfo)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->element.node.event_target.dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLAnchorElement_GetTypeInfo(IHTMLAnchorElement *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    return IDispatchEx_GetTypeInfo(&This->element.node.event_target.dispex.IDispatchEx_iface, iTInfo, lcid,
-            ppTInfo);
-}
-
-static HRESULT WINAPI HTMLAnchorElement_GetIDsOfNames(IHTMLAnchorElement *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    return IDispatchEx_GetIDsOfNames(&This->element.node.event_target.dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLAnchorElement_Invoke(IHTMLAnchorElement *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    return IDispatchEx_Invoke(&This->element.node.event_target.dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLAnchorElement, IHTMLAnchorElement,
+                      impl_from_IHTMLAnchorElement(iface)->element.node.event_target.dispex)
 
 static HRESULT WINAPI HTMLAnchorElement_put_href(IHTMLAnchorElement *iface, BSTR v)
 {
@@ -829,13 +779,13 @@ static void HTMLAnchorElement_unlink(DispatchEx *dispex)
     unlink_ref(&This->nsanchor);
 }
 
-static HRESULT HTMLAnchorElement_handle_event(DispatchEx *dispex, eventid_t eid, nsIDOMEvent *event, BOOL *prevent_default)
+static HRESULT HTMLAnchorElement_handle_event(DispatchEx *dispex, DOMEvent *event, BOOL *prevent_default)
 {
     HTMLAnchorElement *This = impl_from_DispatchEx(dispex);
     nsAString href_str, target_str;
     nsresult nsres;
 
-    if(eid == EVENTID_CLICK) {
+    if(event->event_id == EVENTID_CLICK) {
         nsAString_Init(&href_str, NULL);
         nsres = nsIDOMHTMLAnchorElement_GetHref(This->nsanchor, &href_str);
         if (NS_FAILED(nsres)) {
@@ -850,14 +800,14 @@ static HRESULT HTMLAnchorElement_handle_event(DispatchEx *dispex, eventid_t eid,
             goto fallback;
         }
 
-        return handle_link_click_event(&This->element, &href_str, &target_str, event, prevent_default);
+        return handle_link_click_event(&This->element, &href_str, &target_str, event->nsevent, prevent_default);
 
 fallback:
         nsAString_Finish(&href_str);
         nsAString_Finish(&target_str);
     }
 
-    return HTMLElement_handle_event(&This->element.node.event_target.dispex, eid, event, prevent_default);
+    return HTMLElement_handle_event(&This->element.node.event_target.dispex, event, prevent_default);
 }
 
 static const NodeImplVtbl HTMLAnchorElementImplVtbl = {
@@ -879,18 +829,29 @@ static const event_target_vtbl_t HTMLAnchorElement_event_target_vtbl = {
     .handle_event       = HTMLAnchorElement_handle_event
 };
 
+static void HTMLAnchorElement_init_dispex_info(dispex_data_t *info, compat_mode_t mode)
+{
+    static const DISPID elem_dispids[] = {
+        DISPID_IHTMLELEMENT_TOSTRING,
+        DISPID_UNKNOWN
+    };
+    HTMLElement_init_dispex_info(info, mode);
+    if(mode >= COMPAT_MODE_IE9)
+        dispex_info_add_dispids(info, IHTMLElement_tid, elem_dispids);
+}
+
 static const tid_t HTMLAnchorElement_iface_tids[] = {
     IHTMLAnchorElement_tid,
-    HTMLELEMENT_TIDS,
     0
 };
 
-static dispex_static_data_t HTMLAnchorElement_dispex = {
-    "HTMLAnchorElement",
-    &HTMLAnchorElement_event_target_vtbl.dispex_vtbl,
-    DispHTMLAnchorElement_tid,
-    HTMLAnchorElement_iface_tids,
-    HTMLElement_init_dispex_info
+dispex_static_data_t HTMLAnchorElement_dispex = {
+    .id           = PROT_HTMLAnchorElement,
+    .prototype_id = PROT_HTMLElement,
+    .vtbl         = &HTMLAnchorElement_event_target_vtbl.dispex_vtbl,
+    .disp_tid     = DispHTMLAnchorElement_tid,
+    .iface_tids   = HTMLAnchorElement_iface_tids,
+    .init_info    = HTMLAnchorElement_init_dispex_info,
 };
 
 HRESULT HTMLAnchorElement_Create(HTMLDocumentNode *doc, nsIDOMElement *nselem, HTMLElement **elem)

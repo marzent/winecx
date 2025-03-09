@@ -23,7 +23,6 @@
 
 #include "dispex.h"
 
-#include "wine/heap.h"
 #include "wine/list.h"
 
 #include "msxml_dispex.h"
@@ -166,7 +165,7 @@ extern MSXML_VERSION xmldoc_version( xmlDocPtr doc );
 extern HRESULT XMLElement_create( xmlNodePtr node, LPVOID *ppObj, BOOL own );
 
 extern void wineXmlCallbackLog(char const* caller, xmlErrorLevel lvl, char const* msg, va_list ap);
-extern void wineXmlCallbackError(char const* caller, xmlErrorPtr err);
+extern void wineXmlCallbackError(char const* caller, const xmlError* err);
 
 #define LIBXML2_LOG_CALLBACK WINAPIV __WINE_PRINTF_ATTR(2,3)
 
@@ -265,7 +264,7 @@ static inline xmlChar *xmlchar_from_wcharn(const WCHAR *str, int nchars, BOOL us
     xmlChar *xmlstr;
     DWORD len = WideCharToMultiByte( CP_UTF8, 0, str, nchars, NULL, 0, NULL, NULL );
 
-    xmlstr = use_xml_alloc ? xmlMalloc( len + 1 ) : heap_alloc( len + 1 );
+    xmlstr = use_xml_alloc ? xmlMalloc( len + 1 ) : malloc( len + 1 );
     if ( xmlstr )
     {
         WideCharToMultiByte( CP_UTF8, 0, str, nchars, (LPSTR) xmlstr, len+1, NULL, NULL );
@@ -279,7 +278,7 @@ static inline xmlChar *xmlchar_from_wchar( const WCHAR *str )
     return xmlchar_from_wcharn(str, -1, FALSE);
 }
 
-static inline xmlChar *heap_strdupxmlChar(const xmlChar *str)
+static inline xmlChar *strdupxmlChar(const xmlChar *str)
 {
     xmlChar *ret = NULL;
 
@@ -287,7 +286,7 @@ static inline xmlChar *heap_strdupxmlChar(const xmlChar *str)
         DWORD size;
 
         size = (xmlStrlen(str)+1)*sizeof(xmlChar);
-        ret = heap_alloc(size);
+        ret = malloc(size);
         memcpy(ret, str, size);
     }
 

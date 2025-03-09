@@ -524,7 +524,7 @@ static void process_IOService_Device(io_object_t object)
 
     if ((kIOReturnSuccess != err) || (plugInInterface == nil) )
     {
-        ERR("Unable to create plug in interface for USB device");
+        ERR("Unable to create plug in interface for USB device\n");
         goto failed;
     }
 

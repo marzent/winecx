@@ -1,6 +1,6 @@
 /* FAudio - XAudio Reimplementation for FNA
  *
- * Copyright (c) 2011-2023 Ethan Lee, Luigi Auriemma, and the MonoGame Team
+ * Copyright (c) 2011-2024 Ethan Lee, Luigi Auriemma, and the MonoGame Team
  *
  * This software is provided 'as-is', without any express or implied warranty.
  * In no event will the authors be held liable for any damages arising from
@@ -183,7 +183,7 @@ static inline void DspBiQuad_Change(
 	float q,
 	float gain
 ) {
-	const float TWOPI = 6.283185307179586476925286766559005;
+	const float TWOPI = (float)6.283185307179586476925286766559005;
 	float theta_c = (TWOPI * frequency) / (float) filter->sampleRate;
 	float mu = DbGainToFactor(gain);
 	float beta = (type == DSP_BIQUAD_LOWSHELVING) ?

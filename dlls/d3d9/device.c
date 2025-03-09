@@ -1185,6 +1185,7 @@ static HRESULT d3d9_device_reset(struct d3d9_device *device,
                     surface->parent_device = &device->IDirect3DDevice9Ex_iface;
             }
 
+            device->in_scene = FALSE;
             device->device_state = D3D9_DEVICE_STATE_OK;
 
             if (extended)
@@ -1800,6 +1801,13 @@ static HRESULT WINAPI d3d9_device_UpdateSurface(IDirect3DDevice9Ex *iface,
         return D3DERR_INVALIDCALL;
     }
 
+    if (src_desc.multisample_type != WINED3D_MULTISAMPLE_NONE || dst_desc.multisample_type != WINED3D_MULTISAMPLE_NONE)
+    {
+        wined3d_mutex_unlock();
+        WARN("Cannot use UpdateSurface with multisampled surfaces.\n");
+        return D3DERR_INVALIDCALL;
+    }
+
     if (src_rect)
         wined3d_box_set(&src_box, src_rect->left, src_rect->top, src_rect->right, src_rect->bottom, 0, 1);
     else
@@ -2038,7 +2046,7 @@ static HRESULT WINAPI d3d9_device_ColorFill(IDirect3DDevice9Ex *iface,
         return D3DERR_INVALIDCALL;
     }
 
-    wined3d_device_apply_stateblock(device->wined3d_device, device->state);
+    wined3d_stateblock_apply_clear_state(device->state, device->wined3d_device);
     rtv = d3d9_surface_acquire_rendertarget_view(surface_impl);
     hr = wined3d_device_context_clear_rendertarget_view(device->immediate_context,
             rtv, rect, WINED3DCLEAR_TARGET, &c, 0.0f, 0);
@@ -2192,6 +2200,7 @@ static HRESULT WINAPI d3d9_device_SetDepthStencilSurface(IDirect3DDevice9Ex *ifa
     wined3d_mutex_lock();
     rtv = ds_impl ? d3d9_surface_acquire_rendertarget_view(ds_impl) : NULL;
     hr = wined3d_device_context_set_depth_stencil_view(device->immediate_context, rtv);
+    wined3d_stateblock_depth_buffer_changed(device->state);
     d3d9_surface_release_rendertarget_view(ds_impl, rtv);
     wined3d_mutex_unlock();
 
@@ -2290,7 +2299,7 @@ static HRESULT WINAPI d3d9_device_Clear(IDirect3DDevice9Ex *iface, DWORD rect_co
 
     wined3d_color_from_d3dcolor(&c, color);
     wined3d_mutex_lock();
-    wined3d_device_apply_stateblock(device->wined3d_device, device->state);
+    wined3d_stateblock_apply_clear_state(device->state, device->wined3d_device);
     hr = wined3d_device_clear(device->wined3d_device, rect_count, (const RECT *)rects, flags, &c, z, stencil);
     if (SUCCEEDED(hr))
         d3d9_rts_flag_auto_gen_mipmap(device);
@@ -3176,7 +3185,7 @@ static HRESULT WINAPI d3d9_device_DrawPrimitive(IDirect3DDevice9Ex *iface,
             wined3d_primitive_type_from_d3d(primitive_type), 0);
 
     /* Instancing is ignored for non-indexed draws. */
-    wined3d_device_context_draw(device->immediate_context, start_vertex, vertex_count, 0, 1);
+    wined3d_device_context_draw(device->immediate_context, start_vertex, vertex_count, 0, 0);
 
     d3d9_rts_flag_auto_gen_mipmap(device);
     wined3d_mutex_unlock();
@@ -3274,7 +3283,7 @@ static HRESULT WINAPI d3d9_device_DrawPrimitiveUP(IDirect3DDevice9Ex *iface,
     wined3d_device_apply_stateblock(device->wined3d_device, device->state);
 
     /* Instancing is ignored for non-indexed draws. */
-    wined3d_device_context_draw(device->immediate_context, vb_pos / stride, vtx_count, 0, 1);
+    wined3d_device_context_draw(device->immediate_context, vb_pos / stride, vtx_count, 0, 0);
 
     wined3d_stateblock_set_stream_source(device->state, 0, NULL, 0, 0);
     d3d9_rts_flag_auto_gen_mipmap(device);
@@ -3391,8 +3400,7 @@ static HRESULT WINAPI d3d9_device_ProcessVertices(IDirect3DDevice9Ex *iface,
             ERR("Failed to set stream source.\n");
     }
 
-    wined3d_device_apply_stateblock(device->wined3d_device, device->state);
-    hr = wined3d_device_process_vertices(device->wined3d_device, src_start_idx, dst_idx, vertex_count,
+    hr = wined3d_device_process_vertices(device->wined3d_device, device->state, src_start_idx, dst_idx, vertex_count,
             dst_impl->wined3d_buffer, decl_impl ? decl_impl->wined3d_declaration : NULL,
             flags, dst_impl->fvf);
 
@@ -4614,16 +4622,16 @@ static const struct wined3d_device_parent_ops d3d9_wined3d_device_parent_ops =
 
 static void setup_fpu(void)
 {
-#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
-    WORD cw;
-    __asm__ volatile ("fnstcw %0" : "=m" (cw));
-    cw = (cw & ~0xf3f) | 0x3f;
-    __asm__ volatile ("fldcw %0" : : "m" (cw));
-#elif defined(__i386__) && defined(_MSC_VER)
+#if defined(__i386__) && defined(_MSC_VER)
     WORD cw;
     __asm fnstcw cw;
     cw = (cw & ~0xf3f) | 0x3f;
     __asm fldcw cw;
+#elif defined(__i386__) || (defined(__x86_64__) && !defined(__arm64ec__) && (defined(__GNUC__) || defined(__clang__)))
+    WORD cw;
+    __asm__ volatile ("fnstcw %0" : "=m" (cw));
+    cw = (cw & ~0xf3f) | 0x3f;
+    __asm__ volatile ("fldcw %0" : : "m" (cw));
 #else
     FIXME("FPU setup not implemented for this platform.\n");
 #endif

@@ -22,6 +22,7 @@
 #include "initguid.h"
 #include "objbase.h"
 #include "ocidl.h"
+#include "olectl.h"
 #include "netlistmgr.h"
 #include "wine/test.h"
 
@@ -348,13 +349,13 @@ static void test_INetworkListManager( void )
         "Expected iid to be IID_INetworkListManagerEvents\n" );
 
     hr = IConnectionPoint_Advise( pt, (IUnknown*)&mgr_sink_unk, &cookie);
-    ok( hr == CO_E_FAILEDTOOPENTHREADTOKEN, "Advise failed: %08lx\n", hr );
+    ok( hr == CONNECT_E_CANNOTCONNECT, "Advise failed: %08lx\n", hr );
 
     hr = IConnectionPoint_Advise( pt, (IUnknown*)&mgr_sink, &cookie);
     ok( hr == S_OK, "Advise failed: %08lx\n", hr );
 
     hr = IConnectionPoint_Unadvise( pt, 0xdeadbeef );
-    ok( hr == OLE_E_NOCONNECTION || hr == CO_E_FAILEDTOIMPERSONATE, "Unadvise failed: %08lx\n", hr );
+    ok( hr == OLE_E_NOCONNECTION || hr == CONNECT_E_NOCONNECTION, "Unadvise failed: %08lx\n", hr );
 
     hr = IConnectionPoint_Unadvise( pt, cookie );
     ok( hr == S_OK, "Unadvise failed: %08lx\n", hr );
@@ -365,11 +366,11 @@ static void test_INetworkListManager( void )
     IConnectionPoint_Release( pt2 );
 
     hr = IConnectionPointContainer_FindConnectionPoint( cpc, &IID_INetworkCostManagerEvents, &pt );
-    ok( hr == S_OK || hr == CO_E_FAILEDTOIMPERSONATE, "got %08lx\n", hr );
+    ok( hr == S_OK || hr == CONNECT_E_NOCONNECTION, "got %08lx\n", hr );
     if (hr == S_OK) IConnectionPoint_Release( pt );
 
     hr = IConnectionPointContainer_FindConnectionPoint( cpc, &IID_INetworkConnectionEvents, &pt );
-    ok( hr == S_OK || hr == CO_E_FAILEDTOIMPERSONATE, "got %08lx\n", hr );
+    ok( hr == S_OK || hr == CONNECT_E_NOCONNECTION, "got %08lx\n", hr );
     if (hr == S_OK) IConnectionPoint_Release( pt );
 
     hr = IConnectionPointContainer_FindConnectionPoint( cpc, &IID_INetworkEvents, &pt );
@@ -380,15 +381,47 @@ static void test_INetworkListManager( void )
     network_iter = NULL;
     hr = INetworkListManager_GetNetworks( mgr, NLM_ENUM_NETWORK_ALL, &network_iter );
     ok( hr == S_OK, "got %08lx\n", hr );
-    if (network_iter)
+    ok(network_iter != NULL, "network_iter not set\n");
+    hr = IEnumNetworks_Next( network_iter, 0, NULL, NULL );
+    ok( hr == E_POINTER, "got %08lx\n", hr );
+    network = (INetwork *)0xdeadbeef;
+    while ((hr = IEnumNetworks_Next( network_iter, 1, &network, NULL )) == S_OK)
     {
-        while ((hr = IEnumNetworks_Next( network_iter, 1, &network, NULL )) == S_OK)
-        {
-            test_INetwork( network, NULL );
-            INetwork_Release( network );
-        }
-        IEnumNetworks_Release( network_iter );
+        ok( network != (INetwork *)0xdeadbeef, "network not set\n" );
+        connected = 1;
+        hr = INetwork_get_IsConnected( network, &connected );
+        ok( hr == S_OK, "got %08lx\n", hr );
+        ok( connected == -1 || connected == 0, "got %d\n", connected );
+        INetwork_Release( network );
+        network = (INetwork *)0xdeadbeef;
     }
+    ok( hr == S_FALSE, "got %08lx\n", hr );
+    ok( network == NULL, "network not set\n" );
+    IEnumNetworks_Release( network_iter );
+
+    hr = INetworkListManager_GetNetworks( mgr, NLM_ENUM_NETWORK_CONNECTED, &network_iter );
+    ok( hr == S_OK, "got %08lx\n", hr );
+    while ((hr = IEnumNetworks_Next( network_iter, 1, &network, NULL )) == S_OK)
+    {
+        connected = 0;
+        hr = INetwork_get_IsConnected( network, &connected );
+        ok( hr == S_OK, "got %08lx\n", hr );
+        ok( connected == -1, "got %d\n", connected );
+        INetwork_Release( network );
+    }
+    IEnumNetworks_Release( network_iter );
+
+    hr = INetworkListManager_GetNetworks( mgr, NLM_ENUM_NETWORK_DISCONNECTED, &network_iter );
+    ok( hr == S_OK, "got %08lx\n", hr );
+    while ((hr = IEnumNetworks_Next( network_iter, 1, &network, NULL )) == S_OK)
+    {
+        connected = 1;
+        hr = INetwork_get_IsConnected( network, &connected );
+        ok( hr == S_OK, "got %08lx\n", hr );
+        ok( connected == 0 || broken(connected == -1) /* win11 */, "got %d\n", connected );
+        INetwork_Release( network );
+    }
+    IEnumNetworks_Release( network_iter );
 
     conn_iter = NULL;
     hr = INetworkListManager_GetNetworkConnections( mgr, &conn_iter );

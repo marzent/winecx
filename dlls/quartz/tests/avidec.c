@@ -85,10 +85,10 @@ static LRESULT CALLBACK vfw_driver_proc(DWORD_PTR id, HDRVR driver, UINT msg,
 
         out->biSize = sizeof(BITMAPINFOHEADER);
         out->biCompression = mmioFOURCC('I','4','2','0');
-        out->biWidth = 32;
+        out->biWidth = 29;
         out->biHeight = 24;
         out->biBitCount = 12;
-        out->biSizeImage = 32 * 24 * 12 / 8;
+        out->biSizeImage = 24 * (((29 * 12 + 31) / 8) & ~3);
 
         return ICERR_OK;
     }
@@ -119,7 +119,7 @@ static LRESULT CALLBACK vfw_driver_proc(DWORD_PTR id, HDRVR driver, UINT msg,
         todo_wine_if (in->biSizeImage != sink_bitmap_info.biSizeImage)
             ok(!memcmp(in, &sink_bitmap_info, sizeof(BITMAPINFOHEADER)),
                     "Input types didn't match.\n");
-        todo_wine ok(!memcmp(out, &source_bitmap_info, sizeof(BITMAPINFOHEADER)),
+        ok(!memcmp(out, &source_bitmap_info, sizeof(BITMAPINFOHEADER)),
                 "Output types didn't match.\n");
         ok(!in_begin, "Got multiple ICM_DECOMPRESS_BEGIN messages.\n");
         in_begin = 1;
@@ -159,7 +159,7 @@ static LRESULT CALLBACK vfw_driver_proc(DWORD_PTR id, HDRVR driver, UINT msg,
         for (i = 0; i < 200; ++i)
             expect[i] = i;
         ok(!memcmp(params->lpInput, expect, 200), "Data didn't match.\n");
-        for (i = 0; i < 32 * 24 * 12 / 8; ++i)
+        for (i = 0; i < 24 * (((29 * 12 + 31) / 8) & ~3); ++i)
             output[i] = 111 - i;
 
         return ICERR_OK;
@@ -873,10 +873,24 @@ static HRESULT testsink_connect(struct strmbase_sink *iface, IPin *peer, const A
     return S_OK;
 }
 
+static DWORD WINAPI call_qc_notify(void *ptr)
+{
+    struct testfilter *filter = ptr;
+    IQualityControl *qc;
+    Quality q = { Famine, 2000, -10000000, 10000000 };
+
+    IPin_QueryInterface(filter->sink.pin.peer, &IID_IQualityControl, (void**)&qc);
+    /* don't worry too much about what it returns, just check that it doesn't deadlock */
+    IQualityControl_Notify(qc, &filter->filter.IBaseFilter_iface, q);
+    IQualityControl_Release(qc);
+
+    return 0;
+}
+
 static HRESULT WINAPI testsink_Receive(struct strmbase_sink *iface, IMediaSample *sample)
 {
     struct testfilter *filter = impl_from_strmbase_filter(iface->pin.filter);
-    BYTE *data, expect[32 * 24 * 12 / 8];
+    BYTE *data, expect[24 * (((29 * 12 + 31) / 8) & ~3)];
     REFERENCE_TIME start, stop;
     LONG size, i;
     HRESULT hr;
@@ -884,9 +898,9 @@ static HRESULT WINAPI testsink_Receive(struct strmbase_sink *iface, IMediaSample
     ++filter->got_sample;
 
     size = IMediaSample_GetSize(sample);
-    ok(size == 32 * 24 * 12 / 8, "Got size %lu.\n", size);
+    ok(size == 24 * (((29 * 12 + 31) / 8) & ~3), "Got size %lu.\n", size);
     size = IMediaSample_GetActualDataLength(sample);
-    ok(size == 32 * 24 * 12 / 8, "Got valid size %lu.\n", size);
+    ok(size == 24 * (((29 * 12 + 31) / 8) & ~3), "Got valid size %lu.\n", size);
 
     hr = IMediaSample_GetPointer(sample, &data);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
@@ -919,6 +933,13 @@ static HRESULT WINAPI testsink_Receive(struct strmbase_sink *iface, IMediaSample
     todo_wine_if (testmode == 3) ok(hr == S_FALSE, "Got hr %#lx.\n", hr);
     hr = IMediaSample_IsSyncPoint(sample);
     todo_wine_if (testmode == 5 || testmode == 6) ok(hr == S_OK, "Got hr %#lx.\n", hr);
+
+    if (testmode == 7)
+    {
+        HANDLE h = CreateThread(NULL, 0, call_qc_notify, filter, 0, NULL);
+        ok(WaitForSingleObject(h, 1000) == WAIT_OBJECT_0, "Didn't expect deadlock.\n");
+        CloseHandle(h);
+    }
 
     return S_OK;
 }
@@ -1129,6 +1150,15 @@ static void test_sample_processing(IMediaControl *control, IMemInputPin *input, 
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
     todo_wine ok(!sink->got_sample, "Got %u calls to Receive().\n", sink->got_sample);
 
+    testmode = 7;
+    hr = IMediaSample_SetSyncPoint(sample, TRUE);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    sink->got_sample = 0;
+    hr = IMemInputPin_Receive(input, sample);
+    ok(hr == S_OK, "Got hr %#lx.\n", hr);
+    ok(sink->got_sample == 1, "Got %u calls to Receive().\n", sink->got_sample);
+    sink->got_sample = 0;
+
     hr = IMediaControl_Stop(control);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
 
@@ -1174,7 +1204,7 @@ static void test_streaming_events(IMediaControl *control, IPin *sink,
     ok(!testsink->got_eos, "Got %u calls to IPin::EndOfStream().\n", testsink->got_eos);
     hr = IPin_EndOfStream(sink);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
-    todo_wine ok(!testsink->got_sample, "Got %u calls to Receive().\n", testsink->got_sample);
+    ok(!testsink->got_sample, "Got %u calls to Receive().\n", testsink->got_sample);
     ok(testsink->got_eos == 1, "Got %u calls to IPin::EndOfStream().\n", testsink->got_eos);
     testsink->got_eos = 0;
 
@@ -1185,7 +1215,7 @@ static void test_streaming_events(IMediaControl *control, IPin *sink,
     testmode = 0;
     hr = IMemInputPin_Receive(input, sample);
     ok(hr == S_OK, "Got hr %#lx.\n", hr);
-    todo_wine ok(testsink->got_sample == 1, "Got %u calls to Receive().\n", testsink->got_sample);
+    ok(testsink->got_sample == 1, "Got %u calls to Receive().\n", testsink->got_sample);
     testsink->got_sample = 0;
 
     ok(!testsink->got_begin_flush, "Got %u calls to IPin::BeginFlush().\n", testsink->got_begin_flush);
@@ -1221,7 +1251,7 @@ static void test_connect_pin(void)
     {
         .bmiHeader.biSize = sizeof(BITMAPINFOHEADER),
         .bmiHeader.biCompression = test_handler,
-        .bmiHeader.biWidth = 32,
+        .bmiHeader.biWidth = 29,
         .bmiHeader.biHeight = 24,
         .bmiHeader.biBitCount = 16,
     };
@@ -1330,11 +1360,11 @@ static void test_connect_pin(void)
         VIDEOINFOHEADER expect_format =
         {
             .bmiHeader.biSize = sizeof(BITMAPINFOHEADER),
-            .bmiHeader.biWidth = 32,
+            .bmiHeader.biWidth = 29,
             .bmiHeader.biHeight = 24,
             .bmiHeader.biBitCount = expect[i].bpp,
             .bmiHeader.biCompression = expect[i].compression,
-            .bmiHeader.biSizeImage = 32 * 24 * expect[i].bpp / 8,
+            .bmiHeader.biSizeImage = 24 * (((29 * expect[i].bpp + 31) / 8) & ~3),
         };
 
         AM_MEDIA_TYPE expect_mt =
@@ -1342,7 +1372,7 @@ static void test_connect_pin(void)
             .majortype = MEDIATYPE_Video,
             .subtype = *expect[i].subtype,
             .bFixedSizeSamples = TRUE,
-            .lSampleSize = 32 * 24 * expect[i].bpp / 8,
+            .lSampleSize = 24 * (((29 * expect[i].bpp + 31) / 8) & ~3),
             .formattype = FORMAT_VideoInfo,
             .cbFormat = sizeof(VIDEOINFOHEADER),
             .pbFormat = (BYTE *)&expect_format,

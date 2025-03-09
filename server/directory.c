@@ -69,8 +69,6 @@ static const struct object_ops object_type_ops =
     no_add_queue,                 /* add_queue */
     NULL,                         /* remove_queue */
     NULL,                         /* signaled */
-    NULL,                         /* get_esync_fd */
-    NULL,                         /* get_msync_idx */
     NULL,                         /* satisfied */
     no_signal,                    /* signal */
     no_get_fd,                    /* get_fd */
@@ -121,8 +119,6 @@ static const struct object_ops directory_ops =
     no_add_queue,                 /* add_queue */
     NULL,                         /* remove_queue */
     NULL,                         /* signaled */
-    NULL,                         /* get_esync_fd */
-    NULL,                         /* get_msync_idx */
     NULL,                         /* satisfied */
     no_signal,                    /* signal */
     no_get_fd,                    /* get_fd */
@@ -165,6 +161,8 @@ static struct type_descr *types[] =
     &file_type,
     &mapping_type,
     &key_type,
+    &apc_reserve_type,
+    &completion_reserve_type,
 };
 
 static void object_type_dump( struct object *obj, int verbose )
@@ -324,7 +322,7 @@ static void create_session( unsigned int id )
         release_object( dir_sessions );
     }
 
-    sprintf( id_strA, "%u", id );
+    snprintf( id_strA, sizeof(id_strA), "%u", id );
     id_strW = ascii_to_unicode_str( id_strA, &id_str );
     dir_id = create_directory( &dir_sessions->obj, &id_str, 0, HASH_SIZE, NULL );
     dir_dosdevices = create_directory( &dir_id->obj, &dir_dosdevices_str, OBJ_PERMANENT, HASH_SIZE, NULL );
@@ -443,11 +441,14 @@ void init_directories( struct fd *intl_fd )
     /* mappings */
     static const WCHAR intlW[] = {'N','l','s','S','e','c','t','i','o','n','L','A','N','G','_','I','N','T','L'};
     static const WCHAR user_dataW[] = {'_','_','w','i','n','e','_','u','s','e','r','_','s','h','a','r','e','d','_','d','a','t','a'};
+    static const WCHAR sessionW[] = {'_','_','w','i','n','e','_','s','e','s','s','i','o','n'};
     static const struct unicode_str intl_str = {intlW, sizeof(intlW)};
     static const struct unicode_str user_data_str = {user_dataW, sizeof(user_dataW)};
+    static const struct unicode_str session_str = {sessionW, sizeof(sessionW)};
 
     struct directory *dir_driver, *dir_device, *dir_global, *dir_kernel, *dir_nls;
     struct object *named_pipe_device, *mailslot_device, *null_device;
+    struct mapping *session_mapping;
     unsigned int i;
 
     root_directory = create_directory( NULL, NULL, OBJ_PERMANENT, HASH_SIZE, NULL );
@@ -495,6 +496,10 @@ void init_directories( struct fd *intl_fd )
     release_object( create_user_data_mapping( &dir_kernel->obj, &user_data_str, OBJ_PERMANENT, NULL ));
     release_object( intl_fd );
 
+    session_mapping = create_session_mapping( &dir_kernel->obj, &session_str, OBJ_PERMANENT, NULL );
+    set_session_mapping( session_mapping );
+    release_object( session_mapping );
+
     release_object( named_pipe_device );
     release_object( mailslot_device );
     release_object( null_device );
@@ -520,7 +525,11 @@ DECL_HANDLER(create_directory)
 
     if ((dir = create_directory( root, &name, objattr->attributes, HASH_SIZE, sd )))
     {
-        reply->handle = alloc_handle( current->process, dir, req->access, objattr->attributes );
+        if (get_error() == STATUS_OBJECT_NAME_EXISTS)
+            reply->handle = alloc_handle( current->process, dir, req->access, objattr->attributes );
+        else
+            reply->handle = alloc_handle_no_access_check( current->process, dir,
+                                                          req->access, objattr->attributes );
         release_object( dir );
     }
 
@@ -536,33 +545,77 @@ DECL_HANDLER(open_directory)
                                  &directory_ops, &name, req->attributes );
 }
 
-/* get a directory entry by index */
-DECL_HANDLER(get_directory_entry)
+/* get directory entries */
+DECL_HANDLER(get_directory_entries)
 {
     struct directory *dir = (struct directory *)get_handle_obj( current->process, req->handle,
                                                                 DIRECTORY_QUERY, &directory_ops );
     if (dir)
     {
-        struct object *obj = find_object_index( dir->entries, req->index );
-        if (obj)
+        struct directory_entry *entry;
+        struct object *obj;
+        data_size_t size;
+        unsigned int i;
+        char *buffer;
+
+        reply->total_len = 0;
+
+        size = 0;
+        for (i = 0; i < req->max_count; i++)
         {
+            const struct unicode_str *type_name;
             data_size_t name_len;
-            const struct unicode_str *type_name = &obj->ops->type->name;
-            const WCHAR *name = get_object_name( obj, &name_len );
+            size_t entry_size;
 
-            reply->total_len = name_len + type_name->len;
+            if (!(obj = find_object_index( dir->entries, req->index + i )))
+                break;
+            type_name = &obj->ops->type->name;
+            get_object_name( obj, &name_len );
+            entry_size = (sizeof(*entry) + name_len + type_name->len + 3) & ~3;
+            reply->total_len += name_len + type_name->len;
+            release_object( obj );
 
-            if (reply->total_len <= get_reply_max_size())
+            if (size + entry_size > get_reply_max_size())
             {
-                void *ptr = set_reply_data_size( reply->total_len );
-                if (ptr)
-                {
-                    reply->name_len = name_len;
-                    memcpy( ptr, name, name_len );
-                    memcpy( (char *)ptr + name_len, type_name->str, type_name->len );
-                }
+                set_error( STATUS_MORE_ENTRIES );
+                break;
             }
-            else set_error( STATUS_BUFFER_TOO_SMALL );
+            size += entry_size;
+        }
+        reply->count = i;
+
+        if (!(buffer = set_reply_data_size( size )))
+        {
+            release_object( dir );
+            return;
+        }
+
+        size = 0;
+        for (i = 0; i < reply->count; i++)
+        {
+            const struct unicode_str *type_name;
+            data_size_t name_len;
+            const WCHAR *name;
+
+            obj = find_object_index( dir->entries, req->index + i );
+            assert( obj );
+            type_name = &obj->ops->type->name;
+            name = get_object_name( obj, &name_len );
+
+            entry = (struct directory_entry *)(buffer + size);
+            entry->name_len = name_len;
+            entry->type_len = type_name->len;
+
+            size += sizeof(*entry);
+            memcpy( buffer + size, name, name_len );
+            size += name_len;
+            memcpy( buffer + size, type_name->str, type_name->len );
+            size += type_name->len;
+            if (size & 3)
+            {
+                memset( buffer + size, 0, 4 - (size & 3) );
+                size += 4 - (size & 3);
+            }
 
             release_object( obj );
         }

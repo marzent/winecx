@@ -1139,6 +1139,8 @@ static const char * const WINEMessageTypeNames[SPY_MAX_WINEMSGNUM + 1] =
     "WM_WINE_SETACTIVEWINDOW",
     "WM_WINE_KEYBOARD_LL_HOOK",
     "WM_WINE_MOUSE_LL_HOOK",
+    "WM_WINE_IME_NOTIFY",
+    "WM_WINE_WINDOW_STATE_CHANGED",
     "WM_WINE_UPDATEWINDOWSTATE",
 };
 
@@ -2166,9 +2168,9 @@ static void SPY_GetMsgStuff( SPY_INSTANCE *sp_e )
             }
         }
         if (sp_e->msgnum >= WM_USER && sp_e->msgnum <= WM_APP)
-            sprintf( sp_e->msg_name, "WM_USER+%d", sp_e->msgnum - WM_USER );
+            snprintf( sp_e->msg_name, sizeof(sp_e->msg_name), "WM_USER+%d", sp_e->msgnum - WM_USER );
         else
-            sprintf( sp_e->msg_name, "%04x", sp_e->msgnum );
+            snprintf( sp_e->msg_name, sizeof(sp_e->msg_name), "%04x", sp_e->msgnum );
     }
     else
     {
@@ -2623,7 +2625,7 @@ void spy_enter_message( INT iFlag, HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
             DWORD tid = get_window_thread( hWnd, NULL );
 
             if (tid == GetCurrentThreadId()) strcpy( taskName, "self" );
-            else sprintf( taskName, "tid %04x", (int)GetCurrentThreadId() );
+            else snprintf( taskName, sizeof(taskName), "tid %04x", (int)GetCurrentThreadId() );
 
             TRACE("%*s(%p) %-16s [%04x] %s sent from %s wp=%08lx lp=%08lx\n",
                   indent, "", hWnd, debugstr_w(sp_e.wnd_name), msg,

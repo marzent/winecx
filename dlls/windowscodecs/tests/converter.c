@@ -602,6 +602,40 @@ static const BYTE bits_24bppBGR_gray[] = {
 static const struct bitmap_data testdata_24bppBGR_gray = {
     &GUID_WICPixelFormat24bppBGR, 24, bits_24bppBGR_gray, 32, 2, 96.0, 96.0};
 
+#define TO_16bppBGRA5551(b,g,r,a) ( \
+        ((a >> 7) << 15) | \
+        ((r >> 3) << 10) | \
+        ((g >> 3) << 5) | \
+        ((b >> 3)) \
+)
+
+static const WORD bits_16bppBGRA5551[] = {
+    TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255), TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255),
+    TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255), TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255),
+    TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255), TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255),
+    TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255), TO_16bppBGRA5551(255,0,0,255), TO_16bppBGRA5551(0,255,0,255), TO_16bppBGRA5551(0,0,255,255), TO_16bppBGRA5551(0,0,0,255),
+    TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255), TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255),
+    TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255), TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255),
+    TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255), TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255),
+    TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255), TO_16bppBGRA5551(0,255,255,255), TO_16bppBGRA5551(255,0,255,255), TO_16bppBGRA5551(255,255,0,255), TO_16bppBGRA5551(255,255,255,255)};
+
+static const struct bitmap_data testdata_16bppBGRA5551 = {
+    &GUID_WICPixelFormat16bppBGRA5551, 16, (BYTE*)bits_16bppBGRA5551, 32, 2, 96.0, 96.0};
+
+static const WORD bits_48bppRGB[] = {
+    0,0,0, 0,65535,0, 32767,32768,32767,
+    65535,65535,65535, 10,10,10, 0,0,10};
+
+static const struct bitmap_data testdata_48bppRGB = {
+    &GUID_WICPixelFormat48bppRGB, 48, (BYTE*)bits_48bppRGB, 3, 2, 96.0, 96.0};
+
+static const WORD bits_64bppRGBA_2[] = {
+    0,0,0,65535, 0,65535,0,65535, 32767,32768,32767,65535,
+    65535,65535,65535,65535, 10,10,10,65535, 0,0,10,65535,};
+
+static const struct bitmap_data testdata_64bppRGBA_2 = {
+    &GUID_WICPixelFormat64bppRGBA, 64, (BYTE*)bits_64bppRGBA_2, 3, 2, 96.0, 96.0};
+
 static void test_conversion(const struct bitmap_data *src, const struct bitmap_data *dst, const char *name, BOOL todo)
 {
     BitmapTestSrc *src_obj;
@@ -928,16 +962,11 @@ static void load_stream(IUnknown *reader, IStream *stream)
 {
     HRESULT hr;
     IWICPersistStream *persist;
-#ifdef WORDS_BIGENDIAN
-    DWORD persist_options = WICPersistOptionBigEndian;
-#else
-    DWORD persist_options = WICPersistOptionLittleEndian;
-#endif
 
     hr = IUnknown_QueryInterface(reader, &IID_IWICPersistStream, (void **)&persist);
     ok(hr == S_OK, "QueryInterface failed, hr=%lx\n", hr);
 
-    hr = IWICPersistStream_LoadEx(persist, stream, NULL, persist_options);
+    hr = IWICPersistStream_LoadEx(persist, stream, NULL, 0);
     ok(hr == S_OK, "LoadEx failed, hr=%lx\n", hr);
 
     IWICPersistStream_Release(persist);
@@ -2054,6 +2083,8 @@ START_TEST(converter)
     test_conversion(&testdata_32bppBGR, &testdata_8bppGray, "32bppBGR -> 8bppGray", FALSE);
     test_conversion(&testdata_32bppGrayFloat, &testdata_24bppBGR_gray, "32bppGrayFloat -> 24bppBGR gray", FALSE);
     test_conversion(&testdata_32bppGrayFloat, &testdata_8bppGray, "32bppGrayFloat -> 8bppGray", FALSE);
+    test_conversion(&testdata_32bppBGRA, &testdata_16bppBGRA5551, "32bppBGRA -> 16bppBGRA5551", FALSE);
+    test_conversion(&testdata_48bppRGB, &testdata_64bppRGBA_2, "48bppRGB -> 64bppRGBA", FALSE);
 
     test_invalid_conversion();
     test_default_converter();

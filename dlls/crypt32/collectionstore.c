@@ -262,10 +262,10 @@ static BOOL Collection_deleteCert(WINECRYPT_CERTSTORE *store, context_t *context
     cert_t *cert = (cert_t*)context;
     cert_t *linked;
 
-    TRACE("(%p, %p)\n", store, cert);
+    TRACE("(%p, %p) linked %p\n", store, cert, context->linked);
 
     linked = (cert_t*)context->linked;
-    return CertDeleteCertificateFromStore(&linked->ctx);
+    return CRYPT_DeleteCertificateFromStore(&linked->ctx);
 }
 
 static BOOL Collection_addCRL(WINECRYPT_CERTSTORE *store, context_t *crl,
@@ -478,7 +478,7 @@ WINECRYPT_CERTSTORE *CRYPT_CollectionOpenStore(HCRYPTPROV hCryptProv,
         {
             memset(store, 0, sizeof(WINE_COLLECTIONSTORE));
             CRYPT_InitStore(&store->hdr, dwFlags, StoreTypeCollection, &CollectionStoreVtbl);
-            InitializeCriticalSection(&store->cs);
+            InitializeCriticalSectionEx(&store->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
             store->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": PWINE_COLLECTIONSTORE->cs");
             list_init(&store->stores);
         }

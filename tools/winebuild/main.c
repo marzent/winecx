@@ -36,6 +36,7 @@
 int UsePIC = 0;
 int nb_errors = 0;
 int display_warnings = 0;
+int native_arch = -1;
 int kill_at = 0;
 int verbose = 0;
 int link_ext_symbols = 0;
@@ -60,7 +61,6 @@ static int fake_module;
 static DLLSPEC *main_spec;
 
 static const struct strarray empty_strarray;
-struct strarray lib_path = { 0 };
 struct strarray tools_path = { 0 };
 struct strarray as_command = { 0 };
 struct strarray cc_command = { 0 };
@@ -69,17 +69,6 @@ struct strarray nm_command = { 0 };
 char *cpu_option = NULL;
 char *fpu_option = NULL;
 char *arch_option = NULL;
-#ifdef __SOFTFP__
-const char *float_abi_option = "soft";
-#else
-const char *float_abi_option = "softfp";
-#endif
-
-#ifdef __thumb__
-int thumb_mode = 1;
-#else
-int thumb_mode = 0;
-#endif
 
 static struct strarray res_files;
 
@@ -164,7 +153,6 @@ static void set_target( const char *name )
     target_alias = xstrdup( name );
 
     if (!parse_target( name, &target )) fatal_error( "Unrecognized target '%s'\n", name );
-    thumb_mode = target.cpu == CPU_ARM && is_pe();
     if (is_pe()) unwind_tables = 1;
 }
 
@@ -207,8 +195,6 @@ static const char usage_str[] =
 "   -K, FLAGS                 Compiler flags (only -KPIC is supported)\n"
 "       --large-address-aware Support an address space larger than 2Gb\n"
 "       --ld-cmd=LD           Command to use for linking (default: ld)\n"
-"   -l, --library=LIB         Import the specified library\n"
-"   -L, --library-path=DIR    Look for imports libraries in DIR\n"
 "   -m16, -m32, -m64          Force building 16-bit, 32-bit resp. 64-bit code\n"
 "   -M, --main-module=MODULE  Set the name of the main module for a Win16 dll\n"
 "       --nm-cmd=NM           Command to use to get undefined symbols (default: nm)\n"
@@ -301,8 +287,6 @@ static const struct long_option long_options[] =
     { "help",                0, 'h' },
     { "heap",                1, 'H' },
     { "kill-at",             0, 'k' },
-    { "library",             1, 'l' },
-    { "library-path",        1, 'L' },
     { "main-module",         1, 'M' },
     { "dll-name",            1, 'N' },
     { "output",              1, 'o' },
@@ -389,21 +373,16 @@ static void option_callback( int optc, char *optarg )
     case 'K':
         /* ignored, because cc generates correct code. */
         break;
-    case 'L':
-        strarray_add( &lib_path, xstrdup( optarg ));
-        break;
     case 'm':
         if (!strcmp( optarg, "16" )) main_spec->type = SPEC_WIN16;
         else if (!strcmp( optarg, "32" )) force_pointer_size = 4;
         else if (!strcmp( optarg, "64" )) force_pointer_size = 8;
-        else if (!strcmp( optarg, "arm" )) thumb_mode = 0;
-        else if (!strcmp( optarg, "thumb" )) thumb_mode = 1;
         else if (!strcmp( optarg, "no-cygwin" )) use_msvcrt = 1;
         else if (!strcmp( optarg, "unicode" )) main_spec->unicode_app = 1;
+        else if (!strcmp( optarg, "arm64x" )) native_arch = CPU_ARM64;
         else if (!strncmp( optarg, "cpu=", 4 )) cpu_option = xstrdup( optarg + 4 );
         else if (!strncmp( optarg, "fpu=", 4 )) fpu_option = xstrdup( optarg + 4 );
         else if (!strncmp( optarg, "arch=", 5 )) arch_option = xstrdup( optarg + 5 );
-        else if (!strncmp( optarg, "float-abi=", 10 )) float_abi_option = xstrdup( optarg + 10 );
         else fatal_error( "Unknown -m option '%s'\n", optarg );
         break;
     case 'M':
@@ -433,9 +412,6 @@ static void option_callback( int optc, char *optarg )
         break;
     case 'k':
         kill_at = 1;
-        break;
-    case 'l':
-        add_import_dll( optarg, NULL );
         break;
     case 'o':
         if (unlink( optarg ) == -1 && errno != ENOENT)
@@ -564,22 +540,6 @@ static struct strarray load_resources( struct strarray files, DLLSPEC *spec )
     return ret;
 }
 
-/* add input files that look like import libs to the import list */
-static struct strarray load_import_libs( struct strarray files )
-{
-    struct strarray ret = empty_strarray;
-    int i;
-
-    for (i = 0; i < files.count; i++)
-    {
-        if (strendswith( files.str[i], ".def" ))
-            add_import_dll( NULL, files.str[i] );
-        else
-            strarray_add( &ret, files.str[i] ); /* not an import dll, keep it in the list */
-    }
-    return ret;
-}
-
 static int parse_input_file( DLLSPEC *spec )
 {
     FILE *input_file = open_input_file( NULL, spec_file_name );
@@ -651,7 +611,6 @@ int main(int argc, char **argv)
         }
         if (!is_pe())
         {
-            files = load_import_libs( files );
             read_undef_symbols( spec, files );
             resolve_imports( spec );
         }
@@ -663,7 +622,7 @@ int main(int argc, char **argv)
         if (!spec_file_name) fatal_error( "missing .spec file\n" );
         if (!parse_input_file( spec )) break;
         open_output_file();
-        output_def_file( spec, 0 );
+        output_def_file( spec, &spec->exports, 0 );
         close_output_file();
         break;
     case MODE_IMPLIB:

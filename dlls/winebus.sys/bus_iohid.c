@@ -271,16 +271,35 @@ static void handle_DeviceMatchingCallback(void *context, IOReturn result, void *
 {
     struct device_desc desc =
     {
-        .input = -1,
+        .input = -1, .is_hidraw = TRUE,
         .serialnumber = {'0','0','0','0',0},
     };
     struct iohid_device *impl;
+    USAGE_AND_PAGE usages;
     CFStringRef str;
+
+    usages.UsagePage = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDPrimaryUsagePageKey)));
+    usages.Usage = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDPrimaryUsageKey)));
 
     desc.vid = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDVendorIDKey)));
     desc.pid = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDProductIDKey)));
     desc.version = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDVersionNumberKey)));
     desc.uid = CFNumberToDWORD(IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDLocationIDKey)));
+
+    if ((str = IOHIDDeviceGetProperty(IOHIDDevice, CFSTR(kIOHIDTransportKey))))
+        desc.is_bluetooth = !CFStringCompare(str, CFSTR(kIOHIDTransportBluetoothValue), 0) ||
+                            !CFStringCompare(str, CFSTR(kIOHIDTransportBluetoothLowEnergyValue), 0);
+
+    if (usages.UsagePage != HID_USAGE_PAGE_GENERIC ||
+        !(usages.Usage == HID_USAGE_GENERIC_JOYSTICK || usages.Usage == HID_USAGE_GENERIC_GAMEPAD))
+    {
+        /* winebus isn't currently meant to handle anything but these, and
+         * opening keyboards, mice, or the Touch Bar on older MacBooks triggers
+         * a permissions dialog for input monitoring.
+         */
+        ERR("Ignoring HID device %p (vid %04x, pid %04x): not a joystick or gamepad\n", IOHIDDevice, desc.vid, desc.pid);
+        return;
+    }
 
     if (IOHIDDeviceOpen(IOHIDDevice, 0) != kIOReturnSuccess)
     {
@@ -301,44 +320,6 @@ static void handle_DeviceMatchingCallback(void *context, IOReturn result, void *
     {
         if (is_xbox_gamepad(desc.vid, desc.pid))
             desc.is_gamepad = TRUE;
-        else
-        {
-            int axes=0, buttons=0;
-            CFArrayRef element_array = IOHIDDeviceCopyMatchingElements(
-                IOHIDDevice, NULL, kIOHIDOptionsTypeNone);
-
-            if (element_array) {
-                CFIndex index;
-                CFIndex count = CFArrayGetCount(element_array);
-                for (index = 0; index < count; index++)
-                {
-                    IOHIDElementRef element = (IOHIDElementRef)CFArrayGetValueAtIndex(element_array, index);
-                    if (element)
-                    {
-                        int type = IOHIDElementGetType(element);
-                        if (type == kIOHIDElementTypeInput_Button) buttons++;
-                        if (type == kIOHIDElementTypeInput_Axis) axes++;
-                        if (type == kIOHIDElementTypeInput_Misc)
-                        {
-                            uint32_t usage = IOHIDElementGetUsage(element);
-                            switch (usage)
-                            {
-                                case kHIDUsage_GD_X:
-                                case kHIDUsage_GD_Y:
-                                case kHIDUsage_GD_Z:
-                                case kHIDUsage_GD_Rx:
-                                case kHIDUsage_GD_Ry:
-                                case kHIDUsage_GD_Rz:
-                                case kHIDUsage_GD_Slider:
-                                    axes ++;
-                            }
-                        }
-                    }
-                }
-                CFRelease(element_array);
-            }
-            desc.is_gamepad = (axes == 6  && buttons >= 14);
-        }
     }
 
     TRACE("dev %p, desc %s.\n", IOHIDDevice, debugstr_device_desc(&desc));

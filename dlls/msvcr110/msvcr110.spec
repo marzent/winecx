@@ -38,9 +38,9 @@
 @ cdecl -arch=arm ??0_NonReentrantPPLLock@details@Concurrency@@QAA@XZ(ptr) _NonReentrantPPLLock_ctor
 @ thiscall -arch=i386 ??0_NonReentrantPPLLock@details@Concurrency@@QAE@XZ(ptr) _NonReentrantPPLLock_ctor
 @ cdecl -arch=win64 ??0_NonReentrantPPLLock@details@Concurrency@@QEAA@XZ(ptr) _NonReentrantPPLLock_ctor
-@ stub -arch=arm ??0_ReaderWriterLock@details@Concurrency@@QAA@XZ
-@ stub -arch=i386 ??0_ReaderWriterLock@details@Concurrency@@QAE@XZ
-@ stub -arch=win64 ??0_ReaderWriterLock@details@Concurrency@@QEAA@XZ
+@ cdecl -arch=arm ??0_ReaderWriterLock@details@Concurrency@@QAA@XZ(ptr) _ReaderWriterLock_ctor
+@ thiscall -arch=i386 ??0_ReaderWriterLock@details@Concurrency@@QAE@XZ(ptr) _ReaderWriterLock_ctor
+@ cdecl -arch=win64 ??0_ReaderWriterLock@details@Concurrency@@QEAA@XZ(ptr) _ReaderWriterLock_ctor
 @ cdecl -arch=arm ??0_ReentrantBlockingLock@details@Concurrency@@QAA@XZ(ptr) _ReentrantBlockingLock_ctor
 @ thiscall -arch=i386 ??0_ReentrantBlockingLock@details@Concurrency@@QAE@XZ(ptr) _ReentrantBlockingLock_ctor
 @ cdecl -arch=win64 ??0_ReentrantBlockingLock@details@Concurrency@@QEAA@XZ(ptr) _ReentrantBlockingLock_ctor
@@ -83,7 +83,7 @@
 @ cdecl -arch=arm ??0bad_cast@std@@AAA@PBQBD@Z(ptr ptr) bad_cast_ctor
 @ thiscall -arch=i386 ??0bad_cast@std@@AAE@PBQBD@Z(ptr ptr) bad_cast_ctor
 @ cdecl -arch=win64 ??0bad_cast@std@@AEAA@PEBQEBD@Z(ptr ptr) bad_cast_ctor
-@ cdecl -arch=arm ??0bad_cast@std@@QAA@ABV01@@Z(ptr ptr) bad_cast_ctor
+@ cdecl -arch=arm ??0bad_cast@std@@QAA@ABV01@@Z(ptr ptr) bad_cast_copy_ctor
 @ thiscall -arch=i386 ??0bad_cast@std@@QAE@ABV01@@Z(ptr ptr) bad_cast_copy_ctor
 @ cdecl -arch=win64 ??0bad_cast@std@@QEAA@AEBV01@@Z(ptr ptr) bad_cast_copy_ctor
 @ cdecl -arch=arm ??0bad_cast@std@@QAA@PBD@Z(ptr str) bad_cast_ctor_charptr
@@ -123,7 +123,7 @@
 @ stub -arch=i386 ??0default_scheduler_exists@Concurrency@@QAE@XZ
 @ stub -arch=win64 ??0default_scheduler_exists@Concurrency@@QEAA@XZ
 @ cdecl -arch=arm ??0event@Concurrency@@QAA@XZ(ptr) event_ctor
-@ thiscall -arch=win32 ??0event@Concurrency@@QAE@XZ(ptr) event_ctor
+@ thiscall -arch=i386 ??0event@Concurrency@@QAE@XZ(ptr) event_ctor
 @ cdecl -arch=win64 ??0event@Concurrency@@QEAA@XZ(ptr) event_ctor
 @ cdecl -arch=arm ??0exception@std@@QAA@ABQBD@Z(ptr ptr) exception_ctor
 @ thiscall -arch=i386 ??0exception@std@@QAE@ABQBD@Z(ptr ptr) exception_ctor
@@ -228,7 +228,7 @@
 @ stub -arch=i386 ??0operation_timed_out@Concurrency@@QAE@XZ
 @ stub -arch=win64 ??0operation_timed_out@Concurrency@@QEAA@XZ
 @ cdecl -arch=arm ??0reader_writer_lock@Concurrency@@QAA@XZ(ptr) reader_writer_lock_ctor
-@ thiscall -arch=win32 ??0reader_writer_lock@Concurrency@@QAE@XZ(ptr) reader_writer_lock_ctor
+@ thiscall -arch=i386 ??0reader_writer_lock@Concurrency@@QAE@XZ(ptr) reader_writer_lock_ctor
 @ cdecl -arch=win64 ??0reader_writer_lock@Concurrency@@QEAA@XZ(ptr) reader_writer_lock_ctor
 @ stub -arch=arm ??0scheduler_not_attached@Concurrency@@QAA@PBD@Z
 @ stub -arch=i386 ??0scheduler_not_attached@Concurrency@@QAE@PBD@Z
@@ -315,13 +315,13 @@
 @ thiscall -arch=i386 ??1critical_section@Concurrency@@QAE@XZ(ptr) critical_section_dtor
 @ cdecl -arch=win64 ??1critical_section@Concurrency@@QEAA@XZ(ptr) critical_section_dtor
 @ cdecl -arch=arm ??1event@Concurrency@@QAA@XZ(ptr) event_dtor
-@ thiscall -arch=win32 ??1event@Concurrency@@QAE@XZ(ptr) event_dtor
+@ thiscall -arch=i386 ??1event@Concurrency@@QAE@XZ(ptr) event_dtor
 @ cdecl -arch=win64 ??1event@Concurrency@@QEAA@XZ(ptr) event_dtor
 @ cdecl -arch=arm ??1exception@std@@UAA@XZ(ptr) exception_dtor
 @ thiscall -arch=i386 ??1exception@std@@UAE@XZ(ptr) exception_dtor
 @ cdecl -arch=win64 ??1exception@std@@UEAA@XZ(ptr) exception_dtor
 @ cdecl -arch=arm ??1reader_writer_lock@Concurrency@@QAA@XZ(ptr) reader_writer_lock_dtor
-@ thiscall -arch=win32 ??1reader_writer_lock@Concurrency@@QAE@XZ(ptr) reader_writer_lock_dtor
+@ thiscall -arch=i386 ??1reader_writer_lock@Concurrency@@QAE@XZ(ptr) reader_writer_lock_dtor
 @ cdecl -arch=win64 ??1reader_writer_lock@Concurrency@@QEAA@XZ(ptr) reader_writer_lock_dtor
 @ cdecl -arch=arm ??1scoped_lock@critical_section@Concurrency@@QAA@XZ(ptr) critical_section_scoped_lock_dtor
 @ thiscall -arch=i386 ??1scoped_lock@critical_section@Concurrency@@QAE@XZ(ptr) critical_section_scoped_lock_dtor
@@ -499,17 +499,17 @@
 @ stub -arch=arm ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AAAXXZ
 @ stub -arch=i386 ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AAEXXZ
 @ stub -arch=win64 ?_CleanupToken@_StructuredTaskCollection@details@Concurrency@@AEAAXXZ
-@ stub -arch=i386 ?_ConcRT_Assert@details@Concurrency@@YAXPBD0H@Z
+@ stub -arch=win32 ?_ConcRT_Assert@details@Concurrency@@YAXPBD0H@Z
 @ stub -arch=win64 ?_ConcRT_Assert@details@Concurrency@@YAXPEBD0H@Z
 @ stub -arch=win32 ?_ConcRT_CoreAssert@details@Concurrency@@YAXPBD0H@Z
 @ stub -arch=win64 ?_ConcRT_CoreAssert@details@Concurrency@@YAXPEBD0H@Z
-@ stub -arch=i386 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPB_WZZ
+@ stub -arch=win32 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPB_WZZ
 @ stub -arch=win64 ?_ConcRT_DumpMessage@details@Concurrency@@YAXPEB_WZZ
 @ stub -arch=win32 ?_ConcRT_Trace@details@Concurrency@@YAXHPB_WZZ
 @ stub -arch=win64 ?_ConcRT_Trace@details@Concurrency@@YAXHPEB_WZZ
-@ stub -arch=arm ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAA_NXZ
-@ stub -arch=i386 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAE_NXZ
-@ stub -arch=win64 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QEAA_NXZ
+@ cdecl -arch=arm ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAA_NXZ(ptr) _Cancellation_beacon__Confirm_cancel
+@ thiscall -arch=i386 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QAE_NXZ(ptr) _Cancellation_beacon__Confirm_cancel
+@ cdecl -arch=win64 ?_Confirm_cancel@_Cancellation_beacon@details@Concurrency@@QEAA_NXZ(ptr) _Cancellation_beacon__Confirm_cancel
 @ stub -arch=arm ?_Copy_str@exception@std@@AAAXPBD@Z
 @ stub -arch=i386 ?_Copy_str@exception@std@@AAEXPBD@Z
 @ stub -arch=win64 ?_Copy_str@exception@std@@AEAAXPEBD@Z
@@ -750,10 +750,10 @@
 @ thiscall -arch=i386 ?lock@critical_section@Concurrency@@QAEXXZ(ptr) critical_section_lock
 @ cdecl -arch=win64 ?lock@critical_section@Concurrency@@QEAAXXZ(ptr) critical_section_lock
 @ cdecl -arch=arm ?lock@reader_writer_lock@Concurrency@@QAAXXZ(ptr) reader_writer_lock_lock
-@ thiscall -arch=win32 ?lock@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_lock
+@ thiscall -arch=i386 ?lock@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_lock
 @ cdecl -arch=win64 ?lock@reader_writer_lock@Concurrency@@QEAAXXZ(ptr) reader_writer_lock_lock
 @ cdecl -arch=arm ?lock_read@reader_writer_lock@Concurrency@@QAAXXZ(ptr) reader_writer_lock_lock_read
-@ thiscall -arch=win32 ?lock_read@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_lock_read
+@ thiscall -arch=i386 ?lock_read@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_lock_read
 @ cdecl -arch=win64 ?lock_read@reader_writer_lock@Concurrency@@QEAAXXZ(ptr) reader_writer_lock_lock_read
 @ cdecl -arch=arm ?name@type_info@@QBAPBDPAU__type_info_node@@@Z(ptr ptr) type_info_name_internal_method
 @ thiscall -arch=i386 ?name@type_info@@QBEPBDPAU__type_info_node@@@Z(ptr ptr) type_info_name_internal_method
@@ -771,10 +771,10 @@
 @ thiscall -arch=i386 ?raw_name@type_info@@QBEPBDXZ(ptr) type_info_raw_name
 @ cdecl -arch=win64 ?raw_name@type_info@@QEBAPEBDXZ(ptr) type_info_raw_name
 @ cdecl -arch=arm ?reset@event@Concurrency@@QAAXXZ(ptr) event_reset
-@ thiscall -arch=win32 ?reset@event@Concurrency@@QAEXXZ(ptr) event_reset
+@ thiscall -arch=i386 ?reset@event@Concurrency@@QAEXXZ(ptr) event_reset
 @ cdecl -arch=win64 ?reset@event@Concurrency@@QEAAXXZ(ptr) event_reset
 @ cdecl -arch=arm ?set@event@Concurrency@@QAAXXZ(ptr) event_set
-@ thiscall -arch=win32 ?set@event@Concurrency@@QAEXXZ(ptr) event_set
+@ thiscall -arch=i386 ?set@event@Concurrency@@QAEXXZ(ptr) event_set
 @ cdecl -arch=win64 ?set@event@Concurrency@@QEAAXXZ(ptr) event_set
 @ cdecl ?set_new_handler@@YAP6AXXZP6AXXZ@Z(ptr) set_new_handler
 @ stub -arch=win32 ?set_task_execution_resources@Concurrency@@YAXGPAU_GROUP_AFFINITY@@@Z
@@ -792,20 +792,20 @@
 @ thiscall -arch=i386 ?try_lock@critical_section@Concurrency@@QAE_NXZ(ptr) critical_section_try_lock
 @ cdecl -arch=win64 ?try_lock@critical_section@Concurrency@@QEAA_NXZ(ptr) critical_section_try_lock
 @ cdecl -arch=arm ?try_lock@reader_writer_lock@Concurrency@@QAA_NXZ(ptr) reader_writer_lock_try_lock
-@ thiscall -arch=win32 ?try_lock@reader_writer_lock@Concurrency@@QAE_NXZ(ptr) reader_writer_lock_try_lock
+@ thiscall -arch=i386 ?try_lock@reader_writer_lock@Concurrency@@QAE_NXZ(ptr) reader_writer_lock_try_lock
 @ cdecl -arch=win64 ?try_lock@reader_writer_lock@Concurrency@@QEAA_NXZ(ptr) reader_writer_lock_try_lock
 @ cdecl -arch=arm ?try_lock_for@critical_section@Concurrency@@QAA_NI@Z(ptr long) critical_section_try_lock_for
 @ thiscall -arch=i386 ?try_lock_for@critical_section@Concurrency@@QAE_NI@Z(ptr long) critical_section_try_lock_for
 @ cdecl -arch=win64 ?try_lock_for@critical_section@Concurrency@@QEAA_NI@Z(ptr long) critical_section_try_lock_for
 @ cdecl -arch=arm ?try_lock_read@reader_writer_lock@Concurrency@@QAA_NXZ(ptr) reader_writer_lock_try_lock_read
-@ thiscall -arch=win32 ?try_lock_read@reader_writer_lock@Concurrency@@QAE_NXZ(ptr) reader_writer_lock_try_lock_read
+@ thiscall -arch=i386 ?try_lock_read@reader_writer_lock@Concurrency@@QAE_NXZ(ptr) reader_writer_lock_try_lock_read
 @ cdecl -arch=win64 ?try_lock_read@reader_writer_lock@Concurrency@@QEAA_NXZ(ptr) reader_writer_lock_try_lock_read
 @ cdecl ?unexpected@@YAXXZ() unexpected
 @ cdecl -arch=arm ?unlock@critical_section@Concurrency@@QAAXXZ(ptr) critical_section_unlock
 @ thiscall -arch=i386 ?unlock@critical_section@Concurrency@@QAEXXZ(ptr) critical_section_unlock
 @ cdecl -arch=win64 ?unlock@critical_section@Concurrency@@QEAAXXZ(ptr) critical_section_unlock
 @ cdecl -arch=arm ?unlock@reader_writer_lock@Concurrency@@QAAXXZ(ptr) reader_writer_lock_unlock
-@ thiscall -arch=win32 ?unlock@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_unlock
+@ thiscall -arch=i386 ?unlock@reader_writer_lock@Concurrency@@QAEXXZ(ptr) reader_writer_lock_unlock
 @ cdecl -arch=win64 ?unlock@reader_writer_lock@Concurrency@@QEAAXXZ(ptr) reader_writer_lock_unlock
 @ cdecl ?vswprintf@@YAHPA_WIPB_WPAD@Z(ptr long wstr ptr) _vsnwprintf
 @ cdecl ?wait@Concurrency@@YAXI@Z(long) Concurrency_wait
@@ -813,7 +813,7 @@
 @ thiscall -arch=i386 ?wait@_Condition_variable@details@Concurrency@@QAEXAAVcritical_section@3@@Z(ptr ptr) _Condition_variable_wait
 @ cdecl -arch=win64 ?wait@_Condition_variable@details@Concurrency@@QEAAXAEAVcritical_section@3@@Z(ptr ptr) _Condition_variable_wait
 @ cdecl -arch=arm ?wait@event@Concurrency@@QAAII@Z(ptr long) event_wait
-@ thiscall -arch=win32 ?wait@event@Concurrency@@QAEII@Z(ptr long) event_wait
+@ thiscall -arch=i386 ?wait@event@Concurrency@@QAEII@Z(ptr long) event_wait
 @ cdecl -arch=win64 ?wait@event@Concurrency@@QEAA_KI@Z(ptr long) event_wait
 @ cdecl -arch=arm ?wait_for@_Condition_variable@details@Concurrency@@QAA_NAAVcritical_section@3@I@Z(ptr ptr long) _Condition_variable_wait_for
 @ thiscall -arch=i386 ?wait_for@_Condition_variable@details@Concurrency@@QAE_NAAVcritical_section@3@I@Z(ptr ptr long) _Condition_variable_wait_for
@@ -1411,7 +1411,7 @@
 @ cdecl _locking(long long long)
 @ cdecl _logb(double) logb
 @ cdecl -arch=!i386 _logbf(float) logbf
-@ cdecl -arch=i386 _longjmpex(ptr long) MSVCRT_longjmp
+@ cdecl -arch=i386 _longjmpex(ptr long) longjmp
 @ cdecl _lrotl(long long) MSVCRT__lrotl
 @ cdecl _lrotr(long long) MSVCRT__lrotr
 @ cdecl _lsearch(ptr ptr ptr long ptr)
@@ -1514,8 +1514,8 @@
 @ stub _mbsncoll_l
 @ cdecl _mbsncpy(ptr str long)
 @ cdecl _mbsncpy_l(ptr str long ptr)
-@ stub _mbsncpy_s
-@ stub _mbsncpy_s_l
+@ cdecl _mbsncpy_s(ptr long str long)
+@ cdecl _mbsncpy_s_l(ptr long str long ptr)
 @ cdecl _mbsnextc(str)
 @ cdecl _mbsnextc_l(str ptr)
 @ cdecl _mbsnicmp(str str long)
@@ -1641,9 +1641,9 @@
 @ cdecl _set_printf_count_output(long)
 @ cdecl _set_purecall_handler(ptr)
 @ cdecl _seterrormode(long)
-@ cdecl -norelay _setjmp(ptr) MSVCRT__setjmp
-@ cdecl -arch=i386 -norelay _setjmp3(ptr long) MSVCRT__setjmp3
-@ cdecl -arch=!i386 -norelay _setjmpex(ptr ptr) __wine_setjmpex
+@ cdecl -norelay _setjmp(ptr)
+@ cdecl -arch=i386 -norelay _setjmp3(ptr long)
+@ cdecl -arch=!i386 -norelay _setjmpex(ptr ptr)
 @ cdecl _setmaxstdio(long)
 @ cdecl _setmbcp(long)
 @ cdecl _setmode(long long)
@@ -2097,7 +2097,7 @@
 @ cdecl -arch=!i386 logf(float)
 @ cdecl log10(double)
 @ cdecl -arch=!i386 log10f(float)
-@ cdecl longjmp(ptr long) MSVCRT_longjmp
+@ cdecl longjmp(ptr long)
 @ cdecl malloc(long)
 @ cdecl mblen(ptr long)
 @ cdecl mbrlen(ptr long ptr)
@@ -2138,7 +2138,7 @@
 @ varargs scanf(str)
 @ varargs scanf_s(str)
 @ cdecl setbuf(ptr ptr)
-@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr) MSVCRT__setjmp
+@ cdecl -arch=arm,x86_64 -norelay -private setjmp(ptr ptr) _setjmp
 @ cdecl setlocale(long str)
 @ cdecl setvbuf(ptr str long long)
 @ cdecl signal(long long)

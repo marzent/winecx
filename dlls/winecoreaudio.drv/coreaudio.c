@@ -727,37 +727,6 @@ static NTSTATUS unix_create_stream(void *args)
 
     params->result = S_OK;
 
-    if (params->share == AUDCLNT_SHAREMODE_SHARED) {
-        params->period = def_period;
-        if (params->duration < 3 * params->period)
-            params->duration = 3 * params->period;
-    } else {
-        const WAVEFORMATEXTENSIBLE *fmtex = (WAVEFORMATEXTENSIBLE *)params->fmt;
-        if (fmtex->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-           (fmtex->dwChannelMask == 0 || fmtex->dwChannelMask & SPEAKER_RESERVED))
-            params->result = AUDCLNT_E_UNSUPPORTED_FORMAT;
-        else {
-            if (!params->period)
-                params->period = def_period;
-            if (params->period < min_period || params->period > 5000000)
-                params->result = AUDCLNT_E_INVALID_DEVICE_PERIOD;
-            else if (params->duration > 20000000) /* The smaller the period, the lower this limit. */
-                params->result = AUDCLNT_E_BUFFER_SIZE_ERROR;
-            else if (params->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) {
-                if (params->duration != params->period)
-                    params->result = AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL;
-
-                FIXME("EXCLUSIVE mode with EVENTCALLBACK\n");
-
-                params->result = AUDCLNT_E_DEVICE_IN_USE;
-            } else if (params->duration < 8 * params->period)
-                params->duration = 8 * params->period; /* May grow above 2s. */
-        }
-    }
-
-    if (FAILED(params->result))
-        return STATUS_SUCCESS;
-
     if (!(stream = calloc(1, sizeof(*stream)))) {
         params->result = E_OUTOFMEMORY;
         return STATUS_SUCCESS;
@@ -1886,6 +1855,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     unix_get_capture_buffer,
     unix_release_capture_buffer,
     unix_is_format_supported,
+    unix_not_implemented,
     unix_get_mix_format,
     unix_get_device_period,
     unix_get_buffer_size,
@@ -1896,6 +1866,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     unix_get_position,
     unix_set_volumes,
     unix_set_event_handle,
+    unix_not_implemented,
     unix_not_implemented,
     unix_is_started,
     unix_get_prop_value,
@@ -2341,6 +2312,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     unix_wow64_get_capture_buffer,
     unix_release_capture_buffer,
     unix_wow64_is_format_supported,
+    unix_not_implemented,
     unix_wow64_get_mix_format,
     unix_wow64_get_device_period,
     unix_wow64_get_buffer_size,
@@ -2351,6 +2323,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     unix_wow64_get_position,
     unix_wow64_set_volumes,
     unix_wow64_set_event_handle,
+    unix_not_implemented,
     unix_not_implemented,
     unix_is_started,
     unix_wow64_get_prop_value,

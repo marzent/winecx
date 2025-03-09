@@ -1,6 +1,6 @@
 /* FAudio - XAudio Reimplementation for FNA
  *
- * Copyright (c) 2011-2023 Ethan Lee, Luigi Auriemma, and the MonoGame Team
+ * Copyright (c) 2011-2024 Ethan Lee, Luigi Auriemma, and the MonoGame Team
  *
  * This software is provided 'as-is', without any express or implied warranty.
  * In no event will the authors be held liable for any damages arising from
@@ -493,8 +493,8 @@ extern FAudioGUID DATAFORMAT_SUBTYPE_IEEE_FLOAT;
 #define FAUDIO_TARGET_VERSION 8 /* Targeting compatibility with XAudio 2.8 */
 
 #define FAUDIO_ABI_VERSION	 0
-#define FAUDIO_MAJOR_VERSION	23
-#define FAUDIO_MINOR_VERSION	12
+#define FAUDIO_MAJOR_VERSION	24
+#define FAUDIO_MINOR_VERSION	10
 #define FAUDIO_PATCH_VERSION	 0
 
 #define FAUDIO_COMPILED_VERSION ( \
@@ -1063,6 +1063,11 @@ FAUDIOAPI void FAudioVoice_GetOutputMatrix(
 
 /* Removes this voice from the audio graph and frees memory. */
 FAUDIOAPI void FAudioVoice_DestroyVoice(FAudioVoice *voice);
+
+/*
+ * Returns S_OK on success and E_FAIL if voice could not be destroyed (e. g., because it is in use).
+ */
+FAUDIOAPI uint32_t FAudioVoice_DestroyVoiceSafeEXT(FAudioVoice *voice);
 
 /* FAudioSourceVoice Interface */
 

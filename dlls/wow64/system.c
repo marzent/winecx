@@ -326,6 +326,7 @@ NTSTATUS WINAPI wow64_NtQuerySystemInformation( UINT *args )
     case SystemCurrentTimeZoneInformation:   /* RTL_TIME_ZONE_INFORMATION */
     case SystemRecommendedSharedDataAlignment:  /* ULONG */
     case SystemFirmwareTableInformation:  /* SYSTEM_FIRMWARE_TABLE_INFORMATION */
+    case SystemProcessorIdleCycleTimeInformation:  /* ULONG64[] */
     case SystemDynamicTimeZoneInformation:  /* RTL_DYNAMIC_TIME_ZONE_INFORMATION */
     case SystemCodeIntegrityInformation:  /* SYSTEM_CODEINTEGRITY_INFORMATION */
     case SystemKernelDebuggerInformationEx:  /* SYSTEM_KERNEL_DEBUGGER_INFORMATION_EX */
@@ -405,6 +406,24 @@ NTSTATUS WINAPI wow64_NtQuerySystemInformation( UINT *args )
             *retlen = offsetof( RTL_PROCESS_MODULES32, Modules[count] );
         }
         return status;
+
+    case SystemProcessIdInformation:  /* SYSTEM_PROCESS_ID_INFORMATION */
+    {
+        SYSTEM_PROCESS_ID_INFORMATION32 *info32 = ptr;
+        SYSTEM_PROCESS_ID_INFORMATION info;
+
+        if (retlen) *retlen = sizeof(*info32);
+        if (len < sizeof(*info32)) return STATUS_INFO_LENGTH_MISMATCH;
+
+        info.ProcessId = info32->ProcessId;
+        unicode_str_32to64( &info.ImageName, &info32->ImageName );
+        if (!(status = NtQuerySystemInformation( class, &info, sizeof(info), NULL )))
+        {
+            info32->ImageName.MaximumLength = info.ImageName.MaximumLength;
+            info32->ImageName.Length = info.ImageName.Length;
+        }
+        return status;
+    }
 
     case SystemHandleInformation:  /* SYSTEM_HANDLE_INFORMATION */
         if (len >= sizeof(SYSTEM_HANDLE_INFORMATION32))
@@ -604,17 +623,19 @@ NTSTATUS WINAPI wow64_NtQuerySystemInformationEx( UINT *args )
     HANDLE handle;
     NTSTATUS status;
 
-    if (!query || query_len < sizeof(LONG)) return STATUS_INVALID_PARAMETER;
-    handle = LongToHandle( *(LONG *)query );
-
     switch (class)
     {
+    case SystemProcessorIdleCycleTimeInformation:
+        return NtQuerySystemInformationEx( class, query, query_len, ptr, len, retlen );
+
     case SystemLogicalProcessorInformationEx:  /* SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX */
     {
         SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX32 *ex32, *info32 = ptr;
         SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *ex, *info;
         ULONG size, size32, pos = 0, pos32 = 0;
 
+        if (!query || query_len < sizeof(LONG)) return STATUS_INVALID_PARAMETER;
+        handle = LongToHandle( *(LONG *)query );
         status = NtQuerySystemInformationEx( class, &handle, sizeof(handle), NULL, 0, &size );
         if (status != STATUS_INFO_LENGTH_MISMATCH) return status;
         info = Wow64AllocateTemp( size );
@@ -658,6 +679,8 @@ NTSTATUS WINAPI wow64_NtQuerySystemInformationEx( UINT *args )
 
     case SystemCpuSetInformation:  /* SYSTEM_CPU_SET_INFORMATION */
     case SystemSupportedProcessorArchitectures:  /* SYSTEM_SUPPORTED_PROCESSOR_ARCHITECTURES_INFORMATION */
+        if (!query || query_len < sizeof(LONG)) return STATUS_INVALID_PARAMETER;
+        handle = LongToHandle( *(LONG *)query );
         return NtQuerySystemInformationEx( class, &handle, sizeof(handle), ptr, len, retlen );
 
     default:
@@ -755,7 +778,30 @@ NTSTATUS WINAPI wow64_NtSystemDebugControl( UINT *args )
     ULONG out_len = get_ulong( &args );
     ULONG *retlen = get_ptr( &args );
 
-    return NtSystemDebugControl( command, in_buf, in_len, out_buf, out_len, retlen );
+    switch (command)
+    {
+    case SysDbgBreakPoint:
+    case SysDbgEnableKernelDebugger:
+    case SysDbgDisableKernelDebugger:
+    case SysDbgGetAutoKdEnable:
+    case SysDbgSetAutoKdEnable:
+    case SysDbgGetPrintBufferSize:
+    case SysDbgSetPrintBufferSize:
+    case SysDbgGetKdUmExceptionEnable:
+    case SysDbgSetKdUmExceptionEnable:
+    case SysDbgGetTriageDump:
+    case SysDbgGetKdBlockEnable:
+    case SysDbgSetKdBlockEnable:
+    case SysDbgRegisterForUmBreakInfo:
+    case SysDbgGetUmBreakPid:
+    case SysDbgClearUmBreakPid:
+    case SysDbgGetUmAttachPid:
+    case SysDbgClearUmAttachPid:
+        return NtSystemDebugControl( command, in_buf, in_len, out_buf, out_len, retlen );
+
+    default:
+        return STATUS_NOT_IMPLEMENTED;  /* not implemented on Windows either */
+    }
 }
 
 

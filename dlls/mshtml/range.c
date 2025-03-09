@@ -810,58 +810,7 @@ static inline HTMLTxtRange *impl_from_IHTMLTxtRange(IHTMLTxtRange *iface)
     return CONTAINING_RECORD(iface, HTMLTxtRange, IHTMLTxtRange_iface);
 }
 
-static HRESULT WINAPI HTMLTxtRange_QueryInterface(IHTMLTxtRange *iface, REFIID riid, void **ppv)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-    return IDispatchEx_QueryInterface(&This->dispex.IDispatchEx_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLTxtRange_AddRef(IHTMLTxtRange *iface)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-    return IDispatchEx_AddRef(&This->dispex.IDispatchEx_iface);
-}
-
-static ULONG WINAPI HTMLTxtRange_Release(IHTMLTxtRange *iface)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-    return IDispatchEx_Release(&This->dispex.IDispatchEx_iface);
-}
-
-static HRESULT WINAPI HTMLTxtRange_GetTypeInfoCount(IHTMLTxtRange *iface, UINT *pctinfo)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-
-    return IDispatchEx_GetTypeInfoCount(&This->dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLTxtRange_GetTypeInfo(IHTMLTxtRange *iface, UINT iTInfo,
-                                               LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-
-    return IDispatchEx_GetTypeInfo(&This->dispex.IDispatchEx_iface, iTInfo, lcid, ppTInfo);
-}
-
-static HRESULT WINAPI HTMLTxtRange_GetIDsOfNames(IHTMLTxtRange *iface, REFIID riid,
-                                                 LPOLESTR *rgszNames, UINT cNames,
-                                                 LCID lcid, DISPID *rgDispId)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-
-    return IDispatchEx_GetIDsOfNames(&This->dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLTxtRange_Invoke(IHTMLTxtRange *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLTxtRange *This = impl_from_IHTMLTxtRange(iface);
-
-    return IDispatchEx_Invoke(&This->dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLTxtRange, IHTMLTxtRange, impl_from_IHTMLTxtRange(iface)->dispex)
 
 static HRESULT WINAPI HTMLTxtRange_get_htmlText(IHTMLTxtRange *iface, BSTR *p)
 {
@@ -1731,15 +1680,15 @@ static const dispex_static_data_vtbl_t HTMLTxtRange_dispex_vtbl = {
     .unlink           = HTMLTxtRange_unlink
 };
 
-static const tid_t HTMLTxtRange_iface_tids[] = {
+static const tid_t TextRange_iface_tids[] = {
     IHTMLTxtRange_tid,
     0
 };
-static dispex_static_data_t HTMLTxtRange_dispex = {
-    "TextRange",
-    &HTMLTxtRange_dispex_vtbl,
-    IHTMLTxtRange_tid,
-    HTMLTxtRange_iface_tids
+dispex_static_data_t TextRange_dispex = {
+    .id         = PROT_TextRange,
+    .vtbl       = &HTMLTxtRange_dispex_vtbl,
+    .disp_tid   = IHTMLTxtRange_tid,
+    .iface_tids = TextRange_iface_tids,
 };
 
 HRESULT HTMLTxtRange_Create(HTMLDocumentNode *doc, nsIDOMRange *nsrange, IHTMLTxtRange **p)
@@ -1750,7 +1699,8 @@ HRESULT HTMLTxtRange_Create(HTMLDocumentNode *doc, nsIDOMRange *nsrange, IHTMLTx
     if(!ret)
         return E_OUTOFMEMORY;
 
-    init_dispatch(&ret->dispex, &HTMLTxtRange_dispex, dispex_compat_mode(&doc->node.event_target.dispex));
+    init_dispatch(&ret->dispex, &TextRange_dispex, doc->script_global,
+                  dispex_compat_mode(&doc->node.event_target.dispex));
 
     ret->IHTMLTxtRange_iface.lpVtbl = &HTMLTxtRangeVtbl;
     ret->IOleCommandTarget_iface.lpVtbl = &OleCommandTargetVtbl;
@@ -1771,58 +1721,7 @@ static inline HTMLDOMRange *impl_from_IHTMLDOMRange(IHTMLDOMRange *iface)
     return CONTAINING_RECORD(iface, HTMLDOMRange, IHTMLDOMRange_iface);
 }
 
-static HRESULT WINAPI HTMLDOMRange_QueryInterface(IHTMLDOMRange *iface, REFIID riid, void **ppv)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-    return IDispatchEx_QueryInterface(&This->dispex.IDispatchEx_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLDOMRange_AddRef(IHTMLDOMRange *iface)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-    return IDispatchEx_AddRef(&This->dispex.IDispatchEx_iface);
-}
-
-static ULONG WINAPI HTMLDOMRange_Release(IHTMLDOMRange *iface)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-    return IDispatchEx_Release(&This->dispex.IDispatchEx_iface);
-}
-
-static HRESULT WINAPI HTMLDOMRange_GetTypeInfoCount(IHTMLDOMRange *iface, UINT *pctinfo)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-
-    return IDispatchEx_GetTypeInfoCount(&This->dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLDOMRange_GetTypeInfo(IHTMLDOMRange *iface, UINT iTInfo,
-                                               LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-
-    return IDispatchEx_GetTypeInfo(&This->dispex.IDispatchEx_iface, iTInfo, lcid, ppTInfo);
-}
-
-static HRESULT WINAPI HTMLDOMRange_GetIDsOfNames(IHTMLDOMRange *iface, REFIID riid,
-                                                 LPOLESTR *rgszNames, UINT cNames,
-                                                 LCID lcid, DISPID *rgDispId)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-
-    return IDispatchEx_GetIDsOfNames(&This->dispex.IDispatchEx_iface, riid, rgszNames,
-            cNames, lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLDOMRange_Invoke(IHTMLDOMRange *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLDOMRange *This = impl_from_IHTMLDOMRange(iface);
-
-    return IDispatchEx_Invoke(&This->dispex.IDispatchEx_iface, dispIdMember, riid,
-            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLDOMRange, IHTMLDOMRange, impl_from_IHTMLDOMRange(iface)->dispex)
 
 static HRESULT WINAPI HTMLDOMRange_get_startContainer(IHTMLDOMRange *iface, IHTMLDOMNode **p)
 {
@@ -2086,19 +1985,19 @@ static const dispex_static_data_vtbl_t HTMLDOMRange_dispex_vtbl = {
     .unlink           = HTMLDOMRange_unlink
 };
 
-static const tid_t HTMLDOMRange_iface_tids[] = {
+static const tid_t Range_iface_tids[] = {
     IHTMLDOMRange_tid,
     0
 };
 
-static dispex_static_data_t HTMLDOMRange_dispex = {
-    "Range",
-    &HTMLDOMRange_dispex_vtbl,
-    DispHTMLDOMRange_tid,
-    HTMLDOMRange_iface_tids
+dispex_static_data_t Range_dispex = {
+    .id         = PROT_Range,
+    .vtbl       = &HTMLDOMRange_dispex_vtbl,
+    .disp_tid   = DispHTMLDOMRange_tid,
+    .iface_tids = Range_iface_tids,
 };
 
-HRESULT create_dom_range(nsIDOMRange *nsrange, compat_mode_t compat_mode, IHTMLDOMRange **p)
+HRESULT create_dom_range(nsIDOMRange *nsrange, HTMLDocumentNode *doc, IHTMLDOMRange **p)
 {
     HTMLDOMRange *ret;
 
@@ -2106,7 +2005,8 @@ HRESULT create_dom_range(nsIDOMRange *nsrange, compat_mode_t compat_mode, IHTMLD
     if(!ret)
         return E_OUTOFMEMORY;
 
-    init_dispatch(&ret->dispex, &HTMLDOMRange_dispex, compat_mode);
+    init_dispatch(&ret->dispex, &Range_dispex, doc->script_global,
+                  dispex_compat_mode(&doc->node.event_target.dispex));
 
     ret->IHTMLDOMRange_iface.lpVtbl = &HTMLDOMRangeVtbl;
 

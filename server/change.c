@@ -112,8 +112,6 @@ static const struct object_ops dir_ops =
     add_queue,                /* add_queue */
     remove_queue,             /* remove_queue */
     default_fd_signaled,      /* signaled */
-    default_fd_get_esync_fd,  /* get_esync_fd */
-    default_fd_get_msync_idx, /* get_msync_idx */
     no_satisfied,             /* satisfied */
     no_signal,                /* signal */
     dir_get_fd,               /* get_fd */
@@ -127,7 +125,9 @@ static const struct object_ops dir_ops =
     no_open_file,             /* open_file */
     no_kernel_obj_list,       /* get_kernel_obj_list */
     dir_close_handle,         /* close_handle */
-    dir_destroy               /* destroy */
+    dir_destroy,              /* destroy */
+    default_fd_get_esync_fd,  /* get_esync_fd */
+    default_fd_get_msync_idx, /* get_msync_idx */
 };
 
 static int dir_get_poll_events( struct fd *fd );
@@ -728,7 +728,7 @@ static char *get_path_from_fd( int fd, int sz )
 #ifdef linux
     char *ret = malloc( 32 + sz );
 
-    if (ret) sprintf( ret, "/proc/self/fd/%u", fd );
+    if (ret) snprintf( ret, 32 + sz, "/proc/self/fd/%u", fd );
     return ret;
 #elif defined(F_GETPATH)
     char *ret = malloc( PATH_MAX + sz );
@@ -1073,7 +1073,7 @@ static void dir_add_to_existing_notify( struct dir *dir )
 
     /* check if it's in the list of inodes we want to watch */
     if (fstat( unix_fd, &st_new )) return;
-    if ((inode = find_inode( st_new.st_dev, st_new.st_ino ))) return;
+    if (find_inode( st_new.st_dev, st_new.st_ino )) return;
 
     /* lookup the parent */
     if (!(link = get_path_from_fd( unix_fd, 3 ))) return;

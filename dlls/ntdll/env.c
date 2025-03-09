@@ -46,6 +46,18 @@ static inline SIZE_T get_env_length( const WCHAR *env )
     return end + 1 - env;
 }
 
+static UNICODE_STRING *get_machine_name( USHORT machine, UNICODE_STRING *str )
+{
+    switch (machine)
+    {
+    case IMAGE_FILE_MACHINE_I386:  RtlInitUnicodeString( str, L"x86" ); break;
+    case IMAGE_FILE_MACHINE_AMD64: RtlInitUnicodeString( str, L"AMD64" ); break;
+    case IMAGE_FILE_MACHINE_ARMNT: RtlInitUnicodeString( str, L"ARM" ); break;
+    case IMAGE_FILE_MACHINE_ARM64: RtlInitUnicodeString( str, L"ARM64" ); break;
+    default:                       RtlInitUnicodeString( str, L"Unknown" ); break;
+    }
+    return str;
+}
 
 /***********************************************************************
  *           set_wow64_environment
@@ -59,23 +71,17 @@ static void set_wow64_environment( WCHAR **env )
     UNICODE_STRING arch6432_strW = RTL_CONSTANT_STRING( L"PROCESSOR_ARCHITEW6432" );
     UNICODE_STRING valW = { 0, sizeof(buf), buf };
     UNICODE_STRING nameW;
+    USHORT machine = RtlImageNtHeader( NtCurrentTeb()->Peb->ImageBaseAddress )->FileHeader.Machine;
 
     /* set the PROCESSOR_ARCHITECTURE variable */
 
-    if (!RtlQueryEnvironmentVariable_U( *env, &arch6432_strW, &valW ))
+    RtlSetEnvironmentVariable( env, &arch_strW, get_machine_name( current_machine, &nameW ));
+    if (!is_win64 && NtCurrentTeb()->WowTebOffset)
     {
-        if (is_win64)
-        {
-            RtlSetEnvironmentVariable( env, &arch_strW, &valW );
-            RtlSetEnvironmentVariable( env, &arch6432_strW, NULL );
-        }
+        RtlWow64GetProcessMachines( GetCurrentProcess(), NULL, &machine );
+        RtlSetEnvironmentVariable( env, &arch6432_strW, get_machine_name( machine, &nameW ));
     }
-    else if (NtCurrentTeb64() && !RtlQueryEnvironmentVariable_U( *env, &arch_strW, &valW ))
-    {
-        RtlSetEnvironmentVariable( env, &arch6432_strW, &valW );
-        RtlInitUnicodeString( &nameW, L"x86" );
-        RtlSetEnvironmentVariable( env, &arch_strW, &nameW );
-    }
+    else RtlSetEnvironmentVariable( env, &arch6432_strW, NULL );
 
     /* set the ProgramFiles variables */
 
@@ -99,6 +105,22 @@ static void set_wow64_environment( WCHAR **env )
                        get_env_length(*env) * sizeof(WCHAR) );
 }
 
+
+/******************************************************************************
+ *  RtlAcquirePebLock		[NTDLL.@]
+ */
+void WINAPI RtlAcquirePebLock(void)
+{
+    RtlEnterCriticalSection( NtCurrentTeb()->Peb->FastPebLock );
+}
+
+/******************************************************************************
+ *  RtlReleasePebLock		[NTDLL.@]
+ */
+void WINAPI RtlReleasePebLock(void)
+{
+    RtlLeaveCriticalSection( NtCurrentTeb()->Peb->FastPebLock );
+}
 
 /******************************************************************************
  *  RtlCreateEnvironment		[NTDLL.@]
@@ -362,7 +384,7 @@ done:
 NTSTATUS WINAPI RtlExpandEnvironmentStrings( const WCHAR *renv, WCHAR *src, SIZE_T src_len,
                                              WCHAR *dst, SIZE_T count, SIZE_T *plen )
 {
-    SIZE_T len, total_size = 1;  /* 1 for terminating '\0' */
+    SIZE_T len, copy, total_size = 1;  /* 1 for terminating '\0' */
     LPCWSTR env, var;
 
     if (!renv)
@@ -380,6 +402,7 @@ NTSTATUS WINAPI RtlExpandEnvironmentStrings( const WCHAR *renv, WCHAR *src, SIZE
             var = src;
             src += len;
             src_len -= len;
+            copy = len;
         }
         else  /* we are at the start of a variable */
         {
@@ -391,6 +414,11 @@ NTSTATUS WINAPI RtlExpandEnvironmentStrings( const WCHAR *renv, WCHAR *src, SIZE
                     src += len + 1;  /* Skip the variable name */
                     src_len -= len + 1;
                     len = wcslen(var);
+                    copy = len;
+                    if (count <= copy) /* Either copy the entire value, or nothing at all */
+                        copy = 0;
+                    if (dst && count)  /* When the variable is the last thing that fits into dst, the string is null terminated */
+                       dst[copy] = 0;  /* Either right after, or if it doesn't fit, where it would start */
                 }
                 else
                 {
@@ -398,6 +426,7 @@ NTSTATUS WINAPI RtlExpandEnvironmentStrings( const WCHAR *renv, WCHAR *src, SIZE
                     len++;
                     src += len;
                     src_len -= len;
+                    copy = len;
                 }
             }
             else  /* unfinished variable name, ignore it */
@@ -405,15 +434,17 @@ NTSTATUS WINAPI RtlExpandEnvironmentStrings( const WCHAR *renv, WCHAR *src, SIZE
                 var = src;
                 src += len;
                 src_len = 0;
+                copy = len;
             }
         }
         total_size += len;
         if (dst)
         {
             if (count < len) len = count;
-            memcpy(dst, var, len * sizeof(WCHAR));
+            if (count <= copy) copy = count ? count - 1 : 0; /* If the buffer is too small, we copy one character less */
+            memcpy(dst, var, copy * sizeof(WCHAR));
             count -= len;
-            dst += len;
+            dst += copy;
         }
     }
 

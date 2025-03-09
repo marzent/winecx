@@ -190,32 +190,31 @@ done:
     return ret;
 }
 
-static BOOL xinerama_get_gpus( struct gdi_gpu **new_gpus, int *count, BOOL get_properties )
+static BOOL xinerama_get_gpus( struct x11drv_gpu **new_gpus, int *count, BOOL get_properties )
 {
-    static const WCHAR wine_adapterW[] = {'W','i','n','e',' ','A','d','a','p','t','e','r',0};
-    struct gdi_gpu *gpus;
+    struct x11drv_gpu *gpus;
 
     /* Xinerama has no support for GPU, faking one */
     gpus = calloc( 1, sizeof(*gpus) );
     if (!gpus)
         return FALSE;
 
-    lstrcpyW( gpus[0].name, wine_adapterW );
-
+    gpus[0].name = strdup( "Wine GPU" );
     *new_gpus = gpus;
     *count = 1;
 
     return TRUE;
 }
 
-static void xinerama_free_gpus( struct gdi_gpu *gpus )
+static void xinerama_free_gpus( struct x11drv_gpu *gpus, int count )
 {
+    while (count--) free( gpus[count].name );
     free( gpus );
 }
 
-static BOOL xinerama_get_adapters( ULONG_PTR gpu_id, struct gdi_adapter **new_adapters, int *count )
+static BOOL xinerama_get_adapters( ULONG_PTR gpu_id, struct x11drv_adapter **new_adapters, int *count )
 {
-    struct gdi_adapter *adapters = NULL;
+    struct x11drv_adapter *adapters = NULL;
     INT index = 0;
     INT i, j;
     INT primary_index;
@@ -268,7 +267,7 @@ static BOOL xinerama_get_adapters( ULONG_PTR gpu_id, struct gdi_adapter **new_ad
     /* Primary adapter has to be first */
     if (primary_index)
     {
-        struct gdi_adapter tmp;
+        struct x11drv_adapter tmp;
         tmp = adapters[primary_index];
         adapters[primary_index] = adapters[0];
         adapters[0] = tmp;
@@ -280,7 +279,7 @@ static BOOL xinerama_get_adapters( ULONG_PTR gpu_id, struct gdi_adapter **new_ad
     return TRUE;
 }
 
-static void xinerama_free_adapters( struct gdi_adapter *adapters )
+static void xinerama_free_adapters( struct x11drv_adapter *adapters )
 {
     free( adapters );
 }
@@ -319,11 +318,8 @@ static BOOL xinerama_get_monitors( ULONG_PTR adapter_id, struct gdi_monitor **ne
             monitor[index].rc_monitor = monitors[i].rcMonitor;
             monitor[index].rc_work = monitors[i].rcWork;
             /* Xinerama only reports monitors already attached */
-            monitor[index].state_flags = DISPLAY_DEVICE_ATTACHED;
             monitor[index].edid_len = 0;
             monitor[index].edid = NULL;
-            if (!IsRectEmpty( &monitors[i].rcMonitor ))
-                monitor[index].state_flags |= DISPLAY_DEVICE_ACTIVE;
 
             index++;
         }
@@ -346,9 +342,6 @@ void xinerama_init( unsigned int width, unsigned int height )
     MONITORINFOEXW *primary;
     int i;
     RECT rect;
-
-    if (is_virtual_desktop())
-        return;
 
     pthread_mutex_lock( &xinerama_mutex );
 

@@ -5,15 +5,15 @@ msgstr ""
 "Project-Id-Version: Wine\n"
 "Report-Msgid-Bugs-To: https://bugs.winehq.org\n"
 "POT-Creation-Date: N/A\n"
-"PO-Revision-Date: 2023-12-15 07:05+0100\n"
+"PO-Revision-Date: 2025-01-04 21:17-0600\n"
 "Last-Translator: Jactry Zeng <jzeng@codeweavers.com>\n"
 "Language-Team: Chinese (PRC)\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 2.4.2\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Poedit 3.4.4\n"
 
 #: dlls/aclui/aclui.rc:29 dlls/inetcpl.cpl/inetcpl.rc:90
 #: programs/winefile/winefile.rc:114
@@ -91,8 +91,8 @@ msgstr "技术支持信息"
 #: dlls/mshtml/mshtml.rc:47 dlls/mshtml/mshtml.rc:57 dlls/msvfw32/msvfw32.rc:36
 #: dlls/oledlg/oledlg.rc:62 dlls/oledlg/oledlg.rc:94
 #: dlls/serialui/serialui.rc:41 dlls/setupapi/setupapi.rc:59
-#: dlls/shell32/shell32.rc:274 dlls/shell32/shell32.rc:298
-#: dlls/shell32/shell32.rc:320 dlls/shell32/shell32.rc:339
+#: dlls/shell32/shell32.rc:278 dlls/shell32/shell32.rc:302
+#: dlls/shell32/shell32.rc:324 dlls/shell32/shell32.rc:343
 #: dlls/shlwapi/shlwapi.rc:44 dlls/twain_32/twain.rc:32
 #: dlls/user32/user32.rc:94 dlls/user32/user32.rc:109 dlls/user32/user32.rc:73
 #: dlls/wininet/wininet.rc:62 dlls/wininet/wininet.rc:82
@@ -162,14 +162,15 @@ msgid ""
 "install it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Gecko\">https://wiki.winehq.org/Gecko</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Gecko</a> for details."
 msgstr ""
 "Wine 未找到到用于支持嵌入 HTML 的 Gecko 引擎。Wine 可以自动并下载安装该组"
 "件。\n"
 "\n"
-"注意: 推荐您安装为发行版定制的软件包。具体请参看 <a href=\"https://wiki."
-"winehq.org/Gecko\">https://wiki.winehq.org/Gecko</a>。"
+"注意: 推荐您安装为发行版定制的软件包。具体请参看 <a href=\"https://"
+"wiki.winehq.org/Gecko\">https://gitlab.winehq.org/wine/wine/-/wikis/Gecko</"
+"a>。"
 
 #: dlls/appwiz.cpl/appwiz.rc:110 dlls/appwiz.cpl/appwiz.rc:125
 msgid "&Install"
@@ -194,9 +195,9 @@ msgstr "安装(&I)"
 #: dlls/mshtml/mshtml.rc:48 dlls/mshtml/mshtml.rc:58 dlls/msvfw32/msvfw32.rc:37
 #: dlls/oledlg/oledlg.rc:63 dlls/oledlg/oledlg.rc:95
 #: dlls/serialui/serialui.rc:42 dlls/setupapi/setupapi.rc:42
-#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:275
-#: dlls/shell32/shell32.rc:299 dlls/shell32/shell32.rc:310
-#: dlls/shell32/shell32.rc:340 dlls/shlwapi/shlwapi.rc:45
+#: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:279
+#: dlls/shell32/shell32.rc:303 dlls/shell32/shell32.rc:314
+#: dlls/shell32/shell32.rc:344 dlls/shlwapi/shlwapi.rc:45
 #: dlls/twain_32/twain.rc:33 dlls/user32/user32.rc:95 dlls/user32/user32.rc:110
 #: dlls/user32/user32.rc:74 dlls/wininet/wininet.rc:63
 #: dlls/wininet/wininet.rc:83 dlls/winspool.drv/winspool.rc:43
@@ -229,14 +230,15 @@ msgid ""
 "it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://wiki.winehq.org/Mono\">https://wiki.winehq.org/Mono</a> for "
-"details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> for details."
 msgstr ""
 "Wine 未找到到用于支持 .NET 应用的 wine-mono 组件。Wine 可以自动并下载安装该组"
 "件。\n"
 "\n"
-"注意: 推荐您安装为发行版定制的软件包。具体请参看 <a href=\"https://wiki."
-"winehq.org/Mono\">https://wiki.winehq.org/Mono</a>。"
+"注意: 推荐您安装为发行版定制的软件包。具体请参看 <a https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://gitlab.winehq.org/"
+"wine/wine/-/wikis/Wine-Mono</a>。"
 
 #: dlls/appwiz.cpl/appwiz.rc:31
 msgid "Add/Remove Programs"
@@ -264,7 +266,7 @@ msgid "Not specified"
 msgstr "未指定"
 
 #: dlls/appwiz.cpl/appwiz.rc:38 dlls/oledb32/version.rc:38
-#: dlls/shell32/shell32.rc:144 dlls/shell32/shell32.rc:239
+#: dlls/shell32/shell32.rc:141 dlls/shell32/shell32.rc:243
 #: programs/regedit/regedit.rc:150 programs/winefile/winefile.rc:106
 msgid "Name"
 msgstr "名称"
@@ -286,7 +288,7 @@ msgid "Programs (*.exe)"
 msgstr "程序 (*.exe)"
 
 #: dlls/appwiz.cpl/appwiz.rc:43 dlls/avifil32/avifil32.rc:33
-#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:197
+#: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:199
 #: programs/notepad/notepad.rc:81 programs/oleview/oleview.rc:103
 #: programs/progman/progman.rc:82 programs/regedit/regedit.rc:230
 #: programs/winedbg/winedbg.rc:43 programs/winhlp32/winhlp32.rc:90
@@ -396,6 +398,7 @@ msgid "Properties for %s"
 msgstr "%s 的属性"
 
 #: dlls/comctl32/comctl32.rc:73 dlls/comdlg32/comdlg32.rc:265
+#: dlls/desk.cpl/desk.rc:41
 msgid "&Apply"
 msgstr "应用(&A)"
 
@@ -444,7 +447,7 @@ msgstr "重置(&E)"
 #: dlls/comdlg32/comdlg32.rc:482 dlls/comdlg32/comdlg32.rc:508
 #: dlls/comdlg32/comdlg32.rc:531 dlls/ieframe/ieframe.rc:58
 #: dlls/msacm32/msacm32.rc:52 dlls/oledlg/oledlg.rc:96
-#: dlls/shell32/shell32.rc:128 programs/clock/clock.rc:44
+#: dlls/shell32/shell32.rc:125 programs/clock/clock.rc:44
 #: programs/notepad/notepad.rc:65 programs/notepad/notepad.rc:126
 #: programs/oleview/oleview.rc:72 programs/progman/progman.rc:55
 #: programs/progman/progman.rc:108 programs/progman/progman.rc:126
@@ -490,12 +493,12 @@ msgctxt "hotkey"
 msgid "None"
 msgstr "无"
 
-#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:307
+#: dlls/comctl32/comctl32.rc:52 dlls/shell32/shell32.rc:311
 #: dlls/shlwapi/shlwapi.rc:46 dlls/user32/user32.rc:90 dlls/user32/user32.rc:78
 msgid "&Yes"
 msgstr "是(&Y)"
 
-#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:309
+#: dlls/comctl32/comctl32.rc:53 dlls/shell32/shell32.rc:313
 #: dlls/shlwapi/shlwapi.rc:47 dlls/user32/user32.rc:91 dlls/user32/user32.rc:79
 msgid "&No"
 msgstr "否(&N)"
@@ -530,8 +533,7 @@ msgstr "转到今天"
 
 #: dlls/comdlg32/comdlg32.rc:158 dlls/comdlg32/comdlg32.rc:171
 #: dlls/comdlg32/comdlg32.rc:462 dlls/comdlg32/comdlg32.rc:487
-#: dlls/comdlg32/comdlg32.rc:514 dlls/shell32/shell32.rc:165
-#: programs/oleview/oleview.rc:101
+#: dlls/comdlg32/comdlg32.rc:514 programs/oleview/oleview.rc:101
 msgid "Open"
 msgstr "打开"
 
@@ -552,7 +554,7 @@ msgid "Dri&ves:"
 msgstr "驱动器(&V):"
 
 #: dlls/comdlg32/comdlg32.rc:174 dlls/comdlg32/comdlg32.rc:196
-#: dlls/shell32/shell32.rc:368 dlls/shell32/shell32.rc:405
+#: dlls/shell32/shell32.rc:372 dlls/shell32/shell32.rc:409
 #: programs/winefile/winefile.rc:172
 msgid "&Read Only"
 msgstr "只读(&R)"
@@ -811,7 +813,7 @@ msgstr "全部替换(&A)"
 
 #: dlls/comdlg32/comdlg32.rc:363 dlls/comdlg32/comdlg32.rc:403
 #: dlls/ieframe/ieframe.rc:42 dlls/shdoclc/shdoclc.rc:61
-#: dlls/shell32/shell32.rc:108 programs/clock/clock.rc:31
+#: dlls/shell32/shell32.rc:105 programs/clock/clock.rc:31
 #: programs/conhost/conhost.rc:34
 msgid "&Properties"
 msgstr "属性(&P)"
@@ -935,7 +937,7 @@ msgstr "以只读方式打开(&R)"
 
 #: dlls/comdlg32/comdlg32.rc:480 dlls/comdlg32/comdlg32.rc:506
 #: dlls/comdlg32/comdlg32.rc:524 dlls/shdoclc/shdoclc.rc:127
-#: dlls/shell32/shell32.rc:99
+#: dlls/shell32/shell32.rc:165
 msgid "&Open"
 msgstr "打开(&O)"
 
@@ -2233,8 +2235,8 @@ msgid "Notice Text="
 msgstr "公告文本="
 
 #: dlls/cryptui/cryptui.rc:185 dlls/cryptui/cryptui.rc:240
-#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:346
-#: dlls/shell32/shell32.rc:375
+#: dlls/inetcpl.cpl/inetcpl.rc:46 dlls/shell32/shell32.rc:350
+#: dlls/shell32/shell32.rc:379
 msgid "General"
 msgstr "通用"
 
@@ -2326,7 +2328,7 @@ msgstr "选择证书存储"
 
 #: dlls/cryptui/cryptui.rc:276
 msgid "Select the certificate store you want to use:"
-msgstr "选择您要使用的证书存储"
+msgstr "选择您要使用的证书存储:"
 
 #: dlls/cryptui/cryptui.rc:279
 msgid "&Show physical stores"
@@ -2442,7 +2444,7 @@ msgid "Certificate intended purposes"
 msgstr "证书的预期用途"
 
 #: dlls/cryptui/cryptui.rc:355 dlls/ieframe/ieframe.rc:45
-#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:120
+#: dlls/shell32/shell32.rc:43 dlls/shell32/shell32.rc:117
 #: programs/notepad/notepad.rc:61 programs/oleview/oleview.rc:59
 #: programs/oleview/oleview.rc:61 programs/oleview/oleview.rc:85
 #: programs/regedit/regedit.rc:65 programs/taskmgr/taskmgr.rc:52
@@ -2712,7 +2714,7 @@ msgstr "增强密钥用途 (属性)"
 msgid "Friendly name"
 msgstr "易记名称"
 
-#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:240
+#: dlls/cryptui/cryptui.rc:65 dlls/shell32/shell32.rc:244
 #: programs/ipconfig/ipconfig.rc:45
 msgid "Description"
 msgstr "描述"
@@ -2805,7 +2807,7 @@ msgstr "已选中证书存储"
 msgid "Automatically determined by the program"
 msgstr "由程序自动确定"
 
-#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:137
+#: dlls/cryptui/cryptui.rc:91 dlls/shell32/shell32.rc:134
 msgid "File"
 msgstr "文件"
 
@@ -3087,7 +3089,7 @@ msgstr "注意: 证书的私钥不可导出。"
 msgid "Intended Use"
 msgstr "预期用途"
 
-#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:150
+#: dlls/cryptui/cryptui.rc:178 dlls/shell32/shell32.rc:147
 msgid "Location"
 msgstr "位置"
 
@@ -3099,6 +3101,30 @@ msgstr "选择证书"
 #: programs/winhlp32/winhlp32.rc:110 programs/winhlp32/winhlp32.rc:85
 msgid "Not yet implemented"
 msgstr "尚未实现"
+
+#: dlls/desk.cpl/desk.rc:35
+msgid "Desktop"
+msgstr "桌面"
+
+#: dlls/desk.cpl/desk.rc:38
+msgid "Virtual Desktop"
+msgstr "虚拟桌面"
+
+#: dlls/desk.cpl/desk.rc:40 dlls/joy.cpl/joy.rc:41
+msgid "&Reset"
+msgstr "重置(&R)"
+
+#: dlls/desk.cpl/desk.rc:42
+msgid "Emulate display mode changes (requires restart)"
+msgstr "模拟显示模式改变（需要重启）"
+
+#: dlls/desk.cpl/desk.rc:29
+msgid "Display Settings"
+msgstr "显示设置"
+
+#: dlls/desk.cpl/desk.rc:30
+msgid "Configure monitors and display devices."
+msgstr "监视器与显示设备配置。"
 
 #: dlls/dinput/dinput.rc:34
 msgid "Configure Devices"
@@ -3313,7 +3339,7 @@ msgstr "剪切(&T)"
 #: dlls/hhctrl.ocx/hhctrl.rc:88 dlls/shdoclc/shdoclc.rc:80
 #: dlls/shdoclc/shdoclc.rc:94 dlls/shdoclc/shdoclc.rc:118
 #: dlls/shdoclc/shdoclc.rc:133 dlls/shdoclc/shdoclc.rc:160
-#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:102
+#: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:98
 #: dlls/user32/user32.rc:61 programs/conhost/conhost.rc:36
 #: programs/winhlp32/winhlp32.rc:40 programs/wordpad/wordpad.rc:113
 msgid "&Copy"
@@ -3325,6 +3351,7 @@ msgid "Paste"
 msgstr "粘贴"
 
 #: dlls/hhctrl.ocx/hhctrl.rc:91 dlls/shdoclc/shdoclc.rc:121
+#: dlls/shell32/shell32.rc:166
 msgid "&Print"
 msgstr "打印(&P)"
 
@@ -3391,7 +3418,7 @@ msgstr "向前"
 msgid "Cinepak Video codec"
 msgstr "Cinepak 视频编解码器"
 
-#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:114
+#: dlls/ieframe/ieframe.rc:28 dlls/shell32/shell32.rc:111
 #: programs/notepad/notepad.rc:29 programs/oleview/oleview.rc:30
 #: programs/oleview/oleview.rc:80 programs/progman/progman.rc:32
 #: programs/taskmgr/taskmgr.rc:35 programs/view/view.rc:31
@@ -3679,85 +3706,85 @@ msgstr "操纵杆"
 msgid "&Disable"
 msgstr "停用(&D)"
 
-#: dlls/joy.cpl/joy.rc:41
-msgid "&Reset"
-msgstr "重置(&R)"
-
 #: dlls/joy.cpl/joy.rc:42
-msgid "&Enable"
-msgstr "启用(&E)"
-
-#: dlls/joy.cpl/joy.rc:43
 msgid "&Override"
 msgstr "重写(&O)"
 
+#: dlls/joy.cpl/joy.rc:43
+msgid "&Enable"
+msgstr "启用(&E)"
+
 #: dlls/joy.cpl/joy.rc:44
-msgid "Connected"
-msgstr "已连接"
+msgid "Connected (DirectInput devices)"
+msgstr "已连接 (DirectInput 设备)"
 
 #: dlls/joy.cpl/joy.rc:46
-msgid "Connected (xinput device)"
-msgstr "已连接 (xinput 设备)"
+msgid "Connected (XInput devices)"
+msgstr "已连接 (XInput 设备)"
 
 #: dlls/joy.cpl/joy.rc:48
 msgid "Disabled"
 msgstr "停用"
 
-#: dlls/joy.cpl/joy.rc:50
-msgid ""
-"After disabling or enabling a device, the connected joysticks won't be "
-"updated here until you restart this applet."
-msgstr ""
-"在禁用或启用设备之后，已连接的操纵杆的信息将不会在这里更新，直到您重启该小工"
-"具为止。"
+#: dlls/joy.cpl/joy.rc:51
+msgid "Advanced settings (restart prefix required to take effect)"
+msgstr "高级设置（重启 prefix 后生效）"
 
-#: dlls/joy.cpl/joy.rc:55
+#: dlls/joy.cpl/joy.rc:52
+msgid "Enable SDL"
+msgstr "启用 SDL"
+
+#: dlls/joy.cpl/joy.rc:53
+msgid "Disable hidraw"
+msgstr "停用 hidraw"
+
+#: dlls/joy.cpl/joy.rc:58
 msgid "DInput"
 msgstr "DInput"
 
-#: dlls/joy.cpl/joy.rc:59
+#: dlls/joy.cpl/joy.rc:62
 msgid "Axes"
 msgstr "坐标轴"
 
-#: dlls/joy.cpl/joy.rc:60
+#: dlls/joy.cpl/joy.rc:63
 msgid "POVs"
 msgstr "帽子开关"
 
-#: dlls/joy.cpl/joy.rc:61
+#: dlls/joy.cpl/joy.rc:64
 msgid "Buttons"
 msgstr "按钮"
 
-#: dlls/joy.cpl/joy.rc:62
+#: dlls/joy.cpl/joy.rc:65
 msgid "Force Feedback Effect"
 msgstr "力反馈效果"
 
-#: dlls/joy.cpl/joy.rc:64
+#: dlls/joy.cpl/joy.rc:67
 msgid ""
 "Press any button in the controller to activate the chosen effect. The effect "
 "direction can be changed with the controller axis."
 msgstr "在控制器上按任意键以激活选中的效果。可根据控制器轴改变效果的方向。"
 
-#: dlls/joy.cpl/joy.rc:70
+#: dlls/joy.cpl/joy.rc:73
 msgid "XInput"
 msgstr "XInput"
 
-#: dlls/joy.cpl/joy.rc:73
+#: dlls/joy.cpl/joy.rc:76
 msgid "User #0"
 msgstr "用户 #0"
 
-#: dlls/joy.cpl/joy.rc:74
+#: dlls/joy.cpl/joy.rc:77
 msgid "User #1"
 msgstr "用户 #1"
 
-#: dlls/joy.cpl/joy.rc:75
+#: dlls/joy.cpl/joy.rc:78
 msgid "User #2"
 msgstr "用户 #2"
 
-#: dlls/joy.cpl/joy.rc:76
+#: dlls/joy.cpl/joy.rc:79
 msgid "User #3"
 msgstr "用户 #3"
 
-#: dlls/joy.cpl/joy.rc:78
+#: dlls/joy.cpl/joy.rc:81
 msgid ""
 "No user detected on slot #0, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
@@ -3765,7 +3792,7 @@ msgstr ""
 "插槽 #0 未检测到用户，请确认您的游戏手柄已插入，并且没有覆盖“操纵杆”选项卡中"
 "的 DInput。"
 
-#: dlls/joy.cpl/joy.rc:82
+#: dlls/joy.cpl/joy.rc:85
 msgid ""
 "No user detected on slot #1, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
@@ -3773,7 +3800,7 @@ msgstr ""
 "插槽 #1 未检测到用户，请确认您的游戏手柄已插入，并且没有覆盖“操纵杆”选项卡中"
 "的 DInput。"
 
-#: dlls/joy.cpl/joy.rc:86
+#: dlls/joy.cpl/joy.rc:89
 msgid ""
 "No user detected on slot #2, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
@@ -3781,7 +3808,7 @@ msgstr ""
 "插槽 #2 未检测到用户，请确认您的游戏手柄已插入，并且没有覆盖“操纵杆”选项卡中"
 "的 DInput。"
 
-#: dlls/joy.cpl/joy.rc:90
+#: dlls/joy.cpl/joy.rc:93
 msgid ""
 "No user detected on slot #3, make sure your gamepad is plugged in, and not "
 "overridden for DInput in the Joysticks tab."
@@ -3789,8 +3816,8 @@ msgstr ""
 "插槽 #3 未检测到用户，请确认您的游戏手柄已插入，并且没有覆盖“操纵杆”选项卡中"
 "的 DInput。"
 
-#: dlls/joy.cpl/joy.rc:95 dlls/joy.cpl/joy.rc:96 dlls/joy.cpl/joy.rc:97
-#: dlls/joy.cpl/joy.rc:98
+#: dlls/joy.cpl/joy.rc:98 dlls/joy.cpl/joy.rc:99 dlls/joy.cpl/joy.rc:100
+#: dlls/joy.cpl/joy.rc:101
 msgid "Rumble"
 msgstr "震动"
 
@@ -3838,201 +3865,225 @@ msgstr "对象不支持此动作"
 msgid "Argument not optional"
 msgstr "参数不是可选参数"
 
-#: dlls/jscript/jscript.rc:37
+#: dlls/jscript/jscript.rc:37 dlls/vbscript/vbscript.rc:56
+msgid "Object not a collection"
+msgstr "对象不是集合"
+
+#: dlls/jscript/jscript.rc:38
 msgid "Syntax error"
 msgstr "语法错误"
 
-#: dlls/jscript/jscript.rc:38
+#: dlls/jscript/jscript.rc:39
 msgid "Expected ';'"
 msgstr "期望得到 ';'"
 
-#: dlls/jscript/jscript.rc:39
+#: dlls/jscript/jscript.rc:40
 msgid "Expected '('"
 msgstr "期望得到 '('"
 
-#: dlls/jscript/jscript.rc:40
+#: dlls/jscript/jscript.rc:41
 msgid "Expected ')'"
 msgstr "期望得到 ')'"
 
-#: dlls/jscript/jscript.rc:41
+#: dlls/jscript/jscript.rc:42
 msgid "Expected identifier"
 msgstr "期望标识符"
 
-#: dlls/jscript/jscript.rc:42
+#: dlls/jscript/jscript.rc:43
 msgid "Expected '='"
 msgstr "期望得到 '='"
 
-#: dlls/jscript/jscript.rc:43
+#: dlls/jscript/jscript.rc:44
 msgid "Invalid character"
 msgstr "无效字符"
 
-#: dlls/jscript/jscript.rc:44
+#: dlls/jscript/jscript.rc:45
 msgid "Unterminated string constant"
 msgstr "未终止的字符串常量"
 
-#: dlls/jscript/jscript.rc:45
+#: dlls/jscript/jscript.rc:46
 msgid "'return' statement outside of function"
 msgstr "函数外的 'return' 语句"
 
-#: dlls/jscript/jscript.rc:46
+#: dlls/jscript/jscript.rc:47
 msgid "Can't have 'break' outside of loop"
 msgstr "循环外不能存在 'break'"
 
-#: dlls/jscript/jscript.rc:47
+#: dlls/jscript/jscript.rc:48
 msgid "Can't have 'continue' outside of loop"
 msgstr "循环外不能存在 'continue'"
 
-#: dlls/jscript/jscript.rc:48
+#: dlls/jscript/jscript.rc:49
 msgid "Label redefined"
 msgstr "标签被重复定义"
 
-#: dlls/jscript/jscript.rc:49
+#: dlls/jscript/jscript.rc:50
 msgid "Label not found"
 msgstr "找不到标签"
 
-#: dlls/jscript/jscript.rc:50
+#: dlls/jscript/jscript.rc:51
 msgid "Expected '@end'"
 msgstr "期望 '@end'"
 
-#: dlls/jscript/jscript.rc:51
+#: dlls/jscript/jscript.rc:52
 msgid "Conditional compilation is turned off"
 msgstr "条件编译已关闭"
 
-#: dlls/jscript/jscript.rc:52
+#: dlls/jscript/jscript.rc:53
 msgid "Expected '@'"
 msgstr "期望 '@'"
 
-#: dlls/jscript/jscript.rc:84
+#: dlls/jscript/jscript.rc:90
 msgid "Microsoft JScript compilation error"
 msgstr "Microsoft JScript 编译错误"
 
-#: dlls/jscript/jscript.rc:85
+#: dlls/jscript/jscript.rc:91
 msgid "Microsoft JScript runtime error"
 msgstr "Microsoft JScript 运行时错误"
 
-#: dlls/jscript/jscript.rc:86 dlls/vbscript/vbscript.rc:64
+#: dlls/jscript/jscript.rc:92 dlls/vbscript/vbscript.rc:64
 msgid "Unknown runtime error"
 msgstr "未知运行时错误"
 
-#: dlls/jscript/jscript.rc:55
+#: dlls/jscript/jscript.rc:56
 msgid "Number expected"
 msgstr "期望得到数字"
 
-#: dlls/jscript/jscript.rc:53
+#: dlls/jscript/jscript.rc:54
 msgid "Function expected"
 msgstr "期望得到函数"
 
-#: dlls/jscript/jscript.rc:54
+#: dlls/jscript/jscript.rc:55
 msgid "'[object]' is not a date object"
 msgstr "'[object]' 不是日期对象"
 
-#: dlls/jscript/jscript.rc:56
+#: dlls/jscript/jscript.rc:57
 msgid "Object expected"
 msgstr "期望得到对象"
 
-#: dlls/jscript/jscript.rc:57
+#: dlls/jscript/jscript.rc:58
 msgid "Illegal assignment"
 msgstr "非法赋值"
 
-#: dlls/jscript/jscript.rc:58
+#: dlls/jscript/jscript.rc:59
 msgid "'|' is undefined"
 msgstr "'|' 未被定义"
 
-#: dlls/jscript/jscript.rc:59
+#: dlls/jscript/jscript.rc:60
 msgid "Boolean object expected"
 msgstr "期望得到布尔型对象"
 
-#: dlls/jscript/jscript.rc:60
+#: dlls/jscript/jscript.rc:61
 msgid "Cannot delete '|'"
 msgstr "不能删除 '|'"
 
-#: dlls/jscript/jscript.rc:61
+#: dlls/jscript/jscript.rc:62
 msgid "VBArray object expected"
 msgstr "期望得到 VBArray 对象"
 
-#: dlls/jscript/jscript.rc:62
+#: dlls/jscript/jscript.rc:63
 msgid "JScript object expected"
 msgstr "期望得到 JScript 对象"
 
-#: dlls/jscript/jscript.rc:63
+#: dlls/jscript/jscript.rc:64
 msgid "Enumerator object expected"
 msgstr "期望得到枚举器对象"
 
-#: dlls/jscript/jscript.rc:64
+#: dlls/jscript/jscript.rc:65
 msgid "Regular Expression object expected"
 msgstr "期望得到正则表达式对象"
 
-#: dlls/jscript/jscript.rc:65
+#: dlls/jscript/jscript.rc:66
 msgid "Syntax error in regular expression"
 msgstr "正则表达式中出现语法错误"
 
-#: dlls/jscript/jscript.rc:66
+#: dlls/jscript/jscript.rc:67
 msgid "Unexpected quantifier"
 msgstr "非期望量词"
 
-#: dlls/jscript/jscript.rc:67
+#: dlls/jscript/jscript.rc:68
 msgid "Exception thrown and not caught"
 msgstr "发生异常且未被捕捉"
 
-#: dlls/jscript/jscript.rc:69
+#: dlls/jscript/jscript.rc:70
 msgid "URI to be encoded contains invalid characters"
 msgstr "待编码的 URI 包含无效字符"
 
-#: dlls/jscript/jscript.rc:68
+#: dlls/jscript/jscript.rc:69
 msgid "URI to be decoded is incorrect"
 msgstr "待解码的 URI 不正确"
 
-#: dlls/jscript/jscript.rc:70
+#: dlls/jscript/jscript.rc:71
 msgid "Number of fraction digits is out of range"
 msgstr "分数位数的数字超出范围"
 
-#: dlls/jscript/jscript.rc:71
+#: dlls/jscript/jscript.rc:72
 msgid "Precision is out of range"
 msgstr "精度超出范围"
 
-#: dlls/jscript/jscript.rc:72
+#: dlls/jscript/jscript.rc:73
 msgid "Array length must be a finite positive integer"
 msgstr "数组的长度必须为一个有限正整数"
 
-#: dlls/jscript/jscript.rc:73
+#: dlls/jscript/jscript.rc:74
 msgid "Array object expected"
 msgstr "期望得到 Array 对象"
 
-#: dlls/jscript/jscript.rc:74
+#: dlls/jscript/jscript.rc:75
 msgid ""
 "'writable' attribute on the property descriptor cannot be set to 'true' on "
 "this object"
 msgstr "无法在此对象上更改属性描述符中的“writable”属性为“true”"
 
-#: dlls/jscript/jscript.rc:75
+#: dlls/jscript/jscript.rc:76
 msgid "Cyclic __proto__ value"
 msgstr "循环的 __proto__ 值"
 
-#: dlls/jscript/jscript.rc:76
+#: dlls/jscript/jscript.rc:77
 msgid "Cannot create property for a non-extensible object"
 msgstr "无法为不可扩展对象创建属性"
 
-#: dlls/jscript/jscript.rc:77
+#: dlls/jscript/jscript.rc:78
 msgid "Cannot define property '|': object is not extensible"
 msgstr "无法定义属性 '|': 对象不可扩展"
 
-#: dlls/jscript/jscript.rc:78
+#: dlls/jscript/jscript.rc:79
 msgid "Cannot redefine non-configurable property '|'"
 msgstr "无法重定义不可配置的属性 '|'"
 
-#: dlls/jscript/jscript.rc:79
+#: dlls/jscript/jscript.rc:80
 msgid "Cannot modify non-writable property '|'"
 msgstr "无法更改不可写的属性 '|'"
 
-#: dlls/jscript/jscript.rc:80
+#: dlls/jscript/jscript.rc:81
+msgid "'this' is not a DataView object"
+msgstr "'this' 不是 DataView 对象"
+
+#: dlls/jscript/jscript.rc:82
+msgid "Required argument offset or value in DataView method is not specified"
+msgstr "未指定 DataView 方法所必需的参数偏移量或值"
+
+#: dlls/jscript/jscript.rc:83
+msgid "DataView operation access beyond specified buffer length"
+msgstr "DataView 操作访问超出指定的缓冲区长度"
+
+#: dlls/jscript/jscript.rc:84
+msgid "DataView constructor argument offset is invalid"
+msgstr "DataView 构造函数参数偏移量无效"
+
+#: dlls/jscript/jscript.rc:85
 msgid "'this' is not a | object"
 msgstr "'this' 不是 | 对象"
 
-#: dlls/jscript/jscript.rc:81
+#: dlls/jscript/jscript.rc:86
 msgid "'key' is not an object"
 msgstr "'key' 不是一个对象"
 
-#: dlls/jscript/jscript.rc:82
+#: dlls/jscript/jscript.rc:87
+msgid "ArrayBuffer object expected"
+msgstr "期望得到 ArrayBuffer 对象"
+
+#: dlls/jscript/jscript.rc:88
 msgid "Property cannot have both accessors and a value"
 msgstr "属性不能同时包含存取器和值"
 
@@ -4705,7 +4756,7 @@ msgstr "未找到环境变量。\n"
 msgid "No signal sent.\n"
 msgstr "未发送任何信号。\n"
 
-#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:410
+#: dlls/kernelbase/winerror.mc:818 programs/cmd/cmd.rc:406
 msgid "File name is too long.\n"
 msgstr "文件名过长。\n"
 
@@ -5453,7 +5504,7 @@ msgstr "操作被用户取消。\n"
 msgid "File has a user-mapped section.\n"
 msgstr "文件包含用户映射的区块。\n"
 
-#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3783
+#: dlls/kernelbase/winerror.mc:1758 dlls/kernelbase/winerror.mc:3788
 msgid "Connection refused.\n"
 msgstr "连接被拒绝。\n"
 
@@ -7054,42 +7105,46 @@ msgid "Invalid argument.\n"
 msgstr "无效的参数。\n"
 
 #: dlls/kernelbase/winerror.mc:3778
+msgid "Cannot assign requested address.\n"
+msgstr "无法分配所请求的地址。\n"
+
+#: dlls/kernelbase/winerror.mc:3783
 msgid "Connection reset by peer.\n"
 msgstr "连接被重置。\n"
 
-#: dlls/kernelbase/winerror.mc:3788
+#: dlls/kernelbase/winerror.mc:3793
 msgid "Host not found.\n"
 msgstr "未找到主机。\n"
 
-#: dlls/kernelbase/winerror.mc:3793
+#: dlls/kernelbase/winerror.mc:3798
 msgid "Nonauthoritative host not found.\n"
 msgstr "未找到非授权主机。\n"
 
-#: dlls/kernelbase/winerror.mc:3798
+#: dlls/kernelbase/winerror.mc:3803
 msgid "Nonrecoverable error.\n"
 msgstr "不可恢复错误。\n"
 
-#: dlls/kernelbase/winerror.mc:3803
+#: dlls/kernelbase/winerror.mc:3808
 msgid "Name valid, no data record.\n"
 msgstr "名称无效，没有数据记录。\n"
 
-#: dlls/kernelbase/winerror.mc:3817
+#: dlls/kernelbase/winerror.mc:3822
 msgid "Not implemented.\n"
 msgstr "尚未实现。\n"
 
-#: dlls/kernelbase/winerror.mc:3838
+#: dlls/kernelbase/winerror.mc:3843
 msgid "Call failed.\n"
 msgstr "调用失败。\n"
 
-#: dlls/kernelbase/winerror.mc:3810
+#: dlls/kernelbase/winerror.mc:3815
 msgid "No Signature found in file.\n"
 msgstr "未在文件内找到签名。\n"
 
-#: dlls/kernelbase/winerror.mc:3824
+#: dlls/kernelbase/winerror.mc:3829
 msgid "Invalid call.\n"
 msgstr "无效调用。\n"
 
-#: dlls/kernelbase/winerror.mc:3831
+#: dlls/kernelbase/winerror.mc:3836
 msgid "Resource is not currently available.\n"
 msgstr "资源当前不可用。\n"
 
@@ -8171,7 +8226,7 @@ msgstr "功能来自:"
 msgid "choose which folder contains %s"
 msgstr "选择包含 %s 的文件夹"
 
-#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:236
+#: dlls/msi/msi.rc:66 dlls/shell32/shell32.rc:238
 msgid "New Folder"
 msgstr "新文件夹"
 
@@ -9295,8 +9350,9 @@ msgstr "源文件:"
 #: dlls/oledlg/oledlg.rc:86 dlls/shdoclc/shdoclc.rc:50
 #: dlls/shdoclc/shdoclc.rc:82 dlls/shdoclc/shdoclc.rc:95
 #: dlls/shdoclc/shdoclc.rc:135 dlls/shdoclc/shdoclc.rc:162
-#: dlls/shdoclc/shdoclc.rc:186 dlls/user32/user32.rc:62
-#: programs/conhost/conhost.rc:37 programs/wordpad/wordpad.rc:114
+#: dlls/shdoclc/shdoclc.rc:186 dlls/shell32/shell32.rc:99
+#: dlls/user32/user32.rc:62 programs/conhost/conhost.rc:37
+#: programs/wordpad/wordpad.rc:114
 msgid "&Paste"
 msgstr "粘贴(&P)"
 
@@ -9327,7 +9383,7 @@ msgid ""
 msgstr ""
 "将文件的内容以对象的方式插入到您的文件以便您可以用创建本文件的程序来激活它。"
 
-#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:195
+#: dlls/oledlg/oledlg.rc:30 dlls/shell32/shell32.rc:197
 msgid "Browse"
 msgstr "浏览"
 
@@ -9616,12 +9672,12 @@ msgstr "属性(&R)"
 msgid "&Undo"
 msgstr "撤消(&U)"
 
-#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:105
+#: dlls/shdoclc/shdoclc.rc:96 dlls/shell32/shell32.rc:102
 #: dlls/user32/user32.rc:63
 msgid "&Delete"
 msgstr "删除(&D)"
 
-#: dlls/shdoclc/shdoclc.rc:103 dlls/shell32/shell32.rc:97
+#: dlls/shdoclc/shdoclc.rc:103
 msgid "&Select"
 msgstr "选择(&S)"
 
@@ -9790,26 +9846,26 @@ msgid "&w&bPage &p"
 msgstr "&w&b第 &p 页"
 
 #: dlls/shell32/shell32.rc:30 dlls/shell32/shell32.rc:45
-#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
+#: dlls/shell32/shell32.rc:119 dlls/shell32/shell32.rc:157
 #: programs/taskmgr/taskmgr.rc:65 programs/taskmgr/taskmgr.rc:110
 #: programs/taskmgr/taskmgr.rc:252
 msgid "Lar&ge Icons"
 msgstr "大图标(&G)"
 
 #: dlls/shell32/shell32.rc:31 dlls/shell32/shell32.rc:46
-#: dlls/shell32/shell32.rc:123 dlls/shell32/shell32.rc:161
+#: dlls/shell32/shell32.rc:120 dlls/shell32/shell32.rc:158
 #: programs/taskmgr/taskmgr.rc:66 programs/taskmgr/taskmgr.rc:111
 #: programs/taskmgr/taskmgr.rc:253
 msgid "S&mall Icons"
 msgstr "小图标(&M)"
 
 #: dlls/shell32/shell32.rc:32 dlls/shell32/shell32.rc:47
-#: dlls/shell32/shell32.rc:124 dlls/shell32/shell32.rc:162
+#: dlls/shell32/shell32.rc:121 dlls/shell32/shell32.rc:159
 msgid "&List"
 msgstr "列表(&L)"
 
 #: dlls/shell32/shell32.rc:33 dlls/shell32/shell32.rc:48
-#: dlls/shell32/shell32.rc:125 dlls/shell32/shell32.rc:163
+#: dlls/shell32/shell32.rc:122 dlls/shell32/shell32.rc:160
 #: programs/taskmgr/taskmgr.rc:67 programs/taskmgr/taskmgr.rc:112
 #: programs/taskmgr/taskmgr.rc:254
 msgid "&Details"
@@ -9852,7 +9908,7 @@ msgstr "粘贴快捷方式"
 msgid "New"
 msgstr "新建"
 
-#: dlls/shell32/shell32.rc:69
+#: dlls/shell32/shell32.rc:69 dlls/shell32/shell32.rc:240
 msgid "New &Folder"
 msgstr "新建文件夹(&F)"
 
@@ -9869,23 +9925,19 @@ msgstr "还原(&R)"
 msgid "&Erase"
 msgstr "擦除(&E)"
 
-#: dlls/shell32/shell32.rc:98
-msgid "E&xplore"
-msgstr "资源管理器(&X)"
-
-#: dlls/shell32/shell32.rc:101
+#: dlls/shell32/shell32.rc:97
 msgid "C&ut"
 msgstr "剪切(&U)"
 
-#: dlls/shell32/shell32.rc:104
+#: dlls/shell32/shell32.rc:101
 msgid "Create &Link"
 msgstr "创建快捷方式(&L)"
 
-#: dlls/shell32/shell32.rc:106
+#: dlls/shell32/shell32.rc:103
 msgid "&Rename"
 msgstr "重命名(&R)"
 
-#: dlls/shell32/shell32.rc:117 programs/notepad/notepad.rc:39
+#: dlls/shell32/shell32.rc:114 programs/notepad/notepad.rc:39
 #: programs/oleview/oleview.rc:38 programs/regedit/regedit.rc:41
 #: programs/view/view.rc:34 programs/winefile/winefile.rc:40
 #: programs/winemine/winemine.rc:51 programs/winhlp32/winhlp32.rc:37
@@ -9893,337 +9945,345 @@ msgstr "重命名(&R)"
 msgid "E&xit"
 msgstr "退出(&X)"
 
-#: dlls/shell32/shell32.rc:130
+#: dlls/shell32/shell32.rc:127
 msgid "&About Control Panel"
 msgstr "关于控制面板(&A)"
 
-#: dlls/shell32/shell32.rc:271 dlls/shell32/shell32.rc:286
+#: dlls/shell32/shell32.rc:275 dlls/shell32/shell32.rc:290
 msgid "Browse for Folder"
 msgstr "选择文件夹"
 
-#: dlls/shell32/shell32.rc:291
+#: dlls/shell32/shell32.rc:295
 msgid "Folder:"
 msgstr "文件夹:"
 
-#: dlls/shell32/shell32.rc:297
+#: dlls/shell32/shell32.rc:301
 msgid "&Make New Folder"
 msgstr "新建文件夹(&M)"
 
-#: dlls/shell32/shell32.rc:304
+#: dlls/shell32/shell32.rc:308
 msgid "Message"
 msgstr "消息"
 
-#: dlls/shell32/shell32.rc:308
+#: dlls/shell32/shell32.rc:312
 msgid "Yes to &all"
 msgstr "全部选是(&A)"
 
-#: dlls/shell32/shell32.rc:317
+#: dlls/shell32/shell32.rc:321
 msgid "About %s"
 msgstr "关于 %s"
 
-#: dlls/shell32/shell32.rc:321
+#: dlls/shell32/shell32.rc:325
 msgid "Wine &license"
 msgstr "使用许可(&L)"
 
-#: dlls/shell32/shell32.rc:326
+#: dlls/shell32/shell32.rc:330
 msgid "Running on %s"
 msgstr "运行于 %s"
 
-#: dlls/shell32/shell32.rc:327
+#: dlls/shell32/shell32.rc:331
 msgid "Wine was brought to you by:"
 msgstr "Wine 开发者:"
 
-#: dlls/shell32/shell32.rc:332
+#: dlls/shell32/shell32.rc:336
 msgid "Run"
 msgstr "运行"
 
-#: dlls/shell32/shell32.rc:336
+#: dlls/shell32/shell32.rc:340
 msgid ""
 "Type the name of a program, folder, document, or Internet resource, and Wine "
 "will open it for you."
 msgstr "输入程序，目录，文件或者Internet资源名，Wine将为您打开它。"
 
-#: dlls/shell32/shell32.rc:337
+#: dlls/shell32/shell32.rc:341
 msgid "&Open:"
 msgstr "打开(&O):"
 
-#: dlls/shell32/shell32.rc:341 programs/progman/progman.rc:182
+#: dlls/shell32/shell32.rc:345 programs/progman/progman.rc:182
 #: programs/progman/progman.rc:201 programs/progman/progman.rc:218
 #: programs/winecfg/winecfg.rc:247 programs/winefile/winefile.rc:129
 msgid "&Browse..."
 msgstr "浏览(&B)..."
 
-#: dlls/shell32/shell32.rc:353 dlls/shell32/shell32.rc:382
+#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:386
 msgid "File type:"
 msgstr "文件类型:"
 
-#: dlls/shell32/shell32.rc:357 dlls/shell32/shell32.rc:390
+#: dlls/shell32/shell32.rc:361 dlls/shell32/shell32.rc:394
 #: dlls/urlmon/urlmon.rc:37 programs/explorer/explorer.rc:33
 msgid "Location:"
 msgstr "位置:"
 
-#: dlls/shell32/shell32.rc:359 dlls/shell32/shell32.rc:392
+#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
 #: programs/winefile/winefile.rc:169
 msgid "Size:"
 msgstr "大小:"
 
-#: dlls/shell32/shell32.rc:363 dlls/shell32/shell32.rc:396
+#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:400
 msgid "Creation date:"
 msgstr "创建日期:"
 
-#: dlls/shell32/shell32.rc:367 dlls/shell32/shell32.rc:404
+#: dlls/shell32/shell32.rc:371 dlls/shell32/shell32.rc:408
 msgid "Attributes:"
 msgstr "属性:"
 
-#: dlls/shell32/shell32.rc:369 dlls/shell32/shell32.rc:406
+#: dlls/shell32/shell32.rc:373 dlls/shell32/shell32.rc:410
 #: programs/winefile/winefile.rc:173
 msgid "H&idden"
 msgstr "隐藏(&I)"
 
-#: dlls/shell32/shell32.rc:370 dlls/shell32/shell32.rc:407
+#: dlls/shell32/shell32.rc:374 dlls/shell32/shell32.rc:411
 #: programs/winefile/winefile.rc:174
 msgid "&Archive"
 msgstr "存档(&A)"
 
-#: dlls/shell32/shell32.rc:384
+#: dlls/shell32/shell32.rc:388
 msgid "Open with:"
 msgstr "打开方式:"
 
-#: dlls/shell32/shell32.rc:387
+#: dlls/shell32/shell32.rc:391
 msgid "&Change..."
 msgstr "更改(&C)..."
 
-#: dlls/shell32/shell32.rc:398
+#: dlls/shell32/shell32.rc:402
 msgid "Last modified:"
 msgstr "最近修改:"
 
-#: dlls/shell32/shell32.rc:400
+#: dlls/shell32/shell32.rc:404
 msgid "Last accessed:"
 msgstr "最近访问:"
 
-#: dlls/shell32/shell32.rc:138 dlls/shell32/shell32.rc:142
+#: dlls/shell32/shell32.rc:135 dlls/shell32/shell32.rc:139
 #: programs/winefile/winefile.rc:107
 msgid "Size"
 msgstr "大小"
 
-#: dlls/shell32/shell32.rc:139 programs/regedit/regedit.rc:151
+#: dlls/shell32/shell32.rc:136 programs/regedit/regedit.rc:151
 msgid "Type"
 msgstr "类型"
 
-#: dlls/shell32/shell32.rc:140
+#: dlls/shell32/shell32.rc:137
 msgid "Modified"
 msgstr "修改"
 
-#: dlls/shell32/shell32.rc:141 programs/winefile/winefile.rc:171
+#: dlls/shell32/shell32.rc:138 programs/winefile/winefile.rc:171
 #: programs/winefile/winefile.rc:113
 msgid "Attributes"
 msgstr "属性"
 
-#: dlls/shell32/shell32.rc:143
+#: dlls/shell32/shell32.rc:140
 msgid "Size available"
 msgstr "剩余空间"
 
-#: dlls/shell32/shell32.rc:145
+#: dlls/shell32/shell32.rc:142
 msgid "Comments"
 msgstr "备注"
 
-#: dlls/shell32/shell32.rc:146
+#: dlls/shell32/shell32.rc:143
 msgid "Original location"
 msgstr "原位置"
 
-#: dlls/shell32/shell32.rc:147
+#: dlls/shell32/shell32.rc:144
 msgid "Date deleted"
 msgstr "删除日期"
 
-#: dlls/shell32/shell32.rc:154 programs/winecfg/winecfg.rc:106
+#: dlls/shell32/shell32.rc:151 programs/winecfg/winecfg.rc:106
 #: programs/winefile/winefile.rc:99
 msgctxt "display name"
 msgid "Desktop"
 msgstr "桌面"
 
-#: dlls/shell32/shell32.rc:155 programs/regedit/regedit.rc:243
+#: dlls/shell32/shell32.rc:152 programs/regedit/regedit.rc:243
 msgid "My Computer"
 msgstr "我的电脑"
 
-#: dlls/shell32/shell32.rc:157
+#: dlls/shell32/shell32.rc:154
 msgid "Control Panel"
 msgstr "控制面板"
 
-#: dlls/shell32/shell32.rc:164
-msgid "Select"
-msgstr "选择"
+#: dlls/shell32/shell32.rc:162
+msgid "Ne&w"
+msgstr "新建(&W)"
 
-#: dlls/shell32/shell32.rc:187
+#: dlls/shell32/shell32.rc:164
+msgid "E&xplore"
+msgstr "资源管理器(&X)"
+
+#: dlls/shell32/shell32.rc:167
+msgid "Run as &Administrator"
+msgstr "以管理员运行(&A)"
+
+#: dlls/shell32/shell32.rc:189
 msgid "Restart"
 msgstr "重启"
 
-#: dlls/shell32/shell32.rc:188
+#: dlls/shell32/shell32.rc:190
 msgid "Do you want to simulate a Windows reboot?"
 msgstr "要模拟 Windows 重启吗?"
 
-#: dlls/shell32/shell32.rc:189
+#: dlls/shell32/shell32.rc:191
 msgid "Shutdown"
 msgstr "关闭"
 
-#: dlls/shell32/shell32.rc:190
+#: dlls/shell32/shell32.rc:192
 msgid "Do you want to shutdown your Wine session?"
 msgstr "要关闭 Wine 会话吗?"
 
-#: dlls/shell32/shell32.rc:201 programs/progman/progman.rc:83
+#: dlls/shell32/shell32.rc:203 programs/progman/progman.rc:83
 msgid "Programs"
 msgstr "程序"
 
-#: dlls/shell32/shell32.rc:202 dlls/shell32/shell32.rc:217
-#: dlls/shell32/shell32.rc:148 dlls/shell32/shell32.rc:233
+#: dlls/shell32/shell32.rc:204 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:145 dlls/shell32/shell32.rc:235
 msgid "Documents"
 msgstr "文档"
 
-#: dlls/shell32/shell32.rc:203
+#: dlls/shell32/shell32.rc:205
 msgid "Favorites"
 msgstr "收藏夹"
 
-#: dlls/shell32/shell32.rc:204
+#: dlls/shell32/shell32.rc:206
 msgid "StartUp"
 msgstr "启动"
 
-#: dlls/shell32/shell32.rc:205
+#: dlls/shell32/shell32.rc:207
 msgid "Start Menu"
 msgstr "开始菜单"
 
-#: dlls/shell32/shell32.rc:206 dlls/shell32/shell32.rc:219
+#: dlls/shell32/shell32.rc:208 dlls/shell32/shell32.rc:221
 msgid "Music"
 msgstr "音乐"
 
-#: dlls/shell32/shell32.rc:207 dlls/shell32/shell32.rc:221
+#: dlls/shell32/shell32.rc:209 dlls/shell32/shell32.rc:223
 msgid "Videos"
 msgstr "视频"
 
-#: dlls/shell32/shell32.rc:208
+#: dlls/shell32/shell32.rc:210
 msgctxt "directory"
 msgid "Desktop"
 msgstr "桌面"
 
-#: dlls/shell32/shell32.rc:209
+#: dlls/shell32/shell32.rc:211
 msgid "NetHood"
 msgstr "网上邻居"
 
-#: dlls/shell32/shell32.rc:210
+#: dlls/shell32/shell32.rc:212
 msgid "Templates"
 msgstr "模板"
 
-#: dlls/shell32/shell32.rc:211
+#: dlls/shell32/shell32.rc:213
 msgid "PrintHood"
 msgstr "所有打印机"
 
-#: dlls/shell32/shell32.rc:212 programs/winhlp32/winhlp32.rc:49
+#: dlls/shell32/shell32.rc:214 programs/winhlp32/winhlp32.rc:49
 msgid "History"
 msgstr "历史"
 
-#: dlls/shell32/shell32.rc:213
+#: dlls/shell32/shell32.rc:215
 msgid "Program Files"
 msgstr "Program Files"
 
-#: dlls/shell32/shell32.rc:215 dlls/shell32/shell32.rc:220
+#: dlls/shell32/shell32.rc:217 dlls/shell32/shell32.rc:222
 msgid "Pictures"
 msgstr "图片"
 
-#: dlls/shell32/shell32.rc:216
+#: dlls/shell32/shell32.rc:218
 msgid "Common Files"
 msgstr "公共文件"
 
-#: dlls/shell32/shell32.rc:218
+#: dlls/shell32/shell32.rc:220
 msgid "Administrative Tools"
 msgstr "管理人员工具"
 
-#: dlls/shell32/shell32.rc:214
+#: dlls/shell32/shell32.rc:216
 msgid "Program Files (x86)"
 msgstr "Program Files (x86)"
 
-#: dlls/shell32/shell32.rc:222
+#: dlls/shell32/shell32.rc:224
 msgid "Contacts"
 msgstr "联系人"
 
-#: dlls/shell32/shell32.rc:223 programs/winefile/winefile.rc:112
+#: dlls/shell32/shell32.rc:225 programs/winefile/winefile.rc:112
 msgid "Links"
 msgstr "链接"
 
-#: dlls/shell32/shell32.rc:224
+#: dlls/shell32/shell32.rc:226
 msgid "Slide Shows"
 msgstr "幻灯片"
 
-#: dlls/shell32/shell32.rc:225
+#: dlls/shell32/shell32.rc:227
 msgid "Playlists"
 msgstr "播放列表"
 
-#: dlls/shell32/shell32.rc:149 programs/taskmgr/taskmgr.rc:326
+#: dlls/shell32/shell32.rc:146 programs/taskmgr/taskmgr.rc:326
 msgid "Status"
 msgstr "状态"
 
-#: dlls/shell32/shell32.rc:151
+#: dlls/shell32/shell32.rc:148
 msgid "Model"
 msgstr "型号"
 
-#: dlls/shell32/shell32.rc:226
+#: dlls/shell32/shell32.rc:228
 msgid "Sample Music"
 msgstr "示例音乐"
 
-#: dlls/shell32/shell32.rc:227
+#: dlls/shell32/shell32.rc:229
 msgid "Sample Pictures"
 msgstr "示例图片"
 
-#: dlls/shell32/shell32.rc:228
+#: dlls/shell32/shell32.rc:230
 msgid "Sample Playlists"
 msgstr "示例播放列表"
 
-#: dlls/shell32/shell32.rc:229
+#: dlls/shell32/shell32.rc:231
 msgid "Sample Videos"
 msgstr "示例视频"
 
-#: dlls/shell32/shell32.rc:230
+#: dlls/shell32/shell32.rc:232
 msgid "Saved Games"
 msgstr "已保存的游戏"
 
-#: dlls/shell32/shell32.rc:231
+#: dlls/shell32/shell32.rc:233
 msgid "Searches"
 msgstr "搜索"
 
-#: dlls/shell32/shell32.rc:232
+#: dlls/shell32/shell32.rc:234
 msgid "Users"
 msgstr "用户"
 
-#: dlls/shell32/shell32.rc:234
+#: dlls/shell32/shell32.rc:236
 msgid "Downloads"
 msgstr "下载"
 
-#: dlls/shell32/shell32.rc:167
+#: dlls/shell32/shell32.rc:169
 msgid "Unable to create new Folder: Permission denied."
 msgstr "无法创建新文件夹: 拒绝访问。"
 
-#: dlls/shell32/shell32.rc:168
+#: dlls/shell32/shell32.rc:170
 msgid "Error during creation of a new folder"
 msgstr "创建新文件夹时发生了错误"
 
-#: dlls/shell32/shell32.rc:169
+#: dlls/shell32/shell32.rc:171
 msgid "Confirm file deletion"
 msgstr "确认删除文件"
 
-#: dlls/shell32/shell32.rc:170
+#: dlls/shell32/shell32.rc:172
 msgid "Confirm folder deletion"
 msgstr "确认删除文件夹"
 
-#: dlls/shell32/shell32.rc:171
+#: dlls/shell32/shell32.rc:173
 msgid "Are you sure you want to delete '%1'?"
 msgstr "真的删除 '%1'?"
 
-#: dlls/shell32/shell32.rc:172
+#: dlls/shell32/shell32.rc:174
 msgid "Are you sure you want to delete these %1 items?"
 msgstr "真的删除这 %1 项?"
 
-#: dlls/shell32/shell32.rc:179
+#: dlls/shell32/shell32.rc:181
 msgid "Confirm file overwrite"
 msgstr "确认覆盖文件"
 
-#: dlls/shell32/shell32.rc:178
+#: dlls/shell32/shell32.rc:180
 msgid ""
 "This folder already contains a file called '%1'.\n"
 "\n"
@@ -10233,28 +10293,28 @@ msgstr ""
 "\n"
 "要替换吗?"
 
-#: dlls/shell32/shell32.rc:173
+#: dlls/shell32/shell32.rc:175
 msgid "Are you sure you want to delete the selected item(s)?"
 msgstr "真的删除选中项?"
 
-#: dlls/shell32/shell32.rc:175
+#: dlls/shell32/shell32.rc:177
 msgid ""
 "Are you sure that you want to send '%1' and all its content to the Trash?"
 msgstr "真的把 '%1' 及其全部内容送入回收站?"
 
-#: dlls/shell32/shell32.rc:174
+#: dlls/shell32/shell32.rc:176
 msgid "Are you sure that you want to send '%1' to the Trash?"
 msgstr "真的把 '%1' 送入回收站?"
 
-#: dlls/shell32/shell32.rc:176
+#: dlls/shell32/shell32.rc:178
 msgid "Are you sure that you want to send these %1 items to the Trash?"
 msgstr "真的把这 %1 项送入回收站?"
 
-#: dlls/shell32/shell32.rc:177
+#: dlls/shell32/shell32.rc:179
 msgid "The item '%1' can't be sent to Trash. Do you want to delete it instead?"
 msgstr "'%1' 一项无法送入回收站。 要彻底删除吗?"
 
-#: dlls/shell32/shell32.rc:184
+#: dlls/shell32/shell32.rc:186
 msgid ""
 "This folder already contains a folder named '%1'.\n"
 "\n"
@@ -10266,39 +10326,39 @@ msgstr ""
 "\n"
 "若选择合并原有同名文件将被替换。 真的要合并吗?"
 
-#: dlls/shell32/shell32.rc:238
+#: dlls/shell32/shell32.rc:242
 msgid "Wine Control Panel"
 msgstr "Wine 控制面板"
 
-#: dlls/shell32/shell32.rc:193
+#: dlls/shell32/shell32.rc:195
 msgid "Unable to display Run dialog box (internal error)"
 msgstr "无法显示运行对话框 (内部错误)"
 
-#: dlls/shell32/shell32.rc:194
+#: dlls/shell32/shell32.rc:196
 msgid "Unable to display Browse dialog box (internal error)"
 msgstr "无法显示浏览对话框 (内部错误)"
 
-#: dlls/shell32/shell32.rc:196
+#: dlls/shell32/shell32.rc:198
 msgid "Executable files (*.exe)"
 msgstr "可执行文件 (*.exe)"
 
-#: dlls/shell32/shell32.rc:242
+#: dlls/shell32/shell32.rc:246
 msgid "There is no Windows program configured to open this type of file."
 msgstr "找不到用于打开此类文件的 Windows 程序。"
 
-#: dlls/shell32/shell32.rc:244
+#: dlls/shell32/shell32.rc:248
 msgid "Are you sure you wish to permanently delete '%1'?"
 msgstr "真的永久删除 '%1'?"
 
-#: dlls/shell32/shell32.rc:245
+#: dlls/shell32/shell32.rc:249
 msgid "Are you sure you wish to permanently delete these %1 items?"
 msgstr "真的永久删除这 %1 项?"
 
-#: dlls/shell32/shell32.rc:246
+#: dlls/shell32/shell32.rc:250
 msgid "Confirm deletion"
 msgstr "确认删除文件"
 
-#: dlls/shell32/shell32.rc:247
+#: dlls/shell32/shell32.rc:251
 msgid ""
 "A file already exists at the path %1.\n"
 "\n"
@@ -10308,7 +10368,7 @@ msgstr ""
 "\n"
 "您要替换它吗?"
 
-#: dlls/shell32/shell32.rc:248
+#: dlls/shell32/shell32.rc:252
 msgid ""
 "A folder already exists at the path %1.\n"
 "\n"
@@ -10318,11 +10378,11 @@ msgstr ""
 "\n"
 "您要替换它吗?"
 
-#: dlls/shell32/shell32.rc:249
+#: dlls/shell32/shell32.rc:253
 msgid "Confirm overwrite"
 msgstr "确认覆盖文件"
 
-#: dlls/shell32/shell32.rc:266
+#: dlls/shell32/shell32.rc:270
 msgid ""
 "Wine is free software; you can redistribute it and/or modify it under the "
 "terms of the GNU Lesser General Public License as published by the Free "
@@ -10349,11 +10409,11 @@ msgstr ""
 "自由软件基金会写信，地址是 51 Franklin Street, Fifth Floor, Boston, MA  "
 "02110-1301  USA。"
 
-#: dlls/shell32/shell32.rc:254
+#: dlls/shell32/shell32.rc:258
 msgid "Wine License"
 msgstr "Wine 使用许可"
 
-#: dlls/shell32/shell32.rc:156
+#: dlls/shell32/shell32.rc:153
 msgid "Trash"
 msgstr "回收站"
 
@@ -12467,10 +12527,6 @@ msgstr "未找到命名参数"
 msgid "Wrong number of arguments or invalid property assignment"
 msgstr "参数数量错误或无效的指定属性"
 
-#: dlls/vbscript/vbscript.rc:56
-msgid "Object not a collection"
-msgstr "对象不是集合"
-
 #: dlls/vbscript/vbscript.rc:57
 msgid "Specified DLL function not found"
 msgstr "未找到指定的 DLL 函数"
@@ -13430,7 +13486,7 @@ msgstr "处理推举时发现循环"
 msgid "Referral hop limit exceeded"
 msgstr "超出推举跳跃限制"
 
-#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:373
+#: programs/attrib/attrib.rc:30 programs/cmd/cmd.rc:370
 msgid ""
 "Not Yet Implemented\n"
 "\n"
@@ -13438,7 +13494,7 @@ msgstr ""
 "尚未实现\n"
 "\n"
 
-#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:376
+#: programs/attrib/attrib.rc:31 programs/cmd/cmd.rc:373
 msgid "%1: File Not Found\n"
 msgstr "%1: 找不到文件\n"
 
@@ -13583,22 +13639,18 @@ msgid "COPY <filename> copies a file.\n"
 msgstr "COPY <文件名> 可复制一个文件。\n"
 
 #: programs/cmd/cmd.rc:56
-msgid "CTTY changes the input/output device.\n"
-msgstr "CITY 可更改输入/输出设备。\n"
-
-#: programs/cmd/cmd.rc:59
 msgid "DATE shows or changes the system date.\n"
 msgstr "DATE 可显示或更改系统日期。\n"
 
-#: programs/cmd/cmd.rc:62
+#: programs/cmd/cmd.rc:59
 msgid "DEL <filename> deletes a file or set of files.\n"
 msgstr "DEL <filename> 可删除一个或一组文件。\n"
 
-#: programs/cmd/cmd.rc:65
+#: programs/cmd/cmd.rc:62
 msgid "DIR lists the contents of a directory.\n"
 msgstr "DIR 可列出目录的内容。\n"
 
-#: programs/cmd/cmd.rc:75
+#: programs/cmd/cmd.rc:72
 msgid ""
 "ECHO <string> displays <string> on the current terminal device.\n"
 "\n"
@@ -13616,11 +13668,11 @@ msgstr ""
 "ECHO OFF 的效果与 ECHO ON 相反（ECHO 默认为 OFF）。可在命令前添加 @\n"
 "来避免 ECHO OFF 的效果。\n"
 
-#: programs/cmd/cmd.rc:78
+#: programs/cmd/cmd.rc:75
 msgid "ERASE <filename> deletes a file or set of files.\n"
 msgstr "ERASE <filename> 可删除一个或一组文件。\n"
 
-#: programs/cmd/cmd.rc:85
+#: programs/cmd/cmd.rc:82
 msgid ""
 "The FOR command is used to execute a command for each of a set of files.\n"
 "\n"
@@ -13634,7 +13686,7 @@ msgstr ""
 "\n"
 "在批处理文件中使用 FOR 时必须将 % 符号写两次。\n"
 
-#: programs/cmd/cmd.rc:97
+#: programs/cmd/cmd.rc:94
 msgid ""
 "The GOTO command transfers execution to another statement within a batch\n"
 "file.\n"
@@ -13655,7 +13707,7 @@ msgstr ""
 "\n"
 "GOTO 在交互模式下使用时没有效果。\n"
 
-#: programs/cmd/cmd.rc:101
+#: programs/cmd/cmd.rc:98
 msgid ""
 "HELP <command> shows brief help details on a topic.\n"
 "HELP without an argument shows all CMD built-in commands.\n"
@@ -13663,7 +13715,7 @@ msgstr ""
 "HELP <命令> 显示某个主题的简短帮助信息。\n"
 "不使用参数时调用 HELP 将显示所有 CMD 内置命令。\n"
 
-#: programs/cmd/cmd.rc:111
+#: programs/cmd/cmd.rc:108
 msgid ""
 "IF is used to conditionally execute a command.\n"
 "\n"
@@ -13683,7 +13735,7 @@ msgstr ""
 "在命令的第二种用法中，字符串 1 和字符串 2 必须用双引号包住。比较条件\n"
 "非大小写敏感。\n"
 
-#: programs/cmd/cmd.rc:118
+#: programs/cmd/cmd.rc:115
 msgid ""
 "LABEL is used to set a disk volume label.\n"
 "\n"
@@ -13697,15 +13749,15 @@ msgstr ""
 "该命令将询问指定驱动器的新卷标。\n"
 "您可以使用 VOL 命令显示磁盘卷标。\n"
 
-#: programs/cmd/cmd.rc:121
+#: programs/cmd/cmd.rc:118
 msgid "MD <name> is the short version of MKDIR. It creates a subdirectory.\n"
 msgstr "MD <名称> 是 MKDIR 的缩写版本。该命令用于创建子目录。\n"
 
-#: programs/cmd/cmd.rc:123
+#: programs/cmd/cmd.rc:120
 msgid "MKDIR <name> creates a subdirectory.\n"
 msgstr "MKDIR <名称> 用于创建子目录。\n"
 
-#: programs/cmd/cmd.rc:131
+#: programs/cmd/cmd.rc:128
 msgid ""
 "MOVE relocates a file or directory to a new point within the file system.\n"
 "\n"
@@ -13720,7 +13772,7 @@ msgstr ""
 "\n"
 "MOVE 不支持在不同的 DOS 盘符间移动对象。\n"
 
-#: programs/cmd/cmd.rc:142
+#: programs/cmd/cmd.rc:139
 msgid ""
 "PATH displays or changes the cmd search path.\n"
 "\n"
@@ -13740,7 +13792,7 @@ msgstr ""
 "也可以使用 PATH 环境变量来编辑 PATH 值，例如:\n"
 "PATH %PATH%;c:\\temp\n"
 
-#: programs/cmd/cmd.rc:148
+#: programs/cmd/cmd.rc:145
 msgid ""
 "PAUSE displays a message on the screen asking the user to press a key.\n"
 "\n"
@@ -13752,7 +13804,7 @@ msgstr ""
 "该命令主要用于在批处理文件中让用户读取上一个命令的输出，\n"
 "以免其输出上滚到屏幕外。\n"
 
-#: programs/cmd/cmd.rc:169
+#: programs/cmd/cmd.rc:166
 msgid ""
 "PROMPT sets the command-line prompt.\n"
 "\n"
@@ -13793,7 +13845,7 @@ msgstr ""
 "您也可以使用 PROMPT 环境变量更改提示符，因而命令“SET PROMPT=text”和\n"
 "“PROMPT text”等效。\n"
 
-#: programs/cmd/cmd.rc:173
+#: programs/cmd/cmd.rc:170
 msgid ""
 "A command line beginning with REM (followed by a space) performs no action,\n"
 "and can therefore be used as a comment in a batch file.\n"
@@ -13801,23 +13853,23 @@ msgstr ""
 "由 REM（由空格紧随）开头的命令行不生效，因而可用作批处理文件中的注释。\n"
 "\n"
 
-#: programs/cmd/cmd.rc:176
+#: programs/cmd/cmd.rc:173
 msgid "REN <filename> is the short version of RENAME. It renames a file.\n"
 msgstr "REN <文件名> 是 RENAME 的缩写版本。用于重命名文件。\n"
 
-#: programs/cmd/cmd.rc:178
+#: programs/cmd/cmd.rc:175
 msgid "RENAME <filename> renames a file.\n"
 msgstr "RENAME <文件名> 用于重命名文件。\n"
 
-#: programs/cmd/cmd.rc:181
+#: programs/cmd/cmd.rc:178
 msgid "RD <directory> is the short version of RMDIR. It deletes a directory.\n"
 msgstr "RD <目录> 是 RMDIR 的缩写版本。用于删除目录。\n"
 
-#: programs/cmd/cmd.rc:183
+#: programs/cmd/cmd.rc:180
 msgid "RMDIR <directory> deletes a directory.\n"
 msgstr "RMDIR <目录> 用于删除目录。\n"
 
-#: programs/cmd/cmd.rc:229
+#: programs/cmd/cmd.rc:226
 msgid ""
 "SET displays or changes the cmd environment variables.\n"
 "\n"
@@ -13849,7 +13901,7 @@ msgstr ""
 "因此环境中可能包含 Win32 原生实现之外的值。注意，您不能在 cmd 内影响\n"
 "操作系统的环境。\n"
 
-#: programs/cmd/cmd.rc:234
+#: programs/cmd/cmd.rc:231
 msgid ""
 "SHIFT is used in a batch file to remove one parameter from the head of the\n"
 "list, so parameter 2 becomes parameter 1 and so on. It has no effect if\n"
@@ -13858,7 +13910,7 @@ msgstr ""
 "SHIFT 用于在列表头删除一个参数，因而第 2 个参数将变成第 1 个参数，\n"
 "以此类推。从命令行调用该命令时没有任何效果。\n"
 
-#: programs/cmd/cmd.rc:212
+#: programs/cmd/cmd.rc:209
 msgid ""
 "Start a program, or open a document in the program normally used for files\n"
 "with that suffix.\n"
@@ -13913,15 +13965,15 @@ msgstr ""
 "/ProgIDOpen\t使用指定 progID 打开文档。\n"
 "/?\t\t显示此帮助并退出。\n"
 
-#: programs/cmd/cmd.rc:237
+#: programs/cmd/cmd.rc:234
 msgid "TIME sets or shows the current system time.\n"
 msgstr "TIME 设置或显示当前系统时间。\n"
 
-#: programs/cmd/cmd.rc:240
+#: programs/cmd/cmd.rc:237
 msgid "TITLE <string> sets the window title for the cmd window.\n"
 msgstr "TITLE <字符串> 可设置 cmd 窗口的标题。\n"
 
-#: programs/cmd/cmd.rc:244
+#: programs/cmd/cmd.rc:241
 msgid ""
 "TYPE <filename> copies <filename> to the console device (or elsewhere if\n"
 "redirected). No check is made that the file is readable text.\n"
@@ -13930,7 +13982,7 @@ msgstr ""
 "此程序不会检查文件是否是可读文本。\n"
 "\n"
 
-#: programs/cmd/cmd.rc:253
+#: programs/cmd/cmd.rc:250
 msgid ""
 "VERIFY is used to set, clear or test the verify flag. Valid forms are:\n"
 "\n"
@@ -13948,21 +14000,21 @@ msgstr ""
 "\n"
 "Verify 旗标对 Wine 不生效。\n"
 
-#: programs/cmd/cmd.rc:256
+#: programs/cmd/cmd.rc:253
 msgid "VER displays the version of cmd you are running.\n"
 msgstr "VER 显示您正在运行的 cmd 的版本。\n"
 
-#: programs/cmd/cmd.rc:259
+#: programs/cmd/cmd.rc:256
 msgid "VOL shows the volume label of a disk device.\n"
 msgstr "VOL 显示磁盘设备的卷标。\n"
 
-#: programs/cmd/cmd.rc:263
+#: programs/cmd/cmd.rc:260
 msgid ""
 "ENDLOCAL ends localization of environment changes in a batch file which\n"
 "were introduced by a preceding SETLOCAL.\n"
 msgstr "ENDLOCAL 结束批处理文件中从 SETLOCAL 开始的对环境更改的本地化。\n"
 
-#: programs/cmd/cmd.rc:271
+#: programs/cmd/cmd.rc:268
 msgid ""
 "SETLOCAL starts localization of environment changes in a batch file.\n"
 "\n"
@@ -13976,17 +14028,17 @@ msgstr ""
 "在 SETLOCAL 后进行的环境更改将仅限于批处理文件内，并将在遇到 ENDLOCAL\n"
 "指令后（或文件结尾）取消这些更改，并恢复所有的环境更改。\n"
 
-#: programs/cmd/cmd.rc:275
+#: programs/cmd/cmd.rc:272
 msgid ""
 "PUSHD <directory> saves the current directory onto a stack, and then\n"
 "changes the current directory to the supplied one.\n"
 msgstr "PUSHD <目录> 将当前目录保存到栈，然后切换到所提供的目录。\n"
 
-#: programs/cmd/cmd.rc:278
+#: programs/cmd/cmd.rc:275
 msgid "POPD changes current directory to the last one saved with PUSHD.\n"
 msgstr "POPD 将当前目录更改为 PUSHD 保存的最后一个目录。\n"
 
-#: programs/cmd/cmd.rc:288
+#: programs/cmd/cmd.rc:285
 msgid ""
 "ASSOC shows or modifies file extension associations.\n"
 "\n"
@@ -14005,7 +14057,7 @@ msgstr ""
 "如使用文件扩展名作为参数，将显示当前扩展名的关联信息。\n"
 "如指定扩展名而不在等号后追加文件类型，将移除目前的关联（如果存在）。\n"
 
-#: programs/cmd/cmd.rc:300
+#: programs/cmd/cmd.rc:297
 msgid ""
 "FTYPE shows or modifies open commands associated with file types.\n"
 "\n"
@@ -14027,11 +14079,11 @@ msgstr ""
 "在）。\n"
 "如指定文件类型而不在等号后追加打开命令将移除此文件类型所关联的启动命令。\n"
 
-#: programs/cmd/cmd.rc:303
+#: programs/cmd/cmd.rc:300
 msgid "MORE displays output of files or piped input in pages.\n"
 msgstr "MORE 分页显示文件输出或管道输入。\n"
 
-#: programs/cmd/cmd.rc:308
+#: programs/cmd/cmd.rc:305
 msgid ""
 "CHOICE displays a text and waits, until the User presses an allowed Key\n"
 "from a selectable list.\n"
@@ -14040,7 +14092,7 @@ msgstr ""
 "CHOICE 显示文本并等待用户输入选单中对应某个选项的键。\n"
 "CHOICE 常用于在批处理文件中创建选项菜单。\n"
 
-#: programs/cmd/cmd.rc:324
+#: programs/cmd/cmd.rc:321
 msgid ""
 "Create a symbolic link.\n"
 "\n"
@@ -14064,13 +14116,13 @@ msgstr ""
 "link_name 为符号链接的名称。\n"
 "target 为 link_name 指向的路径。\n"
 
-#: programs/cmd/cmd.rc:312
+#: programs/cmd/cmd.rc:309
 msgid ""
 "EXIT terminates the current command session and returns to the operating\n"
 "system or shell from which you invoked cmd.\n"
 msgstr "EXIT 结束当前命令会话并返回操作系统或者调用 CMD 的命令壳。\n"
 
-#: programs/cmd/cmd.rc:364
+#: programs/cmd/cmd.rc:361
 msgid ""
 "CMD built-in commands are:\n"
 "ASSOC\t\tShow or modify file extension associations\n"
@@ -14129,7 +14181,7 @@ msgstr ""
 "FTYPE\t\t显示或更改文件类型关联的打开命令\n"
 "HELP\t\t显示某个主题的帮助信息概览\n"
 "MD (MKDIR)\t创建子目录\n"
-"MKLINK\t创建符号链接\n"
+"MKLINK\t\t创建符号链接\n"
 "MORE\t\t分页显示输出\n"
 "MOVE\t\t移动一个或多个文件，或整个目录树\n"
 "PATH\t\t设置或显示命令搜索路径\n"
@@ -14152,110 +14204,110 @@ msgstr ""
 "\n"
 "输入 HELP <命令> 以获取关于上述命令的详细信息。\n"
 
-#: programs/cmd/cmd.rc:365
+#: programs/cmd/cmd.rc:362
 msgid "Are you sure?"
 msgstr "您确定吗?"
 
-#: programs/cmd/cmd.rc:366 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
+#: programs/cmd/cmd.rc:363 programs/reg/reg.rc:126 programs/xcopy/xcopy.rc:43
 msgctxt "Yes key"
 msgid "Y"
 msgstr "Y"
 
-#: programs/cmd/cmd.rc:367 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
+#: programs/cmd/cmd.rc:364 programs/reg/reg.rc:127 programs/xcopy/xcopy.rc:44
 msgctxt "No key"
 msgid "N"
 msgstr "N"
 
-#: programs/cmd/cmd.rc:368
+#: programs/cmd/cmd.rc:365
 msgid "File association missing for extension %1\n"
 msgstr "缺少扩展名 %1 的文件关联\n"
 
-#: programs/cmd/cmd.rc:369
+#: programs/cmd/cmd.rc:366
 msgid "No open command associated with file type '%1'\n"
 msgstr "没有与文件类型 \"%1\" 相关联的打开命令\n"
 
-#: programs/cmd/cmd.rc:370
+#: programs/cmd/cmd.rc:367
 msgid "Overwrite %1?"
 msgstr "覆盖 %1?"
 
-#: programs/cmd/cmd.rc:371
+#: programs/cmd/cmd.rc:368
 msgid "More..."
 msgstr "更多..."
 
-#: programs/cmd/cmd.rc:372
+#: programs/cmd/cmd.rc:369
 msgid "Line in Batch processing possibly truncated. Using:\n"
 msgstr "批处理中的行可能被截断。正在使用:\n"
 
-#: programs/cmd/cmd.rc:374
+#: programs/cmd/cmd.rc:371
 msgid "Argument missing\n"
 msgstr "缺少参数\n"
 
-#: programs/cmd/cmd.rc:375
+#: programs/cmd/cmd.rc:372
 msgid "Syntax error\n"
 msgstr "语法错误\n"
 
-#: programs/cmd/cmd.rc:377
+#: programs/cmd/cmd.rc:374
 msgid "No help available for %1\n"
 msgstr "%1 的帮助不可用\n"
 
-#: programs/cmd/cmd.rc:378
+#: programs/cmd/cmd.rc:375
 msgid "Target to GOTO not found\n"
 msgstr "未找到目标 GOTO\n"
 
-#: programs/cmd/cmd.rc:379
+#: programs/cmd/cmd.rc:376
 msgid "Current Date is %1\n"
 msgstr "当前日期是 %1\n"
 
-#: programs/cmd/cmd.rc:380
+#: programs/cmd/cmd.rc:377
 msgid "Current Time is %1\n"
 msgstr "当前时间是 %1\n"
 
-#: programs/cmd/cmd.rc:381
+#: programs/cmd/cmd.rc:378
 msgid "Enter new date: "
 msgstr "输入新的日期: "
 
-#: programs/cmd/cmd.rc:382
+#: programs/cmd/cmd.rc:379
 msgid "Enter new time: "
 msgstr "输入新的时间: "
 
-#: programs/cmd/cmd.rc:383
+#: programs/cmd/cmd.rc:380
 msgid "Environment variable %1 not defined\n"
 msgstr "环境变量 %1 未被定义\n"
 
-#: programs/cmd/cmd.rc:384 programs/xcopy/xcopy.rc:41
+#: programs/cmd/cmd.rc:381 programs/xcopy/xcopy.rc:41
 msgid "Failed to open '%1'\n"
 msgstr "无法打开 \"%1\"\n"
 
-#: programs/cmd/cmd.rc:385
+#: programs/cmd/cmd.rc:382
 msgid "Cannot call batch label outside of a batch script\n"
 msgstr "无法调用批处理脚本外的批处理标签\n"
 
-#: programs/cmd/cmd.rc:386 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
+#: programs/cmd/cmd.rc:383 programs/reg/reg.rc:128 programs/xcopy/xcopy.rc:45
 msgctxt "All key"
 msgid "A"
 msgstr "A"
 
-#: programs/cmd/cmd.rc:387
+#: programs/cmd/cmd.rc:384
 msgid "Delete %1?"
 msgstr "删除 %1?"
 
-#: programs/cmd/cmd.rc:388
+#: programs/cmd/cmd.rc:385
 msgid "Echo is %1\n"
 msgstr "Echo 处于 %1 状态\n"
 
-#: programs/cmd/cmd.rc:389
+#: programs/cmd/cmd.rc:386
 msgid "Verify is %1\n"
 msgstr "Verify 处于 %1 状态\n"
 
-#: programs/cmd/cmd.rc:390
+#: programs/cmd/cmd.rc:387
 msgid "Verify must be ON or OFF\n"
 msgstr "Verify 只能是开启 (ON) 或关闭 (OFF) 状态\n"
 
-#: programs/cmd/cmd.rc:391
+#: programs/cmd/cmd.rc:388
 msgid "Parameter error\n"
 msgstr "参数错误\n"
 
-#: programs/cmd/cmd.rc:392
+#: programs/cmd/cmd.rc:389
 msgid ""
 "Volume Serial Number is %1!04x!-%2!04x!\n"
 "\n"
@@ -14263,78 +14315,86 @@ msgstr ""
 "卷的序列号是 %1!04x!-%2!04x!\n"
 "\n"
 
-#: programs/cmd/cmd.rc:393
+#: programs/cmd/cmd.rc:390
 msgid "Volume label (11 characters, <Enter> for none)?"
 msgstr "卷标 (11 个字符，直接按 <回车> 以留空)?"
 
-#: programs/cmd/cmd.rc:394
-msgid "PATH not found\n"
-msgstr "没有找到 PATH\n"
-
-#: programs/cmd/cmd.rc:395
+#: programs/cmd/cmd.rc:391
 msgid "Press any key to continue... "
 msgstr "请按任意键继续..."
 
-#: programs/cmd/cmd.rc:396
+#: programs/cmd/cmd.rc:392
 msgid "Wine Command Prompt"
 msgstr "Wine 命令提示符"
 
-#: programs/cmd/cmd.rc:397
+#: programs/cmd/cmd.rc:393
 msgid "Microsoft Windows %1!S!\n"
 msgstr "Microsoft Windows %1!S!\n"
 
-#: programs/cmd/cmd.rc:398
+#: programs/cmd/cmd.rc:394
 msgid "More? "
 msgstr "更多?"
 
-#: programs/cmd/cmd.rc:399
+#: programs/cmd/cmd.rc:395
 msgid "The input line is too long.\n"
 msgstr "输入过长。\n"
 
-#: programs/cmd/cmd.rc:400
+#: programs/cmd/cmd.rc:396
 msgid "Volume in drive %1!c! is %2\n"
 msgstr "驱动器 %1!c! 的卷标为 %2\n"
 
-#: programs/cmd/cmd.rc:401
+#: programs/cmd/cmd.rc:397
 msgid "Volume in drive %1!c! has no label.\n"
 msgstr "驱动器 %1!c! 没有卷标。\n"
 
-#: programs/cmd/cmd.rc:402 programs/reg/reg.rc:129
+#: programs/cmd/cmd.rc:398 programs/reg/reg.rc:129
 msgid " (Yes|No)"
 msgstr " (是(Y)|否(N))"
 
-#: programs/cmd/cmd.rc:403 programs/reg/reg.rc:130
+#: programs/cmd/cmd.rc:399 programs/reg/reg.rc:130
 msgid " (Yes|No|All)"
 msgstr " (是(Y)|否(N)|全部(A))"
 
-#: programs/cmd/cmd.rc:404
+#: programs/cmd/cmd.rc:400
 msgid ""
 "Can't recognize '%1' as an internal or external command, or batch script.\n"
 msgstr "无法将 \"%1\" 识别为内部或外部命令，或者批处理脚本。\n"
 
-#: programs/cmd/cmd.rc:405
+#: programs/cmd/cmd.rc:401
 msgid "Division by zero error.\n"
 msgstr "被零除错误。\n"
 
-#: programs/cmd/cmd.rc:406
+#: programs/cmd/cmd.rc:402
 msgid "Expected an operand.\n"
 msgstr "期望一个操作数。\n"
 
-#: programs/cmd/cmd.rc:407
+#: programs/cmd/cmd.rc:403
 msgid "Expected an operator.\n"
 msgstr "期望一个操作符。\n"
 
-#: programs/cmd/cmd.rc:408
+#: programs/cmd/cmd.rc:404
 msgid "Mismatch in parentheses.\n"
 msgstr "括号不匹配。\n"
 
-#: programs/cmd/cmd.rc:409
+#: programs/cmd/cmd.rc:405
 msgid ""
 "Badly formed number - must be one of decimal (12),\n"
 " hexadecimal (0x34) or octal (056).\n"
 msgstr ""
 "数字的格式错误 - 必须是十进制 (12),\n"
 " 十六进制 (0x34) 或者八进制 (056)。\n"
+
+#: programs/cmd/cmd.rc:407
+msgid "Syntax error: unexpected %1\n"
+msgstr "语法错误: 非预期 %1\n"
+
+#: programs/cmd/cmd.rc:408
+msgid "End of line"
+msgstr "行尾"
+
+#: programs/cmd/cmd.rc:409
+msgid "End of file"
+msgstr "文件尾"
 
 #: programs/conhost/conhost.rc:54
 msgid "Cursor size"
@@ -14517,6 +14577,10 @@ msgid ""
 "Are you sure you want to close all programs and exit the virtual desktop?"
 msgstr "您确认要关闭所有程序并退出虚拟桌面吗?"
 
+#: programs/explorer/explorer.rc:38
+msgid "Wine Desktop"
+msgstr "Wine 桌面"
+
 #: programs/findstr/findstr.rc:28
 msgid "Usage: findstr /options string\n"
 msgstr "用法: findstr /选项 字符串\n"
@@ -14682,6 +14746,10 @@ msgstr "KerbTicket 加密类型"
 #: programs/klist/klist.rc:37
 msgid "Current LogonId is"
 msgstr "当前 LogonId 是"
+
+#: programs/klist/klist.rc:38
+msgid "Client"
+msgstr "客户端"
 
 #: programs/msinfo32/msinfo32.rc:28
 msgid "System Information"
@@ -18063,8 +18131,8 @@ msgid ""
 "linked to the Libraries and Graphics tabs to allow you to change system-wide "
 "or per-application settings in those tabs as well."
 msgstr ""
-"对不同的程序，可以让 Wine 假装成不同版本的 Windows，也可以在“函数库”与“显"
-"示”标签页中作不同的设置。"
+"对不同的程序，可以让 Wine 假装成不同版本的 Windows，也可以在“函数库”与“显示”"
+"标签页中作不同的设置。"
 
 #: programs/winecfg/winecfg.rc:164
 msgid "Add appli&cation..."
@@ -19062,8 +19130,8 @@ msgid "Help topics: "
 msgstr "帮助主题: "
 
 #: programs/wmic/wmic.rc:28
-msgid "Error: Command line not supported\n"
-msgstr "错误: 不支持此命令行\n"
+msgid "Error: Command not supported\n"
+msgstr "错误: 不支持此命令\n"
 
 #: programs/wmic/wmic.rc:29
 msgid "Error: Alias not found\n"
@@ -19076,6 +19144,10 @@ msgstr "错误: 无效查询\n"
 #: programs/wmic/wmic.rc:31
 msgid "Error: Invalid syntax for PATH\n"
 msgstr "错误: PATH 语法无效\n"
+
+#: programs/wmic/wmic.rc:32
+msgid "Supply a command\n"
+msgstr "请提供命令\n"
 
 #: programs/wordpad/wordpad.rc:31
 msgid "&New...\tCtrl+N"

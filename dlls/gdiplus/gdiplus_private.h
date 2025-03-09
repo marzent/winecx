@@ -49,6 +49,8 @@
 #define GIF_DISPOSE_RESTORE_TO_BKGND 2
 #define GIF_DISPOSE_RESTORE_TO_PREV 3
 
+#define PIXELFORMATBPP(x) ((x) ? ((x) >> 8) & 255 : 24)
+
 
 COLORREF ARGB2COLORREF(ARGB color);
 HBITMAP ARGB2BMP(ARGB color);
@@ -62,6 +64,8 @@ extern REAL units_scale(GpUnit from, GpUnit to, REAL dpi, BOOL printer_display);
 
 #define WineCoordinateSpaceGdiDevice ((GpCoordinateSpace)4)
 
+extern GpStatus gdi_dc_acquire(GpGraphics *graphics, HDC *hdc);
+extern void gdi_dc_release(GpGraphics *graphics, HDC hdc);
 extern GpStatus gdi_transform_acquire(GpGraphics *graphics);
 extern GpStatus gdi_transform_release(GpGraphics *graphics);
 extern GpStatus get_graphics_transform(GpGraphics *graphics, GpCoordinateSpace dst_space,
@@ -127,9 +131,15 @@ extern void calc_curve_bezier(const GpPointF *pts, REAL tension, REAL *x1,
 extern void calc_curve_bezier_endp(REAL xend, REAL yend, REAL xadj, REAL yadj,
     REAL tension, REAL *x, REAL *y);
 
+extern void get_font_hfont(GpGraphics *graphics, GDIPCONST GpFont *font,
+                           GDIPCONST GpStringFormat *format, HFONT *hfont,
+                           LOGFONTW *lfw_return, GDIPCONST GpMatrix *matrix);
+
 extern void free_installed_fonts(void);
 
 extern BOOL lengthen_path(GpPath *path, INT len);
+
+extern GpStatus widen_flat_path_anchors(GpPath *flat_path, GpPen *pen, REAL pen_width, GpPath **anchors);
 
 extern DWORD write_region_data(const GpRegion *region, void *data);
 extern DWORD write_path_data(GpPath *path, void *data);
@@ -244,6 +254,7 @@ struct GpPen{
 struct GpGraphics{
     HDC hdc;
     HWND hwnd;
+    INT hdc_refs;
     BOOL owndc;
     BOOL alpha_hdc;
     BOOL printer_display;
@@ -368,6 +379,25 @@ struct GpAdjustableArrowCap{
     REAL width;
 };
 
+typedef enum EffectType {
+    NoneEffect,
+    BlurEffect,
+    SharpenEffect,
+    TintEffect,
+    RedEyeCorrectionEffect,
+    ColorMatrixEffect,
+    ColorLUTEffect,
+    BrightnessContrastEffect,
+    HueSaturationLightnessEffect,
+    ColorBalanceEffect,
+    LevelsEffect,
+    ColorCurveEffect,
+} EffectType;
+
+typedef struct CGpEffect{
+    EffectType type;
+} CGpEffect;
+
 struct GpImage{
     IWICBitmapDecoder *decoder;
     IWICBitmapEncoder *encoder;
@@ -458,8 +488,6 @@ struct GpBitmap{
     PixelFormat format;
     ImageLockMode lockmode;
     BYTE *bitmapbits;   /* pointer to the buffer we passed in BitmapLockBits */
-    HBITMAP hbitmap;
-    HDC hdc;
     BYTE *bits; /* actual image bits if this is a DIB */
     INT stride; /* stride of bits if this is a DIB */
     BYTE *own_bits; /* image bits that need to be freed with this object */
@@ -606,13 +634,38 @@ static inline const void *buffer_read(struct memory_buffer *mbuf, INT size)
     return NULL;
 }
 
-typedef GpStatus (*gdip_format_string_callback)(HDC hdc,
-    GDIPCONST WCHAR *string, INT index, INT length, GDIPCONST GpFont *font,
-    GDIPCONST RectF *rect, GDIPCONST GpStringFormat *format,
-    INT lineno, const RectF *bounds, INT *underlined_indexes,
-    INT underlined_index_count, void *user_data);
+/* Represents a string section and the font it should use. */
+struct gdip_font_link_section {
+    struct list entry;
+    DWORD start; /* The starting index of the string where the font applies. */
+    DWORD end; /* The end index of the string. */
+    GpFont *font;
+};
 
-GpStatus gdip_format_string(HDC hdc,
+struct gdip_font_link_info {
+    GDIPCONST GpFont *base_font;
+    struct list sections;
+};
+
+struct gdip_format_string_info {
+    GpGraphics *graphics;
+    HDC hdc;
+    GDIPCONST WCHAR *string;
+    INT index;
+    INT length;
+    struct gdip_font_link_info font_link_info;
+    GDIPCONST RectF *rect;
+    GDIPCONST GpStringFormat *format;
+    INT lineno;
+    const RectF *bounds;
+    INT *underlined_indexes;
+    INT underlined_index_count;
+    void *user_data;
+};
+
+typedef GpStatus (*gdip_format_string_callback)(struct gdip_format_string_info *info);
+
+GpStatus gdip_format_string(GpGraphics *graphics, HDC hdc,
     GDIPCONST WCHAR *string, INT length, GDIPCONST GpFont *font,
     GDIPCONST RectF *rect, GDIPCONST GpStringFormat *format, int ignore_empty_clip,
     gdip_format_string_callback callback, void *user_data);
@@ -627,6 +680,11 @@ static inline BOOL image_lock(GpImage *image)
 static inline void image_unlock(GpImage *image)
 {
     ReleaseSRWLockExclusive(&image->lock);
+}
+
+static inline BOOL has_gdi_dc(GpGraphics *graphics)
+{
+    return graphics->hdc != NULL || graphics->owndc;
 }
 
 static inline void set_rect(GpRectF *rect, REAL x, REAL y, REAL width, REAL height)

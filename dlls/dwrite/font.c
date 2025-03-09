@@ -1821,8 +1821,8 @@ static HRESULT WINAPI dwritefontface3_GetRecommendedRenderingMode(IDWriteFontFac
 
         hr = IDWriteRenderingParams_QueryInterface(params, &IID_IDWriteRenderingParams3, (void**)&params3);
         if (hr == S_OK) {
-            *rendering_mode = IDWriteRenderingParams3_GetRenderingMode1(params3);
-            mode = IDWriteRenderingParams3_GetGridFitMode(params3);
+            mode = IDWriteRenderingParams3_GetRenderingMode1(params3);
+            *gridfit_mode = IDWriteRenderingParams3_GetGridFitMode(params3);
             IDWriteRenderingParams3_Release(params3);
         }
         else
@@ -6003,7 +6003,7 @@ void init_local_fontfile_loader(void)
     local_fontfile_loader.IDWriteLocalFontFileLoader_iface.lpVtbl = &localfontfileloadervtbl;
     local_fontfile_loader.refcount = 1;
     list_init(&local_fontfile_loader.streams);
-    InitializeCriticalSection(&local_fontfile_loader.cs);
+    InitializeCriticalSectionEx(&local_fontfile_loader.cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
     local_fontfile_loader.cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": localfileloader.lock");
 }
 

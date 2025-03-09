@@ -19,6 +19,8 @@
 var compat_version;
 var tests = [];
 
+var svg_ns = "http://www.w3.org/2000/svg";
+
 ok(performance.timing.navigationStart > 0, "navigationStart <= 0");
 ok(performance.timing.fetchStart == performance.timing.navigationStart, "fetchStart != navigationStart");
 ok(performance.timing.domainLookupStart >= performance.timing.fetchStart, "domainLookupStart < fetchStart");
@@ -58,7 +60,6 @@ if(window.addEventListener) {
         pageshow_fired = true;
 
         var r = Object.prototype.toString.call(e);
-        todo_wine.
         ok(r === "[object PageTransitionEvent]", "pageshow toString = " + r);
         ok("persisted" in e, "'persisted' not in pageshow event");
         ok(document.readyState === "complete", "pageshow readyState = " + document.readyState);
@@ -70,7 +71,6 @@ if(window.addEventListener) {
         ok(document.documentMode >= 11, "pagehide fired");
 
         var r = Object.prototype.toString.call(e);
-        todo_wine.
         ok(r === "[object PageTransitionEvent]", "pagehide toString = " + r);
         ok("persisted" in e, "'persisted' not in pagehide event");
     }, true);
@@ -109,74 +109,74 @@ sync_test("page transition events", function() {
 
 sync_test("builtin_toString", function() {
     var tags = [
-        [ "abbr",            "Phrase" ],
-        [ "acronym",         "Phrase" ],
-        [ "address",         "Block" ],
+        [ "abbr",            "Phrase", -1 ],
+        [ "acronym",         "Phrase", -1 ],
+        [ "address",         "Block", -1 ],
      // [ "applet",          "Applet" ],  // makes Windows pop up a dialog box
         [ "article",         "" ],
         [ "aside",           "" ],
-        [ "audio",           "Audio" ],
-        [ "b",               "Phrase" ],
-        [ "base",            "Base" ],
-        [ "basefont",        "BaseFont" ],
+        [ "audio",           "Audio", -1 ],
+        [ "b",               "Phrase", -1 ],
+        [ "base",            "Base", -1 ],
+        [ "basefont",        "BaseFont", -1 ],
         [ "bdi",             "Unknown" ],
-        [ "bdo",             "Phrase" ],
-        [ "big",             "Phrase" ],
-        [ "blockquote",      "Block" ],
+        [ "bdo",             "Phrase", -1 ],
+        [ "big",             "Phrase", -1 ],
+        [ "blockquote",      "Block", -1 ],
         [ "body",            "Body" ],
-        [ "br",              "BR" ],
+        [ "br",              "BR", -1 ],
         [ "button",          "Button" ],
-        [ "canvas",          "Canvas" ],
-        [ "caption",         "TableCaption" ],
-        [ "center",          "Block" ],
-        [ "cite",            "Phrase" ],
-        [ "code",            "Phrase" ],
-        [ "col",             "TableCol" ],
-        [ "colgroup",        "TableCol" ],
+        [ "canvas",          "Canvas", -1 ],
+        [ "caption",         "TableCaption", -1 ],
+        [ "center",          "Block", -1 ],
+        [ "cite",            "Phrase", -1 ],
+        [ "code",            "Phrase", -1 ],
+        [ "col",             "TableCol", -1 ],
+        [ "colgroup",        "TableCol", -1 ],
         [ "data",            "Unknown" ],
         [ "datalist",        "DataList", 10 ],
-        [ "dd",              "DD" ],
-        [ "del",             "Mod" ],
+        [ "dd",              "DD", -1 ],
+        [ "del",             "Mod", -1 ],
         [ "details",         "Unknown" ],
-        [ "dfn",             "Phrase" ],
+        [ "dfn",             "Phrase", -1 ],
         [ "dialog",          "Unknown" ],
-        [ "dir",             "Directory" ],
-        [ "div",             "Div" ],
-        [ "dl",              "DList" ],
-        [ "dt",              "DT" ],
-        [ "em",              "Phrase" ],
+        [ "dir",             "Directory", -1 ],
+        [ "div",             "Div", -1 ],
+        [ "dl",              "DList", -1 ],
+        [ "dt",              "DT", -1 ],
+        [ "em",              "Phrase", -1 ],
         [ "embed",           "Embed" ],
-        [ "fieldset",        "FieldSet" ],
+        [ "fieldset",        "FieldSet", -1 ],
         [ "figcaption",      "" ],
         [ "figure",          "" ],
-        [ "font",            "Font" ],
+        [ "font",            "Font", -1 ],
         [ "footer",          "" ],
         [ "form",            "Form" ],
         [ "frame",           "Frame" ],
-        [ "frameset",        "FrameSet" ],
-        [ "h1",              "Heading" ],
-        [ "h2",              "Heading" ],
-        [ "h3",              "Heading" ],
-        [ "h4",              "Heading" ],
-        [ "h5",              "Heading" ],
-        [ "h6",              "Heading" ],
+        [ "frameset",        "FrameSet", -1 ],
+        [ "h1",              "Heading", -1 ],
+        [ "h2",              "Heading", -1 ],
+        [ "h3",              "Heading", -1 ],
+        [ "h4",              "Heading", -1 ],
+        [ "h5",              "Heading", -1 ],
+        [ "h6",              "Heading", -1 ],
         [ "h7",              "Unknown" ],
         [ "head",            "Head" ],
         [ "header",          "" ],
-        [ "hr",              "HR" ],
+        [ "hr",              "HR", -1 ],
         [ "html",            "Html" ],
-        [ "i",               "Phrase" ],
+        [ "i",               "Phrase", -1 ],
         [ "iframe",          "IFrame" ],
         [ "img",             "Image" ],
         [ "input",           "Input" ],
-        [ "ins",             "Mod" ],
-        [ "kbd",             "Phrase" ],
+        [ "ins",             "Mod", -1 ],
+        [ "kbd",             "Phrase", -1 ],
         [ "label",           "Label" ],
-        [ "legend",          "Legend" ],
-        [ "li",              "LI" ],
+        [ "legend",          "Legend", -1 ],
+        [ "li",              "LI", -1 ],
         [ "link",            "Link" ],
         [ "main",            "Unknown" ],
-        [ "map",             "Map" ],
+        [ "map",             "Map", -1 ],
         [ "mark",            "" ],
         [ "meta",            "Meta" ],
         [ "meter",           "Unknown" ],
@@ -184,57 +184,57 @@ sync_test("builtin_toString", function() {
         [ "noframes",        "" ],
         [ "noscript",        "" ],
         [ "object",          "Object" ],
-        [ "ol",              "OList" ],
-        [ "optgroup",        "OptGroup" ],
+        [ "ol",              "OList", -1 ],
+        [ "optgroup",        "OptGroup", -1 ],
         [ "option",          "Option" ],
         [ "output",          "Unknown" ],
-        [ "p",               "Paragraph" ],
-        [ "param",           "Param" ],
+        [ "p",               "Paragraph", -1 ],
+        [ "param",           "Param", -1 ],
         [ "picture",         "Unknown" ],
-        [ "pre",             "Pre" ],
+        [ "pre",             "Pre", -1 ],
         [ "progress",        "Progress", 10 ],
-        [ "q",               "Quote" ],
-        [ "rp",              "Phrase" ],
-        [ "rt",              "Phrase" ],
-        [ "ruby",            "Phrase" ],
-        [ "s",               "Phrase" ],
-        [ "samp",            "Phrase" ],
+        [ "q",               "Quote", -1 ],
+        [ "rp",              "Phrase", -1 ],
+        [ "rt",              "Phrase", -1 ],
+        [ "ruby",            "Phrase", -1 ],
+        [ "s",               "Phrase", -1 ],
+        [ "samp",            "Phrase", -1 ],
         [ "script",          "Script" ],
         [ "section",         "" ],
         [ "select",          "Select" ],
-        [ "small",           "Phrase" ],
-        [ "source",          "Source" ],
-        [ "span",            "Span" ],
-        [ "strike",          "Phrase" ],
-        [ "strong",          "Phrase" ],
+        [ "small",           "Phrase", -1 ],
+        [ "source",          "Source", -1 ],
+        [ "span",            "Span", -1 ],
+        [ "strike",          "Phrase", -1 ],
+        [ "strong",          "Phrase", -1 ],
         [ "style",           "Style" ],
-        [ "sub",             "Phrase" ],
+        [ "sub",             "Phrase", -1 ],
         [ "summary",         "Unknown" ],
-        [ "sup",             "Phrase" ],
+        [ "sup",             "Phrase", -1 ],
         [ "svg",             "Unknown" ],
         [ "table",           "Table" ],
-        [ "tbody",           "TableSection" ],
+        [ "tbody",           "TableSection", -1 ],
         [ "td",              "TableDataCell" ],
         [ "template",        "Unknown" ],
         [ "textarea",        "TextArea" ],
-        [ "tfoot",           "TableSection" ],
-        [ "th",              "TableHeaderCell" ],
-        [ "thead",           "TableSection" ],
+        [ "tfoot",           "TableSection", -1 ],
+        [ "th",              "TableHeaderCell", -1 ],
+        [ "thead",           "TableSection", -1 ],
         [ "time",            "Unknown" ],
         [ "title",           "Title" ],
         [ "tr",              "TableRow" ],
         [ "track",           "Track", 10 ],
-        [ "tt",              "Phrase" ],
-        [ "u",               "Phrase" ],
-        [ "ul",              "UList" ],
-        [ "var",             "Phrase" ],
-        [ "video",           "Video" ],
+        [ "tt",              "Phrase", -1 ],
+        [ "u",               "Phrase", -1 ],
+        [ "ul",              "UList", -1 ],
+        [ "var",             "Phrase", -1 ],
+        [ "video",           "Video", -1 ],
         [ "wbr",             "" ],
         [ "winetest",        "Unknown" ]
     ];
     var v = document.documentMode, e;
 
-    function test(msg, obj, name, tostr) {
+    function test(msg, obj, name, tostr, is_todo) {
         var s;
         if(obj.toString) {
             s = obj.toString();
@@ -242,21 +242,23 @@ sync_test("builtin_toString", function() {
             ok(s === (tostr ? tostr : (v < 9 ? "[object]" : "[object " + name + "]")), msg + " toString returned " + s);
         }
         s = Object.prototype.toString.call(obj);
-        todo_wine_if(v >= 9 && name != "Object").
+        todo_wine_if(v >= 9 && is_todo).
         ok(s === (v < 9 ? "[object Object]" : "[object " + name + "]"), msg + " Object.toString returned " + s);
     }
 
     for(var i = 0; i < tags.length; i++)
         if(tags[i].length < 3 || v >= tags[i][2])
-            test("tag '" + tags[i][0] + "'", document.createElement(tags[i][0]), "HTML" + tags[i][1] + "Element");
+            test("tag '" + tags[i][0] + "'", document.createElement(tags[i][0]), "HTML" + tags[i][1] + "Element", null, tags[i].length > 2);
 
     e = document.createElement("a");
     ok(e.toString() === "", "tag 'a' (without href) toString returned " + e.toString());
+    ok(e + "" === "", "tag 'a' (without href) value = " + e);
     e.href = "https://www.winehq.org/";
     test("tag 'a'", e, "HTMLAnchorElement", "https://www.winehq.org/");
 
     e = document.createElement("area");
     ok(e.toString() === "", "tag 'area' (without href) toString returned " + e.toString());
+    ok(e + "" === "", "tag 'area' (without href) value = " + e);
     e.href = "https://www.winehq.org/";
     test("tag 'area'", e, "HTMLAreaElement", "https://www.winehq.org/");
 
@@ -298,12 +300,12 @@ sync_test("builtin_toString", function() {
     if(clientRects) test("clientRect", clientRects[0], "ClientRect");
     if(clientRects) test("clientRects", clientRects, "ClientRectList");
     if(currentStyle) test("currentStyle", currentStyle, "MSCurrentStyleCSSProperties");
-    if(v >= 11 /* todo_wine */) test("document", document, v < 11 ? "Document" : "HTMLDocument");
+    test("document", document, v < 11 ? "Document" : "HTMLDocument");
     test("elements", document.getElementsByTagName("body"), "HTMLCollection");
     test("history", window.history, "History");
     test("implementation", document.implementation, "DOMImplementation");
     if(localStorage) test("localStorage", localStorage, "Storage");
-    test("location", window.location, "Object", window.location.href);
+    test("location", window.location, "Object", window.location.href, null, true);
     if(v >= 11 /* todo_wine */) test("mimeTypes", window.navigator.mimeTypes, v < 11 ? "MSMimeTypesCollection" : "MimeTypeArray");
     test("navigator", window.navigator, "Navigator");
     test("performance", window.performance, "Performance");
@@ -349,6 +351,153 @@ sync_test("builtin_toString", function() {
     if(v >= 9) {
         document.body.innerHTML = "<!--...-->";
         test("comment", document.body.firstChild, "Comment");
+
+        test("SVGSVGElement", document.createElementNS(svg_ns, "svg"), "SVGSVGElement");
+        test("SVGCircleElement", document.createElementNS(svg_ns, "circle"), "SVGCircleElement");
+        test("SVGCircleElement", document.createElementNS(svg_ns, "tspan"), "SVGTSpanElement");
+
+        /* Non-function constructors */
+        var props = Object.getOwnPropertyNames(window);
+        for(i = 0; i < props.length; i++)
+            if(typeof(window[props[i]]) === "object" && window[props[i]].hasOwnProperty("prototype"))
+                test(props[i] + " constructor", window[props[i]], props[i]);
+    }
+});
+
+sync_test("builtin_obj", function() {
+    var v = document.documentMode;
+    var f = document.createElement;
+    var e;
+
+    if(v < 9) {
+        ok(!(window instanceof Object), "window instance of Object");
+        ok(!(document instanceof Object), "document instance of Object");
+        ok(!(f.apply instanceof Function), "f.apply instance of Function");
+        ok(!(f.call instanceof Function), "f.call instance of Function");
+        ok(!("arguments" in f), "arguments in f");
+        ok(!("length" in f), "length in f");
+        e = 0;
+        try {
+            f.toString();
+        }catch(ex) {
+            e = ex.number;
+        }
+        ok(e === 0xa01b6 - 0x80000000, "[f.toString] e = " + e);
+        try {
+            window.toString.call(null);
+            ok(false, "expected exception calling window.toString with null context");
+        }catch(ex) {}
+    }else {
+        ok(Object.getPrototypeOf(f) === Function.prototype, "unexpected document.createElement prototype");
+        e = window.toString.call(null);
+        ok(e === "[object Window]", "window.toString with null context = " + e);
+        e = window.toString.call(external.nullDisp);
+        ok(e === "[object Window]", "window.toString with nullDisp context = " + e);
+    }
+
+    e = 0;
+    try {
+        f.call(Object, "div");
+    }catch(ex) {
+        e = ex.number;
+    }
+    ok(e === (v < 9 ? 0xa0005 : 0x0ffff) - 0x80000000, "[f.call(Object, 'div')] e = " + e);
+
+    e = 0;
+    try {
+        f.call(null, "div");
+    }catch(ex) {
+        e = ex.number;
+    }
+    ok(e === (v < 9 ? 0xa0005 : 0x0ffff) - 0x80000000, "[f.call(null, 'div')] e = " + e);
+
+    var elem1 = f.call(document, "div");
+    var elem2 = f.call(document, "br");
+    document.body.appendChild(elem1);
+    document.body.appendChild(elem2);
+    elem1.onclick = function() { ok(false, "unexpected elem1.onclick"); };
+    var clicked = false;
+    elem2.onclick = function() { clicked = true; };
+    elem1.click.call(elem2);
+    ok(clicked === true, "elem2.onclick not called");
+
+    elem1 = f.apply(document, ["div"]);
+    elem2 = f.apply(document, ["br"]);
+    document.body.appendChild(elem1);
+    document.body.appendChild(elem2);
+    elem1.onclick = function() { ok(false, "unexpected elem1.onclick"); };
+    clicked = false;
+    elem2.onclick = function() { clicked = true; };
+    elem1.click.apply(elem2);
+    ok(clicked === true, "elem2.onclick not called");
+
+    try {
+        elem1.click.apply(elem2, { length: -1 });
+        ok(false, "exception expected");
+    }catch(ex) {}
+
+    e = 0;
+    try {
+        new f();
+    }catch(ex) {
+        e = ex.number;
+    }
+    ok(e === (v < 9 ? 0xa01b6 : 0x0ffff) - 0x80000000, "[new f()] e = " + e);
+
+    if(v < 9) {
+        ok(!("call" in f.call), "call in f.call");
+        ok(!("apply" in f.call), "apply in f.call");
+        ok(!("call" in f.apply), "call in f.apply");
+        ok(!("apply" in f.apply), "apply in f.apply");
+        ok(f.call+"" === "\nfunction call() {\n    [native code]\n}\n", "f.call = " + f.call);
+        ok(f.apply+"" === "\nfunction apply() {\n    [native code]\n}\n", "f.apply = " + f.apply);
+        ok(external.getVT(f.call) === "VT_DISPATCH", "f.call not VT_DISPATCH");
+        ok(external.getVT(f.apply) === "VT_DISPATCH", "f.apply not VT_DISPATCH");
+
+        ok(f.apply !== f.apply, "f.apply == f.apply");
+        f = f.apply;
+        ok(!("arguments" in f), "arguments in f.apply");
+        ok(!("length" in f), "length in f.apply");
+        ok(!("call" in f), "call in f.apply");
+        ok(!("apply" in f), "apply in f.apply");
+        e = 0;
+        try {
+            f.toString();
+        }catch(ex) {
+            e = ex.number;
+        }
+        ok(e === 0xa01b6 - 0x80000000, "[f.apply.toString] e = " + e);
+        e = 0;
+        try {
+            f(document, ["style"]);
+        }catch(ex) {
+            e = ex.number;
+        }
+        ok(e === 0xa01b6 - 0x80000000, "[f.apply() indirect] e = " + e);
+
+        var enumerator = new Enumerator(document.getElementsByTagName("br"));
+        enumerator.moveNext();
+        var enum_elem = enumerator.item();
+        ok(enum_elem === elem2, "enum_elem = " + enum_elem);
+        enumerator.moveNext();
+        ok(enumerator.atEnd(), "enumerator not at end");
+    }else {
+        elem = f.call.call(f, document, "div");
+        f = f.bind(document);
+        elem = f.apply(null, ["style"]);
+        document.body.appendChild(elem);
+
+        try {
+            var enumerator = new Enumerator(document.getElementsByTagName("style"));
+        }catch(ex) {
+            e = ex.number;
+        }
+        ok(e === 0xa01c3 - 0x80000000, "[style Enumerator] e = " + e);
+
+        f.apply = 0;
+        f.call = function() { };
+        ok(f.apply === 0, "changed f.apply = ", f.apply);
+        ok(f.call instanceof Function, "changed f.call not instance of Function");
     }
 });
 
@@ -370,7 +519,11 @@ sync_test("elem_props", function() {
     test_exposed("doScroll", v < 11);
     test_exposed("readyState", v < 11);
     test_exposed("clientTop", true);
+    test_exposed("ownerDocument", true);
     test_exposed("title", true);
+    test_exposed("removeNode", true);
+    test_exposed("replaceNode", true);
+    test_exposed("swapNode", true);
     test_exposed("querySelectorAll", v >= 8);
     test_exposed("textContent", v >= 9);
     test_exposed("prefix", v >= 9);
@@ -384,6 +537,25 @@ sync_test("elem_props", function() {
     test_exposed("dispatchEvent", v >= 9);
     test_exposed("msSetPointerCapture", v >= 10);
     if (v >= 9) test_exposed("spellcheck", v >= 10);
+
+    elem = document.createComment("");
+    test_exposed("atomic", v < 9);
+    test_exposed("data", true);
+    test_exposed("length", true);
+    test_exposed("text", true);
+    test_exposed("appendData", true);
+    test_exposed("deleteData", true);
+    test_exposed("insertData", true);
+    test_exposed("replaceData", true);
+    test_exposed("substringData", true);
+    test_exposed("attachEvent", v < 9);
+    test_exposed("doScroll", v < 9);
+    test_exposed("readyState", v < 9);
+    test_exposed("clientTop", v < 9);
+    test_exposed("title", v < 9);
+    test_exposed("removeNode", v < 9);
+    test_exposed("querySelectorAll", v === 8);
+    test_exposed("hasAttribute", v === 8, v === 8);
 
     elem = document.createElement("style");
     test_exposed("media", true);
@@ -435,14 +607,58 @@ sync_test("docfrag_props", function() {
 
     function test_exposed(prop, expect) {
         if(expect)
-            ok(prop in docfrag, prop + " not found in document fragent.");
+            ok(prop in docfrag, prop + " not found in document fragment.");
         else
-            ok(!(prop in docfrag), prop + " found in document fragent.");
+            ok(!(prop in docfrag), prop + " found in document fragment.");
     }
 
     var v = document.documentMode;
 
+    test_exposed("attachEvent", v < 11);
+    test_exposed("detachEvent", v < 11);
+    test_exposed("createStyleSheet", v < 9);
+    test_exposed("fileSize", v < 9);
+    test_exposed("selection", v < 9);
+    test_exposed("doctype", v < 9);
+    test_exposed("onstorage", v < 9);
+    test_exposed("textContent", v >= 9);
+    test_exposed("prefix", v >= 9);
+    test_exposed("ownerDocument", true);
+    test_exposed("removeNode", true);
+    test_exposed("replaceNode", true);
+    test_exposed("swapNode", true);
+    test_exposed("defaultView", false);
+    test_exposed("head", false);
+    test_exposed("addEventListener", v >= 9);
+    test_exposed("removeEventListener", v >= 9);
+    test_exposed("dispatchEvent", v >= 9);
+    test_exposed("createEvent", false);
     test_exposed("compareDocumentPosition", v >= 9);
+});
+
+sync_test("textnode_props", function() {
+    var node = document.createTextNode("testNode");
+
+    function test_exposed(prop, expect) {
+        if(expect)
+            ok(prop in node, prop + " not found in text node.");
+        else
+            ok(!(prop in node), prop + " found in text node.");
+    }
+
+    var v = document.documentMode;
+
+    test_exposed("childNodes", true);
+    test_exposed("nodeName", true);
+    test_exposed("nodeValue", true);
+    test_exposed("ownerDocument", true);
+    test_exposed("removeNode", true);
+    test_exposed("replaceNode", true);
+    test_exposed("swapNode", true);
+    test_exposed("toString", true);
+    test_exposed("compareDocumentPosition", v >= 9);
+    test_exposed("isEqualNode", v >= 9);
+    test_exposed("prefix", v >= 9);
 });
 
 sync_test("window_props", function() {
@@ -478,7 +694,11 @@ sync_test("window_props", function() {
     test_exposed("performance", true);
     test_exposed("console", v >= 10);
     test_exposed("matchMedia", v >= 10);
+    test_exposed("Document", v >= 9);
+    test_exposed("HTMLDocument", v === 8 || v >= 11, v === 8);
     test_exposed("MutationObserver", v >= 11);
+    test_exposed("PageTransitionEvent", v >= 11);
+    test_exposed("ProgressEvent", v >= 10);
 });
 
 sync_test("domimpl_props", function() {
@@ -595,59 +815,94 @@ sync_test("xhr open", function() {
 });
 
 sync_test("style_props", function() {
-    var style = document.body.style;
+    var r, style = document.body.style, currentStyle = document.body.currentStyle, computedStyle = window.getComputedStyle ? window.getComputedStyle(document.body) : undefined;
 
-    function test_exposed(prop, expect) {
-        if(expect)
-            ok(prop in style, prop + " not found in style object.");
-        else
-            ok(!(prop in style), prop + " found in style object.");
+    function test_exposed(prop, expect_style, expect_currentStyle, expect_computedStyle, own_prop) {
+        if(own_prop === undefined)
+            own_prop = (v < 9);
+        function test(prop, obj, expect, name) {
+            if(!expect)
+                ok(!(prop in obj), prop + " found in " + name + " object.");
+            else {
+                ok(prop in obj, prop + " not found in " + name + " object.");
+                if(own_prop) {
+                    ok(Object.prototype.hasOwnProperty.call(obj, prop), prop + " not prop of " + name + " object.");
+                    if(Object.getOwnPropertyDescriptor) {
+                        var desc = Object.getOwnPropertyDescriptor(obj, prop);
+                        if(name === "computedStyle" && prop.indexOf("-") === -1) {
+                            todo_wine.
+                            ok(desc === undefined, prop + " of " + name + " object is not undefined.");
+                            return;
+                        }
+                        ok(desc.value === obj[prop], prop + " of " + name + " object value = ." + desc.value + ", expected " + obj[prop]);
+                        ok(!("get" in desc), prop + " of " + name + " object has a getter.");
+                        ok(!("set" in desc), prop + " of " + name + " object has a setter.");
+                        ok(desc.writable === true, prop + " of " + name + " object not writable.");
+                        ok(desc.enumerable === true, prop + " of " + name + " object not enumerable.");
+                        ok(desc.configurable === true, prop + " of " + name + " object not configurable.");
+                    }
+                }
+            }
+        }
+
+        test(prop, style, expect_style, "style");
+        test(prop, currentStyle, expect_currentStyle, "currentStyle");
+        if(computedStyle)
+            test(prop, computedStyle, expect_computedStyle, "computedStyle");
     }
 
     var v = document.documentMode;
 
-    test_exposed("removeAttribute", true);
-    test_exposed("zIndex", true);
-    test_exposed("z-index", true);
-    test_exposed("filter", true);
-    test_exposed("pixelTop", true);
-    test_exposed("float", true);
-    test_exposed("css-float", false);
-    test_exposed("style-float", false);
-    test_exposed("setProperty", v >= 9);
-    test_exposed("removeProperty", v >= 9);
-    test_exposed("background-clip", v >= 9);
-    test_exposed("msTransform", v >= 9);
-    test_exposed("transform", v >= 10);
+    test_exposed("removeAttribute", true, v >= 9, false);
+    test_exposed("setExpression", v < 9, false, false);
+    test_exposed("zIndex", true, true, true);
+    test_exposed("z-index", true, true, true, true);
+    test_exposed("filter", true, true, v >= 10);
+    test_exposed("pixelTop", true, false, false);
+    test_exposed("float", true, true, true, true);
+    test_exposed("css-float", false, false, false);
+    test_exposed("style-float", false, false, false);
+    test_exposed("setProperty", v >= 9, v >= 9, v >= 9);
+    test_exposed("removeProperty", v >= 9, v >= 9, v >= 9);
+    test_exposed("background-clip", v >= 9, v >= 9, v >= 9, true);
+    test_exposed("msTransform", v >= 9, v >= 9, v >= 9);
+    test_exposed("msTransition", v >= 10, v >= 10, v >= 10);
+    test_exposed("transform", v >= 10, v >= 10, v >= 10);
+    test_exposed("transition", v >= 10, v >= 10, v >= 10);
 
-    style = document.body.currentStyle;
+    if(Object.getOwnPropertyNames) {
+        r = Object.getOwnPropertyNames(style);
+        ok(!r.length, "style has own props: " + r);
+        r = Object.getOwnPropertyNames(currentStyle);
+        ok(!r.length, "currentStyle has own props: " + r);
+        r = Object.getOwnPropertyNames(computedStyle);
+        ok(!r.length, "computedStyle has own props: " + r);
 
-    test_exposed("zIndex", true);
-    test_exposed("z-index", true);
-    test_exposed("filter", true);
-    test_exposed("pixelTop", false);
-    test_exposed("float", true);
-    test_exposed("css-float", false);
-    test_exposed("style-float", false);
-    test_exposed("setProperty", v >= 9);
-    test_exposed("removeProperty", v >= 9);
-    test_exposed("background-clip", v >= 9);
-    test_exposed("transform", v >= 10);
+        r = Object.getOwnPropertyDescriptor(style, "z-index");
+        ok(r.value === "", "style z-index value = " + r.value);
+        style.zIndex = 1;
+        r = Object.getOwnPropertyDescriptor(style, "z-index");
+        ok(r.value === 1, "style z-index value after set = " + r.value);
 
-    if(window.getComputedStyle) {
-        style = window.getComputedStyle(document.body);
+        Object.defineProperty(style, "z-index", { get: function() { return "42"; }, configurable: true });
+        todo_wine.
+        ok(style.zIndex === 1, "style zIndex after defineProperty = " + style.zIndex);
+        todo_wine.
+        ok(style["z-index"] === "42", "style z-index after defineProperty = " + style["z-index"]);
 
-        test_exposed("removeAttribute", false);
-        test_exposed("zIndex", true);
-        test_exposed("z-index", true);
-        test_exposed("pixelTop", false);
-        test_exposed("float", true);
-        test_exposed("css-float", false);
-        test_exposed("style-float", false);
-        test_exposed("setProperty", v >= 9);
-        test_exposed("removeProperty", v >= 9);
-        test_exposed("background-clip", v >= 9);
-        test_exposed("transform", v >= 10);
+        r = Object.getOwnPropertyDescriptor(style, "z-index");
+        todo_wine.
+        ok(!("value" in r), "style z-index after defineProperty still has value");
+        todo_wine.
+        ok(typeof(r.get) === "function", "style z-index after defineProperty not a getter");
+
+        r = delete style["z-index"];
+        ok(r === true, "delete style z-index returned " + r);
+        ok(style["z-index"] === 1, "style z-index after delete = " + style["z-index"]);
+
+        r = Object.getOwnPropertyNames(style);
+        todo_wine.
+        ok(!r.length, "style has own props after delete: " + r);
     }
 });
 
@@ -811,6 +1066,16 @@ sync_test("eval", function() {
     context = {};
     (function(eval) { eval(code); })(function() { context.barfoo = 4321; });
     ok(context.barfoo === 4321, "context.barfoo = " + context.barfoo);
+
+    (0,eval)("var foobar = 'wine';");
+    if(v < 9) {
+        ok(!("foobar" in window), "foobar in window");
+        ok(foobar === "wine", "foobar = " + foobar);
+    }else {
+        ok("foobar" in window, "foobar not in window");
+        ok(window.foobar === "wine", "foobar = " + window.foobar);
+    }
+    delete foobar;
 });
 
 sync_test("for..in", function() {
@@ -847,18 +1112,33 @@ sync_test("for..in", function() {
 });
 
 sync_test("function caller", function() {
+    var v = document.documentMode;
+
     ok(Function.prototype.hasOwnProperty("caller"), "caller not prop of Function.prototype");
+    if(v < 9)
+        ok(arguments.hasOwnProperty("caller"), "caller not prop of arguments");
+    else
+        ok(!("caller" in arguments), "caller in arguments");
 
     function test_caller(expected_caller, stop) {
         ok(test_caller.caller === expected_caller, "caller = " + test_caller.caller);
+        if(v < 9)
+            ok(arguments.caller === expected_caller.arguments, "arguments.caller = " + arguments.caller);
+
         if(stop) return;
         function nested() {
             ok(nested.caller === test_caller, "nested caller = " + nested.caller);
+            if(v < 9)
+                ok(arguments.caller === test_caller.arguments, "nested arguments.caller = " + arguments.caller);
             test_caller(nested, true);
             ok(test_caller.caller === expected_caller, "caller within nested = " + test_caller.caller);
+            if(v < 9)
+                ok(test_caller.arguments.caller === expected_caller.arguments, "arguments.caller within nested = " + test_caller.arguments.caller);
         }
         nested();
         ok(test_caller.caller === expected_caller, "caller after nested = " + test_caller.caller);
+        if(v < 9)
+            ok(arguments.caller === expected_caller.arguments, "arguments.caller after nested = " + arguments.caller);
     }
     ok(test_caller.hasOwnProperty("caller"), "caller not prop of test_caller");
     ok(test_caller.caller === null, "test_caller.caller = " + test_caller.caller);
@@ -950,6 +1230,29 @@ sync_test("elem_by_id", function() {
         ok(v < 9 && e.number === 0xa01b6 - 0x80000000, "Setting document.testid threw = " + e.number);
     }
 
+    window.testid2 = 1;
+    document.testid2 = 2;
+    document.body.innerHTML = '<form id="testid2" name="testname"></form>';
+    ok(window.testid2 == 1, "window.testid2 = " + window.testid2);
+    id_elem = document.body.firstChild;
+    ok(document.testid2 == (v < 9 ? id_elem : 2), "document.testid2 = " + document.testid2);
+    document.body.innerHTML = '';
+    ok(window.testid2 == 1, "window.testid2 = " + window.testid2);
+    ok(document.testid2 == 2, "document.testid2 = " + document.testid2 + " expected 2");
+
+    ok(document.title === "", "document.title = " + document.title);
+    document.body.innerHTML = '<form id="title" name="testname"></form>';
+    id_elem = document.body.firstChild;
+    todo_wine_if(v < 9).
+    ok(document.title === (v < 9 ? id_elem : ""), "document.title = " + document.title);
+    document.body.innerHTML = '';
+    ok(document.title === "", "document.title = " + document.title);
+
+    ok(window.closed === false, "window.closed = " + window.closed);
+    document.body.innerHTML = '<form id="closed" name="testname"></form>';
+    id_elem = document.body.firstChild;
+    ok(window.closed === false, "window.closed = " + window.closed);
+
     // these tags expose name as props, and id only if they have a name
     var tags = [ "embed", "form", "iframe", "img" ];
     for(i in tags) {
@@ -1009,6 +1312,9 @@ sync_test("doctype", function() {
     }
 
     ok(doctype.name === "html", "doctype.name = " + doctype.name);
+    ok(!("removeNode" in doctype), "removeNode found in doctype.");
+    ok(!("replaceNode" in doctype), "replaceNode found in doctype.");
+    ok(!("swapNode" in doctype), "swapNode found in doctype.");
 });
 
 async_test("iframe_doc_mode", function() {
@@ -1095,7 +1401,10 @@ async_test("script_load", function() {
 });
 
 sync_test("location", function() {
+    var v = document.documentMode;
     document.body.innerHTML = '<a name="testanchor">test</a>';
+
+    ok(location.host === "winetest.example.org" + (v < 10 ? ":80" : ""), "location.host = " + location.host);
 
     ok(location.hash === "", "initial location.hash = " + location.hash);
     location.hash = "TestAnchor";
@@ -1127,7 +1436,7 @@ sync_test("navigator", function() {
 
 sync_test("delete_prop", function() {
     var v = document.documentMode;
-    var obj = document.createElement("div"), r, obj2;
+    var obj = document.createElement("div"), r, obj2, func, prop;
 
     obj.prop1 = true;
     r = false;
@@ -1143,6 +1452,40 @@ sync_test("delete_prop", function() {
     ok(!r, "got an unexpected exception");
     ok(!("prop1" in obj), "prop1 is still in obj");
 
+    /* builtin properties don't throw any exception, but are not really deleted */
+    r = (delete obj.tagName);
+    ok(r, "delete returned " + r);
+    ok("tagName" in obj, "tagName deleted from obj");
+    ok(obj.tagName === "DIV", "tagName = " + obj.tagName);
+
+    prop = obj.id;
+    r = (delete obj.id);
+    ok(r, "delete returned " + r);
+    ok("id" in obj, "id deleted from obj");
+    ok(obj.id === prop, "id = " + obj.id);
+
+    obj.id = "1234";
+    ok(obj.id === "1234", "id after set to 1234 = " + obj.id);
+    r = (delete obj.id);
+    ok(r, "delete returned " + r);
+    ok("id" in obj, "id deleted from obj");
+    ok(obj.id === "1234", "id = " + obj.id);
+
+    /* builtin functions get reset to their original values */
+    func = function() { }
+    prop = obj.setAttribute;
+    r = (delete obj.setAttribute);
+    ok(r, "delete returned " + r);
+    ok("setAttribute" in obj, "setAttribute deleted from obj");
+    ok(obj.setAttribute === prop, "setAttribute = " + obj.setAttribute);
+
+    obj.setAttribute = func;
+    ok(obj.setAttribute === func, "setAttribute after set to func = " + obj.setAttribute);
+    r = (delete obj.setAttribute);
+    ok(r, "delete returned " + r);
+    ok("setAttribute" in obj, "setAttribute deleted from obj");
+    ok(obj.setAttribute === prop, "setAttribute = " + obj.setAttribute);
+
     /* again, this time prop1 does not exist */
     r = false;
     try {
@@ -1152,7 +1495,6 @@ sync_test("delete_prop", function() {
     }
     if(v < 9) {
         ok(r, "did not get an expected exception");
-        return;
     }else {
         ok(!r, "got an unexpected exception");
         ok(!("prop1" in obj), "prop1 is still in obj");
@@ -1162,12 +1504,6 @@ sync_test("delete_prop", function() {
     ok(r, "delete returned " + r);
     ok("className" in obj, "className deleted from obj");
     ok(obj.className === "", "className = " + obj.className);
-
-    /* builtin propertiles don't throw any exception, but are not really deleted */
-    r = (delete obj.tagName);
-    ok(r, "delete returned " + r);
-    ok("tagName" in obj, "tagName deleted from obj");
-    ok(obj.tagName === "DIV", "tagName = " + obj.tagName);
 
     obj = document.querySelectorAll("*");
     ok("0" in obj, "0 is not in obj");
@@ -1179,12 +1515,27 @@ sync_test("delete_prop", function() {
     /* test window object and its global scope handling */
     obj = window;
 
+    ok("encodeURIComponent" in obj, "encodeURIComponent not in obj");
+    try {
+        prop = window.encodeURIComponent;
+        r = (delete window.encodeURIComponent);
+        ok(v >= 9, "did not get an expect exception deleting encodeURIComponent");
+        ok(r, "delete returned " + r);
+        ok(!("encodeURIComponent" in obj), "encodeURIComponent is still in obj");
+        window.encodeURIComponent = prop;
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting encodeURIComponent");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting encodeURIComponent threw " + ex.number);
+        ok("encodeURIComponent" in obj, "encodeURIComponent is not in obj");
+    }
+
     obj.globalprop1 = true;
     ok(globalprop1, "globalprop1 = " + globalprop1);
     r = false;
     try {
         delete obj.globalprop1;
     }catch(ex) {
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting globalprop1 threw " + ex.number);
         r = true;
     }
     if(v < 9) {
@@ -1200,13 +1551,13 @@ sync_test("delete_prop", function() {
     try {
         delete obj.globalprop2;
     }catch(ex) {
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting globalprop2 threw " + ex.number);
         r = true;
     }
     if(v < 9) {
         ok(r, "did not get an expected globalprop2 exception");
     }else {
         ok(!r, "got an unexpected exception");
-        todo_wine.
         ok(!("globalprop2" in obj), "globalprop2 is still in obj");
     }
 
@@ -1216,6 +1567,7 @@ sync_test("delete_prop", function() {
     try {
         delete globalprop3;
     }catch(ex) {
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting globalprop3 threw " + ex.number);
         r = true;
     }
     if(v < 9) {
@@ -1230,8 +1582,88 @@ sync_test("delete_prop", function() {
     ok(obj.globalprop4, "globalprop4 = " + globalprop4);
     r = (delete globalprop4);
     ok(r, "delete returned " + r);
-    todo_wine.
     ok(!("globalprop4" in obj), "globalprop4 is still in obj");
+
+    globalprop5 = true;
+    ok(obj.globalprop5, "globalprop5 = " + globalprop5);
+    try {
+        r = (delete window.globalprop5);
+        ok(v >= 9, "did not get an expected exception deleting globalprop5");
+        ok(r, "delete returned " + r);
+        ok(!("globalprop5" in obj), "globalprop5 is still in obj");
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting globalprop5");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting globalprop5 threw " + ex.number);
+        ok("globalprop5" in obj, "globalprop5 is not in obj");
+    }
+
+    document.body.innerHTML = '<div id="winetest"/>';
+    ok("winetest" in obj, "winetest not in obj");
+    try {
+        r = (delete window.winetest);
+        ok(v >= 9, "did not get an expected exception deleting winetest");
+        ok(r, "delete returned " + r);
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting winetest");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting winetest threw " + ex.number);
+    }
+    ok("winetest" in obj, "winetest is not in obj");
+    document.body.innerHTML = "";
+    ok(!("winetest" in obj), "winetest is still in obj");
+
+    document.body.innerHTML = '<div id="foobar"/>';
+    ok("foobar" in obj, "foobar not in obj");
+    window.foobar = "1234";
+    ok(obj.foobar === "1234", "foobar = " + obj.foobar);
+    document.body.innerHTML = "";
+    ok("foobar" in obj, "foobar is not in obj");
+    ok(obj.foobar === "1234", "foobar = " + obj.foobar);
+    try {
+        r = (delete window.foobar);
+        ok(v >= 9, "did not get an expected exception deleting foobar");
+        ok(r, "delete returned " + r);
+        ok(!("foobar" in obj), "foobar is still in obj");
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting foobar");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting foobar threw " + ex.number);
+        ok("foobar" in obj, "foobar is not in obj");
+    }
+
+    document.body.innerHTML = '<div id="barfoo"/>';
+    ok("barfoo" in obj, "barfoo not in obj");
+    window.barfoo = "5678";
+    ok(obj.barfoo === "5678", "barfoo = " + obj.barfoo);
+    try {
+        r = (delete window.barfoo);
+        ok(v >= 9, "did not get an expected exception deleting barfoo");
+        ok(r, "delete returned " + r);
+        ok(obj.barfoo !== "5678", "barfoo is still 5678");
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting barfoo");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting barfoo threw " + ex.number);
+        ok(obj.barfoo === "5678", "barfoo = " + obj.barfoo);
+    }
+    ok("barfoo" in obj, "barfoo is not in obj");
+    document.body.innerHTML = "";
+    if(v < 9)
+        ok("barfoo" in obj, "barfoo is not in obj");
+    else
+        ok(!("barfoo" in obj), "barfoo is still in obj");
+
+    document.body.innerHTML = '<iframe id="testwine"/>';
+    ok("testwine" in obj, "testwine not in obj");
+    try {
+        r = (delete window.testwine);
+        ok(v >= 9, "did not get an expected exception deleting testwine");
+        ok(r, "delete returned " + r);
+    }catch(ex) {
+        ok(v < 9, "expected exception deleting testwine");
+        ok(ex.number === 0xa01bd - 0x80000000, "deleting testwine threw " + ex.number);
+    }
+    ok("testwine" in obj, "testwine is not in obj");
+
+    document.body.innerHTML = "";
+    ok(!("testwine" in obj), "testwine is still in obj");
 });
 
 sync_test("detached arguments", function() {
@@ -1868,7 +2300,7 @@ async_test("storage events", function() {
             return;
         }
         var s = Object.prototype.toString.call(e);
-        todo_wine.
+        todo_wine_if(e.target != window && e.target != document).
         ok(s === "[object StorageEvent]", "Object.toString = " + s);
         ok(e.key === key, "key = " + e.key + ", expected " + key);
         ok(e.oldValue === oldValue, "oldValue = " + e.oldValue + ", expected " + oldValue);
@@ -2032,11 +2464,10 @@ sync_test("elem_attr", function() {
     var func = elem.setAttribute;
     try {
         func("testattr", arr);
-        todo_wine_if(v >= 9).
         ok(v < 9, "expected exception setting testattr via func");
     }catch(ex) {
         ok(v >= 9, "did not expect exception setting testattr via func");
-        elem.setAttribute("testattr", arr);
+        func.call(elem, "testattr", arr);
     }
     r = elem.getAttribute("testattr");
     ok(r === (v < 8 ? arr : (v < 10 ? "arrval" : "42")), "testattr after setAttribute (as func) = " + r);
@@ -2145,7 +2576,6 @@ sync_test("elem_attrNS", function() {
     if(v < 9) return;  /* not available */
 
     var specialspace_ns = "http://www.mozilla.org/ns/specialspace";
-    var svg_ns = "http://www.w3.org/2000/svg";
 
     var elem = document.createElement("div"), r;
 
@@ -2421,6 +2851,36 @@ sync_test("builtins_diffs", function() {
         ok(false, "\"a\".length(): expected exception");
     }catch(e) {
         ok(e.number === 0xa138a - 0x80000000, "\"a\".length(): exception = " + e.number);
+    }
+});
+
+sync_test("style attribute", function() {
+    var r, v = document.documentMode, s = document.createElement("div").style;
+
+    s.setAttribute("background-color", "black");
+    s.foobar = "white";
+
+    r = s.getAttribute("background-color");
+    ok(r === "black", "background-color = " + r);
+    r = s.foobar;
+    ok(r === "white", "foobar prop = " + r);
+
+    r = s.removeAttribute("background-color");
+    ok(r === true, "removeAttribute(background-color) returned " + r);
+    r = s.removeAttribute("border");
+    ok(r === false, "removeAttribute(border) returned " + r);
+    r = s.removeAttribute("foobar");
+    ok(r === (v < 9 ? true : false), "removeAttribute(foobar) returned " + r);
+    r = s.removeAttribute("barfoo");
+    ok(r === false, "removeAttribute(barfoo) returned " + r);
+
+    r = s.getAttribute("background-color");
+    ok(r === "", "background-color after remove = " + r);
+    if(v < 9)
+        ok(!("foobar" in s), "foobar in style after remove");
+    else {
+        r = s.foobar;
+        ok(r === "white", "foobar prop after remove = " + r);
     }
 });
 
@@ -2919,6 +3379,32 @@ sync_test("MutationObserver", function() {
     test_exposed("takeRecords");
 });
 
+sync_test("initMessageEvent", function() {
+    var e, v = document.documentMode;
+    if(!document.createEvent)
+        return;
+    e = document.createEvent("MessageEvent");
+    ok(e.data === (v < 10 ? "" : undefined), "e.data = " + e.data);
+    ok(e.bubbles === false, "bubbles = " + e.bubbles);
+    ok(e.cancelable === false, "cancelable = " + e.cancelable);
+    ok(e.source === null, "e.source = " + e.source);
+    ok(e.origin === "", "e.origin = " + e.origin);
+
+    e.initMessageEvent("blah", true, true, 137, "wine", 1234, window);
+    ok(e.data === "137", "e.data = " + e.data);
+    ok(e.bubbles === true, "bubbles = " + e.bubbles);
+    ok(e.cancelable === true, "cancelable = " + e.cancelable);
+    ok(e.source === window, "e.source = " + e.source);
+    ok(e.origin === "wine", "e.origin = " + e.origin);
+
+    e.initMessageEvent("abcd", false, false, "testdata", "origin", 42, null);
+    ok(e.data === "testdata", "e.data = " + e.data);
+    ok(e.bubbles === false, "bubbles = " + e.bubbles);
+    ok(e.cancelable === false, "cancelable = " + e.cancelable);
+    ok(e.source === null, "e.source = " + e.source);
+    ok(e.origin === "origin", "e.origin = " + e.origin);
+});
+
 async_test("postMessage", function() {
     var v = document.documentMode;
     var onmessage_called = false;
@@ -2928,6 +3414,11 @@ async_test("postMessage", function() {
             ok(e === undefined, "e = " + e);
         else {
             ok(e.data === (v < 10 ? "10" : 10), "e.data = " + e.data);
+            ok(e.source === window, "e.source = " + e.source);
+            ok(e.origin === "http://winetest.example.org", "e.origin = " + e.origin);
+
+            e = document.createEvent("MessageEvent");
+            ok(e.data === (v < 10 ? "" : undefined), "created e.data = " + e.data);
             next_test();
         }
     }
@@ -2979,4 +3470,515 @@ async_test("postMessage", function() {
     window.postMessage(10, (v < 10 ? "*" : { toString: function() { return "*"; } }));
     ok(onmessage_called == (v < 9 ? true : false), "onmessage not called");
     if(v < 9) next_test();
+});
+
+sync_test("form", function() {
+    document.body.innerHTML = "";
+    var form = document.createElement("form");
+    document.body.appendChild(form);
+
+    form[0] = "test";
+    form.innerHTML = "<input type=\"text\" id = \"i1\" /><input type=\"text\" id = \"i2\" />";
+    ok(form.length === 2, "form.length = " + form.length);
+    ok(typeof(form[0]) === "object", "form[0] = " + form[0]);
+    ok(typeof(form[1]) === "object", "form[1] = " + form[1]);
+    form.innerHTML = "";
+    ok(form[0] === "test", "form[0] = " + form[0]);
+});
+
+function test_own_props(obj, name, props, todos, flaky) {
+    var v = document.documentMode, prop, expected = {}, enumerated = Object.getOwnPropertyNames(obj).sort();
+
+    if(flaky)
+        enumerated = enumerated.filter(function(p) { return flaky.indexOf(p) === -1; });
+    if(props) {
+        for(i = 0; i < props.length; i++) {
+            prop = props[i];
+            if(Array.isArray(prop)) {
+                if(v < prop[1] || (prop.length > 2 && v > prop[2]))
+                    continue;
+                prop = prop[0];
+            }
+            expected[prop] |= 1;
+        }
+    }
+    if(todos) {
+        for(i = 0; i < todos.length; i++) {
+            prop = todos[i];
+            if(Array.isArray(prop)) {
+                if(v < prop[1] || (prop.length > 2 && v > prop[2]))
+                    continue;
+                prop = prop[0];
+            }
+            expected[prop] |= 2;  /* 2 marks todo */
+        }
+    }
+    for(i = 0; i < enumerated.length; i++) {
+        prop = enumerated[i];
+        if(!expected.hasOwnProperty(prop))
+            ok(false, prop + " is a prop of " + name);
+        else {
+            if(expected[prop] & 1) {
+                todo_wine_if(expected[prop] & 2).
+                ok(true, prop + " not a prop of " + name);
+            }else {
+                todo_wine_if(expected[prop] & 2).
+                ok(false, prop + " is a prop of " + name);
+            }
+            delete expected[prop];
+        }
+    }
+    for(prop in expected) {
+        todo_wine_if(expected[prop] & 2).
+        ok(!(expected[prop] & 1), prop + " not a prop of " + name);
+    }
+}
+
+sync_test("prototypes", function() {
+    var v = document.documentMode;
+    if(v < 9)
+        return;
+
+    function check(obj, proto, name) {
+        var p = Object.getPrototypeOf(obj);
+        ok(p === proto, "unexpected " + name + " prototype object " + Object.prototype.toString.call(p));
+    }
+
+    check(document.implementation, DOMImplementation.prototype, "implementation");
+    check(DOMImplementation.prototype, Object.prototype, "implementation prototype");
+    check(window.navigator, Navigator.prototype, "navigator");
+    check(Navigator.prototype, Object.prototype, "navigator prototype");
+    check(document.body, HTMLBodyElement.prototype, "body element");
+    check(HTMLBodyElement.prototype, HTMLElement.prototype, "body prototype");
+    check(HTMLElement.prototype, Element.prototype, "html element prototype");
+    check(Element.prototype, Node.prototype, "element prototype");
+    check(Node.prototype, Object.prototype, "node prototype");
+    check(sessionStorage, Storage.prototype, "storage");
+    check(Storage.prototype, Object.prototype, "storage prototype");
+    if(v < 11)
+        check(document, Document.prototype, "html document");
+    else {
+        check(document, HTMLDocument.prototype, "html document");
+        check(HTMLDocument.prototype, Document.prototype, "html document prototype");
+    }
+    check(Document.prototype, Node.prototype, "document prototype");
+    check(window, Window.prototype, "window");
+    check(Window.prototype, Object.prototype, "window prototype");
+    check(new XMLHttpRequest(), XMLHttpRequest.prototype, "xhr");
+    check(XMLHttpRequest.prototype, Object.prototype, "xhr prototype");
+    check(XMLHttpRequest, Function.prototype, "xhr constructor");
+    check(document.createElement("img"), HTMLImageElement.prototype, "img elem");
+    check(HTMLImageElement.prototype, HTMLElement.prototype, "img elem prototype");
+    check(Image, Function.prototype, "Image constructor");
+    check(document.createElement("option"), HTMLOptionElement.prototype, "option elem");
+    check(HTMLOptionElement.prototype, HTMLElement.prototype, "option elem prototype");
+    check(Option, Function.prototype, "Option constructor");
+    if(v >= 11) {
+        check(new MutationObserver(function() {}), MutationObserver.prototype, "mutation observer");
+        check(MutationObserver.prototype, Object.prototype, "mutation observer prototype");
+        check(MutationObserver, Function.prototype, "mutation observer constructor");
+    }
+    check(document.createElement("a"), HTMLAnchorElement.prototype, "anchor element");
+    check(HTMLAnchorElement.prototype, HTMLElement.prototype, "anchor element prototype");
+    check(document.createElement("area"), HTMLAreaElement.prototype, "area element");
+    check(HTMLAreaElement.prototype, HTMLElement.prototype, "area element prototype");
+    check(document.createElement("form"), HTMLFormElement.prototype, "form element");
+    check(HTMLFormElement.prototype, HTMLElement.prototype, "form element prototype");
+    check(document.createElement("frame"), HTMLFrameElement.prototype, "frame element");
+    check(HTMLFrameElement.prototype, HTMLElement.prototype, "frame element prototype");
+    check(document.createElement("iframe"), HTMLIFrameElement.prototype, "iframe element");
+    check(HTMLIFrameElement.prototype, HTMLElement.prototype, "iframe element prototype");
+    check(document.createElement("title"), HTMLTitleElement.prototype, "title element");
+    check(HTMLTitleElement.prototype, HTMLElement.prototype, "title element prototype");
+    check(document.documentElement, HTMLHtmlElement.prototype, "html element");
+    check(HTMLHtmlElement.prototype, HTMLElement.prototype, "html element prototype");
+    check(document.head, HTMLHeadElement.prototype, "head element");
+    check(HTMLHeadElement.prototype, HTMLElement.prototype, "head element prototype");
+    check(document.createElement("meta"), HTMLMetaElement.prototype, "meta element");
+    check(HTMLMetaElement.prototype, HTMLElement.prototype, "meta element prototype");
+    check(document.createElement("input"), HTMLInputElement.prototype, "input element");
+    check(HTMLInputElement.prototype, HTMLElement.prototype, "input element prototype");
+    check(document.createElement("label"), HTMLLabelElement.prototype, "label element");
+    check(HTMLLabelElement.prototype, HTMLElement.prototype, "label element prototype");
+    check(document.createElement("button"), HTMLButtonElement.prototype, "button element");
+    check(HTMLButtonElement.prototype, HTMLElement.prototype, "button element prototype");
+    check(document.createElement("link"), HTMLLinkElement.prototype, "link element");
+    check(HTMLLinkElement.prototype, HTMLElement.prototype, "link element prototype");
+    check(document.createElement("object"), HTMLObjectElement.prototype, "object element");
+    check(HTMLObjectElement.prototype, HTMLElement.prototype, "object element prototype");
+    check(document.createElement("embed"), HTMLEmbedElement.prototype, "embed element");
+    check(HTMLEmbedElement.prototype, HTMLElement.prototype, "embed element prototype");
+    check(document.createElement("script"), HTMLScriptElement.prototype, "script element");
+    check(HTMLScriptElement.prototype, HTMLElement.prototype, "script element prototype");
+    check(document.createElement("select"), HTMLSelectElement.prototype, "select element");
+    check(HTMLSelectElement.prototype, HTMLElement.prototype, "select element prototype");
+    check(document.createElement("style"), HTMLStyleElement.prototype, "style element");
+    check(HTMLStyleElement.prototype, HTMLElement.prototype, "style element prototype");
+    check(document.createElement("table"), HTMLTableElement.prototype, "table element");
+    check(HTMLTableElement.prototype, HTMLElement.prototype, "table element prototype");
+    check(document.createElement("tr"), HTMLTableRowElement.prototype, "tr element");
+    check(HTMLTableRowElement.prototype, HTMLElement.prototype, "tr element prototype");
+    check(document.createElement("td"), HTMLTableDataCellElement.prototype, "td element");
+    check(HTMLTableDataCellElement.prototype, HTMLTableCellElement.prototype, "td element prototype");
+    check(HTMLTableCellElement.prototype, HTMLElement.prototype, "table cell prototype");
+    check(document.createElement("textarea"), HTMLTextAreaElement.prototype, "textarea element");
+    check(HTMLTextAreaElement.prototype, HTMLElement.prototype, "textarea element prototype");
+    check(document.createElement("test"), HTMLUnknownElement.prototype, "unknown element");
+    check(HTMLUnknownElement.prototype, HTMLElement.prototype, "unknown element prototype");
+    check(document.createElementNS(svg_ns, "svg"), SVGSVGElement.prototype, "svg:svg element");
+    check(SVGSVGElement.prototype, SVGElement.prototype, "svg:svg element prototype");
+    check(SVGElement.prototype, Element.prototype, "svg element prototype");
+    check(document.createElementNS(svg_ns, "circle"), SVGCircleElement.prototype, "svg:circle element");
+    check(SVGCircleElement.prototype, SVGElement.prototype, "svg:circle element prototype");
+    check(document.createElementNS(svg_ns, "tspan"), SVGTSpanElement.prototype, "svg:tspan element");
+    check(SVGTSpanElement.prototype, SVGTextPositioningElement.prototype, "svg:tspan element prototype");
+    check(SVGTextPositioningElement.prototype, SVGTextContentElement.prototype, "SVGTextPositioningElement prototype");
+    check(SVGTextContentElement.prototype, SVGElement.prototype, "SVGTextPositioningElement prototype");
+    check(document.doctype, DocumentType.prototype, "doctype");
+    check(DocumentType.prototype, Node.prototype, "doctype prototype");
+    check(document.createTextNode(""), Text.prototype, "text");
+    check(Text.prototype, CharacterData.prototype, "text prototype");
+    check(CharacterData.prototype, Node.prototype, "character data prototype");
+    check(window.getComputedStyle(document.body), CSSStyleDeclaration.prototype, "computed style");
+    check(CSSStyleDeclaration.prototype, Object.prototype, "CSSStyleDeclaration");
+    check(document.body.style, MSStyleCSSProperties.prototype, "style");
+    check(MSStyleCSSProperties.prototype, MSCSSProperties.prototype, "MSStyleCSSProperties");
+    check(MSCSSProperties.prototype, CSSStyleDeclaration.prototype, "MSCSSProperties");
+    check(CSSStyleDeclaration.prototype, Object.prototype, "CSSStyleDeclaration");
+    check(document.body.currentStyle, MSCurrentStyleCSSProperties.prototype, "current style");
+    check(MSCurrentStyleCSSProperties.prototype, MSCSSProperties.prototype, "MSCurrentStyleCSSProperties");
+    var e = document.createElement("style");
+    document.body.appendChild(e);
+    check(e.sheet, CSSStyleSheet.prototype, "stylesheet");
+    check(CSSStyleSheet.prototype, StyleSheet.prototype, "css stylesheet prototype");
+    check(StyleSheet.prototype, Object.prototype, "stylesheet prototype");
+    check(document.styleSheets, StyleSheetList.prototype, "stylesheets list");
+    check(StyleSheetList.prototype, Object.prototype, "stylesheets list prototype");
+    check(e.sheet.rules, MSCSSRuleList.prototype, "css rule list");
+    check(MSCSSRuleList.prototype, Object.prototype, "css rule list prototype");
+    e.sheet.insertRule("div { border: none }", 0);
+    check(e.sheet.rules[0], CSSStyleRule.prototype, "css rule");
+    check(CSSStyleRule.prototype, CSSRule.prototype, "css rule prototype");
+    check(CSSRule.prototype, Object.prototype, "css rule prototype");
+    check(document.body.getBoundingClientRect(), ClientRect.prototype, "rect");
+    check(ClientRect.prototype, Object.prototype, "rect prototype");
+    check(document.body.getClientRects(), ClientRectList.prototype, "rect list");
+    check(ClientRectList.prototype, Object.prototype, "rect list prototype");
+    if(v < 11) {
+        check(document.createEventObject(), MSEventObj.prototype, "event obj");
+        check(MSEventObj.prototype, Object.prototype, "event obj prototype");
+    }
+    check(document.createEvent("Event"), Event.prototype, "event");
+    check(Event.prototype, Object.prototype, "event prototype");
+    check(document.createEvent("UIEvent"), UIEvent.prototype, "UI event");
+    check(UIEvent.prototype, Event.prototype, "UI event prototype");
+    check(document.createEvent("MouseEvent"), MouseEvent.prototype, "mouse event");
+    check(MouseEvent.prototype, UIEvent.prototype, "mouse event prototype");
+    check(document.createEvent("KeyboardEvent"), KeyboardEvent.prototype, "keyboard event");
+    check(KeyboardEvent.prototype, UIEvent.prototype, "keyboard event prototype");
+    if(v >= 11) {
+        check(document.createEvent("PageTransitionEvent"), PageTransitionEvent.prototype, "page transition event");
+        check(PageTransitionEvent.prototype, Event.prototype, "page transition event prototype");
+    }
+    check(document.createEvent("CustomEvent"), CustomEvent.prototype, "custom event");
+    check(CustomEvent.prototype, Event.prototype, "custom event prototype");
+    check(document.createEvent("MessageEvent"), MessageEvent.prototype, "message event");
+    check(MessageEvent.prototype, Event.prototype, "message event prototype");
+    if(v >= 10) {
+        check(document.createEvent("ProgressEvent"), ProgressEvent.prototype, "progress event");
+        check(ProgressEvent.prototype, Event.prototype, "progress event prototype");
+    }
+    check(document.createEvent("StorageEvent"), StorageEvent.prototype, "storage event");
+    check(StorageEvent.prototype, Event.prototype, "storage event prototype");
+    check(screen, Screen.prototype, "screen");
+    check(Screen.prototype, Object.prototype, "screen prototype");
+    check(history, History.prototype, "history");
+    check(History.prototype, Object.prototype, "history prototype");
+    if(v >= 11 /* todo_wine */) {
+        check(navigator.plugins, PluginArray.prototype, "plugins");
+        check(PluginArray.prototype, Object.prototype, "plugins prototype");
+        check(navigator.mimeTypes, MimeTypeArray.prototype, "mimeTypes");
+        check(MimeTypeArray.prototype, Object.prototype, "mimeTypes prototype");
+    }
+    check(performance.timing, PerformanceTiming.prototype, "timing");
+    check(PerformanceTiming.prototype, Object.prototype, "timing prototype");
+    check(performance.navigation, PerformanceNavigation.prototype, "navigation");
+    check(PerformanceNavigation.prototype, Object.prototype, "navigation prototype");
+    check(performance, Performance.prototype, "performance");
+    check(Performance.prototype, Object.prototype, "performance prototype");
+    if(v < 10) {
+        check(document.namespaces, MSNamespaceInfoCollection.prototype, "namespaces");
+        check(MSNamespaceInfoCollection.prototype, Object.prototype, "namespaces prototype");
+    }else {
+        ok(!("MSNamespaceInfoCollection" in window), "MSNamespaceInfoCollection found in window");
+    }
+    if(v >= 10) {
+        check(console, Console.prototype, "console");
+        check(Console.prototype, Object.prototype, "console prototype");
+    }else {
+        ok(!("Console" in window), "Console found in window");
+    }
+    if(v >= 10) {
+        check(window.matchMedia("(hover:hover)"), MediaQueryList.prototype, "media query");
+        check(MediaQueryList.prototype, Object.prototype, "media query prototype");
+    }else {
+        ok(!("MediaQueryList" in window), "MediaQueryList found in window");
+    }
+    if(v >= 10) {
+        check(document.body.classList, DOMTokenList.prototype, "token list");
+        check(DOMTokenList.prototype, Object.prototype, "token list prototype");
+    }else {
+        ok(!("DOMTokenList" in window), "DOMTokenList found in window");
+    }
+    check(document.body.attributes, NamedNodeMap.prototype, "node map");
+    check(NamedNodeMap.prototype, Object.prototype, "node map prototype");
+    check(document.getElementsByTagName("body"), HTMLCollection.prototype, "elem collection");
+    check(HTMLCollection.prototype, Object.prototype, "elem collection prototype");
+    check(document.body.childNodes, NodeList.prototype, "node list");
+    check(NodeList.prototype, Object.prototype, "node list prototype");
+    check(document.body.createTextRange(), TextRange.prototype, "text range");
+    check(TextRange.prototype, Object.prototype, "text range prototype");
+    check(Range.prototype, Object.prototype, "range prototype");
+    if(v < 11) {
+        check(document.selection, MSSelection.prototype, "selection");
+        check(MSSelection.prototype, Object.prototype, "selection prototype");
+    }else {
+        ok(!("MSSelection" in window), "MSSelection found in window");
+    }
+    check(document.createComment(""), Comment.prototype, "comment");
+    check(Comment.prototype, CharacterData.prototype, "comment prototype");
+    check(document.createAttribute("test"), Attr.prototype, "attr");
+    check(Attr.prototype, Node.prototype, "attr prototype");
+    check(document.createDocumentFragment(), DocumentFragment.prototype, "fragment");
+    check(DocumentFragment.prototype, Node.prototype, "fragment prototype");
+});
+
+sync_test("prototype props", function() {
+    var v = document.documentMode;
+    if(v < 9)
+        return;
+
+    function check(constr, props, todos, flaky) {
+        var name = Object.prototype.toString.call(constr).slice(8, -1) + ".prototype";
+        ok(constr.prototype.constructor === constr, name + "'s constructor not original constructor");
+
+        props.push("constructor");
+        test_own_props(constr.prototype, name, props, todos, flaky);
+    }
+
+    check(CharacterData, [ "appendData", "data", "deleteData", "insertData", "length", "replaceData", "substringData" ]);
+    check(Comment, [ "text" ]);
+    check(CSSStyleDeclaration, [
+        ["alignContent",11], ["alignItems",11], ["alignSelf",11], "alignmentBaseline", ["animation",10], ["animationDelay",10],
+        ["animationDirection",10], ["animationDuration",10], ["animationFillMode",10], ["animationIterationCount",10], ["animationName",10],
+        ["animationPlayState",10], ["animationTimingFunction",10], ["backfaceVisibility",10], "background", "backgroundAttachment",
+        "backgroundClip", "backgroundColor", "backgroundImage", "backgroundOrigin", "backgroundPosition", "backgroundRepeat", "backgroundSize",
+        "baselineShift", "border", "borderBottom", "borderBottomColor", "borderBottomLeftRadius", "borderBottomRightRadius", "borderBottomStyle",
+        "borderBottomWidth", "borderCollapse", "borderColor", ["borderImage",11], ["borderImageOutset",11], ["borderImageRepeat",11],
+        ["borderImageSlice",11], ["borderImageSource",11], ["borderImageWidth",11], "borderLeft", "borderLeftColor", "borderLeftStyle",
+        "borderLeftWidth", "borderRadius", "borderRight", "borderRightColor", "borderRightStyle", "borderRightWidth", "borderSpacing",
+        "borderStyle", "borderTop", "borderTopColor", "borderTopLeftRadius", "borderTopRightRadius", "borderTopStyle", "borderTopWidth",
+        "borderWidth", "bottom", "boxShadow", "boxSizing", ["breakAfter",10], ["breakBefore",10], ["breakInside",10], "captionSide", "clear",
+        "clip", "clipPath", "clipRule", "color", ["colorInterpolationFilters",10], ["columnCount",10], ["columnFill",10], ["columnGap",10],
+        ["columnRule",10], ["columnRuleColor",10], ["columnRuleStyle",10], ["columnRuleWidth",10], ["columnSpan",10], ["columnWidth",10],
+        ["columns",10], "content", "counterIncrement", "counterReset", "cssFloat", "cssText", "cursor", "direction", "display", "dominantBaseline",
+        "emptyCells", ["enableBackground",10], "fill", "fillOpacity", "fillRule", ["filter",10], ["flex",11], ["flexBasis",11], ["flexDirection",11],
+        ["flexFlow",11], ["flexGrow",11], ["flexShrink",11], ["flexWrap",11], ["floodColor",10], ["floodOpacity",10], "font", "fontFamily",
+        ["fontFeatureSettings",10], "fontSize", "fontSizeAdjust", "fontStretch", "fontStyle", "fontVariant", "fontWeight", "getPropertyPriority",
+        "getPropertyValue", "glyphOrientationHorizontal", "glyphOrientationVertical", "height", "item", ["justifyContent",11], "kerning", "left",
+        "length", "letterSpacing", ["lightingColor",10], "lineHeight", "listStyle", "listStyleImage", "listStylePosition", "listStyleType", "margin",
+        "marginBottom", "marginLeft", "marginRight", "marginTop", "marker", "markerEnd", "markerMid", "markerStart", "mask", "maxHeight", "maxWidth",
+        "minHeight", "minWidth", ["msAnimation",10], ["msAnimationDelay",10], ["msAnimationDirection",10], ["msAnimationDuration",10],
+        ["msAnimationFillMode",10], ["msAnimationIterationCount",10], ["msAnimationName",10], ["msAnimationPlayState",10], ["msAnimationTimingFunction",10],
+        ["msBackfaceVisibility",10], ["msContentZoomChaining",10], ["msContentZoomLimit",10], ["msContentZoomLimitMax",10], ["msContentZoomLimitMin",10],
+        ["msContentZoomSnap",10], ["msContentZoomSnapPoints",10], ["msContentZoomSnapType",10], ["msContentZooming",10], ["msFlex",10], ["msFlexAlign",10],
+        ["msFlexDirection",10], ["msFlexFlow",10], ["msFlexItemAlign",10], ["msFlexLinePack",10], ["msFlexNegative",10], ["msFlexOrder",10],
+        ["msFlexPack",10], ["msFlexPositive",10], ["msFlexPreferredSize",10], ["msFlexWrap",10], ["msFlowFrom",10], ["msFlowInto",10],
+        ["msFontFeatureSettings",10], ["msGridColumn",10], ["msGridColumnAlign",10], ["msGridColumnSpan",10], ["msGridColumns",10], ["msGridRow",10],
+        ["msGridRowAlign",10], ["msGridRowSpan",10], ["msGridRows",10], ["msHighContrastAdjust",10], ["msHyphenateLimitChars",10],
+        ["msHyphenateLimitLines",10], ["msHyphenateLimitZone",10], ["msHyphens",10], ["msImeAlign",11], ["msOverflowStyle",10], ["msPerspective",10],
+        ["msPerspectiveOrigin",10], ["msScrollChaining",10], ["msScrollLimit",10], ["msScrollLimitXMax",10], ["msScrollLimitXMin",10],
+        ["msScrollLimitYMax",10], ["msScrollLimitYMin",10], ["msScrollRails",10], ["msScrollSnapPointsX",10], ["msScrollSnapPointsY",10],
+        ["msScrollSnapType",10], ["msScrollSnapX",10], ["msScrollSnapY",10], ["msScrollTranslation",10], ["msTextCombineHorizontal",11],
+        ["msTextSizeAdjust",11], ["msTouchAction",10], ["msTouchSelect",10], "msTransform", "msTransformOrigin", ["msTransformStyle",10], ["msTransition",10],
+        ["msTransitionDelay",10], ["msTransitionDuration",10], ["msTransitionProperty",10], ["msTransitionTimingFunction",10], ["msUserSelect",10],
+        ["msWrapFlow",10], ["msWrapMargin",10], ["msWrapThrough",10], "opacity", ["order",11], "orphans", "outline", "outlineColor", "outlineStyle",
+        "outlineWidth", "overflow", "overflowX", "overflowY", "padding", "paddingBottom", "paddingLeft", "paddingRight", "paddingTop", "pageBreakAfter",
+        "pageBreakBefore", "pageBreakInside", "parentRule", ["perspective",10], ["perspectiveOrigin",10], "pointerEvents", "position", "quotes",
+        "removeProperty", "right", "rubyAlign", "rubyOverhang", "rubyPosition", "setProperty", "stopColor", "stopOpacity", "stroke", "strokeDasharray",
+        "strokeDashoffset", "strokeLinecap", "strokeLinejoin", "strokeMiterlimit", "strokeOpacity", "strokeWidth", "tableLayout", "textAlign", "textAlignLast",
+        "textAnchor", "textDecoration", "textIndent", "textJustify", "textOverflow", ["textShadow",10], "textTransform", "textUnderlinePosition", "top",
+        ["touchAction",11], ["transform",10], ["transformOrigin",10], ["transformStyle",10], ["transition",10], ["transitionDelay",10], ["transitionDuration",10],
+        ["transitionProperty",10], ["transitionTimingFunction",10], "unicodeBidi", "verticalAlign", "visibility", "whiteSpace", "widows", "width", "wordBreak",
+        "wordSpacing", "wordWrap", "zIndex"
+    ], [
+        ["alignContent",11], ["alignItems",11], ["alignSelf",11], ["borderImage",11], ["borderImageOutset",11], ["borderImageRepeat",11], ["borderImageSlice",11],
+        ["borderImageSource",11], ["borderImageWidth",11], ["flex",11], ["flexBasis",11], ["flexDirection",11], ["flexFlow",11], ["flexGrow",11], ["flexShrink",11],
+        ["flexWrap",11], ["justifyContent",11], ["msImeAlign",11], ["msTextCombineHorizontal",11], ["msTextSizeAdjust",11], ["order",11], ["touchAction",11]
+    ]);
+    check(CSSStyleSheet, [
+        "addImport", "addPageRule", "addRule", "cssRules", "cssText", "deleteRule", "href", "id", "imports", "insertRule",
+        "isAlternate", "isPrefAlternate", "ownerRule", "owningElement", "pages", "readOnly", "removeImport", "removeRule", "rules"
+    ], [ "addPageRule", "href", "isAlternate", "isPrefAlternate", "pages" ]);
+    check(CSSStyleRule, [ "readOnly", "selectorText", "style" ]);
+    check(CustomEvent, [ "detail", "initCustomEvent" ]);
+    check(Document, [
+        "Script", "URL", "URLUnencoded", "activeElement", "adoptNode", "alinkColor", "all", "anchors", "applets", ["attachEvent",9,10],
+        "bgColor", "body", ["captureEvents",11], "characterSet", "charset", ["clear",10], "close", "compatMode", "compatible", "cookie",
+        "createAttribute", "createAttributeNS", "createCDATASection", "createComment", "createDocumentFragment", "createElement",
+        "createElementNS", "createEvent", ["createEventObject",9,10], "createNodeIterator", "createProcessingInstruction", "createRange",
+        ["createStyleSheet",9,10], "createTextNode", "createTreeWalker", "defaultCharset", "defaultView", "designMode",
+        ["detachEvent",9,10], "dir", "doctype", "documentElement", "documentMode", "domain", "elementFromPoint", "embeds", "execCommand",
+        "execCommandShowHelp", "fgColor", "fileCreatedDate", "fileModifiedDate", ["fileSize",9,10], "fileUpdatedDate", ["fireEvent",9,10],
+        "focus", "forms", "frames", "getElementById", "getElementsByClassName", "getElementsByName", "getElementsByTagName",
+        "getElementsByTagNameNS", "getSelection", "hasFocus", "head", ["hidden",10], "images", "implementation", "importNode",
+        "inputEncoding", "lastModified", "linkColor", "links", "location", "media", "mimeType", ["msCSSOMElementFloatMetrics",10],
+        "msCapsLockWarningOff", ["msElementsFromPoint",10], ["msElementsFromRect",10], ["msExitFullscreen",11], ["msFullscreenElement",11],
+        ["msFullscreenEnabled",11], ["msHidden",10], ["msVisibilityState",10], "nameProp", ["namespaces",9,9], "onabort", "onactivate",
+        ["onafterupdate",9,10], "onbeforeactivate", "onbeforedeactivate", ["onbeforeeditfocus",9,10], ["onbeforeupdate",9,10], "onblur",
+        "oncanplay", "oncanplaythrough", ["oncellchange",9,10], "onchange", "onclick", "oncontextmenu", ["oncontrolselect",9,10],
+        ["ondataavailable",9,10], ["ondatasetchanged",9,10], ["ondatasetcomplete",9,10], "ondblclick", "ondeactivate", "ondrag", "ondragend",
+        "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop", "ondurationchange", "onemptied", "onended", "onerror",
+        ["onerrorupdate",9,10], "onfocus", "onfocusin", "onfocusout", "onhelp", "oninput", "onkeydown", "onkeypress", "onkeyup", "onload",
+        "onloadeddata", "onloadedmetadata", "onloadstart", "onmousedown", "onmousemove", "onmouseout", "onmouseover", "onmouseup",
+        "onmousewheel", ["onmscontentzoom",10], ["onmsfullscreenchange",11], ["onmsfullscreenerror",11], ["onmsgesturechange",10],
+        ["onmsgesturedoubletap",10], ["onmsgestureend",10], ["onmsgesturehold",10], ["onmsgesturestart",10], ["onmsgesturetap",10],
+        ["onmsinertiastart",10], ["onmsmanipulationstatechanged",10], ["onmspointercancel",10], ["onmspointerdown",10],
+        ["onmspointerenter",11], ["onmspointerhover",10,10,v == 10], ["onmspointerleave",11], ["onmspointermove",10], ["onmspointerout",10],
+        ["onmspointerover",10], ["onmspointerup",10], "onmssitemodejumplistitemremoved", "onmsthumbnailclick", "onpause", "onplay",
+        "onplaying", ["onpointercancel",11], ["onpointerdown",11], ["onpointerenter",11], ["onpointerleave",11], ["onpointermove",11],
+        ["onpointerout",11], ["onpointerover",11], ["onpointerup",11], "onprogress", ["onpropertychange",9,10], "onratechange",
+        "onreadystatechange", "onreset", ["onrowenter",9,10], ["onrowexit",9,10], ["onrowsdelete",9,10], ["onrowsinserted",9,10], "onscroll",
+        "onseeked", "onseeking", "onselect", "onselectionchange", "onselectstart", "onstalled", "onstop", "onstoragecommit", "onsubmit",
+        "onsuspend", "ontimeupdate", "onvolumechange", "onwaiting", "open", "parentWindow", "plugins", "protocol", "queryCommandEnabled",
+        "queryCommandIndeterm", "queryCommandState", "queryCommandSupported", "queryCommandText", "queryCommandValue", "querySelector",
+        "querySelectorAll", "readyState", "referrer", "releaseCapture", ["releaseEvents",11], "removeNode", "replaceNode", "rootElement",
+        "scripts", "security", ["selection",9,10], "styleSheets", "swapNode", "title", "uniqueID", "updateSettings", ["visibilityState",10],
+        "vlinkColor", "write", "writeln", "xmlEncoding", "xmlStandalone", "xmlVersion"
+    ], [
+        ["captureEvents",11], "createNodeIterator", "createRange", "createTreeWalker", ["hidden",10], "msCapsLockWarningOff",
+        ["msCSSOMElementFloatMetrics",10], ["msElementsFromPoint",10], ["msElementsFromRect",10], ["msExitFullscreen",11],
+        ["msFullscreenElement",11], ["msFullscreenEnabled",11], ["msHidden",10], ["msVisibilityState",10], ["onmscontentzoom",10],
+        ["onmsfullscreenchange",11], ["onmsfullscreenerror",11], ["onmsgesturechange",10], ["onmsgesturedoubletap",10], ["onmsgestureend",10],
+        ["onmsgesturehold",10], ["onmsgesturestart",10], ["onmsgesturetap",10], ["onmsinertiastart",10], ["onmsmanipulationstatechanged",10],
+        ["onmspointercancel",10], ["onmspointerdown",10], ["onmspointerenter",11], ["onmspointerhover",10,10], ["onmspointerleave",11],
+        ["onmspointermove",10], ["onmspointerout",10], ["onmspointerover",10], ["onmspointerup",10], ["onpointercancel",11], ["onpointerdown",11],
+        ["onpointerenter",11], ["onpointerleave",11], ["onpointermove",11], ["onpointerout",11], ["onpointerover",11], ["onpointerup",11],
+        ["releaseEvents",11], "rootElement", ["visibilityState",10]
+    ]);
+    check(DocumentFragment, [ ["attachEvent",9,10], ["detachEvent",9,10], "querySelector", "querySelectorAll", "removeNode", "replaceNode", "swapNode" ]);
+    check(DocumentType, [ "entities", "internalSubset", "name", "notations", "publicId", "systemId" ]);
+    check(Element, [
+        "childElementCount", "clientHeight", "clientLeft", "clientTop", "clientWidth", ["fireEvent",9,10], "firstElementChild",
+        "getAttribute", "getAttributeNS", "getAttributeNode", "getAttributeNodeNS", "getBoundingClientRect", "getClientRects",
+        "getElementsByTagName", "getElementsByTagNameNS", "hasAttribute", "hasAttributeNS", "lastElementChild",
+        ["msContentZoomFactor",10], ["msGetRegionContent",10], ["msGetUntransformedBounds",11], "msMatchesSelector",
+        ["msRegionOverflow",10], ["msReleasePointerCapture",10], ["msRequestFullscreen",11], ["msSetPointerCapture",10],
+        ["msZoomTo",11], "nextElementSibling", ["ongotpointercapture",11], ["onlostpointercapture",11], ["onmsgesturechange",10],
+        ["onmsgesturedoubletap",10], ["onmsgestureend",10], ["onmsgesturehold",10], ["onmsgesturestart",10], ["onmsgesturetap",10],
+        ["onmsgotpointercapture",10], ["onmsinertiastart",10], ["onmslostpointercapture",10], ["onmspointercancel",10],
+        ["onmspointerdown",10], ["onmspointerenter",11], ["onmspointerhover",10,10], ["onmspointerleave",11], ["onmspointermove",10],
+        ["onmspointerout",10], ["onmspointerover",10], ["onmspointerup",10], ["onpointercancel",11], ["onpointerdown",11],
+        ["onpointerenter",11], ["onpointerleave",11], ["onpointermove",11], ["onpointerout",11], ["onpointerover",11],
+        ["onpointerup",11], "previousElementSibling", "querySelector", "querySelectorAll", ["releasePointerCapture",11],
+        "removeAttribute", "removeAttributeNS", "removeAttributeNode", "scrollHeight", "scrollLeft", "scrollTop", "scrollWidth",
+        "setAttribute", "setAttributeNS", "setAttributeNode", "setAttributeNodeNS", ["setPointerCapture",11], "tagName"
+    ], [
+        ["msContentZoomFactor",10], ["msGetRegionContent",10], ["msGetUntransformedBounds",11], ["msRegionOverflow",10],
+        ["msRequestFullscreen",11], ["msZoomTo",11], ["ongotpointercapture",11], ["onlostpointercapture",11],
+        ["onmspointerenter",11], ["onmspointerleave",11], ["onpointercancel",11], ["onpointerdown",11], ["onpointerenter",11],
+        ["onpointerleave",11], ["onpointermove",11], ["onpointerout",11], ["onpointerover",11], ["onpointerup",11],
+        ["releasePointerCapture",11], ["setPointerCapture",11]
+    ]);
+    check(Event, [
+        "AT_TARGET", "BUBBLING_PHASE", "CAPTURING_PHASE", "bubbles", "cancelBubble", "cancelable", "currentTarget",
+        "defaultPrevented", "eventPhase", "initEvent", "isTrusted", "preventDefault", "srcElement",
+        "stopImmediatePropagation", "stopPropagation", "target", "timeStamp", "type"
+    ], [ "AT_TARGET", "BUBBLING_PHASE", "CAPTURING_PHASE" ]);
+    if(v >= 11)
+        check(HTMLDocument, []);
+    check(HTMLElement, [
+        "accessKey", ["addBehavior",9,10], ["addFilter",9,9], ["all",9,10], "applyElement", ["attachEvent",9,10], ["behaviorUrns",9,10], "blur",
+        "canHaveChildren", "canHaveHTML", "children", ["classList",10], "className", "clearAttributes", "click", "componentFromPoint", "contains",
+        "contentEditable", "createControlRange", "currentStyle", ["dataset",11], ["detachEvent",9,10], "dir", "disabled", ["doScroll",9,10],
+        ["document",9,9], "dragDrop", ["draggable",10], ["filters",9,9], "focus", "getAdjacentText", "getElementsByClassName", ["hidden",11],
+        "hideFocus", "id", "innerHTML", "innerText", "insertAdjacentElement", "insertAdjacentHTML", "insertAdjacentText", "isContentEditable",
+        "isDisabled", "isMultiLine", "isTextEdit", "lang", "language", "mergeAttributes", ["msGetInputContext",11], "offsetHeight", "offsetLeft",
+        "offsetParent", "offsetTop", "offsetWidth", "onabort", "onactivate", ["onafterupdate",9,10], "onbeforeactivate", "onbeforecopy",
+        "onbeforecut", "onbeforedeactivate", ["onbeforeeditfocus",9,10], "onbeforepaste", ["onbeforeupdate",9,10], "onblur", "oncanplay",
+        "oncanplaythrough", ["oncellchange",9,10], "onchange", "onclick", "oncontextmenu", ["oncontrolselect",9,10], "oncopy", ["oncuechange",10],
+        "oncut", ["ondataavailable",9,10], ["ondatasetchanged",9,10], ["ondatasetcomplete",9,10], "ondblclick", "ondeactivate", "ondrag",
+        "ondragend", "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop", "ondurationchange", "onemptied", "onended", "onerror",
+        ["onerrorupdate",9,10], ["onfilterchange",9,10], "onfocus", "onfocusin", "onfocusout", "onhelp", "oninput", "onkeydown", "onkeypress",
+        "onkeyup", ["onlayoutcomplete",9,10], "onload", "onloadeddata", "onloadedmetadata", "onloadstart", ["onlosecapture",9,10],
+        "onmousedown", "onmouseenter", "onmouseleave", "onmousemove", "onmouseout", "onmouseover", "onmouseup", "onmousewheel", ["onmove",9,10],
+        ["onmoveend",9,10], ["onmovestart",9,10], ["onmscontentzoom",10], ["onmsmanipulationstatechanged",10], "onpaste", "onpause", "onplay",
+        "onplaying", "onprogress", ["onpropertychange",9,10], "onratechange", ["onreadystatechange",9,10], "onreset", ["onresize",9,10],
+        ["onresizeend",9,10], ["onresizestart",9,10], ["onrowenter",9,10], ["onrowexit",9,10], ["onrowsdelete",9,10], ["onrowsinserted",9,10],
+        "onscroll", "onseeked", "onseeking", "onselect", "onselectstart", "onstalled", "onsubmit", "onsuspend", "ontimeupdate", "onvolumechange",
+        "onwaiting", "outerHTML", "outerText", "parentElement", "parentTextEdit", ["readyState",9,10], "recordNumber", "releaseCapture",
+        ["removeBehavior",9,10], ["removeFilter",9,9], "removeNode", "replaceAdjacentText", "replaceNode", "runtimeStyle", ["scopeName",9,9],
+        "scrollIntoView", "setActive", "setCapture", "sourceIndex", ["spellcheck",10], "style", "swapNode", "tabIndex", ["tagUrn",9,9], "title",
+        "uniqueID", "uniqueNumber"
+    ], [ ["dataset",11], ["draggable",10], ["hidden",11], ["msGetInputContext",11], ["onmscontentzoom",10] ]);
+    check(HTMLTableCellElement, [
+        "abbr", "align", "axis", "background", "bgColor", "borderColor", "borderColorDark", "borderColorLight",
+        "cellIndex", "ch", "chOff", "colSpan", "headers", "height", "noWrap", "rowSpan", "scope", "vAlign", "width"
+    ], [ "abbr", "axis", "ch", "chOff", "headers", "scope" ]);
+    check(HTMLTableDataCellElement, []);
+    check(HTMLUnknownElement, [ "namedRecordset", "recordset" ]);
+    check(KeyboardEvent, [
+        "DOM_KEY_LOCATION_JOYSTICK", "DOM_KEY_LOCATION_LEFT", "DOM_KEY_LOCATION_MOBILE",
+        "DOM_KEY_LOCATION_NUMPAD", "DOM_KEY_LOCATION_RIGHT", "DOM_KEY_LOCATION_STANDARD",
+        "altKey", "char", "charCode", "ctrlKey", "getModifierState", "initKeyboardEvent",
+        "key", "keyCode", "locale", "location", "metaKey", "repeat", "shiftKey", "which"
+    ], [
+        "DOM_KEY_LOCATION_JOYSTICK", "DOM_KEY_LOCATION_LEFT", "DOM_KEY_LOCATION_MOBILE",
+        "DOM_KEY_LOCATION_NUMPAD", "DOM_KEY_LOCATION_RIGHT", "DOM_KEY_LOCATION_STANDARD"
+    ]);
+    check(MessageEvent, [ "data", "initMessageEvent", "origin", ["ports",10], "source" ], [ ["ports",10] ]);
+    check(MouseEvent, [
+        "altKey", "button", "buttons", "clientX", "clientY", "ctrlKey", "fromElement", "getModifierState",
+        "initMouseEvent", "layerX", "layerY", "metaKey", "offsetX", "offsetY", "pageX", "pageY", "relatedTarget",
+        "screenX", "screenY", "shiftKey", "toElement", "which", "x", "y"
+    ]);
+    check(MSCSSProperties, [
+        "accelerator", "backgroundPositionX", "backgroundPositionY", ["behavior",9,10], ["filter",9,9], "getAttribute",
+        "imeMode", "layoutFlow", "layoutGrid", "layoutGridChar", "layoutGridLine", "layoutGridMode", "layoutGridType",
+        "lineBreak", "msBlockProgression", "msInterpolationMode", "removeAttribute", "scrollbar3dLightColor",
+        "scrollbarArrowColor", "scrollbarBaseColor", "scrollbarDarkShadowColor", "scrollbarFaceColor",
+        "scrollbarHighlightColor", "scrollbarShadowColor", "scrollbarTrackColor", "setAttribute", "styleFloat",
+        "textAutospace", "textJustifyTrim", "textKashida", "textKashidaSpace", "writingMode", "zoom"
+    ]);
+    check(MSCurrentStyleCSSProperties, [ "blockDirection", "clipBottom", "clipLeft", "clipRight", "clipTop", "hasLayout" ]);
+    check(MSStyleCSSProperties, [
+        "pixelBottom", "pixelHeight", "pixelLeft", "pixelRight", "pixelTop", "pixelWidth", "posBottom",
+        "posHeight", "posLeft", "posRight", "posTop", "posWidth", "textDecorationBlink", "textDecorationLineThrough",
+        "textDecorationNone", "textDecorationOverline", "textDecorationUnderline"
+    ]);
+    check(Node, [
+        "ATTRIBUTE_NODE", "CDATA_SECTION_NODE", "COMMENT_NODE", "DOCUMENT_FRAGMENT_NODE",  "DOCUMENT_NODE",
+        "DOCUMENT_POSITION_CONTAINED_BY", "DOCUMENT_POSITION_CONTAINS", "DOCUMENT_POSITION_DISCONNECTED",
+        "DOCUMENT_POSITION_FOLLOWING", "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC", "DOCUMENT_POSITION_PRECEDING",
+        "DOCUMENT_TYPE_NODE", "ELEMENT_NODE", "ENTITY_NODE", "ENTITY_REFERENCE_NODE", "NOTATION_NODE",
+        "PROCESSING_INSTRUCTION_NODE", "TEXT_NODE", "addEventListener", "appendChild", "attributes", "childNodes", "cloneNode",
+        "compareDocumentPosition", "dispatchEvent", "firstChild", "hasAttributes", "hasChildNodes", "insertBefore",
+        "isDefaultNamespace", "isEqualNode", "isSameNode", "isSupported", "lastChild", "localName", "lookupNamespaceURI",
+        "lookupPrefix", "namespaceURI", "nextSibling", "nodeName", "nodeType", "nodeValue", "normalize", "ownerDocument",
+        "parentNode", "prefix", "previousSibling", "removeChild", "removeEventListener", "replaceChild", "textContent"
+    ], [
+        "ATTRIBUTE_NODE", "CDATA_SECTION_NODE", "COMMENT_NODE", "DOCUMENT_FRAGMENT_NODE",  "DOCUMENT_NODE",
+        "DOCUMENT_POSITION_CONTAINED_BY", "DOCUMENT_POSITION_CONTAINS", "DOCUMENT_POSITION_DISCONNECTED",
+        "DOCUMENT_POSITION_FOLLOWING", "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC", "DOCUMENT_POSITION_PRECEDING",
+        "DOCUMENT_TYPE_NODE", "ELEMENT_NODE", "ENTITY_NODE", "ENTITY_REFERENCE_NODE", "NOTATION_NODE",
+        "PROCESSING_INSTRUCTION_NODE", "TEXT_NODE"
+    ]);
+    if(v >= 11)
+        check(PageTransitionEvent, [ "persisted" ]);
+    if(v >= 10)
+        check(ProgressEvent, [ "initProgressEvent", "lengthComputable", "loaded", "total" ]);
+    check(StorageEvent, [ "initStorageEvent", "key", "newValue", "oldValue", "storageArea", "url" ]);
+    check(StyleSheet, [ "disabled", "href", "media", "ownerNode", "parentStyleSheet", "title", "type" ]);
+    check(Text, [ "removeNode", "replaceNode", "replaceWholeText", "splitText", "swapNode", "wholeText" ], [ "replaceWholeText", "wholeText" ]);
+    check(UIEvent, [ "detail", "initUIEvent", "view" ], null, [ "deviceSessionId" ]);
 });

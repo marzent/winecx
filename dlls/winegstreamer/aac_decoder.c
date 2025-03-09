@@ -32,22 +32,14 @@
 WINE_DEFAULT_DEBUG_CHANNEL(mfplat);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
-static struct
+#define NEXT_WAVEFORMATEXTENSIBLE(format) (WAVEFORMATEXTENSIBLE *)((BYTE *)(&(format)->Format + 1) + (format)->Format.cbSize)
+
+static WAVEFORMATEXTENSIBLE const aac_decoder_output_types[] =
 {
-    const GUID *const guid;
-    UINT32 payload_type;
-} aac_decoder_input_types[] =
-{
-    {&MFAudioFormat_AAC, 0},
-    {&MFAudioFormat_RAW_AAC, -1},
-    {&MFAudioFormat_AAC, 1},
-    {&MFAudioFormat_AAC, 3},
-    {&MFAudioFormat_ADTS, -1},
-};
-static const GUID *const aac_decoder_output_types[] =
-{
-    &MFAudioFormat_PCM,
-    &MFAudioFormat_Float,
+    {.Format = {.wFormatTag = WAVE_FORMAT_IEEE_FLOAT, .wBitsPerSample = 32, .nSamplesPerSec = 48000, .nChannels = 2,
+                .cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)}},
+    {.Format = {.wFormatTag = WAVE_FORMAT_PCM, .wBitsPerSample = 16, .nSamplesPerSec = 48000, .nChannels = 2,
+                .cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)}},
 };
 
 static const UINT32 default_channel_mask[7] =
@@ -65,6 +57,10 @@ struct aac_decoder
 {
     IMFTransform IMFTransform_iface;
     LONG refcount;
+
+    UINT input_type_count;
+    WAVEFORMATEXTENSIBLE *input_types;
+
     IMFMediaType *input_type;
     IMFMediaType *output_type;
 
@@ -79,25 +75,15 @@ static struct aac_decoder *impl_from_IMFTransform(IMFTransform *iface)
 
 static HRESULT try_create_wg_transform(struct aac_decoder *decoder)
 {
-    struct wg_format input_format, output_format;
     struct wg_transform_attrs attrs = {0};
 
     if (decoder->wg_transform)
+    {
         wg_transform_destroy(decoder->wg_transform);
-    decoder->wg_transform = 0;
+        decoder->wg_transform = 0;
+    }
 
-    mf_media_type_to_wg_format(decoder->input_type, &input_format);
-    if (input_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
-
-    mf_media_type_to_wg_format(decoder->output_type, &output_format);
-    if (output_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
-
-    if (!(decoder->wg_transform = wg_transform_create(&input_format, &output_format, &attrs)))
-        return E_FAIL;
-
-    return S_OK;
+    return wg_transform_create_mf(decoder->input_type, decoder->output_type, &attrs, &decoder->wg_transform);
 }
 
 static HRESULT WINAPI transform_QueryInterface(IMFTransform *iface, REFIID iid, void **out)
@@ -234,79 +220,45 @@ static HRESULT WINAPI transform_AddInputStreams(IMFTransform *iface, DWORD strea
 static HRESULT WINAPI transform_GetInputAvailableType(IMFTransform *iface, DWORD id, DWORD index,
         IMFMediaType **type)
 {
-    IMFMediaType *media_type;
-    const GUID *subtype;
-    HRESULT hr;
+    struct aac_decoder *decoder = impl_from_IMFTransform(iface);
+    const WAVEFORMATEXTENSIBLE *format = decoder->input_types;
+    UINT count = decoder->input_type_count;
 
     TRACE("iface %p, id %#lx, index %#lx, type %p.\n", iface, id, index, type);
 
+    *type = NULL;
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
-
-    *type = NULL;
-    if (index >= ARRAY_SIZE(aac_decoder_input_types))
-        return MF_E_NO_MORE_TYPES;
-    subtype = aac_decoder_input_types[index].guid;
-
-    if (FAILED(hr = MFCreateMediaType(&media_type)))
-        return hr;
-
-    if (FAILED(hr = IMFMediaType_SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Audio)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetGUID(media_type, &MF_MT_SUBTYPE, subtype)))
-        goto done;
-
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_BITS_PER_SAMPLE, 32)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_NUM_CHANNELS, 6)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT, 24)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, 48000)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 1152000)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1)))
-        goto done;
-    if (IsEqualGUID(subtype, &MFAudioFormat_AAC))
-    {
-        if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0)))
-            goto done;
-        if (aac_decoder_input_types[index].payload_type != -1
-                && FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AAC_PAYLOAD_TYPE,
-                aac_decoder_input_types[index].payload_type)))
-            goto done;
-    }
-
-done:
-    if (SUCCEEDED(hr))
-        IMFMediaType_AddRef((*type = media_type));
-
-    IMFMediaType_Release(media_type);
-    return hr;
+    for (format = decoder->input_types; index > 0 && count > 0; index--, count--)
+        format = NEXT_WAVEFORMATEXTENSIBLE(format);
+    return count ? MFCreateAudioMediaType(&format->Format, (IMFAudioMediaType **)type) : MF_E_NO_MORE_TYPES;
 }
 
 static HRESULT WINAPI transform_GetOutputAvailableType(IMFTransform *iface, DWORD id, DWORD index,
         IMFMediaType **type)
 {
-    UINT32 channel_count, sample_size, sample_rate, block_alignment;
     struct aac_decoder *decoder = impl_from_IMFTransform(iface);
+    UINT32 channel_count, sample_rate;
+    WAVEFORMATEXTENSIBLE wfx = {{0}};
     IMFMediaType *media_type;
-    const GUID *output_type;
     HRESULT hr;
 
     TRACE("iface %p, id %#lx, index %#lx, type %p.\n", iface, id, index, type);
+
+    *type = NULL;
 
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
     if (!decoder->input_type)
         return MF_E_TRANSFORM_TYPE_NOT_SET;
 
-    *type = NULL;
+    wfx = aac_decoder_output_types[index % ARRAY_SIZE(aac_decoder_output_types)];
 
     if (FAILED(hr = IMFMediaType_GetUINT32(decoder->input_type, &MF_MT_AUDIO_NUM_CHANNELS, &channel_count))
             || !channel_count)
-        channel_count = 2;
+        channel_count = wfx.Format.nChannels;
+    if (FAILED(hr = IMFMediaType_GetUINT32(decoder->input_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &sample_rate)))
+        sample_rate = wfx.Format.nSamplesPerSec;
 
     if (channel_count >= ARRAY_SIZE(default_channel_mask))
         return MF_E_INVALIDMEDIATYPE;
@@ -321,53 +273,24 @@ static HRESULT WINAPI transform_GetOutputAvailableType(IMFTransform *iface, DWOR
 
     if (index >= ARRAY_SIZE(aac_decoder_output_types))
         return MF_E_NO_MORE_TYPES;
-    index = ARRAY_SIZE(aac_decoder_output_types) - index - 1;
-    output_type = aac_decoder_output_types[index];
 
-    if (FAILED(hr = MFCreateMediaType(&media_type)))
-        return hr;
+    wfx.Format.nChannels = channel_count;
+    wfx.Format.nSamplesPerSec = sample_rate;
+    wfx.Format.nBlockAlign = wfx.Format.wBitsPerSample * wfx.Format.nChannels / 8;
+    wfx.Format.nAvgBytesPerSec = wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
 
-    if (FAILED(hr = IMFMediaType_SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Audio)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetGUID(media_type, &MF_MT_SUBTYPE, output_type)))
-        goto done;
-
-    if (IsEqualGUID(output_type, &MFAudioFormat_Float))
-        sample_size = 32;
-    else if (IsEqualGUID(output_type, &MFAudioFormat_PCM))
-        sample_size = 16;
-    else
+    if (wfx.Format.nChannels >= 3)
     {
-        FIXME("Subtype %s not implemented!\n", debugstr_guid(output_type));
-        hr = E_NOTIMPL;
-        goto done;
+        wfx.SubFormat = MFAudioFormat_Base;
+        wfx.SubFormat.Data1 = wfx.Format.wFormatTag;
+        wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+        wfx.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+        wfx.dwChannelMask = default_channel_mask[wfx.Format.nChannels];
     }
 
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_BITS_PER_SAMPLE, sample_size)))
-        goto done;
-
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_NUM_CHANNELS, channel_count)))
-        goto done;
-
-    if (FAILED(hr = IMFMediaType_GetUINT32(decoder->input_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &sample_rate)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)))
-        goto done;
-
-    block_alignment = sample_size * channel_count / 8;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT, block_alignment)))
-        goto done;
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sample_rate * block_alignment)))
-        goto done;
-
-    if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_ALL_SAMPLES_INDEPENDENT, 1)))
-        goto done;
+    if (FAILED(hr = MFCreateAudioMediaType(&wfx.Format, (IMFAudioMediaType **)&media_type)))
+        return hr;
     if (FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_FIXED_SIZE_SAMPLES, 1)))
-        goto done;
-    if (channel_count < 3 && FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1)))
-        goto done;
-    if (channel_count >= 3 && FAILED(hr = IMFMediaType_SetUINT32(media_type, &MF_MT_AUDIO_CHANNEL_MASK,
-            default_channel_mask[channel_count])))
         goto done;
 
 done:
@@ -378,42 +301,62 @@ done:
     return hr;
 }
 
+static BOOL matches_format(const WAVEFORMATEXTENSIBLE *a, const WAVEFORMATEXTENSIBLE *b)
+{
+    if (a->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE && b->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+        return IsEqualGUID(&a->SubFormat, &b->SubFormat);
+    if (a->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+        return a->SubFormat.Data1 == b->Format.wFormatTag;
+    if (b->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+        return b->SubFormat.Data1 == a->Format.wFormatTag;
+    return a->Format.wFormatTag == b->Format.wFormatTag;
+}
+
 static HRESULT WINAPI transform_SetInputType(IMFTransform *iface, DWORD id, IMFMediaType *type, DWORD flags)
 {
     struct aac_decoder *decoder = impl_from_IMFTransform(iface);
-    MF_ATTRIBUTE_TYPE item_type;
-    UINT32 channel_count;
-    GUID major, subtype;
+    UINT32 size, count = decoder->input_type_count;
+    WAVEFORMATEXTENSIBLE *format, wfx;
     HRESULT hr;
-    ULONG i;
 
     TRACE("iface %p, id %#lx, type %p, flags %#lx.\n", iface, id, type, flags);
 
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
 
-    if (FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major)))
-        return E_INVALIDARG;
+    if (!type)
+    {
+        if (decoder->input_type)
+        {
+            IMFMediaType_Release(decoder->input_type);
+            decoder->input_type = NULL;
+        }
+        if (decoder->output_type)
+        {
+            IMFMediaType_Release(decoder->output_type);
+            decoder->output_type = NULL;
+        }
+        if (decoder->wg_transform)
+        {
+            wg_transform_destroy(decoder->wg_transform);
+            decoder->wg_transform = 0;
+        }
 
-    if (!IsEqualGUID(&major, &MFMediaType_Audio)
-            || FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_SUBTYPE, &subtype)))
+        return S_OK;
+    }
+
+    if (FAILED(hr = MFCreateWaveFormatExFromMFMediaType(type, (WAVEFORMATEX **)&format, &size,
+            MFWaveFormatExConvertFlag_ForceExtensible)))
+        return hr;
+    wfx = *format;
+    CoTaskMemFree(format);
+
+    for (format = decoder->input_types; count > 0 && !matches_format(format, &wfx); count--)
+        format = NEXT_WAVEFORMATEXTENSIBLE(format);
+    if (!count)
         return MF_E_INVALIDMEDIATYPE;
 
-    for (i = 0; i < ARRAY_SIZE(aac_decoder_input_types); ++i)
-        if (IsEqualGUID(&subtype, aac_decoder_input_types[i].guid))
-            break;
-    if (i == ARRAY_SIZE(aac_decoder_input_types))
-        return MF_E_INVALIDMEDIATYPE;
-
-    if (SUCCEEDED(IMFMediaType_GetUINT32(type, &MF_MT_AUDIO_NUM_CHANNELS, &channel_count))
-            && channel_count >= ARRAY_SIZE(default_channel_mask))
-        return MF_E_INVALIDMEDIATYPE;
-
-    if (FAILED(IMFMediaType_GetItemType(type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &item_type))
-            || item_type != MF_ATTRIBUTE_UINT32)
-        return MF_E_INVALIDMEDIATYPE;
-    if (FAILED(IMFMediaType_GetItemType(type, &MF_MT_USER_DATA, &item_type))
-            || item_type != MF_ATTRIBUTE_BLOB)
+    if (wfx.Format.nChannels >= ARRAY_SIZE(default_channel_mask) || !wfx.Format.nSamplesPerSec || !wfx.Format.cbSize)
         return MF_E_INVALIDMEDIATYPE;
     if (flags & MFT_SET_TYPE_TEST_ONLY)
         return S_OK;
@@ -433,8 +376,8 @@ static HRESULT WINAPI transform_SetInputType(IMFTransform *iface, DWORD id, IMFM
 static HRESULT WINAPI transform_SetOutputType(IMFTransform *iface, DWORD id, IMFMediaType *type, DWORD flags)
 {
     struct aac_decoder *decoder = impl_from_IMFTransform(iface);
-    MF_ATTRIBUTE_TYPE item_type;
-    GUID major, subtype;
+    WAVEFORMATEXTENSIBLE *format, wfx;
+    UINT32 size;
     HRESULT hr;
     ULONG i;
 
@@ -442,30 +385,39 @@ static HRESULT WINAPI transform_SetOutputType(IMFTransform *iface, DWORD id, IMF
 
     if (id)
         return MF_E_INVALIDSTREAMNUMBER;
+
+    if (!type)
+    {
+        if (decoder->output_type)
+        {
+            IMFMediaType_Release(decoder->output_type);
+            decoder->input_type = NULL;
+        }
+        if (decoder->wg_transform)
+        {
+            wg_transform_destroy(decoder->wg_transform);
+            decoder->wg_transform = 0;
+        }
+
+        return S_OK;
+    }
+
     if (!decoder->input_type)
         return MF_E_TRANSFORM_TYPE_NOT_SET;
 
-    if (FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major))
-            || FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_SUBTYPE, &subtype)))
+    if (FAILED(hr = MFCreateWaveFormatExFromMFMediaType(type, (WAVEFORMATEX **)&format, &size,
+            MFWaveFormatExConvertFlag_ForceExtensible)))
         return hr;
-
-    if (!IsEqualGUID(&major, &MFMediaType_Audio))
-        return MF_E_INVALIDMEDIATYPE;
+    wfx = *format;
+    CoTaskMemFree(format);
 
     for (i = 0; i < ARRAY_SIZE(aac_decoder_output_types); ++i)
-        if (IsEqualGUID(&subtype, aac_decoder_output_types[i]))
+        if (matches_format(&aac_decoder_output_types[i], &wfx))
             break;
     if (i == ARRAY_SIZE(aac_decoder_output_types))
         return MF_E_INVALIDMEDIATYPE;
 
-    if (FAILED(IMFMediaType_GetItemType(type, &MF_MT_AUDIO_BITS_PER_SAMPLE, &item_type))
-            || item_type != MF_ATTRIBUTE_UINT32)
-        return MF_E_INVALIDMEDIATYPE;
-    if (FAILED(IMFMediaType_GetItemType(type, &MF_MT_AUDIO_NUM_CHANNELS, &item_type))
-            || item_type != MF_ATTRIBUTE_UINT32)
-        return MF_E_INVALIDMEDIATYPE;
-    if (FAILED(IMFMediaType_GetItemType(type, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &item_type))
-            || item_type != MF_ATTRIBUTE_UINT32)
+    if (!wfx.Format.wBitsPerSample || !wfx.Format.nChannels || !wfx.Format.nSamplesPerSec)
         return MF_E_INVALIDMEDIATYPE;
     if (flags & MFT_SET_TYPE_TEST_ONLY)
         return S_OK;
@@ -607,7 +559,7 @@ static HRESULT WINAPI transform_ProcessOutput(IMFTransform *iface, DWORD flags, 
         return hr;
 
     if (SUCCEEDED(hr = wg_transform_read_mf(decoder->wg_transform, samples->pSample,
-            info.cbSize, NULL, &samples->dwStatus)))
+            info.cbSize, &samples->dwStatus)))
         wg_sample_queue_flush(decoder->wg_sample_queue, false);
     else
         samples->dwStatus = MFT_OUTPUT_DATA_BUFFER_NO_SAMPLE;
@@ -645,36 +597,39 @@ static const IMFTransformVtbl transform_vtbl =
     transform_ProcessOutput,
 };
 
+static HEAACWAVEINFO aac_decoder_input_types[] =
+{
+#define MAKE_HEAACWAVEINFO(format, payload) \
+    {.wfx = {.wFormatTag = format, .nChannels = 6, .nSamplesPerSec = 48000, .nAvgBytesPerSec = 1152000, \
+             .nBlockAlign = 24, .wBitsPerSample = 32, .cbSize = sizeof(HEAACWAVEINFO) - sizeof(WAVEFORMATEX)}, \
+     .wPayloadType = payload}
+
+    MAKE_HEAACWAVEINFO(WAVE_FORMAT_MPEG_HEAAC, 0),
+    MAKE_HEAACWAVEINFO(WAVE_FORMAT_RAW_AAC1, 0),
+    MAKE_HEAACWAVEINFO(WAVE_FORMAT_MPEG_HEAAC, 1),
+    MAKE_HEAACWAVEINFO(WAVE_FORMAT_MPEG_HEAAC, 3),
+    MAKE_HEAACWAVEINFO(WAVE_FORMAT_MPEG_ADTS_AAC, 0),
+
+#undef MAKE_HEAACWAVEINFO
+};
+
 HRESULT aac_decoder_create(REFIID riid, void **ret)
 {
-    static const struct wg_format output_format =
-    {
-        .major_type = WG_MAJOR_TYPE_AUDIO,
-        .u.audio =
-        {
-            .format = WG_AUDIO_FORMAT_F32LE,
-            .channel_mask = 1,
-            .channels = 1,
-            .rate = 44100,
-        },
-    };
-    static const struct wg_format input_format = {.major_type = WG_MAJOR_TYPE_AUDIO_MPEG4};
-    struct wg_transform_attrs attrs = {0};
-    wg_transform_t transform;
     struct aac_decoder *decoder;
     HRESULT hr;
 
     TRACE("riid %s, ret %p.\n", debugstr_guid(riid), ret);
 
-    if (!(transform = wg_transform_create(&input_format, &output_format, &attrs)))
+    if (FAILED(hr = check_audio_transform_support(&aac_decoder_input_types[0].wfx, &aac_decoder_output_types[0].Format)))
     {
-        ERR_(winediag)("GStreamer doesn't support WMA decoding, please install appropriate plugins\n");
-        return E_FAIL;
+        ERR_(winediag)("GStreamer doesn't support AAC decoding, please install appropriate plugins\n");
+        return hr;
     }
-    wg_transform_destroy(transform);
 
     if (!(decoder = calloc(1, sizeof(*decoder))))
         return E_OUTOFMEMORY;
+    decoder->input_types = (WAVEFORMATEXTENSIBLE *)aac_decoder_input_types;
+    decoder->input_type_count = ARRAY_SIZE(aac_decoder_input_types);
 
     if (FAILED(hr = wg_sample_queue_create(&decoder->wg_sample_queue)))
     {

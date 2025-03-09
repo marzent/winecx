@@ -19,8 +19,6 @@
 
 #include <wine/list.h>
 
-typedef struct audio_client ACImpl;
-
 typedef struct audio_session {
     GUID guid;
     struct list clients;
@@ -31,6 +29,10 @@ typedef struct audio_session {
     UINT32 channel_count;
     float *channel_vols;
     BOOL mute;
+
+    WCHAR *display_name;
+    WCHAR *icon_path;
+    GUID grouping_param;
 
     struct list entry;
 } AudioSession;
@@ -60,6 +62,7 @@ struct audio_client {
     IAudioCaptureClient IAudioCaptureClient_iface;
     IAudioClock IAudioClock_iface;
     IAudioClock2 IAudioClock2_iface;
+    IAudioClockAdjustment IAudioClockAdjustment_iface;
     IAudioStreamVolume IAudioStreamVolume_iface;
 
     LONG ref;
@@ -78,7 +81,5 @@ struct audio_client {
     struct audio_session_wrapper *session_wrapper;
 
     struct list entry;
-
-    /* Keep at end */
-    char device_name[0];
+    char *device_name;
 };

@@ -28,7 +28,6 @@ SOURCES = \
 	d3dmetal.c \
 	display.c \
 	dllmain.c \
-	dragdrop.c \
 	event.c \
 	gdi.c \
 	image.c \

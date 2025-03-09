@@ -1592,7 +1592,7 @@ static HRESULT WINAPI dwritetextanalyzer_GetGlyphPlacements(IDWriteTextAnalyzer2
     UINT32 const* feature_range_lengths, UINT32 feature_ranges, float *advances, DWRITE_GLYPH_OFFSET *offsets)
 {
     const struct dwritescript_properties *scriptprops;
-    struct scriptshaping_context context;
+    struct scriptshaping_context context = { 0 };
     struct dwrite_fontface *font_obj;
     unsigned int i;
     HRESULT hr;
@@ -1666,7 +1666,7 @@ static HRESULT WINAPI dwritetextanalyzer_GetGdiCompatibleGlyphPlacements(IDWrite
     UINT32 const* feature_range_lengths, UINT32 feature_ranges, float *advances, DWRITE_GLYPH_OFFSET *offsets)
 {
     const struct dwritescript_properties *scriptprops;
-    struct scriptshaping_context context;
+    struct scriptshaping_context context = { 0 };
     DWRITE_MEASURING_MODE measuring_mode;
     struct dwrite_fontface *font_obj;
     unsigned int i;
@@ -1855,7 +1855,7 @@ static inline UINT32 get_cluster_length(UINT16 const *clustermap, UINT32 start, 
     UINT16 g = clustermap[start];
     UINT32 length = 1;
 
-    while (start < text_len && clustermap[++start] == g)
+    while (start < (text_len - 1) && clustermap[++start] == g)
         length++;
     return length;
 }

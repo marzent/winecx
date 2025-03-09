@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <stdio.h>
 #include <limits.h>
 #include <share.h>
 
@@ -3028,8 +3027,19 @@ void __thiscall basic_filebuf_char__Init(basic_filebuf_char *this, FILE *file, b
 
     basic_streambuf_char__Init_empty(&this->base);
     if(file)
-        basic_streambuf_char__Init(&this->base, &file->_base, &file->_ptr,
-                &file->_cnt, &file->_base, &file->_ptr, &file->_cnt);
+    {
+        char **base, **ptr;
+        int *cnt;
+
+#if _MSVCP_VER >= 140
+        _get_stream_buffer_pointers(file, &base, &ptr, &cnt);
+#else
+        base = &file->_base;
+        ptr = &file->_ptr;
+        cnt = &file->_cnt;
+#endif
+        basic_streambuf_char__Init(&this->base, base, ptr, cnt, base, ptr, cnt);
+    }
 }
 
 /* ?_Initcvt@?$basic_filebuf@DU?$char_traits@D@std@@@std@@IAEXPAV?$codecvt@DDH@2@@Z */
@@ -3258,18 +3268,56 @@ FILE* __cdecl _Fiopen_wchar(const wchar_t *name, int mode, int prot)
 /* ?_Fiopen@std@@YAPEAU_iobuf@@PEBDHH@Z */
 FILE* __cdecl _Fiopen(const char *name, int mode, int prot)
 {
-    wchar_t nameW[FILENAME_MAX];
+    static const struct {
+        int mode;
+        const char str[4];
+        const char str_bin[4];
+    } str_mode[] = {
+        {OPENMODE_out,                              "w",   "wb"},
+        {OPENMODE_out|OPENMODE_app,                 "a",   "ab"},
+        {OPENMODE_app,                              "a",   "ab"},
+        {OPENMODE_out|OPENMODE_trunc,               "w",   "wb"},
+        {OPENMODE_in,                               "r",   "rb"},
+        {OPENMODE_in|OPENMODE_out,                  "r+",  "r+b"},
+        {OPENMODE_in|OPENMODE_out|OPENMODE_trunc,   "w+",  "w+b"},
+        {OPENMODE_in|OPENMODE_out|OPENMODE_app,     "a+",  "a+b"},
+        {OPENMODE_in|OPENMODE_app,                  "a+",  "a+b"}
+    };
 
-    TRACE("(%s %d %d)\n", name, mode, prot);
+    int real_mode = mode & ~(OPENMODE_ate|OPENMODE__Nocreate|OPENMODE__Noreplace|OPENMODE_binary);
+    size_t mode_idx;
+    FILE *f = NULL;
 
-#if _MSVCP_VER >= 80 && _MSVCP_VER <= 90
-    if(mbstowcs_s(NULL, nameW, FILENAME_MAX, name, FILENAME_MAX-1) != 0)
+    TRACE("(%s %d %d)\n", debugstr_a(name), mode, prot);
+
+    for(mode_idx=0; mode_idx<ARRAY_SIZE(str_mode); mode_idx++)
+        if(str_mode[mode_idx].mode == real_mode)
+            break;
+    if(mode_idx == ARRAY_SIZE(str_mode))
         return NULL;
-#else
-    if(!MultiByteToWideChar(CP_ACP, 0, name, -1, nameW, FILENAME_MAX-1))
+
+    if((mode & OPENMODE__Nocreate) && !(f = fopen(name, "r")))
         return NULL;
-#endif
-    return _Fiopen_wchar(nameW, mode, prot);
+    else if(f)
+        fclose(f);
+
+    if((mode & OPENMODE__Noreplace) && (mode & (OPENMODE_out|OPENMODE_app))
+            && (f = fopen(name, "r"))) {
+        fclose(f);
+        return NULL;
+    }
+
+    f = _fsopen(name, (mode & OPENMODE_binary) ? str_mode[mode_idx].str_bin
+            : str_mode[mode_idx].str, prot);
+    if(!f)
+        return NULL;
+
+    if((mode & OPENMODE_ate) && fseek(f, 0, SEEK_END)) {
+        fclose(f);
+        return NULL;
+    }
+
+    return f;
 }
 
 /* ?__Fiopen@std@@YAPAU_iobuf@@PBDH@Z */
@@ -5115,8 +5163,14 @@ void __thiscall ios_base_Callfns(ios_base *this, IOS_BASE_event event)
 }
 
 /* ?_Tidy@ios_base@std@@AAAXXZ */
+/* ?_Tidy@ios_base@std@@AAEXXZ */
 /* ?_Tidy@ios_base@std@@AEAAXXZ */
+#if _MSVCP_VER >= 80 && _MSVCP_VER <= 90
 void __cdecl ios_base_Tidy(ios_base *this)
+#else
+DEFINE_THISCALL_WRAPPER(ios_base_Tidy, 4)
+void __thiscall ios_base_Tidy(ios_base *this)
+#endif
 {
     IOS_BASE_iosarray *arr_cur, *arr_next;
     IOS_BASE_fnarray *event_cur, *event_next;
@@ -11504,6 +11558,17 @@ basic_ofstream_char* __thiscall basic_ofstream_char_ctor_name(basic_ofstream_cha
     return this;
 }
 
+#if _MSVCP_VER == 70
+/* ??0?$basic_ofstream@DU?$char_traits@D@std@@@std@@QAE@PBDH@Z */
+/* ??0?$basic_ofstream@DU?$char_traits@D@std@@@std@@QEAA@PEBDH@Z */
+DEFINE_THISCALL_WRAPPER(basic_ofstream_char_ctor_name_mode, 16)
+basic_ofstream_char* __thiscall basic_ofstream_char_ctor_name_mode(basic_ofstream_char *this,
+        const char *name, int mode, bool virt_init)
+{
+    return basic_ofstream_char_ctor_name(this, name, mode, _SH_DENYNO, virt_init);
+}
+#endif
+
 /* ??0?$basic_ofstream@DU?$char_traits@D@std@@@std@@QAE@PBGHH@Z */
 /* ??0?$basic_ofstream@DU?$char_traits@D@std@@@std@@QEAA@PEBGHH@Z */
 /* ??0?$basic_ofstream@DU?$char_traits@D@std@@@std@@QAE@PB_WHH@Z */
@@ -11750,6 +11815,17 @@ basic_ofstream_wchar* __thiscall basic_ofstream_wchar_ctor_name(basic_ofstream_w
     return this;
 }
 
+#if _MSVCP_VER == 70
+/* ??0?$basic_ofstream@_WU?$char_traits@_W@std@@@std@@QAE@PBDH@Z */
+/* ??0?$basic_ofstream@_WU?$char_traits@_W@std@@@std@@QEAA@PEBDH@Z */
+DEFINE_THISCALL_WRAPPER(basic_ofstream_wchar_ctor_name_mode, 16)
+basic_ofstream_wchar* __thiscall basic_ofstream_wchar_ctor_name_mode(basic_ofstream_wchar *this,
+        const char *name, int mode, bool virt_init)
+{
+    return basic_ofstream_wchar_ctor_name(this, name, mode, _SH_DENYNO, virt_init);
+}
+#endif
+
 /* ??0?$basic_ofstream@GU?$char_traits@G@std@@@std@@QAE@PBDHH@Z */
 /* ??0?$basic_ofstream@GU?$char_traits@G@std@@@std@@QEAA@PEBDHH@Z */
 DEFINE_THISCALL_WRAPPER(basic_ofstream_short_ctor_name, 20)
@@ -11760,6 +11836,17 @@ basic_ofstream_wchar* __thiscall basic_ofstream_short_ctor_name(basic_ofstream_w
     basic_ostream_wchar_get_basic_ios(&this->base)->base.vtable = &basic_ofstream_short_vtable;
     return this;
 }
+
+#if _MSVCP_VER == 70
+/* ??0?$basic_ofstream@GU?$char_traits@G@std@@@std@@QAE@PBDH@Z */
+/* ??0?$basic_ofstream@GU?$char_traits@G@std@@@std@@QEAA@PEBDH@Z */
+DEFINE_THISCALL_WRAPPER(basic_ofstream_short_ctor_name_mode, 16)
+basic_ofstream_wchar* __thiscall basic_ofstream_short_ctor_name_mode(basic_ofstream_wchar *this,
+        const char *name, int mode, bool virt_init)
+{
+    return basic_ofstream_short_ctor_name(this, name, mode, _SH_DENYNO, virt_init);
+}
+#endif
 
 /* ??0?$basic_ofstream@_WU?$char_traits@_W@std@@@std@@QAE@PBGHH@Z */
 /* ??0?$basic_ofstream@_WU?$char_traits@_W@std@@@std@@QEAA@PEBGHH@Z */
@@ -15837,7 +15924,7 @@ void* __thiscall _Winit_op_assign(void *this, void *rhs)
 
 void init_io(void *base)
 {
-#ifdef __x86_64__
+#ifdef RTTI_USE_RVA
     init_iosb_rtti(base);
     init_ios_base_rtti(base);
     init_basic_ios_char_rtti(base);

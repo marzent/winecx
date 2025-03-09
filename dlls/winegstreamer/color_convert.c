@@ -95,27 +95,73 @@ static inline struct color_convert *impl_from_IUnknown(IUnknown *iface)
     return CONTAINING_RECORD(iface, struct color_convert, IUnknown_inner);
 }
 
+static void update_video_aperture(MFVideoInfo *input_info, MFVideoInfo *output_info)
+{
+    static const MFVideoArea empty_area = {0};
+
+    /* Tests show that the color converter ignores aperture entirely, probably a side
+     * effect of an internal conversion to VIDEOINFOHEADER2, as the component is also
+     * exposing a IMediaObject interface, and designed for dshow.
+     */
+
+    input_info->GeometricAperture = empty_area;
+    input_info->MinimumDisplayAperture = empty_area;
+    input_info->PanScanAperture = empty_area;
+
+    output_info->GeometricAperture = empty_area;
+    output_info->MinimumDisplayAperture = empty_area;
+    output_info->PanScanAperture = empty_area;
+}
+
+static HRESULT normalize_media_types(IMFMediaType **input_type, IMFMediaType **output_type)
+{
+    MFVIDEOFORMAT *input_format, *output_format;
+    UINT32 size;
+    HRESULT hr;
+
+    if (FAILED(hr = MFCreateMFVideoFormatFromMFMediaType(*input_type, &input_format, &size)))
+        return hr;
+    if (FAILED(hr = MFCreateMFVideoFormatFromMFMediaType(*output_type, &output_format, &size)))
+    {
+        CoTaskMemFree(input_format);
+        return hr;
+    }
+
+    update_video_aperture(&input_format->videoInfo, &output_format->videoInfo);
+
+    if (FAILED(hr = MFCreateVideoMediaType(input_format, (IMFVideoMediaType **)input_type)))
+        goto done;
+    if (FAILED(hr = MFCreateVideoMediaType(output_format, (IMFVideoMediaType **)output_type)))
+    {
+        IMFMediaType_Release(*input_type);
+        *input_type = NULL;
+    }
+
+done:
+    CoTaskMemFree(input_format);
+    CoTaskMemFree(output_format);
+    return hr;
+}
+
 static HRESULT try_create_wg_transform(struct color_convert *impl)
 {
-    struct wg_format input_format, output_format;
+    IMFMediaType *input_type = impl->input_type, *output_type = impl->output_type;
     struct wg_transform_attrs attrs = {0};
+    HRESULT hr;
 
     if (impl->wg_transform)
+    {
         wg_transform_destroy(impl->wg_transform);
-    impl->wg_transform = 0;
+        impl->wg_transform = 0;
+    }
 
-    mf_media_type_to_wg_format(impl->input_type, &input_format);
-    if (input_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
+    if (FAILED(hr = normalize_media_types(&input_type, &output_type)))
+        return hr;
+    hr = wg_transform_create_mf(input_type, output_type, &attrs, &impl->wg_transform);
+    IMFMediaType_Release(output_type);
+    IMFMediaType_Release(input_type);
 
-    mf_media_type_to_wg_format(impl->output_type, &output_format);
-    if (output_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
-
-    if (!(impl->wg_transform = wg_transform_create(&input_format, &output_format, &attrs)))
-        return E_FAIL;
-
-    return S_OK;
+    return hr;
 }
 
 static HRESULT WINAPI unknown_QueryInterface(IUnknown *iface, REFIID iid, void **out)
@@ -370,6 +416,22 @@ static HRESULT WINAPI transform_SetInputType(IMFTransform *iface, DWORD id, IMFM
 
     TRACE("iface %p, id %#lx, type %p, flags %#lx.\n", iface, id, type, flags);
 
+    if (!type)
+    {
+        if (impl->input_type)
+        {
+            IMFMediaType_Release(impl->input_type);
+            impl->input_type = NULL;
+        }
+        if (impl->wg_transform)
+        {
+            wg_transform_destroy(impl->wg_transform);
+            impl->wg_transform = 0;
+        }
+
+        return S_OK;
+    }
+
     if (FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major)) ||
             FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_SUBTYPE, &subtype)))
         return MF_E_ATTRIBUTENOTFOUND;
@@ -431,6 +493,22 @@ static HRESULT WINAPI transform_SetOutputType(IMFTransform *iface, DWORD id, IMF
     ULONG i;
 
     TRACE("iface %p, id %#lx, type %p, flags %#lx.\n", iface, id, type, flags);
+
+    if (!type)
+    {
+        if (impl->output_type)
+        {
+            IMFMediaType_Release(impl->output_type);
+            impl->output_type = NULL;
+        }
+        if (impl->wg_transform)
+        {
+            wg_transform_destroy(impl->wg_transform);
+            impl->wg_transform = 0;
+        }
+
+        return S_OK;
+    }
 
     if (FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major)) ||
             FAILED(hr = IMFMediaType_GetGUID(type, &MF_MT_SUBTYPE, &subtype)))
@@ -592,7 +670,7 @@ static HRESULT WINAPI transform_ProcessOutput(IMFTransform *iface, DWORD flags, 
         return hr;
 
     if (SUCCEEDED(hr = wg_transform_read_mf(impl->wg_transform, samples->pSample,
-            info.cbSize, NULL, &samples->dwStatus)))
+            info.cbSize, &samples->dwStatus)))
         wg_sample_queue_flush(impl->wg_sample_queue, false);
 
     return hr;
@@ -917,39 +995,28 @@ static const IPropertyStoreVtbl property_store_vtbl =
 
 HRESULT color_convert_create(IUnknown *outer, IUnknown **out)
 {
-    static const struct wg_format input_format =
+    const MFVIDEOFORMAT input_format =
     {
-        .major_type = WG_MAJOR_TYPE_VIDEO,
-        .u.video =
-        {
-            .format = WG_VIDEO_FORMAT_I420,
-            .width = 1920,
-            .height = 1080,
-        },
+        .dwSize = sizeof(MFVIDEOFORMAT),
+        .videoInfo = {.dwWidth = 1920, .dwHeight = 1080},
+        .guidFormat = MFVideoFormat_I420,
     };
-    static const struct wg_format output_format =
+    const MFVIDEOFORMAT output_format =
     {
-        .major_type = WG_MAJOR_TYPE_VIDEO,
-        .u.video =
-        {
-            .format = WG_VIDEO_FORMAT_NV12,
-            .width = 1920,
-            .height = 1080,
-        },
+        .dwSize = sizeof(MFVIDEOFORMAT),
+        .videoInfo = {.dwWidth = 1920, .dwHeight = 1080},
+        .guidFormat = MFVideoFormat_NV12,
     };
-    struct wg_transform_attrs attrs = {0};
-    wg_transform_t transform;
     struct color_convert *impl;
     HRESULT hr;
 
     TRACE("outer %p, out %p.\n", outer, out);
 
-    if (!(transform = wg_transform_create(&input_format, &output_format, &attrs)))
+    if (FAILED(hr = check_video_transform_support(&input_format, &output_format)))
     {
         ERR_(winediag)("GStreamer doesn't support video conversion, please install appropriate plugins.\n");
-        return E_FAIL;
+        return hr;
     }
-    wg_transform_destroy(transform);
 
     if (!(impl = calloc(1, sizeof(*impl))))
         return E_OUTOFMEMORY;

@@ -21,7 +21,9 @@
 #ifndef __WINE_SERVER_USER_H
 #define __WINE_SERVER_USER_H
 
+#include <limits.h>
 #include "wine/server_protocol.h"
+#include "unicode.h"
 
 struct thread;
 struct region;
@@ -41,41 +43,58 @@ enum user_object
 
 #define DESKTOP_ATOM  ((atom_t)32769)
 
+#define MAX_USER_HANDLES ((LAST_USER_HANDLE - FIRST_USER_HANDLE + 1) >> 1)
+
 struct winstation
 {
     struct object      obj;                /* object header */
     unsigned int       flags;              /* winstation flags */
     struct list        entry;              /* entry in global winstation list */
     struct list        desktops;           /* list of desktops of this winstation */
+    struct desktop    *input_desktop;      /* desktop receiving user input */
     struct clipboard  *clipboard;          /* clipboard information */
     struct atom_table *atom_table;         /* global atom table */
     struct namespace  *desktop_names;      /* namespace for desktops of this winstation */
+    unsigned int       monitor_count;      /* number of monitors */
+    struct monitor_info *monitors;         /* window station monitors */
+    unsigned __int64   monitor_serial;     /* winstation monitor update counter */
 };
 
-struct global_cursor
+struct key_repeat
 {
-    int                  x;                /* cursor position */
-    int                  y;
-    rectangle_t          clip;             /* cursor clip rectangle */
-    unsigned int         last_change;      /* time of last position change */
-    user_handle_t        win;              /* window that contains the cursor */
+    int                  enable;           /* enable auto-repeat */
+    timeout_t            delay;            /* auto-repeat delay */
+    timeout_t            period;           /* auto-repeat period */
+    union hw_input       input;            /* the input to repeat */
+    user_handle_t        win;              /* target window for input event */
+    struct timeout_user *timeout;          /* timeout for repeat */
 };
 
 struct desktop
 {
     struct object        obj;              /* object header */
-    unsigned int         flags;            /* desktop flags */
     struct winstation   *winstation;       /* winstation this desktop belongs to */
+    timeout_t            input_time;       /* last time this desktop had the input */
     struct list          entry;            /* entry in winstation list of desktops */
+    struct list          threads;          /* list of threads connected to this desktop */
     struct window       *top_window;       /* desktop window for this desktop */
     struct window       *msg_window;       /* HWND_MESSAGE top window */
+    struct window       *shell_window;     /* shell window for this desktop */
+    struct window       *shell_listview;   /* shell list view window for this desktop */
+    struct window       *progman_window;   /* progman window for this desktop */
+    struct window       *taskman_window;   /* taskman window for this desktop */
     struct hook_table   *global_hooks;     /* table of global hooks on this desktop */
     struct list          hotkeys;          /* list of registered hotkeys */
+    struct list          pointers;         /* list of active pointers */
     struct timeout_user *close_timeout;    /* timeout before closing the desktop */
     struct thread_input *foreground_input; /* thread input of foreground thread */
     unsigned int         users;            /* processes and threads using this desktop */
-    struct global_cursor cursor;           /* global cursor information */
     unsigned char        keystate[256];    /* asynchronous key state */
+    unsigned char        alt_pressed;      /* last key press was Alt (used to determine msg on release) */
+    struct key_repeat    key_repeat;       /* key auto-repeat */
+    unsigned int         clip_flags;       /* last cursor clip flags */
+    user_handle_t        cursor_win;       /* window that contains the cursor */
+    const desktop_shm_t *shared;           /* desktop session shared memory */
 };
 
 /* user handles functions */
@@ -97,7 +116,8 @@ extern void cleanup_clipboard_thread( struct thread *thread );
 
 extern void remove_thread_hooks( struct thread *thread );
 extern unsigned int get_active_hooks(void);
-extern struct thread *get_first_global_hook( int id, thread_id_t *thread_id, client_ptr_t *proc );
+extern struct thread *get_first_global_hook( struct desktop *desktop, int id, thread_id_t *thread_id, client_ptr_t *proc );
+extern void add_desktop_hook_count( struct desktop *desktop, struct thread *thread, int count );
 extern void disable_hung_hook( struct desktop *desktop, int id, thread_id_t thread_id, client_ptr_t proc );
 
 /* queue functions */
@@ -105,13 +125,16 @@ extern void disable_hung_hook( struct desktop *desktop, int id, thread_id_t thre
 extern void free_msg_queue( struct thread *thread );
 extern struct hook_table *get_queue_hooks( struct thread *thread );
 extern void set_queue_hooks( struct thread *thread, struct hook_table *hooks );
+extern void add_queue_hook_count( struct thread *thread, unsigned int index, int count );
 extern void inc_queue_paint_count( struct thread *thread, int incr );
 extern void queue_cleanup_window( struct thread *thread, user_handle_t win );
 extern int init_thread_queue( struct thread *thread );
+extern void check_thread_queue_idle( struct thread *thread );
 extern int attach_thread_input( struct thread *thread_from, struct thread *thread_to );
 extern void detach_thread_input( struct thread *thread_from );
-extern void set_clip_rectangle( struct desktop *desktop, const rectangle_t *rect,
+extern void set_clip_rectangle( struct desktop *desktop, const struct rectangle *rect,
                                 unsigned int flags, int reset );
+extern void update_cursor_pos( struct desktop *desktop );
 extern void post_message( user_handle_t win, unsigned int message,
                           lparam_t wparam, lparam_t lparam );
 extern void send_notify_message( user_handle_t win, unsigned int message,
@@ -122,22 +145,24 @@ extern void post_win_event( struct thread *thread, unsigned int event,
                             const WCHAR *module, data_size_t module_size,
                             user_handle_t handle );
 extern void free_hotkeys( struct desktop *desktop, user_handle_t window );
+extern void free_pointers( struct desktop *desktop );
+extern void set_rawinput_process( struct process *process, int enable );
 
 /* region functions */
 
 extern struct region *create_empty_region(void);
 extern struct region *create_region_from_req_data( const void *data, data_size_t size );
 extern void free_region( struct region *region );
-extern void set_region_rect( struct region *region, const rectangle_t *rect );
-extern rectangle_t *get_region_data( const struct region *region, data_size_t max_size,
-                                     data_size_t *total_size );
-extern rectangle_t *get_region_data_and_free( struct region *region, data_size_t max_size,
-                                              data_size_t *total_size );
+extern void set_region_rect( struct region *region, const struct rectangle *rect );
+extern struct rectangle *get_region_data( const struct region *region, data_size_t max_size,
+                                          data_size_t *total_size );
+extern struct rectangle *get_region_data_and_free( struct region *region, data_size_t max_size,
+                                                   data_size_t *total_size );
 extern int is_region_empty( const struct region *region );
 extern int is_region_equal( const struct region *region1, const struct region *region2 );
-extern void get_region_extents( const struct region *region, rectangle_t *rect );
+extern void get_region_extents( const struct region *region, struct rectangle *rect );
 extern void offset_region( struct region *region, int x, int y );
-extern void mirror_region( const rectangle_t *client_rect, struct region *region );
+extern void mirror_region( const struct rectangle *client_rect, struct region *region );
 extern void scale_region( struct region *region, unsigned int dpi_from, unsigned int dpi_to );
 extern struct region *copy_region( struct region *dst, const struct region *src );
 extern struct region *intersect_region( struct region *dst, const struct region *src1,
@@ -149,12 +174,12 @@ extern struct region *union_region( struct region *dst, const struct region *src
 extern struct region *xor_region( struct region *dst, const struct region *src1,
                                   const struct region *src2 );
 extern int point_in_region( struct region *region, int x, int y );
-extern int rect_in_region( struct region *region, const rectangle_t *rect );
+extern int rect_in_region( struct region *region, const struct rectangle *rect );
 
 /* window functions */
 
 extern struct process *get_top_window_owner( struct desktop *desktop );
-extern void get_top_window_rectangle( struct desktop *desktop, rectangle_t *rect );
+extern void get_virtual_screen_rect( struct desktop *desktop, struct rectangle *rect, int is_raw );
 extern void post_desktop_message( struct desktop *desktop, unsigned int message,
                                   lparam_t wparam, lparam_t lparam );
 extern void free_window_handle( struct window *win );
@@ -184,11 +209,14 @@ extern client_ptr_t get_class_client_ptr( struct window_class *class );
 
 /* windows station functions */
 
+extern struct winstation *get_visible_winstation(void);
+extern struct desktop *get_input_desktop( struct winstation *winstation );
+extern int set_input_desktop( struct winstation *winstation, struct desktop *new_desktop );
 extern struct desktop *get_desktop_obj( struct process *process, obj_handle_t handle, unsigned int access );
 extern struct winstation *get_process_winstation( struct process *process, unsigned int access );
 extern struct desktop *get_thread_desktop( struct thread *thread, unsigned int access );
-extern void connect_process_winstation( struct process *process, struct thread *parent_thread,
-                                        struct process *parent_process );
+extern void connect_process_winstation( struct process *process, struct unicode_str *desktop_path,
+                                        struct thread *parent_thread, struct process *parent_process );
 extern void set_process_default_desktop( struct process *process, struct desktop *desktop,
                                          obj_handle_t handle );
 extern void close_process_desktop( struct process *process );
@@ -196,18 +224,18 @@ extern void set_thread_default_desktop( struct thread *thread, struct desktop *d
 extern void release_thread_desktop( struct thread *thread, int close );
 
 /* checks if two rectangles are identical */
-static inline int is_rect_equal( const rectangle_t *rect1, const rectangle_t *rect2 )
+static inline int is_rect_equal( const struct rectangle *rect1, const struct rectangle *rect2 )
 {
     return (rect1->left == rect2->left && rect1->right == rect2->right &&
             rect1->top == rect2->top && rect1->bottom == rect2->bottom);
 }
 
-static inline int is_rect_empty( const rectangle_t *rect )
+static inline int is_rect_empty( const struct rectangle *rect )
 {
     return (rect->left >= rect->right || rect->top >= rect->bottom);
 }
 
-static inline int point_in_rect( const rectangle_t *rect, int x, int y )
+static inline int point_in_rect( const struct rectangle *rect, int x, int y )
 {
     return (x >= rect->left && x < rect->right && y >= rect->top && y < rect->bottom);
 }
@@ -218,7 +246,7 @@ static inline int scale_dpi( int val, unsigned int dpi_from, unsigned int dpi_to
     return (val * dpi_to - (dpi_from / 2)) / dpi_from;
 }
 
-static inline void scale_dpi_rect( rectangle_t *rect, unsigned int dpi_from, unsigned int dpi_to )
+static inline void scale_dpi_rect( struct rectangle *rect, unsigned int dpi_from, unsigned int dpi_to )
 {
     rect->left   = scale_dpi( rect->left, dpi_from, dpi_to );
     rect->top    = scale_dpi( rect->top, dpi_from, dpi_to );
@@ -227,7 +255,7 @@ static inline void scale_dpi_rect( rectangle_t *rect, unsigned int dpi_from, uns
 }
 
 /* offset the coordinates of a rectangle */
-static inline void offset_rect( rectangle_t *rect, int offset_x, int offset_y )
+static inline void offset_rect( struct rectangle *rect, int offset_x, int offset_y )
 {
     rect->left   += offset_x;
     rect->top    += offset_y;
@@ -236,7 +264,7 @@ static inline void offset_rect( rectangle_t *rect, int offset_x, int offset_y )
 }
 
 /* mirror a rectangle respective to the window client area */
-static inline void mirror_rect( const rectangle_t *client_rect, rectangle_t *rect )
+static inline void mirror_rect( const struct rectangle *client_rect, struct rectangle *rect )
 {
     int width = client_rect->right - client_rect->left;
     int tmp = rect->left;
@@ -245,13 +273,43 @@ static inline void mirror_rect( const rectangle_t *client_rect, rectangle_t *rec
 }
 
 /* compute the intersection of two rectangles; return 0 if the result is empty */
-static inline int intersect_rect( rectangle_t *dst, const rectangle_t *src1, const rectangle_t *src2 )
+static inline int intersect_rect( struct rectangle *dst, const struct rectangle *src1, const struct rectangle *src2 )
 {
     dst->left   = max( src1->left, src2->left );
     dst->top    = max( src1->top, src2->top );
     dst->right  = min( src1->right, src2->right );
     dst->bottom = min( src1->bottom, src2->bottom );
     return !is_rect_empty( dst );
+}
+
+static inline void reset_bounds( struct rectangle *bounds )
+{
+    bounds->left = bounds->top = INT_MAX;
+    bounds->right = bounds->bottom = INT_MIN;
+}
+
+static inline void union_rect( struct rectangle *dest, const struct rectangle *src1, const struct rectangle *src2 )
+{
+    if (is_rect_empty( src1 ))
+    {
+        if (is_rect_empty( src2 ))
+        {
+            reset_bounds( dest );
+            return;
+        }
+        else *dest = *src2;
+    }
+    else
+    {
+        if (is_rect_empty( src2 )) *dest = *src1;
+        else
+        {
+            dest->left   = min( src1->left, src2->left );
+            dest->right  = max( src1->right, src2->right );
+            dest->top    = min( src1->top, src2->top );
+            dest->bottom = max( src1->bottom, src2->bottom );
+        }
+    }
 }
 
 /* validate a window handle and return the full handle */

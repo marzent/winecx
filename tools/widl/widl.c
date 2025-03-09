@@ -59,6 +59,7 @@ static const char usage[] =
 "   --nostdinc         Do not search the standard include path\n"
 "   --ns_prefix        Prefix namespaces with ABI namespace\n"
 "   --oldnames         Use old naming conventions\n"
+"   --oldtlb           Generate typelib in the old format (SLTG)\n"
 "   -o, --output=NAME  Set the output file name\n"
 "   -Otype             Type of stubs to generate (-Os, -Oi, -Oif)\n"
 "   -p                 Generate proxy\n"
@@ -88,7 +89,7 @@ static const char usage[] =
 static const char version_string[] = "Wine IDL Compiler version " PACKAGE_VERSION "\n"
 			"Copyright 2002 Ove Kaaven\n";
 
-static struct target target;
+struct target target = { 0 };
 
 int debuglevel = DEBUGLEVEL_NONE;
 int parser_debug, yy_flex_debug;
@@ -106,10 +107,11 @@ int do_idfile = 0;
 int do_dlldata = 0;
 static int no_preprocess = 0;
 int old_names = 0;
+int old_typelib = 0;
 int winrt_mode = 0;
+int interpreted_mode = 1;
 int use_abi_namespace = 0;
 static int stdinc = 1;
-static enum stub_mode stub_mode = MODE_Os;
 
 char *input_name;
 char *idl_name;
@@ -132,8 +134,9 @@ struct strarray temp_files = { 0 };
 const char *temp_dir = NULL;
 const char *prefix_client = "";
 const char *prefix_server = "";
+static const char *bindir;
+static const char *libdir;
 static const char *includedir;
-static const char *dlldir;
 static struct strarray dlldirs;
 static char *output_name;
 static const char *sysroot = "";
@@ -153,6 +156,7 @@ enum {
     DLLDATA_ONLY_OPTION,
     LOCAL_STUBS_OPTION,
     NOSTDINC_OPTION,
+    OLD_TYPELIB_OPTION,
     PACKING_OPTION,
     PREFIX_ALL_OPTION,
     PREFIX_CLIENT_OPTION,
@@ -179,6 +183,7 @@ static const struct long_option long_options[] = {
     { "nostdinc", 0, NOSTDINC_OPTION },
     { "ns_prefix", 0, RT_NS_PREFIX },
     { "oldnames", 0, OLDNAMES_OPTION },
+    { "oldtlb", 0, OLD_TYPELIB_OPTION },
     { "output", 0, 'o' },
     { "packing", 1, PACKING_OPTION },
     { "prefix-all", 1, PREFIX_ALL_OPTION },
@@ -194,13 +199,6 @@ static const struct long_option long_options[] = {
 };
 
 static void rm_tempfile(void);
-
-enum stub_mode get_stub_mode(void)
-{
-    /* old-style interpreted stubs are not supported on 64-bit */
-    if (stub_mode == MODE_Oi && pointer_size == 8) return MODE_Oif;
-    return stub_mode;
-}
 
 static char *make_token(const char *name)
 {
@@ -245,7 +243,7 @@ static void add_widl_version_define(void)
     if (p)
         version += atoi(p + 1);
 
-    sprintf(version_str, "__WIDL__=0x%x", version);
+    snprintf(version_str, sizeof(version_str), "__WIDL__=0x%x", version);
     wpp_add_cmdline_define(version_str);
 }
 
@@ -472,15 +470,6 @@ void write_id_data(const statement_list_t *stmts)
   fclose(idfile);
 }
 
-static void init_argv0_dir( const char *argv0 )
-{
-    char *dir = get_argv0_dir( argv0 );
-
-    if (!dir) return;
-    includedir = strmake( "%s/%s", dir, BIN_TO_INCLUDEDIR );
-    dlldir = strmake( "%s/%s", dir, BIN_TO_DLLDIR );
-}
-
 static void option_callback( int optc, char *optarg )
 {
     switch (optc)
@@ -590,11 +579,11 @@ static void option_callback( int optc, char *optarg )
       output_name = xstrdup(optarg);
       break;
     case 'O':
-      if (!strcmp( optarg, "s" )) stub_mode = MODE_Os;
-      else if (!strcmp( optarg, "i" )) stub_mode = MODE_Oi;
-      else if (!strcmp( optarg, "ic" )) stub_mode = MODE_Oif;
-      else if (!strcmp( optarg, "if" )) stub_mode = MODE_Oif;
-      else if (!strcmp( optarg, "icf" )) stub_mode = MODE_Oif;
+      if (!strcmp( optarg, "s" )) interpreted_mode = 0;
+      else if (!strcmp( optarg, "i" )) interpreted_mode = 1;
+      else if (!strcmp( optarg, "ic" )) interpreted_mode = 1;
+      else if (!strcmp( optarg, "if" )) interpreted_mode = 1;
+      else if (!strcmp( optarg, "icf" )) interpreted_mode = 1;
       else error( "Invalid argument '-O%s'\n", optarg );
       break;
     case 'p':
@@ -618,6 +607,9 @@ static void option_callback( int optc, char *optarg )
     case 't':
       do_everything = 0;
       do_typelib = 1;
+      break;
+    case OLD_TYPELIB_OPTION:
+      old_typelib = 1;
       break;
     case 'T':
       typelib_name = xstrdup(optarg);
@@ -643,7 +635,7 @@ static void option_callback( int optc, char *optarg )
 
 int open_typelib( const char *name )
 {
-    static const char *default_dirs[] = { DLLDIR, "/usr/lib/wine", "/usr/local/lib/wine" };
+    static const char *default_dirs[] = { LIBDIR "/wine", "/usr/lib/wine", "/usr/local/lib/wine" };
     struct target win_target = { target.cpu, PLATFORM_WINDOWS };
     const char *pe_dir = get_arch_dir( win_target );
     int fd;
@@ -672,10 +664,10 @@ int open_typelib( const char *name )
 
     if (stdinc)
     {
-        if (dlldir)
+        if (libdir)
         {
-            TRYOPEN( strmake( "%s%s/%s", dlldir, pe_dir, name ));
-            TRYOPEN( strmake( "%s/%s", dlldir, name ));
+            TRYOPEN( strmake( "%s/wine%s/%s", libdir, pe_dir, name ));
+            TRYOPEN( strmake( "%s/wine/%s", libdir, name ));
         }
         for (i = 0; i < ARRAY_SIZE(default_dirs); i++)
         {
@@ -694,7 +686,9 @@ int main(int argc,char *argv[])
   struct strarray files;
 
   init_signals( exit_on_signal );
-  init_argv0_dir( argv[0] );
+  bindir = get_bindir( argv[0] );
+  libdir = get_libdir( bindir );
+  includedir = get_includedir( bindir );
   target = init_argv0_target( argv[0] );
 
   now = time(NULL);
@@ -835,10 +829,8 @@ int main(int argc,char *argv[])
 
   init_types();
   ret = parser_parse();
-
-  if(ret) {
-    exit(1);
-  }
+  close_all_inputs();
+  if (ret) exit(1);
 
   /* Everything has been done successfully, don't delete any files.  */
   set_everything(FALSE);

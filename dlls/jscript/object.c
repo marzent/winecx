@@ -27,8 +27,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 static HRESULT Object_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv,
         jsval_t *r)
 {
+    const WCHAR *str = NULL;
+    jsstr_t *ret = NULL;
     jsdisp_t *jsdisp;
-    const WCHAR *str;
     IDispatch *disp;
     HRESULT hres;
 
@@ -50,9 +51,12 @@ static HRESULT Object_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags, uns
         L"[object Object]",
         L"[object Object]",
         L"[object Object]",
+        L"[object ArrayBuffer]",
         L"[object Object]",
         L"[object Object]",
-        L"[object Object]"
+        L"[object Object]",
+        L"[object Object]",
+        NULL
     };
 
     TRACE("\n");
@@ -72,6 +76,8 @@ static HRESULT Object_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags, uns
     jsdisp = to_jsdisp(disp);
     if(!jsdisp) {
         str = L"[object Object]";
+    }else if(jsdisp->builtin_info->to_string) {
+        hres = jsdisp->builtin_info->to_string(jsdisp, &ret);
     }else if(names[jsdisp->builtin_info->class]) {
         str = names[jsdisp->builtin_info->class];
     }else {
@@ -85,11 +91,14 @@ static HRESULT Object_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags, uns
 
 set_output:
     if(r) {
-        jsstr_t *ret;
-        ret = jsstr_alloc(str);
-        if(!ret)
-            return E_OUTOFMEMORY;
+        if(!ret) {
+            ret = jsstr_alloc(str);
+            if(!ret)
+                return E_OUTOFMEMORY;
+        }
         *r = jsval_string(ret);
+    }else if(ret) {
+        jsstr_release(ret);
     }
 
     return S_OK;
@@ -446,11 +455,6 @@ done:
     return r ? jsval_copy(argv[0], r) : S_OK;
 }
 
-static void Object_destructor(jsdisp_t *dispex)
-{
-    free(dispex);
-}
-
 static const builtin_prop_t Object_props[] = {
     {L"__defineGetter__",      Object_defineGetter,          PROPF_METHOD|PROPF_ES6|2},
     {L"__defineSetter__",      Object_defineSetter,          PROPF_METHOD|PROPF_ES6|2},
@@ -463,20 +467,13 @@ static const builtin_prop_t Object_props[] = {
 };
 
 static const builtin_info_t Object_info = {
-    JSCLASS_OBJECT,
-    NULL,
-    ARRAY_SIZE(Object_props),
-    Object_props,
-    Object_destructor,
-    NULL
+    .class      = JSCLASS_OBJECT,
+    .props_cnt  = ARRAY_SIZE(Object_props),
+    .props      = Object_props,
 };
 
 static const builtin_info_t ObjectInst_info = {
-    JSCLASS_OBJECT,
-    NULL,
-    0, NULL,
-    Object_destructor,
-    NULL
+    .class = JSCLASS_OBJECT,
 };
 
 static void release_property_descriptor(property_desc_t *desc)
@@ -658,7 +655,7 @@ static HRESULT jsdisp_define_properties(script_ctx_t *ctx, jsdisp_t *obj, jsval_
         if(FAILED(hres))
             break;
 
-        hres = IDispatchEx_GetMemberName(&list_obj->IDispatchEx_iface, id, &name);
+        hres = IDispatchEx_GetMemberName(to_dispex(list_obj), id, &name);
         if(SUCCEEDED(hres))
             hres = jsdisp_define_property(obj, name, &prop_desc);
         release_property_descriptor(&prop_desc);
@@ -1067,12 +1064,10 @@ static const builtin_prop_t ObjectConstr_props[] = {
 };
 
 static const builtin_info_t ObjectConstr_info = {
-    JSCLASS_FUNCTION,
-    Function_value,
-    ARRAY_SIZE(ObjectConstr_props),
-    ObjectConstr_props,
-    NULL,
-    NULL
+    .class     = JSCLASS_FUNCTION,
+    .call      = Function_value,
+    .props_cnt = ARRAY_SIZE(ObjectConstr_props),
+    .props     = ObjectConstr_props,
 };
 
 static HRESULT ObjectConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv,

@@ -22,9 +22,39 @@
 #include "wcmd.h"
 #include "wine/debug.h"
 
-extern struct env_stack *saved_environment;
-
 WINE_DEFAULT_DEBUG_CHANNEL(cmd);
+
+static RETURN_CODE WCMD_batch_main_loop(void)
+{
+    RETURN_CODE return_code = NO_ERROR;
+    /* Work through the file line by line until an exit is called. */
+    while (!context->skip_rest)
+    {
+        CMD_NODE *node;
+
+        switch (WCMD_ReadAndParseLine(NULL, &node))
+        {
+        case RPL_EOF:
+            context->skip_rest = TRUE;
+            break;
+        case RPL_SUCCESS:
+            if (node)
+            {
+                return_code = node_execute(node);
+                node_dispose_tree(node);
+            }
+            break;
+        case RPL_SYNTAXERROR:
+            return_code = RETURN_CODE_SYNTAX_ERROR;
+            break;
+        }
+    }
+
+    /* If there are outstanding setlocal's to the current context, unwind them. */
+    while (WCMD_endlocal() == NO_ERROR) {}
+
+    return return_code;
+}
 
 /****************************************************************************
  * WCMD_batch
@@ -42,82 +72,30 @@ WINE_DEFAULT_DEBUG_CHANNEL(cmd);
  * a label to goto once opened.
  */
 
-void WCMD_batch (WCHAR *file, WCHAR *command, BOOL called, WCHAR *startLabel, HANDLE pgmHandle)
+RETURN_CODE WCMD_call_batch(const WCHAR *file, WCHAR *command)
 {
-  HANDLE h = INVALID_HANDLE_VALUE;
-  BATCH_CONTEXT *prev_context;
+    BATCH_CONTEXT *prev_context;
+    RETURN_CODE return_code = NO_ERROR;
 
-  if (startLabel == NULL) {
-    h = CreateFileW (file, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                     NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-      SetLastError (ERROR_FILE_NOT_FOUND);
-      WCMD_print_error ();
-      return;
-    }
-  } else {
-    DuplicateHandle(GetCurrentProcess(), pgmHandle,
-                    GetCurrentProcess(), &h,
-                    0, FALSE, DUPLICATE_SAME_ACCESS);
-  }
+    /* Create a context structure for this batch file. */
+    prev_context = context;
+    context = malloc(sizeof (BATCH_CONTEXT));
+    context->file_position.QuadPart = 0;
+    context->batchfileW = xstrdupW(file);
+    context->command = command;
+    memset(context->shift_count, 0x00, sizeof(context->shift_count));
+    context->prev_context = prev_context;
+    context->skip_rest = FALSE;
 
-/*
- *	Create a context structure for this batch file.
- */
+    return_code = WCMD_batch_main_loop();
 
-  prev_context = context;
-  context = LocalAlloc (LMEM_FIXED, sizeof (BATCH_CONTEXT));
-  context -> h = h;
-  context->batchfileW = xstrdupW(file);
-  context -> command = command;
-  memset(context -> shift_count, 0x00, sizeof(context -> shift_count));
-  context -> prev_context = prev_context;
-  context -> skip_rest = FALSE;
-
-  /* If processing a call :label, 'goto' the label in question */
-  if (startLabel) {
-    lstrcpyW(param1, startLabel);
-    WCMD_goto(NULL);
-  }
-
-/*
- * 	Work through the file line by line. Specific batch commands are processed here,
- * 	the rest are handled by the main command processor.
- */
-
-  while (context -> skip_rest == FALSE) {
-      CMD_LIST *toExecute = NULL;         /* Commands left to be executed */
-      if (!WCMD_ReadAndParseLine(NULL, &toExecute, h))
-        break;
-      /* Note: although this batch program itself may be called, we are not retrying
-         the command as a result of a call failing to find a program, hence the
-         retryCall parameter below is FALSE                                           */
-      WCMD_process_commands(toExecute, FALSE, FALSE);
-      WCMD_free_commands(toExecute);
-      toExecute = NULL;
-  }
-  CloseHandle (h);
-
-/*
- *  If there are outstanding setlocal's to the current context, unwind them.
- */
-  while (saved_environment && saved_environment->batchhandle == context->h) {
-      WCMD_endlocal();
-  }
-
-/*
- *	If invoked by a CALL, we return to the context of our caller. Otherwise return
- *	to the caller's caller.
- */
-
-  free(context->batchfileW);
-  LocalFree(context);
-  if ((prev_context != NULL) && (!called)) {
-    WINE_TRACE("Batch completed, but was not 'called' so skipping outer batch too\n");
-    prev_context -> skip_rest = TRUE;
+    free(context->batchfileW);
+    free(context);
     context = prev_context;
-  }
-  context = prev_context;
+
+    if (return_code != NO_ERROR && return_code != RETURN_CODE_ABORTED)
+        errorlevel = return_code;
+    return errorlevel;
 }
 
 /*******************************************************************
@@ -249,7 +227,16 @@ WCHAR *WCMD_fgets(WCHAR *buf, DWORD noChars, HANDLE h)
   /* We can't use the native f* functions because of the filename syntax differences
      between DOS and Unix. Also need to lose the LF (or CRLF) from the line. */
 
-  if (!ReadConsoleW(h, buf, noChars, &charsRead, NULL)) {
+  if (VerifyConsoleIoHandle(h) && ReadConsoleW(h, buf, noChars, &charsRead, NULL) && charsRead) {
+      if (!charsRead) return NULL;
+
+      /* Find first EOL */
+      for (i = 0; i < charsRead; i++) {
+          if (buf[i] == '\n' || buf[i] == '\r')
+              break;
+      }
+  }
+  else {
       LARGE_INTEGER filepos;
       char *bufA;
       UINT cp;
@@ -280,15 +267,6 @@ WCHAR *WCMD_fgets(WCHAR *buf, DWORD noChars, HANDLE h)
 
       i = MultiByteToWideChar(cp, 0, bufA, p - bufA, buf, noChars);
       free(bufA);
-  }
-  else {
-      if (!charsRead) return NULL;
-
-      /* Find first EOL */
-      for (i = 0; i < charsRead; i++) {
-          if (buf[i] == '\n' || buf[i] == '\r')
-              break;
-      }
   }
 
   /* Truncate at EOL (or end of buffer) */
@@ -334,11 +312,7 @@ WCHAR *WCMD_fgets(WCHAR *buf, DWORD noChars, HANDLE h)
  */
 void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute)
 {
-
-#define NUMMODIFIERS 11
-  static const WCHAR validmodifiers[NUMMODIFIERS] = {
-        '~', 'f', 'd', 'p', 'n', 'x', 's', 'a', 't', 'z', '$'
-  };
+  static const WCHAR *validmodifiers = L"~fdpnxsatz$";
 
   WIN32_FILE_ATTRIBUTE_DATA fileInfo;
   WCHAR  outputparam[MAXSTRING];
@@ -348,41 +322,17 @@ void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute)
   WCHAR  *filepart       = NULL;
   WCHAR  *pos            = *start+1;
   WCHAR  *firstModifier  = pos;
-  WCHAR  *lastModifier   = NULL;
+  WCHAR  *lastModifier   = pos++;
   int   modifierLen     = 0;
-  BOOL  finished        = FALSE;
-  int   i               = 0;
   BOOL  exists          = TRUE;
   BOOL  skipFileParsing = FALSE;
   BOOL  doneModifier    = FALSE;
 
   /* Search forwards until find invalid character modifier */
-  while (!finished) {
-
-    /* Work on the previous character */
-    if (lastModifier != NULL) {
-
-      for (i=0; i<NUMMODIFIERS; i++) {
-        if (validmodifiers[i] == *lastModifier) {
-
-          /* Special case '$' to skip until : found */
-          if (*lastModifier == '$') {
-            while (*pos != ':' && *pos) pos++;
-            if (*pos == 0x00) return; /* Invalid syntax */
-            pos++;                    /* Skip ':'       */
-          }
-          break;
-        }
-      }
-
-      if (i==NUMMODIFIERS) {
-        finished = TRUE;
-      }
-    }
-
-    /* Save this one away */
-    if (!finished) {
-      lastModifier = pos;
+  for (; wcschr(validmodifiers, towlower(*lastModifier)); lastModifier = pos++) {
+    /* Special case '$' to skip until : found */
+    if (*lastModifier == L'$') {
+      if (!(pos = wcschr(pos, L':'))) return; /* Invalid syntax */
       pos++;
     }
   }
@@ -396,15 +346,17 @@ void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute)
       break;
 
     } else {
-      int foridx = FOR_VAR_IDX(*lastModifier);
       /* Its a valid parameter identifier - OK */
-      if ((foridx >= 0) && (forloopcontext.variable[foridx] != NULL)) break;
+      if (for_var_is_valid(*lastModifier) && forloopcontext->variable[*lastModifier] != NULL) break;
 
       /* Its not a valid parameter identifier - step backwards */
       lastModifier--;
     }
   }
   if (lastModifier == firstModifier) return; /* Invalid syntax */
+  /* put all modifiers in lowercase */
+  for (pos = firstModifier; pos < lastModifier && *pos != L'$'; pos++)
+      *pos = towlower(*pos);
 
   /* So now, firstModifier points to beginning of modifiers, lastModifier
      points to the variable just after the modifiers. Process modifiers
@@ -424,8 +376,8 @@ void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute)
                             *lastModifier-'0' + context -> shift_count[*lastModifier-'0'],
                             NULL, FALSE, TRUE));
   } else {
-    int foridx = FOR_VAR_IDX(*lastModifier);
-    lstrcpyW(outputparam, forloopcontext.variable[foridx]);
+    if (for_var_is_valid(*lastModifier))
+        lstrcpyW(outputparam, forloopcontext->variable[*lastModifier]);
   }
 
   /* 1. Handle '~' : Strip surrounding quotes */
@@ -641,48 +593,136 @@ void WCMD_HandleTildeModifiers(WCHAR **start, BOOL atExecute)
   WCMD_strsubstW(*start, lastModifier+1, finaloutput, -1);
 }
 
+extern void WCMD_expand(const WCHAR *, WCHAR *);
+
 /*******************************************************************
  * WCMD_call - processes a batch call statement
  *
  *	If there is a leading ':', calls within this batch program
  *	otherwise launches another program.
  */
-void WCMD_call (WCHAR *command) {
+RETURN_CODE WCMD_call(WCHAR *command)
+{
+    RETURN_CODE return_code;
+    WCHAR buffer[MAXSTRING];
+    WCMD_expand(command, buffer);
 
-  /* Run other program if no leading ':' */
-  if (*command != ':') {
-    WCMD_run_program(command, TRUE);
-    /* If the thing we try to run does not exist, call returns 1 */
-    if (errorlevel) errorlevel=1;
-  } else {
-
-    WCHAR gotoLabel[MAX_PATH];
-
-    lstrcpyW(gotoLabel, param1);
-
-    if (context) {
-
-      LARGE_INTEGER li;
-      FOR_CONTEXT oldcontext;
-
-      /* Save the for variable context, then start with an empty context
-         as for loop variables do not survive a call                    */
-      oldcontext = forloopcontext;
-      memset(&forloopcontext, 0, sizeof(forloopcontext));
-
-      /* Save the current file position, call the same file,
-         restore position                                    */
-      li.QuadPart = 0;
-      li.u.LowPart = SetFilePointer(context -> h, li.u.LowPart,
-                     &li.u.HighPart, FILE_CURRENT);
-      WCMD_batch (context->batchfileW, command, TRUE, gotoLabel, context->h);
-      SetFilePointer(context -> h, li.u.LowPart,
-                     &li.u.HighPart, FILE_BEGIN);
-
-      /* Restore the for loop context */
-      forloopcontext = oldcontext;
-    } else {
-      WCMD_output_asis_stderr(WCMD_LoadMessage(WCMD_CALLINSCRIPT));
+    /* Run other program if no leading ':' */
+    if (*command != ':')
+    {
+        if (*WCMD_skip_leading_spaces(buffer) == L'\0')
+            /* FIXME it's incomplete as (call) should return 1, and (call ) should return 0...
+             * but we need to get the untouched string in command
+             */
+            return_code = errorlevel = NO_ERROR;
+        else
+        {
+            WCMD_call_command(buffer);
+            /* If the thing we try to run does not exist, call returns 1 */
+            if (errorlevel == RETURN_CODE_CANT_LAUNCH)
+                errorlevel = ERROR_INVALID_FUNCTION;
+            return_code = errorlevel;
+        }
     }
+    else if (context)
+    {
+        WCHAR gotoLabel[MAX_PATH];
+        BATCH_CONTEXT *prev_context;
+
+        lstrcpyW(gotoLabel, param1);
+
+        /* Save the for variable context, then start with an empty context
+           as for loop variables do not survive a call                    */
+        WCMD_save_for_loop_context(TRUE);
+
+        prev_context = context;
+        context = malloc(sizeof (BATCH_CONTEXT));
+        context->file_position = prev_context->file_position; /* will be overwritten by WCMD_GOTO below */
+        context->batchfileW = prev_context->batchfileW;
+        context->command = buffer;
+        memset(context->shift_count, 0x00, sizeof(context->shift_count));
+        context->prev_context = prev_context;
+        context->skip_rest = FALSE;
+
+        /* FIXME as commands here can temper with param1 global variable (ugly) */
+        lstrcpyW(param1, gotoLabel);
+        WCMD_goto();
+
+        WCMD_batch_main_loop();
+
+        free(context);
+        context = prev_context;
+        return_code = errorlevel;
+
+        /* Restore the for loop context */
+        WCMD_restore_for_loop_context();
+  } else {
+      WCMD_output_asis_stderr(WCMD_LoadMessage(WCMD_CALLINSCRIPT));
+      return_code = ERROR_INVALID_FUNCTION;
   }
+  return return_code;
+}
+
+void WCMD_set_label_end(WCHAR *string)
+{
+    static const WCHAR labelEndsW[] = L"><|& :\t";
+    WCHAR *p;
+
+    /* Label ends at whitespace or redirection characters */
+    if ((p = wcspbrk(string, labelEndsW))) *p = L'\0';
+}
+
+static BOOL find_next_label(HANDLE h, ULONGLONG end, WCHAR candidate[MAXSTRING])
+{
+    while (WCMD_fgets(candidate, MAXSTRING, h))
+    {
+        WCHAR *str = candidate;
+
+        /* Ignore leading whitespace or no-echo character */
+        while (*str == L'@' || iswspace(*str)) str++;
+
+        /* If the first real character is a : then this is a label */
+        if (*str == L':')
+        {
+            /* Skip spaces between : and label */
+            for (str++; iswspace(*str); str++) {}
+            memmove(candidate, str, (wcslen(str) + 1) * sizeof(WCHAR));
+            WCMD_set_label_end(candidate);
+
+            return TRUE;
+        }
+        if (end)
+        {
+            LARGE_INTEGER li = {.QuadPart = 0}, curli;
+            if (!SetFilePointerEx(h, li, &curli, FILE_CURRENT)) return FALSE;
+            if (curli.QuadPart > end) break;
+        }
+    }
+    return FALSE;
+}
+
+BOOL WCMD_find_label(HANDLE h, const WCHAR *label, LARGE_INTEGER *pos)
+{
+    LARGE_INTEGER where = *pos, zeroli = {.QuadPart = 0};
+    WCHAR candidate[MAXSTRING];
+
+    if (!*label) return FALSE;
+
+    if (!SetFilePointerEx(h, *pos, NULL, FILE_BEGIN)) return FALSE;
+    while (find_next_label(h, ~(ULONGLONG)0, candidate))
+    {
+        TRACE("comparing found label %s\n", wine_dbgstr_w(candidate));
+        if (!lstrcmpiW(candidate, label))
+            return SetFilePointerEx(h, zeroli, pos, FILE_CURRENT);
+    }
+    TRACE("Label not found, trying from beginning of file\n");
+    if (!SetFilePointerEx(h, zeroli, NULL, FILE_BEGIN)) return FALSE;
+    while (find_next_label(h, where.QuadPart, candidate))
+    {
+        TRACE("comparing found label %s\n", wine_dbgstr_w(candidate));
+        if (!lstrcmpiW(candidate, label))
+            return SetFilePointerEx(h, zeroli, pos, FILE_CURRENT);
+    }
+    TRACE("Reached wrap point, label not found\n");
+    return FALSE;
 }

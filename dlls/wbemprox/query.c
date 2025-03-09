@@ -54,11 +54,12 @@ HRESULT create_view( enum view_type type, enum wbm_namespace ns, const WCHAR *pa
 
     case VIEW_TYPE_SELECT:
     {
-        struct table *table = grab_table( ns, class );
+        struct table *table = find_table( ns, class );
         HRESULT hr;
 
         if (table && (hr = append_table( view, table )) != S_OK)
         {
+            release_table( table );
             free( view );
             return hr;
         }
@@ -93,23 +94,30 @@ void destroy_view( struct view *view )
     free( view );
 }
 
-static BOOL eval_like( const WCHAR *lstr, const WCHAR *rstr )
+static BOOL eval_like( const WCHAR *text, const WCHAR *pattern )
 {
-    const WCHAR *p = lstr, *q = rstr;
+    if (wcsstr( pattern, L"[" )) FIXME( "character ranges (i.e. [abc], [^a-z]) are not supported\n" );
 
-    while (*p && *q)
+    while (*text)
     {
-        if (q[0] == '\\' && q[1] == '\\') q++;
-        if (*q == '%')
+        if (pattern[0] == '\\' && pattern[1] == '\\') pattern++;
+
+        if (*pattern == '%')
         {
-            while (*q == '%') q++;
-            if (!*q) return TRUE;
-            while (*p && *q && towupper( *p ) == towupper( *q )) { p++; q++; };
-            if (!*p && !*q) return TRUE;
+            while (*pattern == '%') pattern++;
+            if (!*pattern) return TRUE;
+            while (!eval_like( text, pattern ) && *text) text++;
+
+            return !!*text;
         }
-        if (*q != '%' && towupper( *p++ ) != towupper( *q++ )) return FALSE;
+
+        if (*pattern != '_' && towupper( *text ) != towupper( *pattern )) return FALSE;
+        text++; pattern++;
     }
-    return TRUE;
+
+    while (*pattern == '%') pattern++;
+
+    return *pattern == '\0';
 }
 
 static HRESULT eval_strcmp( UINT op, const WCHAR *lstr, const WCHAR *rstr, LONGLONG *val )
@@ -624,7 +632,7 @@ static HRESULT get_antecedent_table( enum wbm_namespace ns, const WCHAR *assoccl
     }
 
     if ((hr = do_query( ns, str, &query )) != S_OK) goto done;
-    if (query->view->table_count) *table = addref_table( query->view->table[0] );
+    if (query->view->table_count) *table = grab_table( query->view->table[0] );
     else *table = NULL;
 
 done:

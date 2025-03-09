@@ -18,6 +18,8 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <locale.h>
+#include <share.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -168,6 +170,7 @@ typedef struct
 {
     DWORD flags;
     critical_section cs;
+    ULONG_PTR unknown;
     DWORD thread_id;
     DWORD count;
 } *_Mtx_t;
@@ -252,6 +255,24 @@ static ULONG (__cdecl *p__Winerror_message)(ULONG, char*, ULONG);
 static int (__cdecl *p__Winerror_map)(int);
 static const char* (__cdecl *p__Syserror_map)(int err);
 
+typedef enum {
+    OPENMODE_in         = 0x01,
+    OPENMODE_out        = 0x02,
+    OPENMODE_ate        = 0x04,
+    OPENMODE_app        = 0x08,
+    OPENMODE_trunc      = 0x10,
+    OPENMODE__Nocreate  = 0x40,
+    OPENMODE__Noreplace = 0x80,
+    OPENMODE_binary     = 0x20,
+    OPENMODE_mask       = 0xff
+} IOSB_openmode;
+static FILE* (__cdecl *p__Fiopen_wchar)(const wchar_t*, int, int);
+static FILE* (__cdecl *p__Fiopen)(const char*, int, int);
+
+static char* (__cdecl *p_setlocale)(int, const char*);
+static int (__cdecl *p_fclose)(FILE*);
+static int (__cdecl *p__unlink)(const char*);
+
 static BOOLEAN (WINAPI *pCreateSymbolicLinkW)(const WCHAR *, const WCHAR *, DWORD);
 
 static HMODULE msvcp;
@@ -290,6 +311,9 @@ static BOOL init(void)
         SET(p__Release_chore, "?_Release_chore@details@Concurrency@@YAXPEAU_Threadpool_chore@12@@Z");
         SET(p__Winerror_message, "?_Winerror_message@std@@YAKKPEADK@Z");
         SET(p__Syserror_map, "?_Syserror_map@std@@YAPEBDH@Z");
+
+        SET(p__Fiopen_wchar, "?_Fiopen@std@@YAPEAU_iobuf@@PEB_WHH@Z");
+        SET(p__Fiopen, "?_Fiopen@std@@YAPEAU_iobuf@@PEBDHH@Z");
     } else {
 #ifdef __arm__
         SET(p_task_continuation_context_ctor, "??0task_continuation_context@Concurrency@@AAA@XZ");
@@ -298,7 +322,7 @@ static BOOL init(void)
         SET(p__ContextCallback__Capture, "?_Capture@_ContextCallback@details@Concurrency@@AAAXXZ");
         SET(p__ContextCallback__Reset, "?_Reset@_ContextCallback@details@Concurrency@@AAAXXZ");
         SET(p__TaskEventLogger__LogCancelTask, "?_LogCancelTask@_TaskEventLogger@details@Concurrency@@QAAXXZ");
-        SET(p__TaskEventLogger__LogScheduleTask, "?_LogScheduleTask@_TaskEventLogger@details@Concurrency@@QAEX_N@Z");
+        SET(p__TaskEventLogger__LogScheduleTask, "?_LogScheduleTask@_TaskEventLogger@details@Concurrency@@QAAX_N@Z@Z");
         SET(p__TaskEventLogger__LogTaskCompleted, "?_LogTaskCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
         SET(p__TaskEventLogger__LogTaskExecutionCompleted, "?_LogTaskExecutionCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
         SET(p__TaskEventLogger__LogWorkItemCompleted, "?_LogWorkItemCompleted@_TaskEventLogger@details@Concurrency@@QAAXXZ");
@@ -321,6 +345,9 @@ static BOOL init(void)
         SET(p__Release_chore, "?_Release_chore@details@Concurrency@@YAXPAU_Threadpool_chore@12@@Z");
         SET(p__Winerror_message, "?_Winerror_message@std@@YAKKPADK@Z");
         SET(p__Syserror_map, "?_Syserror_map@std@@YAPBDH@Z");
+
+        SET(p__Fiopen_wchar, "?_Fiopen@std@@YAPAU_iobuf@@PB_WHH@Z");
+        SET(p__Fiopen, "?_Fiopen@std@@YAPAU_iobuf@@PBDHH@Z");
     }
 
     SET(p__Mtx_init, "_Mtx_init");
@@ -363,6 +390,11 @@ static BOOL init(void)
 
     hdll = GetModuleHandleA("kernel32.dll");
     pCreateSymbolicLinkW = (void*)GetProcAddress(hdll, "CreateSymbolicLinkW");
+
+    hdll = GetModuleHandleA("ucrtbase.dll");
+    p_setlocale = (void*)GetProcAddress(hdll, "setlocale");
+    p_fclose = (void*)GetProcAddress(hdll, "fclose");
+    p__unlink = (void*)GetProcAddress(hdll, "_unlink");
 
     init_thiscall_thunk();
     return TRUE;
@@ -1396,6 +1428,8 @@ static void test__Syserror_map(void)
 
     r1 = p__Syserror_map(0);
     ok(r1 != NULL, "_Syserror_map(0) returned NULL\n");
+    r1 = p__Syserror_map(1233);
+    ok(r1 != NULL, "_Syserror_map(1233) returned NULL\n");
     r2 = p__Syserror_map(1234);
     ok(r2 != NULL, "_Syserror_map(1234) returned NULL\n");
     ok(r1 == r2, "r1 = %p(%s), r2 = %p(%s)\n", r1, r1, r2, r2);
@@ -1638,6 +1672,76 @@ static void test_Copy_file(void)
     ok(SetCurrentDirectoryW(origin_path), "SetCurrentDirectoryW to origin_path failed\n");
 }
 
+static void test__Mtx(void)
+{
+    _Mtx_t mtx = NULL;
+    int r;
+
+    r = p__Mtx_init(&mtx, 0);
+    ok(!r, "failed to init mtx\n");
+
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 0, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_lock(mtx);
+    ok(mtx->thread_id == GetCurrentThreadId(), "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_lock(mtx);
+    ok(mtx->thread_id == GetCurrentThreadId(), "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == 0, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == -1, "mtx.count = %lx\n", mtx->count);
+    p__Mtx_unlock(mtx);
+    ok(mtx->thread_id == -1, "mtx.thread_id = %lx\n", mtx->thread_id);
+    ok(mtx->count == -2, "mtx.count = %lx\n", mtx->count);
+
+    p__Mtx_destroy(mtx);
+}
+
+static void test__Fiopen(void)
+{
+    int i, ret;
+    FILE *f;
+    wchar_t wpath[MAX_PATH];
+    static const struct {
+        const char *loc;
+        const char *path;
+    } tests[] = {
+        { "German.utf8",    "t\xc3\xa4\xc3\x8f\xc3\xb6\xc3\x9f.txt" },
+        { "Polish.utf8",    "t\xc4\x99\xc5\x9b\xc4\x87.txt" },
+        { "Turkish.utf8",   "t\xc3\x87\xc4\x9e\xc4\xb1\xc4\xb0\xc5\x9e.txt" },
+        { "Arabic.utf8",    "t\xd8\xaa\xda\x86.txt" },
+        { "Japanese.utf8",  "t\xe3\x82\xaf\xe3\x83\xa4.txt" },
+        { "Chinese.utf8",   "t\xe4\xb8\x82\xe9\xbd\xab.txt" },
+    };
+
+    for(i=0; i<ARRAY_SIZE(tests); i++) {
+        if(!p_setlocale(LC_ALL, tests[i].loc)) {
+            win_skip("skipping locale %s\n", tests[i].loc);
+            continue;
+        }
+
+        ret = MultiByteToWideChar(CP_UTF8, 0, tests[i].path, -1, wpath, MAX_PATH);
+        ok(ret, "MultiByteToWideChar failed on %s with locale %s: %lx\n",
+                debugstr_a(tests[i].path), tests[i].loc, GetLastError());
+
+        f = p__Fiopen(tests[i].path, OPENMODE_out, SH_DENYNO);
+        ok(!!f, "failed to create %s with locale %s\n", tests[i].path, tests[i].loc);
+        p_fclose(f);
+
+        f = p__Fiopen_wchar(wpath, OPENMODE_in, SH_DENYNO);
+        ok(!!f, "failed to open %s with locale %s\n", wine_dbgstr_w(wpath), tests[i].loc);
+        if(f) p_fclose(f);
+
+        ok(!p__unlink(tests[i].path), "failed to unlink %s with locale %s\n",
+                tests[i].path, tests[i].loc);
+    }
+    p_setlocale(LC_ALL, "C");
+}
+
 START_TEST(msvcp140)
 {
     if(!init()) return;
@@ -1665,5 +1769,7 @@ START_TEST(msvcp140)
     test_Equivalent();
     test_cnd();
     test_Copy_file();
+    test__Mtx();
+    test__Fiopen();
     FreeLibrary(msvcp);
 }

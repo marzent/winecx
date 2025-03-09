@@ -28,6 +28,8 @@
 WINE_DEFAULT_DEBUG_CHANNEL(mfplat);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
+extern GUID MFVideoFormat_ABGR32;
+
 static const GUID *const input_types[] =
 {
     &MFVideoFormat_IYUV,
@@ -66,6 +68,7 @@ static const GUID *const output_types[] =
     &MFVideoFormat_AYUV,
     &MFVideoFormat_RGB555,
     &MFVideoFormat_RGB565,
+    &MFVideoFormat_ABGR32,
 };
 
 struct video_processor
@@ -83,29 +86,130 @@ struct video_processor
 
     wg_transform_t wg_transform;
     struct wg_sample_queue *wg_sample_queue;
+
+    IUnknown *device_manager;
+    IMFVideoSampleAllocatorEx *allocator;
 };
+
+static void update_video_aperture(MFVideoInfo *input_info, MFVideoInfo *output_info)
+{
+    RECT input_rect, output_rect;
+
+    get_mf_video_content_rect(input_info, &input_rect);
+    get_mf_video_content_rect(output_info, &output_rect);
+
+    if (!EqualRect(&input_rect, &output_rect))
+    {
+        FIXME("Mismatched content size %s vs %s\n", wine_dbgstr_rect(&input_rect),
+                wine_dbgstr_rect(&output_rect));
+    }
+
+    input_info->MinimumDisplayAperture.OffsetX.value = input_rect.left;
+    input_info->MinimumDisplayAperture.OffsetY.value = input_rect.top;
+    input_info->MinimumDisplayAperture.Area.cx = input_rect.right - input_rect.left;
+    input_info->MinimumDisplayAperture.Area.cy = input_rect.bottom - input_rect.top;
+    output_info->MinimumDisplayAperture = input_info->MinimumDisplayAperture;
+}
+
+static HRESULT normalize_media_types(BOOL bottom_up, IMFMediaType **input_type, IMFMediaType **output_type)
+{
+    MFVIDEOFORMAT *input_format, *output_format;
+    BOOL normalize_input, normalize_output;
+    UINT32 size;
+    HRESULT hr;
+
+    normalize_input = FAILED(IMFMediaType_GetItem(*input_type, &MF_MT_DEFAULT_STRIDE, NULL));
+    normalize_output = FAILED(IMFMediaType_GetItem(*output_type, &MF_MT_DEFAULT_STRIDE, NULL));
+
+    if (FAILED(hr = MFCreateMFVideoFormatFromMFMediaType(*input_type, &input_format, &size)))
+        return hr;
+    if (FAILED(hr = MFCreateMFVideoFormatFromMFMediaType(*output_type, &output_format, &size)))
+    {
+        CoTaskMemFree(input_format);
+        return hr;
+    }
+
+    if (bottom_up && normalize_input)
+        input_format->videoInfo.VideoFlags |= MFVideoFlag_BottomUpLinearRep;
+    if (bottom_up && normalize_output)
+        output_format->videoInfo.VideoFlags |= MFVideoFlag_BottomUpLinearRep;
+
+    update_video_aperture(&input_format->videoInfo, &output_format->videoInfo);
+
+    if (FAILED(hr = MFCreateVideoMediaType(input_format, (IMFVideoMediaType **)input_type)))
+        goto done;
+    if (FAILED(hr = MFCreateVideoMediaType(output_format, (IMFVideoMediaType **)output_type)))
+    {
+        IMFMediaType_Release(*input_type);
+        *input_type = NULL;
+    }
+
+done:
+    CoTaskMemFree(input_format);
+    CoTaskMemFree(output_format);
+    return hr;
+}
 
 static HRESULT try_create_wg_transform(struct video_processor *impl)
 {
-    struct wg_format input_format, output_format;
+    BOOL bottom_up = !impl->device_manager; /* when not D3D-enabled, the transform outputs bottom up RGB buffers */
+    IMFMediaType *input_type = impl->input_type, *output_type = impl->output_type;
     struct wg_transform_attrs attrs = {0};
+    HRESULT hr;
 
     if (impl->wg_transform)
+    {
         wg_transform_destroy(impl->wg_transform);
-    impl->wg_transform = 0;
+        impl->wg_transform = 0;
+    }
 
-    mf_media_type_to_wg_format(impl->input_type, &input_format);
-    if (input_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
+    if (FAILED(hr = normalize_media_types(bottom_up, &input_type, &output_type)))
+        return hr;
+    hr = wg_transform_create_mf(input_type, output_type, &attrs, &impl->wg_transform);
+    IMFMediaType_Release(output_type);
+    IMFMediaType_Release(input_type);
 
-    mf_media_type_to_wg_format(impl->output_type, &output_format);
-    if (output_format.major_type == WG_MAJOR_TYPE_UNKNOWN)
-        return MF_E_INVALIDMEDIATYPE;
+    return hr;
+}
 
-    if (!(impl->wg_transform = wg_transform_create(&input_format, &output_format, &attrs)))
-        return E_FAIL;
+static HRESULT video_processor_init_allocator(struct video_processor *processor)
+{
+    IMFVideoSampleAllocatorEx *allocator;
+    UINT32 count;
+    HRESULT hr;
 
+    if (processor->allocator)
+        return S_OK;
+
+    if (FAILED(hr = MFCreateVideoSampleAllocatorEx(&IID_IMFVideoSampleAllocatorEx, (void **)&allocator)))
+        return hr;
+    if (FAILED(IMFAttributes_GetUINT32(processor->attributes, &MF_SA_MINIMUM_OUTPUT_SAMPLE_COUNT, &count)))
+        count = 2;
+    if (FAILED(hr = IMFVideoSampleAllocatorEx_SetDirectXManager(allocator, processor->device_manager))
+            || FAILED(hr = IMFVideoSampleAllocatorEx_InitializeSampleAllocatorEx(allocator, count, max(count + 2, 10),
+            processor->output_attributes, processor->output_type)))
+    {
+        IMFVideoSampleAllocatorEx_Release(allocator);
+        return hr;
+    }
+
+    processor->allocator = allocator;
     return S_OK;
+}
+
+static HRESULT video_processor_uninit_allocator(struct video_processor *processor)
+{
+    HRESULT hr;
+
+    if (!processor->allocator)
+        return S_OK;
+
+    if (SUCCEEDED(hr = IMFVideoSampleAllocatorEx_UninitializeSampleAllocator(processor->allocator)))
+        hr = IMFVideoSampleAllocatorEx_SetDirectXManager(processor->allocator, NULL);
+    IMFVideoSampleAllocatorEx_Release(processor->allocator);
+    processor->allocator = NULL;
+
+    return hr;
 }
 
 static struct video_processor *impl_from_IMFTransform(IMFTransform *iface)
@@ -151,6 +255,9 @@ static ULONG WINAPI video_processor_Release(IMFTransform *iface)
 
     if (!refcount)
     {
+        video_processor_uninit_allocator(impl);
+        if (impl->device_manager)
+            IUnknown_Release(impl->device_manager);
         if (impl->wg_transform)
             wg_transform_destroy(impl->wg_transform);
         if (impl->input_type)
@@ -223,7 +330,7 @@ static HRESULT WINAPI video_processor_GetAttributes(IMFTransform *iface, IMFAttr
 {
     struct video_processor *impl = impl_from_IMFTransform(iface);
 
-    FIXME("iface %p, attributes %p semi-stub!\n", iface, attributes);
+    TRACE("iface %p, attributes %p\n", iface, attributes);
 
     if (!attributes)
         return E_POINTER;
@@ -242,7 +349,7 @@ static HRESULT WINAPI video_processor_GetOutputStreamAttributes(IMFTransform *if
 {
     struct video_processor *impl = impl_from_IMFTransform(iface);
 
-    FIXME("iface %p, id %#lx, attributes %p semi-stub!\n", iface, id, attributes);
+    TRACE("iface %p, id %#lx, attributes %p\n", iface, id, attributes);
 
     if (!attributes)
         return E_POINTER;
@@ -347,6 +454,22 @@ static HRESULT WINAPI video_processor_SetInputType(IMFTransform *iface, DWORD id
 
     TRACE("iface %p, id %#lx, type %p, flags %#lx.\n", iface, id, type, flags);
 
+    if (!type)
+    {
+        if (impl->input_type)
+        {
+            IMFMediaType_Release(impl->input_type);
+            impl->input_type = NULL;
+        }
+        if (impl->wg_transform)
+        {
+            wg_transform_destroy(impl->wg_transform);
+            impl->wg_transform = 0;
+        }
+
+        return S_OK;
+    }
+
     if (FAILED(IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major))
             || !IsEqualGUID(&major, &MFMediaType_Video))
         return E_INVALIDARG;
@@ -390,6 +513,22 @@ static HRESULT WINAPI video_processor_SetOutputType(IMFTransform *iface, DWORD i
 
     TRACE("iface %p, id %#lx, type %p, flags %#lx.\n", iface, id, type, flags);
 
+    if (!type)
+    {
+        if (impl->output_type)
+        {
+            IMFMediaType_Release(impl->output_type);
+            impl->output_type = NULL;
+        }
+        if (impl->wg_transform)
+        {
+            wg_transform_destroy(impl->wg_transform);
+            impl->wg_transform = 0;
+        }
+
+        return S_OK;
+    }
+
     if (FAILED(IMFMediaType_GetGUID(type, &MF_MT_MAJOR_TYPE, &major))
             || !IsEqualGUID(&major, &MFMediaType_Video))
         return E_INVALIDARG;
@@ -405,6 +544,9 @@ static HRESULT WINAPI video_processor_SetOutputType(IMFTransform *iface, DWORD i
         return MF_E_INVALIDMEDIATYPE;
     if (flags & MFT_SET_TYPE_TEST_ONLY)
         return S_OK;
+
+    if (FAILED(hr = video_processor_uninit_allocator(impl)))
+        return hr;
 
     if (impl->output_type)
         IMFMediaType_Release(impl->output_type);
@@ -506,8 +648,33 @@ static HRESULT WINAPI video_processor_ProcessEvent(IMFTransform *iface, DWORD id
 
 static HRESULT WINAPI video_processor_ProcessMessage(IMFTransform *iface, MFT_MESSAGE_TYPE message, ULONG_PTR param)
 {
-    FIXME("iface %p, message %#x, param %#Ix stub!\n", iface, message, param);
-    return S_OK;
+    struct video_processor *processor = impl_from_IMFTransform(iface);
+    HRESULT hr;
+
+    TRACE("iface %p, message %#x, param %Ix.\n", iface, message, param);
+
+    switch (message)
+    {
+    case MFT_MESSAGE_SET_D3D_MANAGER:
+        if (FAILED(hr = video_processor_uninit_allocator(processor)))
+            return hr;
+
+        if (processor->device_manager)
+        {
+            processor->output_info.dwFlags &= ~MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
+            IUnknown_Release(processor->device_manager);
+        }
+        if ((processor->device_manager = (IUnknown *)param))
+        {
+            IUnknown_AddRef(processor->device_manager);
+            processor->output_info.dwFlags |= MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
+        }
+        return S_OK;
+
+    default:
+        FIXME("Ignoring message %#x.\n", message);
+        return S_OK;
+    }
 }
 
 static HRESULT WINAPI video_processor_ProcessInput(IMFTransform *iface, DWORD id, IMFSample *sample, DWORD flags)
@@ -527,6 +694,7 @@ static HRESULT WINAPI video_processor_ProcessOutput(IMFTransform *iface, DWORD f
 {
     struct video_processor *impl = impl_from_IMFTransform(iface);
     MFT_OUTPUT_STREAM_INFO info;
+    IMFSample *output_sample;
     HRESULT hr;
 
     TRACE("iface %p, flags %#lx, count %lu, samples %p, status %p.\n", iface, flags, count, samples, status);
@@ -538,16 +706,35 @@ static HRESULT WINAPI video_processor_ProcessOutput(IMFTransform *iface, DWORD f
         return MF_E_TRANSFORM_TYPE_NOT_SET;
 
     samples->dwStatus = 0;
-    if (!samples->pSample)
-        return E_INVALIDARG;
-
     if (FAILED(hr = IMFTransform_GetOutputStreamInfo(iface, 0, &info)))
         return hr;
 
-    if (SUCCEEDED(hr = wg_transform_read_mf(impl->wg_transform, samples->pSample,
-            info.cbSize, NULL, &samples->dwStatus)))
-        wg_sample_queue_flush(impl->wg_sample_queue, false);
+    if (impl->output_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES)
+    {
+        if (FAILED(hr = video_processor_init_allocator(impl)))
+            return hr;
+        if (FAILED(hr = IMFVideoSampleAllocatorEx_AllocateSample(impl->allocator, &output_sample)))
+            return hr;
+    }
+    else
+    {
+        if (!(output_sample = samples->pSample))
+            return E_INVALIDARG;
+        IMFSample_AddRef(output_sample);
+    }
 
+    if (FAILED(hr = wg_transform_read_mf(impl->wg_transform, output_sample, info.cbSize, &samples->dwStatus)))
+        goto done;
+    wg_sample_queue_flush(impl->wg_sample_queue, false);
+
+    if (impl->output_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES)
+    {
+        samples->pSample = output_sample;
+        IMFSample_AddRef(output_sample);
+    }
+
+done:
+    IMFSample_Release(output_sample);
     return hr;
 }
 
@@ -583,44 +770,38 @@ static const IMFTransformVtbl video_processor_vtbl =
 
 HRESULT video_processor_create(REFIID riid, void **ret)
 {
-    static const struct wg_format input_format =
+    const MFVIDEOFORMAT input_format =
     {
-        .major_type = WG_MAJOR_TYPE_VIDEO,
-        .u.video =
-        {
-            .format = WG_VIDEO_FORMAT_I420,
-            .width = 1920,
-            .height = 1080,
-        },
+        .dwSize = sizeof(MFVIDEOFORMAT),
+        .videoInfo = {.dwWidth = 1920, .dwHeight = 1080},
+        .guidFormat = MFVideoFormat_I420,
     };
-    static const struct wg_format output_format =
+    const MFVIDEOFORMAT output_format =
     {
-        .major_type = WG_MAJOR_TYPE_VIDEO,
-        .u.video =
-        {
-            .format = WG_VIDEO_FORMAT_NV12,
-            .width = 1920,
-            .height = 1080,
-        },
+        .dwSize = sizeof(MFVIDEOFORMAT),
+        .videoInfo = {.dwWidth = 1920, .dwHeight = 1080},
+        .guidFormat = MFVideoFormat_NV12,
     };
-    struct wg_transform_attrs attrs = {0};
-    wg_transform_t transform;
     struct video_processor *impl;
     HRESULT hr;
 
     TRACE("riid %s, ret %p.\n", debugstr_guid(riid), ret);
 
-    if (!(transform = wg_transform_create(&input_format, &output_format, &attrs)))
+    if (FAILED(hr = check_video_transform_support(&input_format, &output_format)))
     {
         ERR_(winediag)("GStreamer doesn't support video conversion, please install appropriate plugins.\n");
-        return E_FAIL;
+        return hr;
     }
-    wg_transform_destroy(transform);
 
     if (!(impl = calloc(1, sizeof(*impl))))
         return E_OUTOFMEMORY;
 
     if (FAILED(hr = MFCreateAttributes(&impl->attributes, 0)))
+        goto failed;
+    if (FAILED(hr = IMFAttributes_SetUINT32(impl->attributes, &MF_SA_D3D11_AWARE, TRUE)))
+        goto failed;
+    /* native only has MF_SA_D3D_AWARE on Win7, but it is useful to have in mfreadwrite */
+    if (FAILED(hr = IMFAttributes_SetUINT32(impl->attributes, &MF_SA_D3D_AWARE, TRUE)))
         goto failed;
     if (FAILED(hr = MFCreateAttributes(&impl->output_attributes, 0)))
         goto failed;

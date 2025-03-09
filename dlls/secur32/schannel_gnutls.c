@@ -401,7 +401,7 @@ static void check_supported_protocols(
 
     for(i = 0; i < num_flags; i++)
     {
-        sprintf(priority, "NORMAL:-%s", flags[i].gnutls_flag);
+        snprintf(priority, sizeof(priority), "NORMAL:-%s", flags[i].gnutls_flag);
         err = pgnutls_priority_set_direct(session, priority, NULL);
         if (err == GNUTLS_E_SUCCESS)
         {
@@ -904,6 +904,7 @@ static const WCHAR *get_hash_str( gnutls_session_t session, BOOL full )
     static const WCHAR sha384W[] = {'S','H','A','3','8','4',0};
     static const WCHAR sha512W[] = {'S','H','A','5','1','2',0};
     static const WCHAR unknownW[] = {'<','u','n','k','n','o','w','n','>',0};
+    static const WCHAR emptyW[] = {0};
     gnutls_mac_algorithm_t mac = pgnutls_mac_get( session );
 
     switch (mac)
@@ -913,6 +914,7 @@ static const WCHAR *get_hash_str( gnutls_session_t session, BOOL full )
     case GNUTLS_MAC_SHA256: return sha256W;
     case GNUTLS_MAC_SHA384: return sha384W;
     case GNUTLS_MAC_SHA512: return sha512W;
+    case GNUTLS_MAC_AEAD:   return emptyW;
     default:
         FIXME( "unknown mac %u\n", mac );
         return unknownW;
@@ -991,14 +993,16 @@ static const WCHAR *get_chaining_mode_str( gnutls_session_t session )
 
 static NTSTATUS schan_get_cipher_info( void *args )
 {
-    const WCHAR tlsW[] = {'T','L','S','_',0};
-    const WCHAR underscoreW[] = {'_',0};
-    const WCHAR widthW[] = {'_','W','I','T','H','_',0};
+    static const WCHAR tlsW[] = {'T','L','S','_',0};
+    static const WCHAR underscoreW[] = {'_',0};
+    static const WCHAR widthW[] = {'_','W','I','T','H','_',0};
+    static const WCHAR sha384W[] = {'S','H','A','3','8','4',0};
     const struct get_cipher_info_params *params = args;
     gnutls_session_t session = session_from_handle( params->session );
     SecPkgContext_CipherInfo *info = params->info;
     char buf[11];
     WCHAR *ptr;
+    const WCHAR *hash;
     int len;
 
     info->dwProtocol = get_protocol_version( session );
@@ -1022,13 +1026,15 @@ static NTSTATUS schan_get_cipher_info( void *args )
     wcscat( info->szCipherSuite, widthW );
     wcscat( info->szCipherSuite, info->szCipher );
     wcscat( info->szCipherSuite, underscoreW );
-    len = sprintf( buf, "%u", (unsigned int)info->dwCipherLen ) + 1;
+    len = snprintf( buf, sizeof(buf), "%u", (unsigned int)info->dwCipherLen ) + 1;
     ptr = info->szCipherSuite + wcslen( info->szCipherSuite );
     ntdll_umbstowcs( buf, len, ptr, len );
     wcscat( info->szCipherSuite, underscoreW );
     wcscat( info->szCipherSuite, get_chaining_mode_str( session ) );
     wcscat( info->szCipherSuite, underscoreW );
-    wcscat( info->szCipherSuite, get_hash_str( session, FALSE ) );
+    hash = get_hash_str( session, FALSE );
+    if (hash[0]) wcscat( info->szCipherSuite, hash );
+    else wcscat( info->szCipherSuite, sha384W ); /* FIXME */
     return SEC_E_OK;
 }
 
@@ -1588,7 +1594,9 @@ else
 
     if (TRACE_ON(secur32))
     {
-        pgnutls_global_set_log_level(4);
+        char *env = getenv("GNUTLS_DEBUG_LEVEL");
+        int level = env ? atoi(env) : 4;
+        pgnutls_global_set_log_level(level);
         pgnutls_global_set_log_function(gnutls_log);
     }
 
@@ -1635,6 +1643,8 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     schan_set_session_target,
     schan_set_dtls_timeouts,
 };
+
+C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == unix_funcs_count);
 
 #ifdef _WIN64
 
@@ -1968,6 +1978,8 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     wow64_schan_set_session_target,
     schan_set_dtls_timeouts,
 };
+
+C_ASSERT(ARRAYSIZE(__wine_unix_call_wow64_funcs) == unix_funcs_count);
 
 #endif /* _WIN64 */
 

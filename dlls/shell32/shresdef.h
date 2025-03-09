@@ -49,12 +49,17 @@
 #define IDS_MYCOMPUTER		21
 #define IDS_CONTROLPANEL        22
 
-#define IDS_SELECT		23
-#define IDS_OPEN		24
 #define IDS_VIEW_LARGE		25
 #define IDS_VIEW_SMALL		26
 #define IDS_VIEW_LIST		27
 #define IDS_VIEW_DETAILS	28
+
+#define IDS_NEW_MENU                29
+
+#define IDS_VERB_EXPLORE            30
+#define IDS_VERB_OPEN               31
+#define IDS_VERB_PRINT              32
+#define IDS_VERB_RUNAS              33
 
 #define IDS_RESTART_TITLE      40
 #define IDS_RESTART_PROMPT     41
@@ -132,6 +137,7 @@
 #define IDS_RECYCLEBIN_OVERWRITEFOLDER   170
 #define IDS_RECYCLEBIN_OVERWRITE_CAPTION 171
 
+#define IDS_NEW_MENU_FOLDER         180
 
 #define IDS_LICENSE                 256
 #define IDS_LICENSE_CAPTION         257

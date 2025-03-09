@@ -14,7 +14,6 @@
 #include <libxml/parser.h>
 #include <libxml/xmlerror.h>
 #include <libxml/xmlmemory.h>
-#include <libxml/globals.h>
 
 #include "private/error.h"
 
@@ -67,7 +66,7 @@
  *
  * Default handler for out of context error messages.
  */
-void XMLCDECL
+void
 xmlGenericErrorDefaultFunc(void *ctx ATTRIBUTE_UNUSED, const char *msg, ...) {
     va_list args;
 
@@ -466,7 +465,7 @@ xmlReportError(xmlErrorPtr err, xmlParserCtxtPtr ctxt, const char *str,
  * then forward the error message down the parser or generic
  * error callback handler
  */
-void XMLCDECL
+void
 __xmlRaiseError(xmlStructuredErrorFunc schannel,
               xmlGenericErrorFunc channel, void *data, void *ctx,
               void *nod, int domain, int code, xmlErrorLevel level,
@@ -705,7 +704,7 @@ __xmlSimpleError(int domain, int code, xmlNodePtr node,
  * Display and format an error messages, gives file, line, position and
  * extra parameters.
  */
-void XMLCDECL
+void
 xmlParserError(void *ctx, const char *msg, ...)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
@@ -748,7 +747,7 @@ xmlParserError(void *ctx, const char *msg, ...)
  * Display and format a warning messages, gives file, line, position and
  * extra parameters.
  */
-void XMLCDECL
+void
 xmlParserWarning(void *ctx, const char *msg, ...)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
@@ -797,7 +796,7 @@ xmlParserWarning(void *ctx, const char *msg, ...)
  * Display and format an validity error messages, gives file,
  * line, position and extra parameters.
  */
-void XMLCDECL
+void
 xmlParserValidityError(void *ctx, const char *msg, ...)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
@@ -841,7 +840,7 @@ xmlParserValidityError(void *ctx, const char *msg, ...)
  * Display and format a validity warning messages, gives file, line,
  * position and extra parameters.
  */
-void XMLCDECL
+void
 xmlParserValidityWarning(void *ctx, const char *msg, ...)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
@@ -881,9 +880,9 @@ xmlParserValidityWarning(void *ctx, const char *msg, ...)
  * Get the last global error registered. This is per thread if compiled
  * with thread support.
  *
- * Returns NULL if no error occurred or a pointer to the error
+ * Returns a pointer to the error
  */
-xmlErrorPtr
+const xmlError *
 xmlGetLastError(void)
 {
     if (xmlLastError.code == XML_ERR_OK)
@@ -940,7 +939,7 @@ xmlResetLastError(void)
  *
  * Returns NULL if no error occurred or a pointer to the error
  */
-xmlErrorPtr
+const xmlError *
 xmlCtxtGetLastError(void *ctx)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
@@ -982,7 +981,7 @@ xmlCtxtResetLastError(void *ctx)
  * Returns 0 in case of success and -1 in case of error.
  */
 int
-xmlCopyError(xmlErrorPtr from, xmlErrorPtr to) {
+xmlCopyError(const xmlError *from, xmlErrorPtr to) {
     char *message, *file, *str1, *str2, *str3;
 
     if ((from == NULL) || (to == NULL))
@@ -1021,4 +1020,3 @@ xmlCopyError(xmlErrorPtr from, xmlErrorPtr to) {
 
     return 0;
 }
-

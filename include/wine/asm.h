@@ -68,7 +68,15 @@
 #elif defined(__APPLE__)
 # define __ASM_FUNC_SIZE(name) ""
 #else
-# define __ASM_FUNC_SIZE(name) "\n\t.size " name ",.-" name
+# define __ASM_FUNC_SIZE(name) ".size " name ",.-" name
+#endif
+
+#ifdef __arm64ec_x64__
+# define __ASM_FUNC_SECTION(name) ".section .text,\"xr\",discard," name
+# define __ASM_FUNC_ALIGN ".balign 16"
+#else
+# define __ASM_FUNC_SECTION(name) ".text"
+# define __ASM_FUNC_ALIGN ".align 4"
 #endif
 
 #if !defined(__GNUC__) && !defined(__clang__)
@@ -81,8 +89,19 @@
 
 #define __ASM_DEFINE_FUNC(name,code)  \
     __ASM_BLOCK_BEGIN(__LINE__) \
-    asm(".text\n\t.align 4\n\t.globl " name "\n\t" __ASM_FUNC_TYPE(name) __ASM_SEH("\n\t.seh_proc " name) "\n" name ":\n\t" \
-        __ASM_CFI(".cfi_startproc\n\t") __ASM_EHABI(".fnstart\n\t") code __ASM_CFI("\n\t.cfi_endproc") __ASM_EHABI("\n\t.fnend") __ASM_SEH("\n\t.seh_endproc") __ASM_FUNC_SIZE(name)); \
+    asm( __ASM_FUNC_SECTION(name) "\n\t" \
+         __ASM_FUNC_ALIGN "\n\t" \
+         ".globl " name "\n\t" \
+         __ASM_FUNC_TYPE(name) "\n" \
+         name ":\n\t" \
+         __ASM_SEH(".seh_proc " name "\n\t") \
+         __ASM_CFI(".cfi_startproc\n\t") \
+         __ASM_EHABI(".fnstart\n\t") \
+         code "\n\t" \
+         __ASM_CFI(".cfi_endproc\n\t") \
+         __ASM_EHABI(".fnend\n\t") \
+         __ASM_SEH(".seh_endproc\n\t") \
+         __ASM_FUNC_SIZE(name)); \
     __ASM_BLOCK_END
 
 #define __ASM_GLOBAL_FUNC(name,code) __ASM_DEFINE_FUNC(__ASM_NAME(#name),code)
@@ -90,15 +109,36 @@
 /* import variables */
 
 #ifdef __WINE_PE_BUILD
-# ifdef _WIN64
+# ifdef __arm64ec__
+#  define __ASM_DEFINE_IMPORT(name) \
+    asm( ".data\n\t" \
+         ".balign 8\n\t" \
+         ".globl __imp_" name "\n" \
+         "__imp_" name ":\n\t" \
+         ".quad \"#" name "\"\n\t" \
+         ".globl __imp_aux_" name "\n" \
+         "__imp_aux_" name ":\n\t" \
+         ".quad " name "\n\t" \
+         ".text" );
+# elif defined(_WIN64)
 #  define __ASM_DEFINE_IMPORT(name) \
     __ASM_BLOCK_BEGIN(__LINE__) \
-    asm(".data\n\t.balign 8\n\t.globl __imp_" name "\n__imp_" name ":\n\t.quad " name "\n\t.text"); \
+    asm( ".data\n\t" \
+         ".balign 8\n\t" \
+         ".globl __imp_" name "\n" \
+         "__imp_" name ":\n\t" \
+         ".quad " name "\n\t" \
+         ".text"); \
     __ASM_BLOCK_END
 # else
 #  define __ASM_DEFINE_IMPORT(name) \
     __ASM_BLOCK_BEGIN(__LINE__) \
-    asm(".data\n\t.balign 4\n\t.globl __imp_" name "\n__imp_" name ":\n\t.long " name "\n\t.text"); \
+    asm( ".data\n\t" \
+         ".balign 4\n\t" \
+         ".globl __imp_" name "\n" \
+         "__imp_" name ":\n\t" \
+         ".long " name "\n\t" \
+         ".text"); \
     __ASM_BLOCK_END
 # endif
 # define __ASM_GLOBAL_IMPORT(name) __ASM_DEFINE_IMPORT(__ASM_NAME(#name))
@@ -209,7 +249,7 @@
 #elif defined __aarch64__
 # define __ASM_SYSCALL_FUNC(id,name) \
     __ASM_GLOBAL_FUNC( name, \
-                       __ASM_SEH(".seh_endprologue\n\t") \
+                       ".seh_endprologue\n\t" \
                        "mov x8, #(" #id ")\n\t" \
                        "mov x9, x30\n\t" \
                        "ldr x16, 1f\n\t" \
@@ -218,84 +258,67 @@
                        "ret\n" \
                        "1:\t.quad " __ASM_NAME("__wine_syscall_dispatcher") )
 #elif defined __arm64ec__
-# define __ASM_SYSCALL_FUNC(id) \
-    asm( "mov x8, #%0\n\t" \
+# define __ASM_SYSCALL_FUNC(id,name) \
+    asm( ".seh_proc \"#" #name "$hp_target\"\n\t" \
+         ".seh_endprologue\n\t" \
+         "mov x8, #%0\n\t" \
          "mov x9, x30\n\t" \
-         "adr x16, " __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
-         "ldr x16, [x16]\n\t" \
+         "adrp x16, __wine_syscall_dispatcher\n\t" \
+         "ldr x16, [x16, :lo12:__wine_syscall_dispatcher]\n\t" \
          "blr x16\n\t" \
-         "ret" :: "i" (id) )
+         "ret\n\t" \
+         ".seh_endproc" :: "i" (id) )
+#elif defined __arm64ec_x64__
+# define __ASM_SYSCALL_FUNC(id,name) \
+    __ASM_DEFINE_FUNC( "\"EXP+#" #name "\"", \
+                       ".seh_endprologue\n\t" \
+                       ".byte 0x4c,0x8b,0xd1\n\t" /* 00: movq %rcx,%r10 */ \
+                       ".byte 0xb8\n\t"           /* 03: movl $i,%eax */ \
+                       ".long (" #id ")\n\t"                            \
+                       ".byte 0xf6,0x04,0x25,0x08,0x03,0xfe,0x7f,0x01\n\t" /* 08: testb $1,0x7ffe0308 */ \
+                       ".byte 0x75,0x03\n\t"      /* 10: jne 15 */ \
+                       ".byte 0x0f,0x05\n\t"      /* 12: syscall */ \
+                       ".byte 0xc3\n\t"           /* 14: ret */ \
+                       ".byte 0xcd,0x2e\n\t"      /* 15: int $0x2e */ \
+                       ".byte 0xc3" )             /* 17: ret */
 #elif defined __x86_64__
 /* Chromium depends on syscall thunks having the same form as on
  * Windows. For 64-bit systems the only viable form we can emulate is
  * having an int $0x2e fallback. Since actually using an interrupt is
  * expensive, and since for some reason Chromium doesn't actually
  * validate that instruction, we can just put a jmp there instead. */
-# ifdef __WINE_PE_BUILD
-#  define __ASM_SYSCALL_FUNC(id,name) \
+# define __ASM_SYSCALL_FUNC(id,name) \
     __ASM_GLOBAL_FUNC( name, \
                        __ASM_SEH(".seh_endprologue\n\t") \
-                       ".byte 0x4c,0x8b,0xd1\n\t" /* movq %rcx,%r10 */ \
-                       ".byte 0xb8\n\t"           /* movl $i,%eax */ \
+                       ".byte 0x4c,0x8b,0xd1\n\t" /* 00: movq %rcx,%r10 */ \
+                       ".byte 0xb8\n\t"           /* 03: movl $i,%eax */ \
                        ".long (" #id ")\n\t" \
-                       ".byte 0xf6,0x04,0x25,0x08,0x03,0xfe,0x7f,0x01\n\t" /* testb $1,0x7ffe0308 */ \
-                       ".byte 0x75,0x03\n\t"      /* jne 1f */ \
-                       ".byte 0x0f,0x05\n\t"      /* syscall */ \
-                       ".byte 0xc3\n\t"           /* ret */ \
-                       "jmp 1f\n\t" \
-                       ".byte 0xc3\n"             /* ret */ \
-                       "1:\t.byte 0xff,0x14,0x25\n\t" /* 1: callq *(0x7ffe1000) */ \
+                       ".byte 0xf6,0x04,0x25,0x08,0x03,0xfe,0x7f,0x01\n\t" /* 08: testb $1,0x7ffe0308 */ \
+                       ".byte 0x75,0x03\n\t"      /* 10: jne 15 */ \
+                       ".byte 0x0f,0x05\n\t"      /* 12: syscall */ \
+                       ".byte 0xc3\n\t"           /* 14: ret */ \
+                       ".byte 0xeb,0x01\n\t"      /* 15: jmp 18 */ \
+                       ".byte 0xc3\n\t"           /* 17: ret */ \
+                       ".byte 0xff,0x14,0x25\n\t" /* 18: callq *(0x7ffe1000) */ \
                        ".long 0x7ffe1000\n\t" \
-                       "ret" )
-# else
-#  define __ASM_SYSCALL_FUNC(id,name) \
-    __ASM_GLOBAL_FUNC( name, \
-                       __ASM_SEH(".seh_endprologue\n\t") \
-                       ".byte 0x4c,0x8b,0xd1\n\t" /* movq %rcx,%r10 */ \
-                       ".byte 0xb8\n\t"           /* movl $i,%eax */ \
-                       ".long (" #id ")\n\t" \
-                       ".byte 0xf6,0x04,0x25,0x08,0x03,0xfe,0x7f,0x01\n\t" /* testb $1,0x7ffe0308 */ \
-                       ".byte 0x75,0x03\n\t"      /* jne 1f */ \
-                       ".byte 0x0f,0x05\n\t"      /* syscall */ \
-                       ".byte 0xc3\n\t"           /* ret */ \
-                       "jmp 1f\n\t" \
-                       ".byte 0xc3\n"             /* ret */ \
-                       "nop\n" \
-                       "1:\tcallq *" __ASM_NAME("__wine_syscall_dispatcher") "(%rip)\n\t" \
-                       "ret" )
-# endif
+                       ".byte 0xc3" )             /* 1f: ret */
 #elif defined __arm__
 # define __ASM_SYSCALL_FUNC(id,name,args) \
     __ASM_GLOBAL_FUNC( name, \
                        "push {r0-r3}\n\t" \
+                       ".seh_save_regs {r0-r3}\n\t" \
+                       ".seh_endprologue\n\t" \
                        "movw ip, #(" #id ")\n\t" \
                        "mov r3, lr\n\t" \
-                       "bl " __ASM_NAME("__wine_syscall") "\n\t" \
+                       "bl __wine_syscall\n\t" \
+                       "add sp, #16\n\t" \
                        "bx lr" )
-# ifndef __PIC__
-#  define DEFINE_SYSCALL_HELPER32() \
+# define DEFINE_SYSCALL_HELPER32() \
     __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "movw r0, :lower16:" __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
-                       "movt r0, :upper16:" __ASM_NAME("__wine_syscall_dispatcher") "\n\t" \
+                       "movw r0, :lower16:__wine_syscall_dispatcher\n\t" \
+                       "movt r0, :upper16:__wine_syscall_dispatcher\n\t" \
                        "ldr r0, [r0]\n\t" \
                        "bx r0" )
-# elif defined __thumb__
-#  define DEFINE_SYSCALL_HELPER32() \
-    __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "ldr r0, 2f\n" \
-                       "1:\tadd r0, pc\n\t" \
-                       "ldr r0, [r0]\n\t" \
-                       "bx r0\n" \
-                       "2:\t.long " __ASM_NAME("__wine_syscall_dispatcher") "-1b-4" )
-# else
-#  define DEFINE_SYSCALL_HELPER32() \
-    __ASM_GLOBAL_FUNC( __wine_syscall, \
-                       "ldr r0, 2f\n" \
-                       "1:\tadd r0, pc\n\t" \
-                       "ldr r0, [r0]\n\t" \
-                       "bx r0\n" \
-                       "2:\t.long " __ASM_NAME("__wine_syscall_dispatcher") "-1b-8" )
-# endif
 #endif
 
 #endif  /* __WINE_WINE_ASM_H */

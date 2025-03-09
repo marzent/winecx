@@ -639,6 +639,9 @@ static ULONG ddraw_surface_release_iface(struct ddraw_surface *This)
             wined3d_mutex_unlock();
             return iface_count;
         }
+        if ((This->surface_desc.ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)
+                && (This->ddraw->flags & DDRAW_RESTORE_MODE) && This->ddraw->swapchain_window)
+            RedrawWindow(This->ddraw->swapchain_window, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
         ddraw_surface_cleanup(This);
         wined3d_mutex_unlock();
 
@@ -1536,12 +1539,13 @@ static HRESULT ddraw_surface_blt(struct ddraw_surface *dst_surface, const RECT *
         const struct wined3d_blt_fx *fx, enum wined3d_texture_filter_type filter)
 {
     struct ddraw *ddraw = dst_surface->ddraw;
-    struct wined3d_device *wined3d_device = ddraw->wined3d_device;
     struct wined3d_color colour;
     DWORD wined3d_flags;
 
     if (flags & DDBLT_COLORFILL)
     {
+        unsigned int location_flags = dst_rect ? DDRAW_SURFACE_RW : DDRAW_SURFACE_WRITE;
+
         wined3d_flags = WINED3DCLEAR_TARGET;
         if (!(flags & DDBLT_ASYNC))
             wined3d_flags |= WINED3DCLEAR_SYNCHRONOUS;
@@ -1550,8 +1554,12 @@ static HRESULT ddraw_surface_blt(struct ddraw_surface *dst_surface, const RECT *
                 dst_surface->palette, fill_colour, &colour))
             return DDERR_INVALIDPARAMS;
 
-        wined3d_device_apply_stateblock(wined3d_device, ddraw->state);
-        ddraw_surface_get_draw_texture(dst_surface, dst_rect ? DDRAW_SURFACE_RW : DDRAW_SURFACE_WRITE);
+        if (dst_surface->surface_desc.ddsCaps.dwCaps & DDSCAPS_SYSTEMMEMORY)
+            return wined3d_device_context_clear_sysmem_texture(ddraw->immediate_context,
+                    ddraw_surface_get_default_texture(dst_surface, location_flags),
+                    dst_surface->sub_resource_idx, dst_rect, wined3d_flags, &colour);
+
+        ddraw_surface_get_draw_texture(dst_surface, location_flags);
         return wined3d_device_context_clear_rendertarget_view(ddraw->immediate_context,
                 ddraw_surface_get_rendertarget_view(dst_surface),
                 dst_rect, wined3d_flags, &colour, 0.0f, 0);
@@ -1567,7 +1575,6 @@ static HRESULT ddraw_surface_blt(struct ddraw_surface *dst_surface, const RECT *
                 dst_surface->palette, fill_colour, &colour))
             return DDERR_INVALIDPARAMS;
 
-        wined3d_device_apply_stateblock(wined3d_device, ddraw->state);
         ddraw_surface_get_draw_texture(dst_surface, dst_rect ? DDRAW_SURFACE_RW : DDRAW_SURFACE_WRITE);
         return wined3d_device_context_clear_rendertarget_view(ddraw->immediate_context,
                 ddraw_surface_get_rendertarget_view(dst_surface),
@@ -1986,6 +1993,8 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface2_Blt(IDirectDrawSurface2 *
  *****************************************************************************/
 static HRESULT ddraw_surface_attach_surface(struct ddraw_surface *This, struct ddraw_surface *Surf)
 {
+    struct d3d_device *device;
+
     TRACE("surface %p, attachment %p.\n", This, Surf);
 
     if(Surf == This)
@@ -2012,8 +2021,10 @@ static HRESULT ddraw_surface_attach_surface(struct ddraw_surface *This, struct d
     This->next_attached = Surf;
 
     /* Check if the WineD3D depth stencil needs updating */
-    if (This->ddraw->d3ddevice)
-        d3d_device_update_depth_stencil(This->ddraw->d3ddevice);
+    LIST_FOR_EACH_ENTRY(device, &This->ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
+    {
+        d3d_device_update_depth_stencil(device);
+    }
 
     wined3d_mutex_unlock();
 
@@ -2160,6 +2171,7 @@ static HRESULT ddraw_surface_delete_attached_surface(struct ddraw_surface *surfa
 {
     struct wined3d_rendertarget_view *dsv;
     struct ddraw_surface *prev = surface;
+    struct d3d_device *device;
 
     TRACE("surface %p, attachment %p, detach_iface %p.\n", surface, attachment, detach_iface);
 
@@ -2208,7 +2220,11 @@ static HRESULT ddraw_surface_delete_attached_surface(struct ddraw_surface *surfa
      * but don't cleanup properly after the relevant dll is unloaded. */
     dsv = wined3d_device_context_get_depth_stencil_view(surface->ddraw->immediate_context);
     if (attachment->surface_desc.ddsCaps.dwCaps & DDSCAPS_ZBUFFER && dsv == attachment->wined3d_rtv)
+    {
         wined3d_device_context_set_depth_stencil_view(surface->ddraw->immediate_context, NULL);
+        LIST_FOR_EACH_ENTRY(device, &surface->ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
+            wined3d_stateblock_depth_buffer_changed(device->state);
+    }
     wined3d_mutex_unlock();
 
     /* Set attached_iface to NULL before releasing it, the surface may go
@@ -4319,7 +4335,7 @@ static HRESULT WINAPI ddraw_surface4_GetUniquenessValue(IDirectDrawSurface4 *ifa
 static HRESULT WINAPI ddraw_surface7_SetLOD(IDirectDrawSurface7 *iface, DWORD MaxLOD)
 {
     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
-    HRESULT hr;
+    struct d3d_device *device;
 
     TRACE("iface %p, lod %lu.\n", iface, MaxLOD);
 
@@ -4330,12 +4346,18 @@ static HRESULT WINAPI ddraw_surface7_SetLOD(IDirectDrawSurface7 *iface, DWORD Ma
         return DDERR_INVALIDOBJECT;
     }
 
-    hr = wined3d_stateblock_set_texture_lod(surface->ddraw->state, surface->wined3d_texture, MaxLOD);
-    if (SUCCEEDED(hr) && surface->draw_texture)
-        hr = wined3d_stateblock_set_texture_lod(surface->ddraw->state, surface->draw_texture, MaxLOD);
-    wined3d_mutex_unlock();
+    wined3d_texture_set_lod(surface->wined3d_texture, MaxLOD);
+    if (surface->draw_texture)
+        wined3d_texture_set_lod(surface->draw_texture, MaxLOD);
 
-    return hr;
+    LIST_FOR_EACH_ENTRY(device, &surface->ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
+    {
+        wined3d_stateblock_texture_changed(device->state, surface->wined3d_texture);
+        if (surface->draw_texture)
+            wined3d_stateblock_texture_changed(device->state, surface->draw_texture);
+    }
+    wined3d_mutex_unlock();
+    return DD_OK;
 }
 
 /*****************************************************************************
@@ -4669,11 +4691,19 @@ static HRESULT WINAPI ddraw_surface1_SetClipper(IDirectDrawSurface *iface, IDire
 static HRESULT ddraw_surface_set_wined3d_textures_colour_key(struct ddraw_surface *surface, DWORD flags,
         struct wined3d_color_key *color_key)
 {
+    struct d3d_device *device;
     HRESULT hr;
 
     hr = wined3d_texture_set_color_key(surface->wined3d_texture, flags, color_key);
     if (surface->draw_texture && SUCCEEDED(hr))
         hr = wined3d_texture_set_color_key(surface->draw_texture, flags, color_key);
+
+    LIST_FOR_EACH_ENTRY(device, &surface->ddraw->d3ddevice_list, struct d3d_device, ddraw_entry)
+    {
+        wined3d_stateblock_texture_changed(device->state, surface->wined3d_texture);
+        if (surface->draw_texture)
+            wined3d_stateblock_texture_changed(device->state, surface->draw_texture);
+    }
 
     return hr;
 }
@@ -5411,7 +5441,6 @@ static HRESULT WINAPI d3d_texture2_GetHandle(IDirect3DTexture2 *iface,
         IDirect3DDevice2 *device, D3DTEXTUREHANDLE *handle)
 {
     struct ddraw_surface *surface = impl_from_IDirect3DTexture2(iface);
-    struct d3d_device *device_impl = unsafe_impl_from_IDirect3DDevice2(device);
 
     TRACE("iface %p, device %p, handle %p.\n", iface, device, handle);
 
@@ -5419,7 +5448,7 @@ static HRESULT WINAPI d3d_texture2_GetHandle(IDirect3DTexture2 *iface,
 
     if (!surface->Handle)
     {
-        DWORD h = ddraw_allocate_handle(&device_impl->handle_table, surface, DDRAW_HANDLE_SURFACE);
+        DWORD h = ddraw_allocate_handle(NULL, surface, DDRAW_HANDLE_SURFACE);
         if (h == DDRAW_INVALID_HANDLE)
         {
             ERR("Failed to allocate a texture handle.\n");
@@ -6030,7 +6059,7 @@ static void STDMETHODCALLTYPE ddraw_surface_wined3d_object_destroyed(void *paren
 
     /* Having a texture handle set implies that the device still exists. */
     if (surface->Handle)
-        ddraw_free_handle(&surface->ddraw->d3ddevice->handle_table, surface->Handle - 1, DDRAW_HANDLE_SURFACE);
+        ddraw_free_handle(NULL, surface->Handle - 1, DDRAW_HANDLE_SURFACE);
 
     /* Reduce the ddraw surface count. */
     list_remove(&surface->surface_list_entry);
@@ -6489,15 +6518,17 @@ static HRESULT ddraw_texture_init(struct ddraw_texture *texture, struct ddraw *d
 
 fail:
     if (draw_texture)
+    {
         wined3d_texture_decref(draw_texture);
 
-    parent = wined3d_texture_get_sub_resource_parent(draw_texture, 0);
-    if (texture->version == 7)
-        IDirectDrawSurface7_Release(&parent->IDirectDrawSurface7_iface);
-    else if (texture->version == 4)
-        IDirectDrawSurface4_Release(&parent->IDirectDrawSurface4_iface);
-    else
-        IDirectDrawSurface_Release(&parent->IDirectDrawSurface_iface);
+        parent = wined3d_texture_get_sub_resource_parent(draw_texture, 0);
+        if (texture->version == 7)
+            IDirectDrawSurface7_Release(&parent->IDirectDrawSurface7_iface);
+        else if (texture->version == 4)
+            IDirectDrawSurface4_Release(&parent->IDirectDrawSurface4_iface);
+        else
+            IDirectDrawSurface_Release(&parent->IDirectDrawSurface_iface);
+    }
     return hr;
 }
 
@@ -6739,25 +6770,13 @@ HRESULT ddraw_surface_create(struct ddraw *ddraw, const DDSURFACEDESC2 *surface_
             swapchain_desc.backbuffer_height = mode.height;
             swapchain_desc.backbuffer_format = mode.format_id;
 
-            if (ddraw->d3ddevice)
-            {
-                if (ddraw->d3ddevice->recording)
-                    wined3d_stateblock_decref(ddraw->d3ddevice->recording);
-                ddraw->d3ddevice->recording = NULL;
-                ddraw->d3ddevice->update_state = ddraw->d3ddevice->state;
-            }
-            wined3d_stateblock_reset(ddraw->state);
-
             if (FAILED(hr = wined3d_device_reset(ddraw->wined3d_device,
-                    &swapchain_desc, NULL, ddraw_reset_enum_callback, TRUE)))
+                    &swapchain_desc, NULL, ddraw_reset_enum_callback, FALSE)))
             {
                 ERR("Failed to reset device.\n");
                 free(texture);
                 return hr_ddraw_from_wined3d(hr);
             }
-
-            wined3d_stateblock_set_render_state(ddraw->state, WINED3D_RS_ZENABLE,
-                    !!swapchain_desc.enable_auto_depth_stencil);
         }
     }
 
@@ -6808,11 +6827,19 @@ HRESULT ddraw_surface_create(struct ddraw *ddraw, const DDSURFACEDESC2 *surface_
     {
         if (!(desc->ddsCaps.dwCaps2 & (DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_D3DTEXTUREMANAGE)))
         {
-            unsigned int bind_flags = WINED3D_BIND_SHADER_RESOURCE;
+            unsigned int bind_flags = 0;
             DWORD usage = 0;
 
             if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP)
+            {
                 usage |= WINED3DUSAGE_LEGACY_CUBEMAP;
+                bind_flags |= WINED3D_BIND_SHADER_RESOURCE;
+            }
+            else if (desc->ddsCaps.dwCaps & DDSCAPS_TEXTURE)
+            {
+                bind_flags |= WINED3D_BIND_SHADER_RESOURCE;
+            }
+
             if (desc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER)
                 bind_flags |= WINED3D_BIND_DEPTH_STENCIL;
             else if (desc->ddsCaps.dwCaps & DDSCAPS_3DDEVICE)

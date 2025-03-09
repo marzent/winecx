@@ -135,6 +135,7 @@
 @ stdcall ExAcquireSharedWaitForExclusive(ptr long)
 @ stub ExAllocateFromPagedLookasideList
 @ stdcall ExAllocatePool(long long)
+@ stdcall ExAllocatePool2(int64 long long)
 @ stdcall ExAllocatePoolWithQuota(long long)
 @ stdcall ExAllocatePoolWithQuotaTag(long long long)
 @ stdcall ExAllocatePoolWithTag(long long long)
@@ -405,6 +406,7 @@
 @ stdcall IoGetDeviceInterfaces(ptr ptr long ptr)
 @ stdcall IoGetDeviceObjectPointer(ptr long ptr ptr)
 @ stdcall IoGetDeviceProperty(ptr long long ptr ptr)
+@ stdcall IoGetDevicePropertyData(ptr ptr long long long ptr ptr ptr)
 @ stub IoGetDeviceToVerify
 @ stub IoGetDiskDeviceObject
 @ stub IoGetDmaAdapter
@@ -463,8 +465,8 @@
 @ stub IoReportHalResourceUsage
 @ stdcall IoReportResourceForDetection(ptr ptr long ptr ptr long ptr)
 @ stdcall IoReportResourceUsage(ptr ptr ptr long ptr ptr long long ptr)
-@ stub IoReportTargetDeviceChange
-@ stub IoReportTargetDeviceChangeAsynchronous
+@ stdcall IoReportTargetDeviceChange(ptr ptr)
+@ stdcall IoReportTargetDeviceChangeAsynchronous(ptr ptr ptr ptr)
 @ stub IoRequestDeviceEject
 @ stdcall IoReuseIrp(ptr long)
 @ stub IoSetCompletionRoutineEx
@@ -604,6 +606,7 @@
 @ stdcall KeQueryActiveProcessorCountEx(long)
 @ stdcall KeQueryActiveProcessorCount(ptr)
 @ stdcall KeQueryActiveGroupCount() GetActiveProcessorGroupCount
+@ stdcall KeQueryGroupAffinity(long)
 @ stdcall KeQueryInterruptTime()
 @ stdcall KeQueryPriorityThread(ptr)
 @ stub KeQueryRuntimeThread
@@ -798,7 +801,6 @@
 @ stdcall NtFsControlFile(long long ptr ptr ptr long ptr long ptr long)
 @ stub NtGlobalFlag
 @ stdcall NtLockFile(long long ptr ptr ptr ptr ptr ptr long long)
-@ stub NtMakePermanentObject
 @ stdcall NtMapViewOfSection(long long ptr long long ptr ptr long long long)
 @ stdcall NtNotifyChangeDirectoryFile(long long ptr ptr ptr ptr long long long)
 @ stdcall NtOpenFile(ptr long ptr ptr long long)
@@ -878,7 +880,7 @@
 @ stub PoRegisterDeviceForIdleDetection
 @ stub PoRegisterDeviceNotify
 @ stub PoRegisterSystemState
-@ stub PoRequestPowerIrp
+@ stdcall PoRequestPowerIrp(ptr long long ptr ptr ptr)
 @ stub PoRequestShutdownEvent
 @ stub PoSetHiberRange
 @ stdcall PoSetPowerState(ptr long long)
@@ -1072,7 +1074,7 @@
 @ stub RtlEnumerateGenericTableAvl
 @ stub RtlEnumerateGenericTableLikeADirectory
 @ stdcall RtlEnumerateGenericTableWithoutSplaying(ptr ptr)
-@ stub RtlEnumerateGenericTableWithoutSplayingAvl
+@ stdcall RtlEnumerateGenericTableWithoutSplayingAvl(ptr ptr)
 @ stdcall RtlEqualLuid(ptr ptr)
 @ stdcall RtlEqualSid(ptr ptr)
 @ stdcall RtlEqualString(ptr ptr long)
@@ -1199,7 +1201,7 @@
 @ stub RtlLockBootStatusData
 @ stdcall RtlLookupAtomInAtomTable(ptr wstr ptr)
 @ stdcall RtlLookupElementGenericTable(ptr ptr)
-@ stub RtlLookupElementGenericTableAvl
+@ stdcall RtlLookupElementGenericTableAvl(ptr ptr)
 @ stub RtlLookupElementGenericTableFull
 @ stub RtlLookupElementGenericTableFullAvl
 @ stdcall -arch=!i386 RtlLookupFunctionEntry(long ptr ptr)
@@ -1214,7 +1216,7 @@
 @ stdcall RtlNtStatusToDosError(long)
 @ stdcall RtlNtStatusToDosErrorNoTeb(long)
 @ stdcall RtlNumberGenericTableElements(ptr)
-@ stub RtlNumberGenericTableElementsAvl
+@ stdcall RtlNumberGenericTableElementsAvl(ptr)
 @ stdcall RtlNumberOfClearBits(ptr)
 @ stdcall RtlNumberOfSetBits(ptr)
 @ stub RtlOemStringToCountedUnicodeString
@@ -1445,6 +1447,7 @@
 @ stdcall -private ZwLoadKey(ptr ptr) NtLoadKey
 @ stdcall -private ZwLockFile(long long ptr ptr ptr ptr ptr ptr long long) NtLockFile
 @ stdcall -private ZwLockVirtualMemory(long ptr ptr long) NtLockVirtualMemory
+@ stdcall ZwMakePermanentObject(long) NtMakePermanentObject
 @ stdcall ZwMakeTemporaryObject(long) NtMakeTemporaryObject
 @ stdcall ZwMapViewOfSection(long long ptr long long ptr ptr long long long) NtMapViewOfSection
 @ stdcall -private ZwNotifyChangeDirectoryFile(long long ptr ptr ptr ptr long long long) NtNotifyChangeDirectoryFile
@@ -1522,6 +1525,7 @@
 @ stdcall -private ZwSetInformationToken(long long ptr long) NtSetInformationToken
 @ stdcall -private ZwSetIntervalProfile(long long) NtSetIntervalProfile
 @ stdcall -private ZwSetIoCompletion(ptr long long long long) NtSetIoCompletion
+@ stdcall -private ZwSetIoCompletionEx(ptr ptr long long long long) NtSetIoCompletionEx
 @ stdcall -private ZwSetSecurityObject(long long ptr) NtSetSecurityObject
 @ stdcall -private ZwSetSystemInformation(long ptr long) NtSetSystemInformation
 @ stdcall -private ZwSetSystemTime(ptr ptr) NtSetSystemTime

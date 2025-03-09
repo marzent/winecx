@@ -651,6 +651,192 @@ static void test_strcmp(void)
     ok( ret == 0, "wrong ret %d\n", ret );
 }
 
+#define expect_bin(buf, value, len) { ok(memcmp((buf), value, len) == 0, \
+                                         "Binary buffer mismatch - expected %s, got %s\n", \
+                                         debugstr_an(value, len), debugstr_an((char *)(buf), len)); }
+
+static void test__mbsncpy_s(void)
+{
+    unsigned char *mbstring = (unsigned char *)"\xb0\xb1\xb2\xb3Q\xb4\xb5\x0";
+    unsigned char *mbstring2 = (unsigned char *)"\xb0\x0";
+    unsigned char buf[16];
+    errno_t err;
+    int oldcp;
+
+    oldcp = _getmbcp();
+    if (_setmbcp(936))
+    {
+        skip("Code page 936 is not available, skipping test.\n");
+        return;
+    }
+
+    errno = 0xdeadbeef;
+    memset(buf, 0xcc, sizeof(buf));
+    err = _mbsncpy_s(NULL, 0, mbstring, 0);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+
+    errno = 0xdeadbeef;
+    memset(buf, 0xcc, sizeof(buf));
+    err = _mbsncpy_s(buf, 6, mbstring, 1);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+    expect_bin(buf, "\xb0\xb1\0\xcc", 4);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 6, mbstring, 2);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+    expect_bin(buf, "\xb0\xb1\xb2\xb3\0\xcc", 6);
+
+    errno = 0xdeadbeef;
+    memset(buf, 0xcc, sizeof(buf));
+    err = _mbsncpy_s(buf, 2, mbstring, _TRUNCATE);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(err == STRUNCATE, "got %d.\n", err);
+    expect_bin(buf, "\x00\xb1\xcc", 3);
+
+    memset(buf, 0xcc, sizeof(buf));
+    SET_EXPECT(invalid_parameter_handler);
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 2, mbstring, 1);
+    ok(errno == err, "got %d.\n", errno);
+    CHECK_CALLED(invalid_parameter_handler);
+    ok(err == ERANGE, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc\xcc", 3);
+
+    memset(buf, 0xcc, sizeof(buf));
+    SET_EXPECT(invalid_parameter_handler);
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 2, mbstring, 3);
+    ok(errno == err, "got %d\n", errno);
+    CHECK_CALLED(invalid_parameter_handler);
+    ok(err == ERANGE, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc\xcc", 3);
+
+    memset(buf, 0xcc, sizeof(buf));
+    SET_EXPECT(invalid_parameter_handler);
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 1, mbstring, 3);
+    ok(errno == err, "got %d\n", errno);
+    CHECK_CALLED(invalid_parameter_handler);
+    ok(err == ERANGE, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    SET_EXPECT(invalid_parameter_handler);
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 0, mbstring, 3);
+    ok(errno == err, "got %d\n", errno);
+    CHECK_CALLED(invalid_parameter_handler);
+    ok(err == EINVAL, "got %d.\n", err);
+    expect_bin(buf, "\xcc", 1);
+
+    memset(buf, 0xcc, sizeof(buf));
+    SET_EXPECT(invalid_parameter_handler);
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 0, mbstring, 0);
+    ok(errno == err, "got %d\n", errno);
+    CHECK_CALLED(invalid_parameter_handler);
+    ok(err == EINVAL, "got %d.\n", err);
+    expect_bin(buf, "\xcc", 1);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, -1, mbstring, 0);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, -1, mbstring, 256);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+    expect_bin(buf, "\xb0\xb1\xb2\xb3Q\xb4\xb5\x0\xcc", 9);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 1, mbstring2, 4);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 2, mbstring2, 4);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 1, mbstring2, _TRUNCATE);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(err == STRUNCATE, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 2, mbstring2, _TRUNCATE);
+    ok(errno == 0xdeadbeef, "got %d\n", errno);
+    ok(!err, "got %d.\n", err);
+    expect_bin(buf, "\xb0\x0\xcc", 3);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 1, mbstring2, 1);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 2, mbstring2, 1);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 3, mbstring2, 1);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    memset(buf, 0xcc, sizeof(buf));
+    errno = 0xdeadbeef;
+    err = _mbsncpy_s(buf, 3, mbstring2, 2);
+    ok(errno == err, "got %d\n", errno);
+    ok(err == EILSEQ, "got %d.\n", err);
+    expect_bin(buf, "\x0\xcc", 2);
+
+    _setmbcp(oldcp);
+}
+
+static void test_mbstowcs(void)
+{
+    static const char mbs[] = { 0xc3, 0xa9, 0 };
+    WCHAR wcs[2];
+    size_t ret;
+
+    if (!setlocale(LC_ALL, "en_US.UTF-8"))
+    {
+        win_skip("skipping UTF8 mbstowcs tests\n");
+        return;
+    }
+
+    ret = mbstowcs(NULL, mbs, 0);
+    ok(ret == 1, "mbstowcs returned %Id\n", ret);
+    memset(wcs, 0xfe, sizeof(wcs));
+    ret = mbstowcs(wcs, mbs, 1);
+    ok(ret == 1, "mbstowcs returned %Id\n", ret);
+    ok(wcs[0] == 0xe9, "wcsstring[0] = %x\n", wcs[0]);
+    ok(wcs[1] == 0xfefe, "wcsstring[1] = %x\n", wcs[1]);
+    setlocale(LC_ALL, "C");
+}
+
 START_TEST(string)
 {
     ok(_set_invalid_parameter_handler(test_invalid_parameter_handler) == NULL,
@@ -669,4 +855,6 @@ START_TEST(string)
     test_SpecialCasing();
     test__mbbtype_l();
     test_strcmp();
+    test__mbsncpy_s();
+    test_mbstowcs();
 }

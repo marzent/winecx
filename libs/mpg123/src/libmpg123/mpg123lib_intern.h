@@ -15,9 +15,9 @@
 
 #include "config.h" /* Load this before _anything_ */
 
-#include "abi_align.h"
+#include "../common/abi_align.h"
 
-#include "compat.h"
+#include "../compat/compat.h"
 
 // Only portable API plays a role in the library itself, outside of lfs_wrap.c.
 // Also, we need to ensure no suffix renaming for the primary implementations.
@@ -230,12 +230,6 @@ static inline int32_t scale_rounded(int32_t x, int shift)
 
 #endif
 
-#ifndef REAL_IS_FIXED
-# if (defined SIZEOF_INT32_T) && (SIZEOF_INT32_T != 4)
-#  error "Bad 32bit types!!!"
-# endif
-#endif
-
 #ifndef DOUBLE_TO_REAL
 # define DOUBLE_TO_REAL(x)					(real)(x)
 #endif
@@ -284,7 +278,7 @@ static inline int32_t scale_rounded(int32_t x, int shift)
    now: factor on minimum frame buffer size (which takes upsampling into account) */
 #define		AUDIOBUFSIZE		2
 
-#include "true.h"
+#include "../common/true.h"
 
 #define         MAX_NAME_SIZE           81
 #define         SBLIMIT                 32
@@ -328,9 +322,6 @@ int64_t INT123_bytes_to_samples(mpg123_handle *fr , int64_t b);
 int64_t INT123_outblock_bytes(mpg123_handle *fr, int64_t s);
 /* Postprocessing format conversion of freshly decoded buffer. */
 void INT123_postprocess_buffer(mpg123_handle *fr);
-
-int INT123_open_fixed_pre(mpg123_handle *mh, int channels, int encoding);
-int INT123_open_fixed_post(mpg123_handle *mh, int channels, int encoding);
 
 /* If networking is enabled and we really mean internal networking, the timeout_read function is available. */
 #if defined (NETWORK) && !defined (WANT_WIN32_SOCKETS)

@@ -314,7 +314,7 @@ static const mach_msg_bits_t msgh_bits_complex_send = MACH_MSGH_BITS_SET(
 
 static const mach_msg_bits_t msgh_bits_send = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
 
-static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
+static inline mach_msg_return_t server_register_wait( semaphore_t sem, unsigned int msgh_id,
                                          struct msync **wait_objs, const int count )
 {
     int i, is_mutex;
@@ -346,10 +346,11 @@ static inline void server_register_wait( semaphore_t sem, unsigned int msgh_id,
 
     if (mr != MACH_MSG_SUCCESS)
         ERR("Failed to send server register wait: %#x\n", mr);
+
+    return mr;
 }
 
-static inline void server_remove_wait( semaphore_t sem, unsigned int msgh_id,
-                                       struct msync **wait_objs, const int count )
+static inline void server_remove_wait( unsigned int msgh_id, struct msync **wait_objs, const int count )
 {
     int i;
     mach_msg_return_t mr;
@@ -399,7 +400,7 @@ static inline int is_destroyed( struct msync **objs, int count)
     int i;
 
     for (i = 0; i < count; i++)
-        if (__atomic_load_n( (int *)objs[i]->shm + 2, __ATOMIC_RELAXED ))
+        if (__atomic_load_n( (int *)objs[i]->shm + 2, __ATOMIC_ACQUIRE ))
             return 0;
 
     return 1;
@@ -448,7 +449,7 @@ static inline int resize_wait_objs( struct msync **wait_objs, struct msync **obj
     for (read_index = 0; read_index < count; read_index++)
     {
         if (wait_objs[read_index] &&
-            __atomic_load_n( (int *)wait_objs[read_index]->shm + 2, __ATOMIC_RELAXED ))
+            __atomic_load_n( (int *)wait_objs[read_index]->shm + 2, __ATOMIC_ACQUIRE ))
         {
             objs[write_index] = wait_objs[read_index];
             write_index++;
@@ -483,6 +484,7 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
 {
     semaphore_t *sem;
     kern_return_t kr;
+    mach_msg_return_t mr;
     unsigned int msgh_id;
     __thread static struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
 
@@ -496,7 +498,33 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
 
     sem = semaphore_pool_alloc();
     msgh_id = (tid << 8) | count;
-    server_register_wait( *sem, msgh_id, objs, count );
+    mr = server_register_wait( *sem, msgh_id, objs, count );
+
+    if (mr != MACH_MSG_SUCCESS)
+    {
+        /* The os failed to send the mach message, which is either because
+         * we lost the wineserver process or the semaphore from semaphore_pool_alloc
+         * is not valid...
+         * To avoid pooling in a dead port, recreate it here.
+         * Worst case, this will behave effectively like a spinlock. */
+        semaphore_destroy( mach_task_self(), *sem) ;
+        kr = semaphore_create( mach_task_self(), sem, SYNC_POLICY_FIFO, 0 );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR("Cannot create semaphore: %#x %s\n", kr, mach_error_string(kr));
+            semaphore_pool_free( sem );
+            return STATUS_PENDING;
+        }
+
+        mr = server_register_wait( *sem, msgh_id, objs, count );
+
+        if (mr != MACH_MSG_SUCCESS)
+        {
+            semaphore_pool_free( sem );
+            return STATUS_PENDING;
+        }
+    }
 
     do
     {
@@ -512,7 +540,7 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
     if (is_destroyed( objs, count ))
         return destroyed_wait( end );
 
-    server_remove_wait( *sem, msgh_id, objs, count );
+    server_remove_wait( msgh_id, objs, count );
 
     switch (kr) {
         case KERN_SUCCESS:
@@ -1356,8 +1384,8 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         struct semaphore *semaphore = obj->shm;
                         int current;
 
-                        current = __atomic_load_n(&semaphore->count, __ATOMIC_ACQUIRE);
-                        if (current && __atomic_compare_exchange_n(&semaphore->count, &current, current - 1, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED))
+                        current = __atomic_load_n(&semaphore->count, __ATOMIC_SEQ_CST);
+                        if (current && __atomic_compare_exchange_n(&semaphore->count, &current, current - 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;
@@ -1377,13 +1405,13 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         }
 
                         tid = 0;
-                        if (__atomic_compare_exchange_n(&mutex->tid, &tid, current_tid, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+                        if (__atomic_compare_exchange_n(&mutex->tid, &tid, current_tid, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             mutex->count = 1;
                             return i;
                         }
-                        else if (tid == ~0 && __atomic_compare_exchange_n(&mutex->tid, &tid, current_tid, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+                        else if (tid == ~0 && __atomic_compare_exchange_n(&mutex->tid, &tid, current_tid, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
                         {
                             TRACE("Woken up by abandoned mutex %p [%d].\n", handles[i], i);
                             mutex->count = 1;
@@ -1398,7 +1426,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                         struct event *event = obj->shm;
                         int signaled = 1;
 
-                        if (__atomic_compare_exchange_n(&event->signaled, &signaled, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+                        if (__atomic_compare_exchange_n(&event->signaled, &signaled, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;
@@ -1412,7 +1440,7 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     {
                         struct event *event = obj->shm;
 
-                        if (__atomic_load_n(&event->signaled, __ATOMIC_ACQUIRE))
+                        if (__atomic_load_n(&event->signaled, __ATOMIC_SEQ_CST))
                         {
                             TRACE("Woken up by handle %p [%d].\n", handles[i], i);
                             return i;

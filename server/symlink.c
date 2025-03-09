@@ -71,8 +71,6 @@ static const struct object_ops symlink_ops =
     no_add_queue,                 /* add_queue */
     NULL,                         /* remove_queue */
     NULL,                         /* signaled */
-    NULL,                         /* get_esync_fd */
-    NULL,                         /* get_msync_idx */
     NULL,                         /* satisfied */
     no_signal,                    /* signal */
     no_get_fd,                    /* get_fd */
@@ -167,8 +165,6 @@ struct object *create_symlink( struct object *root, const struct unicode_str *na
             return NULL;
         }
     }
-    else clear_error();
-
     return &symlink->obj;
 }
 
@@ -214,7 +210,14 @@ DECL_HANDLER(create_symlink)
 
     if ((symlink = create_symlink( root, &name, objattr->attributes, &target, sd )))
     {
-        reply->handle = alloc_handle( current->process, symlink, req->access, objattr->attributes );
+        if (get_error() == STATUS_OBJECT_NAME_EXISTS)
+        {
+            clear_error();
+            reply->handle = alloc_handle( current->process, symlink, req->access, objattr->attributes );
+        }
+        else
+            reply->handle = alloc_handle_no_access_check( current->process, symlink,
+                                                          req->access, objattr->attributes );
         release_object( symlink );
     }
 

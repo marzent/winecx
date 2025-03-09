@@ -2010,7 +2010,7 @@ ok(isNaN(tmp), "Math.tan(-Infinity) is not NaN");
         ["true", true],
         ["   \nnull  ", null],
         ["{}", {}],
-        ["\"\\r\\n test\\u1111\"", "\r\n test\u1111"],
+        ["\"\\r\\n test\\u1111\\/\\x20\\45\\'\"", "\r\n test\u1111/ %'"],
         ["{\"x\" :\n true}", {x:true}],
         ["{\"x y\": {}, \"z\": {\"x\":null}}", {"x y":{}, z:{x:null}}],
         ["[]", []],
@@ -2744,6 +2744,7 @@ testException(function() {null.toString();}, "E_OBJECT_EXPECTED");
 testException(function() {RegExp.prototype.toString.call(new Object());}, "E_REGEXP_EXPECTED");
 testException(function() {/a/.lastIndex();}, "E_NOT_FUNC");
 testException(function() {"a".length();}, "E_NOT_FUNC");
+testException(function() {var o = {f: {}}; o.f();}, "E_NOT_FUNC");
 testException(function() {((function() { var f = Number.prototype.toString; return (function() { return f(); }); })())();}, "E_NOT_NUM");
 testException(function() {((function() { var f = Object.prototype.hasOwnProperty; return (function() { return f("f"); }); })())();}, "E_OBJECT_EXPECTED");
 

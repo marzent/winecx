@@ -59,54 +59,7 @@ static inline HTMLLocation *impl_from_IHTMLLocation(IHTMLLocation *iface)
     return CONTAINING_RECORD(iface, HTMLLocation, IHTMLLocation_iface);
 }
 
-static HRESULT WINAPI HTMLLocation_QueryInterface(IHTMLLocation *iface, REFIID riid, void **ppv)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_QueryInterface(&This->dispex.IDispatchEx_iface, riid, ppv);
-}
-
-static ULONG WINAPI HTMLLocation_AddRef(IHTMLLocation *iface)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_AddRef(&This->dispex.IDispatchEx_iface);
-}
-
-static ULONG WINAPI HTMLLocation_Release(IHTMLLocation *iface)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_Release(&This->dispex.IDispatchEx_iface);
-}
-
-static HRESULT WINAPI HTMLLocation_GetTypeInfoCount(IHTMLLocation *iface, UINT *pctinfo)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_GetTypeInfoCount(&This->dispex.IDispatchEx_iface, pctinfo);
-}
-
-static HRESULT WINAPI HTMLLocation_GetTypeInfo(IHTMLLocation *iface, UINT iTInfo,
-                                              LCID lcid, ITypeInfo **ppTInfo)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_GetTypeInfo(&This->dispex.IDispatchEx_iface, iTInfo, lcid, ppTInfo);
-}
-
-static HRESULT WINAPI HTMLLocation_GetIDsOfNames(IHTMLLocation *iface, REFIID riid,
-                                                LPOLESTR *rgszNames, UINT cNames,
-                                                LCID lcid, DISPID *rgDispId)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_GetIDsOfNames(&This->dispex.IDispatchEx_iface, riid, rgszNames, cNames,
-            lcid, rgDispId);
-}
-
-static HRESULT WINAPI HTMLLocation_Invoke(IHTMLLocation *iface, DISPID dispIdMember,
-                            REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams,
-                            VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
-{
-    HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    return IDispatchEx_Invoke(&This->dispex.IDispatchEx_iface, dispIdMember, riid, lcid,
-            wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-}
+DISPEX_IDISPATCH_IMPL(HTMLLocation, IHTMLLocation, impl_from_IHTMLLocation(iface)->dispex)
 
 static HRESULT WINAPI HTMLLocation_put_href(IHTMLLocation *iface, BSTR v)
 {
@@ -272,11 +225,27 @@ static HRESULT WINAPI HTMLLocation_get_host(IHTMLLocation *iface, BSTR *p)
     HTMLLocation *This = impl_from_IHTMLLocation(iface);
     URL_COMPONENTSW url = {sizeof(URL_COMPONENTSW)};
     HRESULT hres;
+    IUri *uri;
 
     TRACE("(%p)->(%p)\n", This, p);
 
     if(!p)
         return E_POINTER;
+
+    if(dispex_compat_mode(&This->window->base.inner_window->event_target.dispex) >= COMPAT_MODE_IE10) {
+        if(!(uri = get_uri(This))) {
+            *p = NULL;
+            return S_OK;
+        }
+
+        hres = IUri_GetAuthority(uri, p);
+        if(hres == S_OK || FAILED(hres))
+            return hres;
+
+        SysFreeString(*p);
+        *p = NULL;
+        return S_OK;
+    }
 
     url.dwHostNameLength = 1;
     hres = get_url_components(This, &url);
@@ -653,7 +622,7 @@ HRESULT create_location(HTMLOuterWindow *window, HTMLLocation **ret)
     location->window = window;
     IHTMLWindow2_AddRef(&window->base.IHTMLWindow2_iface);
 
-    init_dispatch(&location->dispex, &HTMLLocation_dispex, COMPAT_MODE_QUIRKS);
+    init_dispatch(&location->dispex, &HTMLLocation_dispex, NULL, COMPAT_MODE_QUIRKS);
 
     *ret = location;
     return S_OK;

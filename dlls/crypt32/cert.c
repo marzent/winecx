@@ -1482,10 +1482,15 @@ static BOOL compare_cert_by_name(PCCERT_CONTEXT pCertContext, DWORD dwType,
     CERT_NAME_BLOB *blob = (CERT_NAME_BLOB *)pvPara, *toCompare;
     BOOL ret;
 
-    if (dwType & CERT_INFO_SUBJECT_FLAG)
+    if ((dwType & CERT_COMPARE_MASK) == CERT_INFO_SUBJECT_FLAG)
         toCompare = &pCertContext->pCertInfo->Subject;
-    else
+    else if ((dwType & CERT_COMPARE_MASK) == CERT_INFO_ISSUER_FLAG)
         toCompare = &pCertContext->pCertInfo->Issuer;
+    else
+    {
+        ERR("dwType %08lx doesn't specify SUBJECT or ISSUER\n", dwType);
+        return FALSE;
+    }
     ret = CertCompareCertificateName(pCertContext->dwCertEncodingType,
      toCompare, blob);
     return ret;
@@ -1735,7 +1740,7 @@ static PCCERT_CONTEXT find_cert_by_issuer(HCERTSTORE store, DWORD dwType,
     }
     else
        found = cert_compare_certs_in_store(store, prev,
-        compare_cert_by_name, CERT_COMPARE_NAME | CERT_COMPARE_SUBJECT_CERT,
+        compare_cert_by_name, CERT_FIND_SUBJECT_NAME,
         dwFlags, &subject->pCertInfo->Issuer);
     return found;
 }
@@ -1747,7 +1752,7 @@ static BOOL compare_cert_by_name_str(PCCERT_CONTEXT pCertContext,
     DWORD len;
     BOOL ret = FALSE;
 
-    if (dwType & CERT_INFO_SUBJECT_FLAG)
+    if ((dwType & CERT_COMPARE_MASK) == CERT_INFO_SUBJECT_FLAG)
         name = &pCertContext->pCertInfo->Subject;
     else
         name = &pCertContext->pCertInfo->Issuer;
@@ -2778,32 +2783,37 @@ BOOL CNG_ImportPubKey(CERT_PUBLIC_KEY_INFO *pubKeyInfo, BCRYPT_KEY_HANDLE *key)
 static BOOL CNG_PrepareSignatureECC(BYTE *encoded_sig, DWORD encoded_size, BYTE **sig_value, DWORD *sig_len)
 {
     CERT_ECC_SIGNATURE *ecc_sig;
-    DWORD size;
+    DWORD size, r_size, s_size, r_offset, s_offset;
     int i;
 
     if (!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, encoded_sig, encoded_size,
             CRYPT_DECODE_ALLOC_FLAG, NULL, &ecc_sig, &size))
         return FALSE;
 
-    if (!ecc_sig->r.cbData || !ecc_sig->s.cbData)
+    if (!(r_size = ecc_sig->r.cbData) || !(s_size = ecc_sig->s.cbData))
     {
         LocalFree(ecc_sig);
         SetLastError(ERROR_INVALID_DATA);
         return FALSE;
     }
+    r_size = s_size = max( r_size, s_size );
 
-    *sig_len = ecc_sig->r.cbData + ecc_sig->s.cbData;
+    *sig_len = r_size + s_size;
     if (!(*sig_value = CryptMemAlloc(*sig_len)))
     {
         LocalFree(ecc_sig);
         SetLastError(ERROR_OUTOFMEMORY);
         return FALSE;
     }
+    memset( *sig_value, 0, *sig_len );
+
+    r_offset = r_size - ecc_sig->r.cbData;
+    s_offset = s_size - ecc_sig->s.cbData;
 
     for (i = 0; i < ecc_sig->r.cbData; i++)
-        (*sig_value)[i] = ecc_sig->r.pbData[ecc_sig->r.cbData - i - 1];
+        (*sig_value)[i + r_offset] = ecc_sig->r.pbData[ecc_sig->r.cbData - i - 1];
     for (i = 0; i < ecc_sig->s.cbData; i++)
-        (*sig_value)[ecc_sig->r.cbData + i] = ecc_sig->s.pbData[ecc_sig->s.cbData - i - 1];
+        (*sig_value)[r_size + i + s_offset] = ecc_sig->s.pbData[ecc_sig->s.cbData - i - 1];
 
     LocalFree(ecc_sig);
     return TRUE;
