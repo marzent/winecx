@@ -155,10 +155,9 @@ static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t opt
 
 static mach_port_name_t receive_port;
 
-struct sem_node
+struct tid_node
 {
-    struct sem_node *next;
-    semaphore_t sem;
+    struct tid_node *next;
     int tid;
 };
 
@@ -166,8 +165,8 @@ struct sem_node
 
 struct node_memory_pool
 {
-    struct sem_node *nodes;
-    struct sem_node **free_nodes;
+    struct tid_node *nodes;
+    struct tid_node **free_nodes;
     unsigned int count;
 };
 
@@ -177,25 +176,25 @@ static void pool_init(void)
 {
     unsigned int i;
     pool = malloc( sizeof(struct node_memory_pool) );
-    pool->nodes = malloc( MAX_POOL_NODES * sizeof(struct sem_node) );
-    pool->free_nodes = malloc( MAX_POOL_NODES * sizeof(struct sem_node *) );
+    pool->nodes = malloc( MAX_POOL_NODES * sizeof(struct tid_node) );
+    pool->free_nodes = malloc( MAX_POOL_NODES * sizeof(struct tid_node *) );
     pool->count = MAX_POOL_NODES;
 
     for (i = 0; i < MAX_POOL_NODES; i++)
         pool->free_nodes[i] = &pool->nodes[i];
 }
 
-static inline struct sem_node *pool_alloc(void)
+static inline struct tid_node *pool_alloc(void)
 {
     if (pool->count == 0)
     {
         fprintf( stderr, "msync: warn: node memory pool exhausted\n" );
-        return malloc( sizeof(struct sem_node) );
+        return malloc( sizeof(struct tid_node) );
     }
     return pool->free_nodes[--pool->count];
 }
 
-static inline void pool_free( struct sem_node *node )
+static inline void pool_free( struct tid_node *node )
 {
     if (node < pool->nodes || node >= pool->nodes + MAX_POOL_NODES)
     {
@@ -205,30 +204,30 @@ static inline void pool_free( struct sem_node *node )
     pool->free_nodes[pool->count++] = node;
 }
 
-struct sem_list
+struct tid_list
 {
-    struct sem_node *head;
+    struct tid_node *head;
 };
 
-static struct sem_list mach_semaphore_map[MAX_INDEX];
+static struct tid_list tid_map[MAX_INDEX];
+static int *shm_tid_map;
 
-static inline void add_sem( unsigned int shm_idx, semaphore_t sem, int tid )
+static inline void add_tid( unsigned int shm_idx, int tid )
 {
-    struct sem_node *new_node;
-    struct sem_list *list = mach_semaphore_map + shm_idx;
+    struct tid_node *new_node;
+    struct tid_list *list = tid_map + shm_idx;
 
     new_node = pool_alloc();
-    new_node->sem = sem;
     new_node->tid = tid;
 
     new_node->next = list->head;
     list->head = new_node;
 }
 
-static inline void remove_sem( unsigned int shm_idx, int tid )
+static inline void remove_tid( unsigned int shm_idx, int tid )
 {
-    struct sem_node *current, *prev = NULL;
-    struct sem_list *list = mach_semaphore_map + shm_idx;
+    struct tid_node *current, *prev = NULL;
+    struct tid_list *list = tid_map + shm_idx;
 
     current = list->head;
     while (current != NULL)
@@ -249,43 +248,55 @@ static inline void remove_sem( unsigned int shm_idx, int tid )
 
 static void *get_shm( unsigned int idx );
 
-static inline void destroy_all_internal( unsigned int shm_idx )
+typedef struct
 {
-    struct sem_node *current, *temp;
-    struct sem_list *list = mach_semaphore_map + shm_idx;
-    int *shm = get_shm( shm_idx );
+    mach_msg_header_t header;
+    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
+    mach_msg_trailer_t trailer;
+} mach_register_message_t;
 
-    __atomic_store_n( shm + 2, 0, __ATOMIC_SEQ_CST );
-    __atomic_store_n( shm + 3, 0, __ATOMIC_SEQ_CST );
-    __ulock_wake( UL_COMPARE_AND_WAIT_SHARED | ULF_WAKE_ALL, (void *)shm, 0 );
+static inline void unregister_wait( mach_register_message_t *message, unsigned int tid, unsigned int count )
+{
+    int i;
+
+    for (i = 0; i < count; i++)
+        remove_tid( message->shm_idx[i], tid );
+}
+
+static inline void wake_tid( int tid )
+{
+    int *shm = shm_tid_map + tid;
+
+    __atomic_store_n( shm, 0, __ATOMIC_RELEASE );
+    __ulock_wake( UL_COMPARE_AND_WAIT_SHARED, (void *)shm, 0 );
+}
+
+static inline void signal_all_internal( unsigned int shm_idx )
+{
+    struct tid_node *current, *temp;
+    struct tid_list *list = tid_map + shm_idx;
+
     current = list->head;
     list->head = NULL;
 
     while (current)
     {
-        semaphore_destroy( mach_task_self(), current->sem );
+        wake_tid( current->tid );
         temp = current;
         current = current->next;
         pool_free(temp);
     }
 }
 
-static inline void signal_all_internal( unsigned int shm_idx )
+static inline void destroy_all_internal( unsigned int shm_idx )
 {
-    struct sem_node *current, *temp;
-    struct sem_list *list = mach_semaphore_map + shm_idx;
+    struct tid_node *current, *temp;
+    struct tid_list *list = tid_map + shm_idx;
+    int *shm = get_shm( shm_idx );
 
-    current = list->head;
-    list->head = NULL;
-
-    while (current)
-    {
-        semaphore_signal( current->sem );
-        semaphore_destroy( mach_task_self(), current->sem );
-        temp = current;
-        current = current->next;
-        pool_free(temp);
-    }
+    __atomic_store_n( shm + 2, 0, __ATOMIC_SEQ_CST );
+    __atomic_store_n( shm + 3, 0, __ATOMIC_SEQ_CST );
+    signal_all_internal( shm_idx );
 }
 
 /*
@@ -309,7 +320,7 @@ static inline mach_msg_return_t signal_all( unsigned int shm_idx, int *shm )
     static mach_msg_header_t send_header;
 
     __ulock_wake( UL_COMPARE_AND_WAIT_SHARED | ULF_WAKE_ALL, (void *)shm, 0 );
-    if (!__atomic_load_n( shm + 3, __ATOMIC_ACQUIRE ))
+    if (!__atomic_load_n( shm + 3, __ATOMIC_SEQ_CST ))
         return MACH_MSG_SUCCESS;
 
     send_header.msgh_bits = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
@@ -320,22 +331,6 @@ static inline mach_msg_return_t signal_all( unsigned int shm_idx, int *shm )
     return mach_msg2( &send_header, MACH_SEND_MSG, send_header.msgh_size,
                 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
 }
-
-typedef struct
-{
-    mach_msg_header_t header;
-    mach_msg_body_t body;
-    mach_msg_port_descriptor_t descriptor;
-    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
-    mach_msg_trailer_t trailer;
-} mach_register_message_t;
-
-typedef struct
-{
-    mach_msg_header_t header;
-    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
-    mach_msg_trailer_t trailer;
-} mach_unregister_message_t;
 
 static inline mach_msg_return_t receive_mach_msg( mach_register_message_t *buffer )
 {
@@ -349,11 +344,11 @@ static inline void decode_msgh_id( unsigned int msgh_id, unsigned int *tid, unsi
     *count = msgh_id & 0xFF;
 }
 
-static inline unsigned int check_bit_29( unsigned int *shm_idx )
+static inline unsigned int check_bit( const unsigned int bit, unsigned int *shm_idx )
 {
-    unsigned int bit_29 = (*shm_idx >> 28) & 1;
-    *shm_idx &= ~(1 << 28);
-    return bit_29;
+    unsigned int bit_val = (*shm_idx >> bit) & 1;
+    *shm_idx &= ~(1u << bit);
+    return bit_val;
 }
 
 static void *mach_message_pump( void *args )
@@ -362,9 +357,7 @@ static void *mach_message_pump( void *args )
     unsigned int tid, count, is_mutex;
     int *addr;
     mach_msg_return_t mr;
-    semaphore_t sem;
     mach_register_message_t receive_message = { 0 };
-    mach_unregister_message_t *mach_unregister_message;
     sigset_t set;
 
     sigfillset( &set );
@@ -381,13 +374,13 @@ static void *mach_message_pump( void *args )
 
         /*
          * A message with no body is a signal_all or destroy_all operation where the shm_idx
-         * is the msgh_id and the type of operation is decided by the 20th bit.
+         * is the msgh_id and the type of operation is decided by the 29th bit.
          * (The shared memory index is only a 28-bit integer at max)
          * See signal_all( unsigned int shm_idx ) and destroy_all( unsigned int shm_idx )above.
          */
         if (receive_message.header.msgh_size == sizeof(mach_msg_header_t))
         {
-            if (check_bit_29( (unsigned int *)&receive_message.header.msgh_id ))
+            if (check_bit( 28, (unsigned int *)&receive_message.header.msgh_id ))
                 destroy_all_internal( receive_message.header.msgh_id );
             else
                 signal_all_internal( receive_message.header.msgh_id );
@@ -395,37 +388,32 @@ static void *mach_message_pump( void *args )
         }
 
         /*
-         * A message with a body which is not complex means this is a
-         * server_remove_wait operation
+         * Finally server_register_wait and server_unregister_wait
          */
         decode_msgh_id( receive_message.header.msgh_id, &tid, &count );
-        if (!MACH_MSGH_BITS_IS_COMPLEX(receive_message.header.msgh_bits))
-        {
-            mach_unregister_message = (mach_unregister_message_t *)&receive_message;
-            for (i = 0; i < count; i++)
-                remove_sem( mach_unregister_message->shm_idx[i], tid );
-
-            continue;
-        }
-
-        /*
-         * Finally server_register_wait
-         */
-        sem = receive_message.descriptor.name;
         for (i = 0; i < count; i++)
         {
-            is_mutex = check_bit_29( receive_message.shm_idx + i );
+            if (i == 0 && check_bit( 29, receive_message.shm_idx + i ))
+            {
+                unregister_wait( &receive_message, tid, count );
+                break;
+            }
+            is_mutex = check_bit( 28, receive_message.shm_idx + i );
             addr = (int *)get_shm( receive_message.shm_idx[i] );
             val = __atomic_load_n( addr, __ATOMIC_SEQ_CST );
             if ((is_mutex && (val == 0 || val == ~0 || val == tid)) || (!is_mutex && val != 0)
                 || !__atomic_load_n( addr + 2, __ATOMIC_SEQ_CST ))
             {
-                /* The client had a TOCTTOU we need to fix */
-                semaphore_signal( sem );
-                semaphore_destroy( mach_task_self(), sem );
-                continue;
+                if (i > 1) unregister_wait( &receive_message, tid, i );
+                wake_tid( tid );
+                break;
             }
-            add_sem( receive_message.shm_idx[i], sem, tid );
+            add_tid( receive_message.shm_idx[i], tid );
+            if (i == count - 1)
+            {
+                /* The client can stop spinning and safely start waiting now */
+                __atomic_store_n( shm_tid_map + tid, 1, __ATOMIC_RELEASE );
+            }
         }
     }
 
@@ -455,6 +443,9 @@ int do_msync(void)
 static char shm_name[29];
 static int shm_fd;
 static const off_t shm_size = MAX_INDEX * 16;
+static char shm_tid_name[33];
+static int shm_tid_fd;
+static const off_t shm_tid_size = 64 * 1024 * 1024; /* 64 MB to index 24 bit tids */
 static void **shm_addrs;
 static int shm_addrs_size;  /* length of the allocated shm_addrs array */
 static long pagesize;
@@ -466,6 +457,9 @@ static void cleanup(void)
 {
     close( shm_fd );
     if (shm_unlink( shm_name ) == -1)
+        perror( "shm_unlink" );
+    close( shm_tid_fd );
+    if (shm_unlink( shm_tid_name ) == -1)
         perror( "shm_unlink" );
 }
 
@@ -520,15 +514,24 @@ void msync_init(void)
         fatal_error( "cannot stat config dir\n" );
 
     if (st.st_ino != (unsigned long)st.st_ino)
-        sprintf( shm_name, "/wine-%lx%08lx-msync", (unsigned long)((unsigned long long)st.st_ino >> 32), (unsigned long)st.st_ino );
+        snprintf( shm_name, 29, "/wine-%lx%08lx-msync", (unsigned long)((unsigned long long)st.st_ino >> 32), (unsigned long)st.st_ino );
     else
-        sprintf( shm_name, "/wine-%lx-msync", (unsigned long)st.st_ino );
+        snprintf( shm_name, 29, "/wine-%lx-msync", (unsigned long)st.st_ino );
+
+    snprintf( shm_tid_name, 33, "%s-tid", shm_name );
 
     if (!shm_unlink( shm_name ))
         fprintf( stderr, "msync: warning: a previous shm file %s was not properly removed\n", shm_name );
 
+    if (!shm_unlink( shm_tid_name ))
+        fprintf( stderr, "msync: warning: a previous shm file %s was not properly removed\n", shm_tid_name );
+
     shm_fd = shm_open( shm_name, O_RDWR | O_CREAT | O_EXCL, 0644 );
     if (shm_fd == -1)
+        perror( "shm_open" );
+
+    shm_tid_fd = shm_open( shm_tid_name, O_RDWR | O_CREAT | O_EXCL, 0644 );
+    if (shm_tid_fd == -1)
         perror( "shm_open" );
 
     pagesize = sysconf( _SC_PAGESIZE );
@@ -540,6 +543,20 @@ void msync_init(void)
     {
         perror( "ftruncate" );
         fatal_error( "could not initialize shared memory\n" );
+    }
+
+    if (ftruncate( shm_tid_fd, shm_tid_size ) == -1)
+    {
+        perror( "ftruncate" );
+        fatal_error( "could not initialize tid shared memory\n" );
+    }
+
+    shm_tid_map = mmap( NULL, shm_tid_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_tid_fd, 0 );
+
+    if (shm_tid_map == MAP_FAILED)
+    {
+        perror("mmap");
+        fatal_error( "could not map tid shared memory\n" );
     }
 
     shm = get_shm( 0 );
@@ -734,7 +751,7 @@ unsigned int msync_alloc_shm( int low, int high )
         }
     }
     __atomic_store_n( shm + 2, 1, __ATOMIC_SEQ_CST );
-    assert(mach_semaphore_map[shm_idx].head == NULL);
+    assert(tid_map[shm_idx].head == NULL);
     shm_idx_counter = (shm_idx + 1) % MAX_INDEX;
 
 

@@ -46,6 +46,7 @@
 # include <mach/mach_error.h>
 # include <servers/bootstrap.h>
 # include <os/lock.h>
+# include <AvailabilityMacros.h>
 #endif
 #include <dlfcn.h>
 #include <sched.h>
@@ -76,23 +77,31 @@ static LONGLONG update_timeout( ULONGLONG end )
     return timeleft;
 }
 
-static inline mach_timespec_t convert_to_mach_time( LONGLONG win32_time )
-{
-    mach_timespec_t ret;
-
-    ret.tv_sec = win32_time / (ULONGLONG)TICKSPERSEC;
-    ret.tv_nsec = (win32_time % TICKSPERSEC) * 100;
-    return ret;
-}
-
 #define UL_COMPARE_AND_WAIT_SHARED  0x3
 #define ULF_WAKE_ALL                0x00000100
 #define ULF_NO_ERRNO                0x01000000
 extern int __ulock_wake( uint32_t operation, void *addr, uint64_t wake_value );
+extern int __ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_t timeout ); /* timeout is specified in microseconds */
+#ifdef MAC_OS_VERSION_11_0
+extern int __ulock_wait2( uint32_t operation, void *addr, uint64_t value, uint64_t timeout_ns, uint64_t value2 ) __attribute__((weak_import));
+#endif
 
-typedef int (*__ulock_wait2_ptr_t)( uint32_t operation, void *addr, uint64_t value,
-                                    uint64_t timeout_ns, uint64_t value2 );
-static __ulock_wait2_ptr_t __ulock_wait2;
+static inline int ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_t timeout_ns )
+{
+#ifdef MAC_OS_VERSION_11_0
+    if (__builtin_available( macOS 11.0, * ))
+    {
+        return __ulock_wait2( operation, addr, value, timeout_ns, 0 );
+    }
+    else
+#endif
+    {
+        uint32_t timeout_us = timeout_ns / 1000;
+        /* Avoid a 0 timeout for small timeout_ns values */
+        uint32_t adjust = (timeout_us == 0) & (timeout_ns != 0);
+        return __ulock_wait( operation, addr, value, timeout_us + adjust );
+    }
+}
 
 /*
  * Faster to directly do the syscall and inline everything, taken and slightly adapted
@@ -169,118 +178,6 @@ static inline mach_msg_return_t mach_msg2( mach_msg_header_t *data, uint64_t opt
 #undef MACH_MSG2_SHIFT_ARGS
 }
 
-/* this is a lot, but running out cripples performance */
-#define MAX_POOL_SEMAPHORES 1024
-#define POOL_SHRINK_THRESHOLD 30
-#define POOL_SHRINK_COUNT 10
-
-struct semaphore_memory_pool
-{
-    semaphore_t semaphores[MAX_POOL_SEMAPHORES];
-    semaphore_t *free_semaphores[MAX_POOL_SEMAPHORES];
-    unsigned int count;
-    unsigned int total;
-    os_unfair_lock lock;
-};
-
-static struct semaphore_memory_pool *pool;
-
-static void semaphore_pool_init(void)
-{
-    unsigned int i;
-
-    pool = malloc( sizeof(struct semaphore_memory_pool) );
-
-    pool->lock = OS_UNFAIR_LOCK_INIT;
-
-    for (i = 0; i < MAX_POOL_SEMAPHORES; i++)
-    {
-        pool->free_semaphores[i] = &pool->semaphores[i];
-    }
-
-    pool->count = 0;
-    pool->total = 0;
-}
-
-static inline semaphore_t *semaphore_pool_alloc(void)
-{
-    semaphore_t *new_semaphore;
-    kern_return_t kr;
-
-    os_unfair_lock_lock(&pool->lock);
-
-    if (pool->count == 0)
-    {
-        if (pool->total < MAX_POOL_SEMAPHORES)
-        {
-            TRACE("Dynamically growing semaphore pool\n");
-            kr = semaphore_create(mach_task_self(), &pool->semaphores[pool->total], SYNC_POLICY_FIFO, 0);
-            if (kr != KERN_SUCCESS)
-                ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
-
-            new_semaphore = &pool->semaphores[pool->total];
-            pool->total++;
-
-            os_unfair_lock_unlock(&pool->lock);
-
-            return new_semaphore;
-        }
-        else
-        {
-            os_unfair_lock_unlock(&pool->lock);
-
-            WARN("Semaphore pool exhausted, consider increasing MAX_POOL_SEMAPHORES\n");
-            new_semaphore = malloc(sizeof(semaphore_t));
-            kr = semaphore_create(mach_task_self(), new_semaphore, SYNC_POLICY_FIFO, 0);
-            if (kr != KERN_SUCCESS)
-                ERR("Cannot create dynamic semaphore: %#x %s\n", kr, mach_error_string(kr));
-
-            return new_semaphore;
-        }
-    }
-
-    new_semaphore = pool->free_semaphores[pool->count - 1];
-    pool->count--;
-
-    os_unfair_lock_unlock(&pool->lock);
-
-    return new_semaphore;
-}
-
-static inline void semaphore_pool_free(semaphore_t *sem)
-{
-    int i;
-
-    os_unfair_lock_lock(&pool->lock);
-
-    if (sem < pool->semaphores || sem >= pool->semaphores + MAX_POOL_SEMAPHORES)
-    {
-        os_unfair_lock_unlock(&pool->lock);
-
-        semaphore_destroy(mach_task_self(), *sem);
-        free(sem);
-
-        return;
-    }
-
-    if (pool->count >= POOL_SHRINK_THRESHOLD)
-    {
-        TRACE("Dynamically shrinking semaphore pool\n");
-        for (i = 0; i < POOL_SHRINK_COUNT; i++)
-        {
-            semaphore_destroy(mach_task_self(), *sem);
-            pool->total--;
-        }
-    }
-    else
-    {
-        pool->free_semaphores[pool->count] = sem;
-        pool->count++;
-    }
-
-    os_unfair_lock_unlock(&pool->lock);
-}
-
 struct msync
 {
     void *shm;              /* pointer to shm section */
@@ -291,45 +188,25 @@ struct msync
 typedef struct
 {
     mach_msg_header_t header;
-    mach_msg_body_t body;
-    mach_msg_port_descriptor_t descriptor;
-} mach_register_message_prolog_t;
-
-typedef struct
-{
-    mach_register_message_prolog_t prolog;
     unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
 } mach_register_message_t;
 
-typedef struct
-{
-    mach_msg_header_t header;
-    unsigned int shm_idx[MAXIMUM_WAIT_OBJECTS + 1];
-} mach_unregister_message_t;
-
 static mach_port_t server_port;
 
-static const mach_msg_bits_t msgh_bits_complex_send = MACH_MSGH_BITS_SET(
-                MACH_MSG_TYPE_COPY_SEND, 0, 0, MACH_MSGH_BITS_COMPLEX);
+static int *shm_tid_map;
 
 static const mach_msg_bits_t msgh_bits_send = MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_COPY_SEND);
 
-static inline mach_msg_return_t server_register_wait( semaphore_t sem, unsigned int msgh_id,
+static inline mach_msg_return_t server_register_wait( unsigned int msgh_id,
                                          struct msync **wait_objs, const int count )
 {
     int i, is_mutex;
     mach_msg_return_t mr;
     __thread static mach_register_message_t message;
 
-    message.prolog.header.msgh_remote_port = server_port;
-    message.prolog.header.msgh_bits = msgh_bits_complex_send;
-    message.prolog.header.msgh_id = msgh_id;
-
-    message.prolog.body.msgh_descriptor_count = 1;
-
-    message.prolog.descriptor.name = sem;
-    message.prolog.descriptor.disposition = MACH_MSG_TYPE_COPY_SEND;
-    message.prolog.descriptor.type = MACH_MSG_PORT_DESCRIPTOR;
+    message.header.msgh_remote_port = server_port;
+    message.header.msgh_bits = msgh_bits_send;
+    message.header.msgh_id = msgh_id;
 
     for (i = 0; i < count; i++)
     {
@@ -338,10 +215,10 @@ static inline mach_msg_return_t server_register_wait( semaphore_t sem, unsigned 
         __atomic_add_fetch( (int *)(wait_objs[i]->shm) + 3, 1, __ATOMIC_SEQ_CST);
     }
 
-    message.prolog.header.msgh_size = sizeof(mach_register_message_prolog_t) +
-                                      count * sizeof(unsigned int);
+    message.header.msgh_size = sizeof(mach_msg_header_t) +
+                               count * sizeof(unsigned int);
 
-    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.prolog.header.msgh_size,
+    mr = mach_msg2( (mach_msg_header_t *)&message, MACH_SEND_MSG, message.header.msgh_size,
                      0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, 0 );
 
     if (mr != MACH_MSG_SUCCESS)
@@ -354,7 +231,7 @@ static inline void server_remove_wait( unsigned int msgh_id, struct msync **wait
 {
     int i;
     mach_msg_return_t mr;
-    __thread static mach_unregister_message_t message;
+    __thread static mach_register_message_t message;
 
     message.header.msgh_remote_port = server_port;
     message.header.msgh_bits = msgh_bits_send;
@@ -362,17 +239,13 @@ static inline void server_remove_wait( unsigned int msgh_id, struct msync **wait
 
     for (i = 0; i < count; i++)
     {
-        int old_val, new_val;
-        do
-        {
-            old_val = __atomic_load_n( (int *)(wait_objs[i]->shm) + 3, __ATOMIC_SEQ_CST );
-            if (old_val <= 0) break;
-            new_val = old_val - 1;
-        } while (!__atomic_compare_exchange_n( (int *)(wait_objs[i]->shm) + 3, &old_val,
-                                               new_val, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST ));
-
+        int refs = __atomic_sub_fetch( (int *)(wait_objs[i]->shm) + 3, 1, __ATOMIC_SEQ_CST);
+        if (refs < 0)
+            __atomic_store_n( (int *)(wait_objs[i]->shm) + 3, 0, __ATOMIC_SEQ_CST);
         message.shm_idx[i] = wait_objs[i]->shm_idx;
     }
+
+    message.shm_idx[0] |= (1 << 29);
 
     message.header.msgh_size = sizeof(mach_msg_header_t) +
                                count * sizeof(unsigned int);
@@ -391,7 +264,7 @@ static NTSTATUS destroyed_wait( ULONGLONG *end )
         usleep( update_timeout( *end ) / 10 );
         return STATUS_TIMEOUT;
     }
-    pause();
+    for(;;) pause();
     return STATUS_PENDING;
 }
 
@@ -430,8 +303,8 @@ static inline NTSTATUS msync_wait_single( struct msync *wait_obj,
             ns_timeleft = update_timeout( *end ) * 100;
             if (!ns_timeleft) return STATUS_TIMEOUT;
         }
-        ret = __ulock_wait2( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, val, ns_timeleft, 0 );
-    } while (ret == -EINTR);
+        ret = ulock_wait( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, val, ns_timeleft );
+    } while (ret == -EINTR || ret == -EFAULT);
 
     if (ret == -ETIMEDOUT)
         return STATUS_TIMEOUT;
@@ -482,46 +355,36 @@ static inline int check_shm_contention( struct msync **wait_objs,
 static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
                                      int count, ULONGLONG *end, int tid )
 {
-    semaphore_t *sem;
-    kern_return_t kr;
+    int ret, val;
+    int *addr = shm_tid_map + tid;
+    ULONGLONG ns_timeleft = 0;
     mach_msg_return_t mr;
     unsigned int msgh_id;
     __thread static struct msync *objs[MAXIMUM_WAIT_OBJECTS + 1];
 
     count = resize_wait_objs( wait_objs, objs, count );
 
-    if (count == 1 && __ulock_wait2) return msync_wait_single( objs[0], end, tid );
+    if (count == 1) return msync_wait_single( objs[0], end, tid );
     if (!count) return destroyed_wait( end );
 
-    if (check_shm_contention( objs, count, tid ))
-        return STATUS_PENDING;
-
-    sem = semaphore_pool_alloc();
+    __atomic_store_n( addr, 2, __ATOMIC_RELEASE );
     msgh_id = (tid << 8) | count;
-    mr = server_register_wait( *sem, msgh_id, objs, count );
+    mr = server_register_wait( msgh_id, objs, count );
 
     if (mr != MACH_MSG_SUCCESS)
+        return STATUS_PENDING;
+
+    while (__atomic_load_n( addr, __ATOMIC_ACQUIRE ) == 2)
     {
-        /* The os failed to send the mach message, which is either because
-         * we lost the wineserver process or the semaphore from semaphore_pool_alloc
-         * is not valid...
-         * To avoid pooling in a dead port, recreate it here.
-         * Worst case, this will behave effectively like a spinlock. */
-        semaphore_destroy( mach_task_self(), *sem) ;
-        kr = semaphore_create( mach_task_self(), sem, SYNC_POLICY_FIFO, 0 );
-
-        if (kr != KERN_SUCCESS)
+        if (check_shm_contention( objs, count, tid ))
         {
-            ERR("Cannot create semaphore: %#x %s\n", kr, mach_error_string(kr));
-            semaphore_pool_free( sem );
-            return STATUS_PENDING;
-        }
-
-        mr = server_register_wait( *sem, msgh_id, objs, count );
-
-        if (mr != MACH_MSG_SUCCESS)
-        {
-            semaphore_pool_free( sem );
+            int i;
+            for (i = 0; i < count; i++)
+            {
+                int refs = __atomic_sub_fetch( (int *)(wait_objs[i]->shm) + 3, 1, __ATOMIC_SEQ_CST);
+                if (refs < 0)
+                    __atomic_store_n( (int *)(wait_objs[i]->shm) + 3, 0, __ATOMIC_SEQ_CST);
+            }
             return STATUS_PENDING;
         }
     }
@@ -529,32 +392,28 @@ static NTSTATUS msync_wait_multiple( struct msync **wait_objs,
     do
     {
         if (end)
-            kr = semaphore_timedwait( *sem,
-                        convert_to_mach_time( update_timeout( *end ) ) );
-        else
-            kr = semaphore_wait( *sem );
-    } while (kr == KERN_ABORTED);
+        {
+            ns_timeleft = update_timeout( *end ) * 100;
+            if (!ns_timeleft)
+            {
+                server_remove_wait( msgh_id, objs, count );
+                return STATUS_TIMEOUT;
+            }
+        }
+        ret = ulock_wait( UL_COMPARE_AND_WAIT_SHARED | ULF_NO_ERRNO, addr, 1, ns_timeleft );
+        val = __atomic_load_n( addr, __ATOMIC_ACQUIRE );
+        if (!val)
+            break;
+    } while (ret == -EINTR || ret == -EFAULT);
 
-    semaphore_pool_free( sem );
-
+    server_remove_wait( msgh_id, objs, count );
+    
     if (is_destroyed( objs, count ))
         return destroyed_wait( end );
 
-    server_remove_wait( msgh_id, objs, count );
+    if (ret == -ETIMEDOUT) return STATUS_TIMEOUT;
 
-    switch (kr) {
-        case KERN_SUCCESS:
-            return STATUS_SUCCESS;
-        case KERN_OPERATION_TIMED_OUT:
-            if (check_shm_contention( objs, count, tid ))
-                return STATUS_PENDING;
-            return STATUS_TIMEOUT;
-        case KERN_TERMINATED:
-            return destroyed_wait( end );
-        default:
-            ERR("Unexpected kernel return code: %#x %s\n", kr, mach_error_string( kr ));
-            return STATUS_PENDING;
-    }
+    return STATUS_SUCCESS;
 }
 
 #endif
@@ -598,6 +457,9 @@ C_ASSERT(sizeof(struct mutex) == 8);
 
 static char shm_name[29];
 static int shm_fd;
+static char shm_tid_name[33];
+static int shm_tid_fd;
+static const off_t shm_tid_size = 64 * 1024 * 1024; /* 64 MB to index 24 bit tids */
 static void **shm_addrs;
 static int shm_addrs_size;  /* length of the allocated shm_addrs array */
 static long pagesize;
@@ -862,9 +724,11 @@ void msync_init(void)
         ERR("Cannot stat %s\n", config_dir);
 
     if (st.st_ino != (unsigned long)st.st_ino)
-        sprintf( shm_name, "/wine-%lx%08lx-msync", (unsigned long)((unsigned long long)st.st_ino >> 32), (unsigned long)st.st_ino );
+        snprintf( shm_name, 29, "/wine-%lx%08lx-msync", (unsigned long)((unsigned long long)st.st_ino >> 32), (unsigned long)st.st_ino );
     else
-        sprintf( shm_name, "/wine-%lx-msync", (unsigned long)st.st_ino );
+        snprintf( shm_name, 29, "/wine-%lx-msync", (unsigned long)st.st_ino );
+
+    snprintf( shm_tid_name, 33, "%s-tid", shm_name );
 
     if ((shm_fd = shm_open( shm_name, O_RDWR, 0644 )) == -1)
     {
@@ -876,16 +740,24 @@ void msync_init(void)
         exit(1);
     }
 
+    if ((shm_tid_fd = shm_open( shm_tid_name, O_RDWR, 0644 )) == -1)
+    {
+        ERR("Failed to initialize tid shared memory %s: %s\n", shm_tid_name, strerror( errno ));
+        exit(1);
+    }
+
+    shm_tid_map = mmap( NULL, shm_tid_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_tid_fd, 0 );
+
+    if (shm_tid_map == MAP_FAILED)
+    {
+        ERR("Failed to map tid shared memory: %s\n", strerror( errno ));
+        exit(1);
+    }
+
     pagesize = sysconf( _SC_PAGESIZE );
 
     shm_addrs = calloc( 128, sizeof(shm_addrs[0]) );
     shm_addrs_size = 128;
-
-    semaphore_pool_init();
-
-    __ulock_wait2 = (__ulock_wait2_ptr_t)dlsym( dlhandle, "__ulock_wait2" );
-    if (!__ulock_wait2)
-        WARN("__ulock_wait2 not available, performance will be lower\n");
 
     /* Bootstrap mach wineserver communication */
 
@@ -941,7 +813,7 @@ static inline void signal_all( struct msync *obj )
 
     __ulock_wake( UL_COMPARE_AND_WAIT_SHARED | ULF_WAKE_ALL, obj->shm, 0 );
 
-    if (!__atomic_load_n( (int *)obj->shm + 3, __ATOMIC_ACQUIRE ))
+    if (!__atomic_load_n( (int *)obj->shm + 3, __ATOMIC_SEQ_CST ))
         return;
 
     send_header.msgh_bits = msgh_bits_send;
@@ -1382,13 +1254,16 @@ static NTSTATUS __msync_wait_objects( DWORD count, const HANDLE *handles,
                     case MSYNC_SEMAPHORE:
                     {
                         struct semaphore *semaphore = obj->shm;
-                        int current;
+                        int current, new;
 
-                        current = __atomic_load_n(&semaphore->count, __ATOMIC_SEQ_CST);
-                        if (current && __atomic_compare_exchange_n(&semaphore->count, &current, current - 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+                        new = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST );
+                        while ((current = new))
                         {
-                            TRACE("Woken up by handle %p [%d].\n", handles[i], i);
-                            return i;
+                            if ((new = __sync_val_compare_and_swap( &semaphore->count, current, current - 1 )) == current)
+                            {
+                                TRACE("Woken up by handle %p [%d].\n", handles[i], i);
+                                return i;
+                            }
                         }
                         break;
                     }
@@ -1603,10 +1478,15 @@ tryagain:
                 case MSYNC_SEMAPHORE:
                 {
                     struct semaphore *semaphore = obj->shm;
-                    int current;
+                    int current, new;
 
-                    if (!(current = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST ))
-                            || __sync_val_compare_and_swap( &semaphore->count, current, current - 1 ) != current)
+                    new = __atomic_load_n( &semaphore->count, __ATOMIC_SEQ_CST );
+                    while ((current = new))
+                    {
+                        if ((new = __sync_val_compare_and_swap( &semaphore->count, current, current - 1 )) == current)
+                            break;
+                    }
+                    if (!current)
                         goto tooslow;
                     break;
                 }
