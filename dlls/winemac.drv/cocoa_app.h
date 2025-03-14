@@ -92,6 +92,7 @@ enum {
     CGEventSourceKeyboardType keyboardType;
     NSEvent* lastFlagsChanged;
     BOOL inputSourceIsInputMethod;
+    BOOL inputSourceIsInputMethodValid;
     uint32_t pressedKeyCodes[128 / 32];
 
     CGFloat primaryScreenHeight;
