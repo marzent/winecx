@@ -183,6 +183,7 @@ static UINT ime_set_composition_status( HIMC himc, BOOL composition )
     if (!(ctx = ImmLockIMC( himc ))) return 0;
     if ((priv = ImmLockIMCC( ctx->hPrivate )))
     {
+        NtUserNotifyIMEStatus( ctx->hWnd, composition );
         if (!priv->in_composition && composition) msg = WM_IME_STARTCOMPOSITION;
         else if (priv->in_composition && !composition) msg = WM_IME_ENDCOMPOSITION;
         priv->in_composition = composition;
