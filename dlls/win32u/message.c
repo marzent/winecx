@@ -2496,6 +2496,12 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
     msg->pt = point_phys_to_win_dpi( msg->hwnd, msg->pt );
     set_thread_dpi_awareness_context( get_window_dpi_awareness_context( msg->hwnd ));
 
+    if (msg->message == WM_LBUTTONDOWN)
+    {
+        TRACE("forcing IME completion\n");
+        ImmTranslateMessage( msg->hwnd, 0, 0, 0xFFFFFFFF );
+    }
+
     /* FIXME: is this really the right place for this hook? */
     event.message = msg->message;
     event.time    = msg->time;

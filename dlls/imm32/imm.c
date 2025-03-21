@@ -3111,6 +3111,16 @@ BOOL WINAPI ImmTranslateMessage( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
     if (!(data = get_imc_data( ImmGetContext( hwnd ) ))) return FALSE;
     if (!(ime = imc_select_ime( data ))) return FALSE;
 
+    if (msg == 0 && wparam == 0 && lparam == 0xFFFFFFFF)
+    {
+        ImmNotifyIME( data->handle, NI_COMPOSITIONSTR, CPS_COMPLETE, 0 );
+        ImmSetCompositionStringW( data->handle, SCS_SETSTR, NULL, 0, NULL, 0 );
+        return TRUE;
+    }
+
+    if (!ImmProcessKey( hwnd, GetKeyboardLayout( 0 ), ImmGetVirtualKey( hwnd ), lparam, 1 ))
+        return FALSE;
+
     if ((vkey = data->vkey) == VK_PROCESSKEY) return FALSE;
     data->vkey = VK_PROCESSKEY;
     GetKeyboardState( state );
@@ -3151,8 +3161,15 @@ BOOL WINAPI ImmProcessKey( HWND hwnd, HKL hkl, UINT vkey, LPARAM lparam, DWORD u
 
     GetKeyboardState( state );
 
+    if (unknown)
+    {
+        vkey = vkey | (1U << (sizeof(UINT) * 8 - 1));
+    }
+
     ret = ime->pImeProcessKey( imc->handle, vkey, lparam, state );
     imc->vkey = ret ? vkey : VK_PROCESSKEY;
+
+    TRACE( "returning %u\n", ret );
 
     return ret;
 }

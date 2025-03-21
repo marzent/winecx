@@ -1403,6 +1403,7 @@ UINT macdrv_ImeProcessKey(HIMC himc, UINT wparam, UINT lparam, const BYTE *key_s
     BOOL repeat = !!(lparam >> 30), pressed = !(lparam >> 31);
     unsigned int flags;
     int keyc, done = 0;
+    int preprocess = 0;
 
     TRACE("himc %p, scan %#x, vkey %#x, repeat %u, pressed %u\n",
           himc, scan, vkey, repeat, pressed);
@@ -1444,6 +1445,27 @@ UINT macdrv_ImeProcessKey(HIMC himc, UINT wparam, UINT lparam, const BYTE *key_s
 
     TRACE("flags 0x%08x keyc 0x%04x\n", flags, keyc);
 
+    switch (vkey)
+    {
+        case VK_RETURN:
+        case VK_ESCAPE:
+        case VK_BACK:
+            preprocess = 1;
+    }
+
+    if (wparam & (1U << (sizeof(UINT) * 8 - 1)))
+    {
+        if (!preprocess)
+            goto send_input;
+    }
+    else
+    {
+        if (preprocess)
+            goto send_input;
+    }
+    return 1;
+
+send_input:
     macdrv_send_text_input_event(pressed, flags, repeat, keyc, himc, &done);
     while (!done) NtUserMsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_POSTMESSAGE | QS_SENDMESSAGE, 0);
 
