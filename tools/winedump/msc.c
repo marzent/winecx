@@ -1958,6 +1958,49 @@ BOOL codeview_dump_symbols(const void* root, unsigned long start, unsigned long 
                    sym->pogoinfo_v3.numInstrs, sym->pogoinfo_v3.staInstLive);
             break;
 
+        case S_TOKENREF:
+            printf("Tokenref V3 %x %x %x %x %x \n",
+                   ((const unsigned*)sym)[1],
+                   ((const unsigned*)sym)[2],
+                   ((const unsigned*)sym)[3],
+                   ((const unsigned*)sym)[4],
+                   ((const unsigned*)sym)[5]);
+            break;
+
+        case S_GMANPROC:
+        case S_LMANPROC:
+            printf("%s Managed Procedure V3: '%s' (%04x:%08x#%x) attr:%x\n",
+                   sym->generic.id == S_GMANPROC ? "Global" : "Local",
+                   sym->managed_proc_v3.name,
+                   sym->managed_proc_v3.sect, sym->managed_proc_v3.off, sym->managed_proc_v3.proc_len,
+                   sym->managed_proc_v3.flags);
+            printf("%*s\\- Debug: start=%08x end=%08x\n",
+                   indent, "", sym->managed_proc_v3.debug_start, sym->managed_proc_v3.debug_end);
+            printf("%*s\\- parent:<%x> end:<%x> next<%x>\n",
+                   indent, "", sym->managed_proc_v3.pParent, sym->managed_proc_v3.pEnd, sym->managed_proc_v3.pNext);
+            printf("%*s\\- token:%x retReg:%x\n",
+                   indent, "", sym->managed_proc_v3.token, sym->managed_proc_v3.retReg);
+            push_symbol_dumper(&sd, sym, sym->managed_proc_v3.pEnd);
+            break;
+
+        case S_MANSLOT:
+            printf("Managed slot V3: '%s' type:%x attr:%s slot:%u\n",
+                   sym->managed_slot_v3.name, sym->managed_slot_v3.typeid,
+                   get_varflags(sym->managed_slot_v3.attr), sym->managed_slot_v3.iSlot);
+            break;
+
+        case S_OEM:
+            printf("OEM symbol V3 guid=%s type=%x\n",
+                   get_guid_str(&sym->oem_v3.idOEM), sym->oem_v3.typeid);
+            {
+                const unsigned int *from = (const void*)sym->oem_v3.rgl;
+                const unsigned int *last = (unsigned int*)((unsigned char*)sym + 2 + sym->generic.len);
+                printf("%*s\\- rgl: [", indent, "");
+                for (; from < last; from++) printf("%08x%s", *from, (from + 1) < last ? " " : "");
+                printf("]\n");
+            }
+            break;
+
         default:
             printf("\n\t\t>>> Unsupported symbol-id %x sz=%d\n", sym->generic.id, sym->generic.len + 2);
             dump_data((const void*)sym, sym->generic.len + 2, "  ");

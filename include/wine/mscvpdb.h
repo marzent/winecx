@@ -2057,6 +2057,43 @@ union codeview_symbol
         unsigned                numInstrs;
         unsigned                staInstLive;
     } pogoinfo_v3;
+
+    struct
+    {
+        unsigned short int      len;
+        unsigned short int      id;
+        unsigned int            pParent;
+        unsigned int            pEnd;
+        unsigned int            pNext;
+        unsigned int            proc_len;
+        unsigned int            debug_start;
+        unsigned int            debug_end;
+        unsigned int            token;
+        unsigned int            off;
+        unsigned short          sect;
+        unsigned char           flags;
+        unsigned short          retReg;
+        unsigned char           name[];
+    } managed_proc_v3;
+
+    struct
+    {
+        unsigned short          len;
+        unsigned short          id;
+        unsigned int            iSlot;
+        cv_typ_t                typeid;
+        struct cv_local_varflag attr;
+        unsigned char           name[];
+    } managed_slot_v3;
+
+    struct
+    {
+        unsigned short          len;
+        unsigned short          id;
+        GUID                    idOEM;
+        cv_typ_t                typeid;
+        unsigned int            rgl[];
+    } oem_v3;
 };
 
 enum BinaryAnnotationOpcode
@@ -2112,6 +2149,7 @@ enum BinaryAnnotationOpcode
 #define S_DATAREF_ST    0x0401
 #define S_ALIGN         0x0402
 #define S_LPROCREF_ST   0x0403
+#define S_OEM           0x0404
 
 #define S_REGISTER_ST   0x1001 /* Variants with new 32-bit type indices */
 #define S_CONSTANT_ST   0x1002

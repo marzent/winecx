@@ -2787,6 +2787,19 @@ static BOOL codeview_snarf(const struct msc_debug_info* msc_dbg,
                 FIXME("Unexpected S_FRAMEPROC %d (%p %p)\n", top_frame_size, top_func, curr_func);
             break;
 
+        case S_GMANPROC:
+        case S_LMANPROC:
+            /* skip whole record and sub-records */
+            i = sym->managed_proc_v3.pEnd;
+            sym = (const union codeview_symbol*)(root + i);
+            if (i + sizeof(sym->generic) > size || sym->generic.id != S_END)
+            {
+                FIXME("Wrong relocation after managed proc, aborting\n");
+                return FALSE;
+            }
+            length = 2 + sym->generic.len;
+            break;
+
         /* the symbols we can safely ignore for now */
         case S_TRAMPOLINE:
         case S_FRAMECOOKIE:
@@ -2794,6 +2807,9 @@ static BOOL codeview_snarf(const struct msc_debug_info* msc_dbg,
         case S_COFFGROUP:
         case S_EXPORT:
         case S_CALLSITEINFO:
+        case S_TOKENREF:
+        case S_OEM:
+        case S_MANSLOT:
             /* even if S_LOCAL groks all the S_DEFRANGE* records following itself,
              * those kinds of records can also be present after a S_FILESTATIC record
              * so silence them until (at least) S_FILESTATIC is supported
@@ -2900,11 +2916,13 @@ static BOOL codeview_snarf_sym_hashtable(const struct msc_debug_info* msc_dbg, c
     if (hashsize < sizeof(DBI_HASH_HEADER) ||
         hash_hdr->signature != 0xFFFFFFFF ||
         hash_hdr->version != 0xeffe0000 + 19990810 ||
+        !hash_hdr->hash_records_size ||
         (hash_hdr->hash_records_size % sizeof(DBI_HASH_RECORD)) != 0 ||
         sizeof(DBI_HASH_HEADER) + hash_hdr->hash_records_size + DBI_BITMAP_HASH_SIZE > hashsize ||
         (hashsize - (sizeof(DBI_HASH_HEADER) + hash_hdr->hash_records_size + DBI_BITMAP_HASH_SIZE)) % sizeof(unsigned))
     {
-        FIXME("Incorrect hash structure\n");
+        if (hash_hdr->hash_records_size)
+            FIXME("Incorrect hash structure\n");
         return FALSE;
     }
 
