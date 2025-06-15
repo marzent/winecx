@@ -86,7 +86,7 @@ extern int __ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_
 extern int __ulock_wait2( uint32_t operation, void *addr, uint64_t value, uint64_t timeout_ns, uint64_t value2 ) __attribute__((weak_import));
 #endif
 
-static inline int ulock_wait( uint32_t operation, void *addr, uint64_t value, uint32_t timeout_ns )
+static inline int ulock_wait( uint32_t operation, void *addr, uint64_t value, uint64_t timeout_ns )
 {
 #ifdef MAC_OS_VERSION_11_0
     if (__builtin_available( macOS 11.0, * ))
