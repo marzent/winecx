@@ -155,7 +155,8 @@ static NSString* WineLocalizedString(unsigned int stringID)
             @{
                 @"NSQuotedKeystrokeBinding" : @"",
                     @"NSRepeatCountBinding" : @"",
-                @"ApplePressAndHoldEnabled" : @NO
+                @"ApplePressAndHoldEnabled" : @NO,
+                @"NSAutoFillHeuristicControllerEnabled" : @NO
             };
 
             [[NSUserDefaults standardUserDefaults] registerDefaults:defaults];
