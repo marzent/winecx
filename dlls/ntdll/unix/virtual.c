@@ -402,6 +402,208 @@ static void kernel_get_write_watches( void *base, SIZE_T size, void **buffer, UL
         addr = next_addr;
     }
 }
+#elif defined(__APPLE__)
+static vm_prot_t get_mach_prot( mach_vm_address_t addr )
+{
+    size_t i, idx = (size_t)ROUND_ADDR( addr, host_page_mask ) >> page_shift;
+    const BYTE *vprot_ptr;
+    BYTE vprot = 0;
+    vm_prot_t mach_prot = VM_PROT_NONE;
+
+    if ((idx >> pages_vprot_shift) >= pages_vprot_size) return VM_PROT_NONE;
+    if (!pages_vprot[idx >> pages_vprot_shift]) return VM_PROT_NONE;
+    assert( host_page_mask >> page_shift <= pages_vprot_mask );
+    vprot_ptr = pages_vprot[idx >> pages_vprot_shift] + (idx & pages_vprot_mask);
+    for (i = 0; i < host_page_size / page_size; i++) vprot |= vprot_ptr[i];
+    if ((vprot & VPROT_COMMITTED) && !(vprot & VPROT_GUARD))
+    {
+        if (vprot & VPROT_READ) mach_prot |= VM_PROT_READ;
+        if (vprot & VPROT_WRITE) mach_prot |= VM_PROT_WRITE | VM_PROT_READ;
+        if (vprot & VPROT_WRITECOPY) mach_prot |= VM_PROT_WRITE | VM_PROT_READ;
+        if (vprot & VPROT_EXEC) mach_prot |= VM_PROT_EXECUTE | VM_PROT_READ;
+        if (vprot & VPROT_WRITEWATCH) mach_prot &= ~VM_PROT_WRITE;
+    }
+
+    return mach_prot;
+}
+
+static void kernel_writewatch_init(void)
+{
+    const char *env = getenv( "DISABLE_MACH_WRITEWATCHES" );
+
+    if (env)
+    {
+        char *endptr = NULL;
+        long val = strtol( env, &endptr, 0 );
+
+        if (endptr != env && val != 0)
+        {
+            WARN( "Mach write watches disabled by environment variable.\n" );
+            return;
+        }
+    }
+
+    use_kernel_writewatch = 1;
+    TRACE( "Using mach write watches.\n" );
+}
+
+static void kernel_writewatch_reset( void *start, SIZE_T len )
+{
+    mach_vm_address_t current_address = (mach_vm_address_t)ROUND_ADDR( start, host_page_mask );
+    SIZE_T end = current_address + ROUND_SIZE( start, len, host_page_mask );
+    kern_return_t kr;
+
+    while (current_address < end)
+    {
+        vm_prot_t mach_prot = get_mach_prot( current_address );
+
+        kr = mach_vm_protect( mach_task_self(), current_address, host_page_size, 0,
+                              mach_prot | VM_PROT_COPY );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR( "mach_vm_protect failed on address %p: %d\n", (void *)current_address, kr );
+            break;
+        }
+
+        current_address += host_page_size;
+    }
+}
+
+static void kernel_writewatch_register_range( struct file_view *view, void *base, size_t size )
+{
+    mach_vm_address_t current_address = (mach_vm_address_t)ROUND_ADDR( base, host_page_mask );
+    mach_vm_address_t region_address;
+    mach_vm_size_t region_size;
+    mach_msg_type_number_t info_count;
+    mach_port_t object_name;
+    vm_region_extended_info_data_t info;
+    SIZE_T end = current_address + ROUND_SIZE( base, size, host_page_mask );
+    kern_return_t kr;
+
+    if (!(view->protect & VPROT_WRITEWATCH) || !use_kernel_writewatch) return;
+
+    while (current_address < end)
+    {
+        vm_prot_t mach_prot = get_mach_prot( current_address );
+
+        region_address = current_address;
+        info_count = VM_REGION_EXTENDED_INFO_COUNT;
+        kr = mach_vm_region( mach_task_self(), &region_address, &region_size, VM_REGION_EXTENDED_INFO, 
+                             (vm_region_info_t)&info, &info_count, &object_name );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR( "mach_vm_region failed: %d\n", kr );
+            break;
+        }
+
+        if (region_address > current_address) 
+        {
+            ERR( "trying to register unmapped region\n" );
+            break;
+        }
+
+        assert( info.protection == mach_prot );
+
+        region_size = (mach_vm_size_t)host_page_size;
+        kr = mach_vm_protect( mach_task_self(), current_address, region_size, 0,
+                              mach_prot | VM_PROT_COPY );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR( "mach_vm_protect failed: %d\n", kr );
+            break;
+        }
+
+        kr = mach_make_memory_entry_64( mach_task_self(), &region_size, current_address, mach_prot,
+                                        &object_name, MACH_PORT_NULL );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR( "mach_make_memory_entry_64 failed: %d\n", kr );
+            current_address += host_page_size;
+            continue;
+        }
+
+        assert( region_size == host_page_size );
+        mach_port_deallocate( mach_task_self(), object_name );
+        current_address += host_page_size;
+    }
+}
+
+static void kernel_get_write_watches( void *base, SIZE_T size, void **buffer, ULONG_PTR *count, BOOL reset )
+{
+    mach_vm_address_t current_address;
+    mach_vm_address_t region_address;
+    mach_vm_size_t region_size;
+    mach_msg_type_number_t info_count;
+    mach_port_t object_name;
+    vm_region_extended_info_data_t info;
+    data_size_t remaining_size;
+    SIZE_T buffer_len = *count;
+    size_t end;
+    kern_return_t kr;
+
+    assert( !(size & page_mask) );
+
+    end = (size_t)((char *)base + size);
+    remaining_size = ROUND_SIZE( base, size, host_page_mask );
+    current_address = (mach_vm_address_t)ROUND_ADDR( base, host_page_mask );
+    *count = 0;
+
+    while (remaining_size && buffer_len)
+    {
+        region_address = current_address;
+        info_count = VM_REGION_EXTENDED_INFO_COUNT;
+        kr = mach_vm_region( mach_task_self(), &region_address, &region_size, VM_REGION_EXTENDED_INFO, 
+                             (vm_region_info_t)&info, &info_count, &object_name );
+
+        if (kr != KERN_SUCCESS)
+        {
+            ERR( "mach_vm_region failed: %d\n", kr );
+            break;
+        }
+
+        if (region_address > min( current_address, (mach_vm_address_t)end )) break;
+
+        assert( region_size == host_page_size );
+
+        if (info.share_mode != SM_COW)
+        {
+            size_t c_addr = max( (size_t)current_address, (size_t)base );
+            size_t region_end = min( (size_t)(region_address + region_size), end );
+
+            while (buffer_len && c_addr < region_end)
+            {
+                buffer[(*count)++] = (void *)c_addr;
+                --buffer_len;
+                c_addr += page_size;
+            }
+        }
+
+        current_address += region_size;
+        remaining_size  -= region_size;
+    }
+
+    if (reset)
+    {
+        ULONG_PTR i;
+        vm_prot_t mach_prot;
+        mach_vm_address_t current_address;
+
+        for (i = 0; i < *count; i++)
+        {
+            current_address = (mach_vm_address_t)buffer[i];
+            mach_prot = get_mach_prot( current_address );
+            kr = mach_vm_protect( mach_task_self(), current_address, page_size, 0,
+                                  mach_prot | VM_PROT_COPY );
+
+            if (kr != KERN_SUCCESS)
+                ERR( "mach_vm_protect failed: %d\n", kr );
+        }
+    }
+}
 #else
 static void kernel_writewatch_init(void)
 {
