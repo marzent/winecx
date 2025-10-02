@@ -379,6 +379,7 @@ AC_CHECK_HEADERS(\
 	link.h \
 	linux/cdrom.h \
 	linux/filter.h \
+	linux/fs.h \
 	linux/hdreg.h \
 	linux/hidraw.h \
 	linux/input.h \
@@ -388,6 +389,7 @@ AC_CHECK_HEADERS(\
 	linux/serial.h \
 	linux/types.h \
 	linux/ucdrom.h \
+	linux/userfaultfd.h \
 	linux/wireless.h \
 	lwp.h \
 	mach-o/loader.h \
