@@ -64,6 +64,7 @@
 # include <valgrind/valgrind.h>
 #endif
 #if defined(__APPLE__)
+#define host_page_size mac_host_page_size
 # include <mach/mach_init.h>
 # include <mach/mach_vm.h>
 # include <mach-o/dyld.h> /* CrossOver Hack #16371 */
@@ -71,6 +72,7 @@
 # include <mach/task.h>
 # include <mach/thread_state.h>
 # include <mach/vm_map.h>
+#undef host_page_size
 #endif
 
 #if defined(HAVE_LINUX_USERFAULTFD_H) && defined(HAVE_LINUX_FS_H)
@@ -222,6 +224,8 @@ static BYTE **pages_vprot;
 static BYTE *pages_vprot;
 #endif
 
+static const UINT_PTR host_page_size = 0x1000;
+static const UINT_PTR host_page_mask = 0xfff;
 static int use_kernel_writewatch;
 #ifdef USE_UFFD_WRITEWATCH
 static int uffd_fd, pagemap_fd;
@@ -450,7 +454,7 @@ static void kernel_writewatch_init(void)
 static void kernel_writewatch_reset( void *start, SIZE_T len )
 {
     mach_vm_address_t current_address = (mach_vm_address_t)ROUND_ADDR( start, host_page_mask );
-    SIZE_T end = current_address + ROUND_SIZE( start, len, host_page_mask );
+    SIZE_T end = current_address + ROUND_SIZE( start, len );
     kern_return_t kr;
 
     while (current_address < end)
@@ -478,7 +482,7 @@ static void kernel_writewatch_register_range( struct file_view *view, void *base
     mach_msg_type_number_t info_count;
     mach_port_t object_name;
     vm_region_extended_info_data_t info;
-    SIZE_T end = current_address + ROUND_SIZE( base, size, host_page_mask );
+    SIZE_T end = current_address + ROUND_SIZE( base, size );
     kern_return_t kr;
 
     if (!(view->protect & VPROT_WRITEWATCH) || !use_kernel_writewatch) return;
@@ -548,7 +552,7 @@ static void kernel_get_write_watches( void *base, SIZE_T size, void **buffer, UL
     assert( !(size & page_mask) );
 
     end = (size_t)((char *)base + size);
-    remaining_size = ROUND_SIZE( base, size, host_page_mask );
+    remaining_size = ROUND_SIZE( base, size );
     current_address = (mach_vm_address_t)ROUND_ADDR( base, host_page_mask );
     *count = 0;
 
@@ -2375,9 +2379,8 @@ static void *map_reserved_area( void *limit_low, void *limit_high, size_t size, 
  * Map a memory area at a fixed address.
  * virtual_mutex must be held by caller.
  */
-static NTSTATUS map_fixed_area( void *base, size_t size, unsigned int vprot )
+static NTSTATUS map_fixed_area( void *base, size_t size, int unix_prot )
 {
-    int unix_prot = get_unix_prot(vprot);
     struct reserved_area *area;
     NTSTATUS status;
     char *start = base, *end = (char *)base + size;
@@ -2437,6 +2440,7 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
 {
     int top_down = alloc_type & MEM_TOP_DOWN;
     void *ptr;
+    int unix_prot = get_unix_prot( vprot );
     NTSTATUS status;
 
     if (alloc_type & MEM_REPLACE_PLACEHOLDER)
@@ -2471,7 +2475,7 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
         if (limit_low && base < (void *)limit_low) return STATUS_CONFLICTING_ADDRESSES;
         if (limit_high && is_beyond_limit( base, size, (void *)limit_high )) return STATUS_CONFLICTING_ADDRESSES;
         if (is_beyond_limit( base, size, host_addr_space_limit )) return STATUS_CONFLICTING_ADDRESSES;
-        if ((status = map_fixed_area( base, size, vprot ))) return status;
+        if ((status = map_fixed_area( base, size, unix_prot ))) return status;
         if (is_beyond_limit( base, size, working_set_limit )) working_set_limit = address_space_limit;
         ptr = base;
     }
@@ -2487,7 +2491,7 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
         if (limit_low && (void *)limit_low > start) start = (void *)limit_low;
         if (limit_high && (void *)limit_high < end) end = (char *)limit_high + 1;
 
-        if ((ptr = map_reserved_area( start, end, size, top_down, get_unix_prot(vprot), align_mask )))
+        if ((ptr = map_reserved_area( start, end, size, top_down, unix_prot, align_mask )))
         {
             TRACE( "got mem in reserved area %p-%p\n", ptr, (char *)ptr + size );
             goto done;
@@ -2495,7 +2499,7 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
 
         if (start > address_space_start || end < host_addr_space_limit || top_down)
         {
-            if (!(ptr = map_free_area( start, end, size, top_down, get_unix_prot(vprot), align_mask )))
+            if (!(ptr = map_free_area( start, end, size, top_down, unix_prot, align_mask )))
                 return STATUS_NO_MEMORY;
             TRACE( "got mem with map_free_area %p-%p\n", ptr, (char *)ptr + size );
             goto done;
@@ -2503,11 +2507,11 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
 
         for (;;)
         {
-            if ((ptr = anon_mmap_alloc( view_size, get_unix_prot(vprot) )) == MAP_FAILED)
+            if ((ptr = anon_mmap_alloc( view_size, unix_prot )) == MAP_FAILED)
             {
                 status = (errno == ENOMEM) ? STATUS_NO_MEMORY : STATUS_INVALID_PARAMETER;
                 ERR( "anon mmap error %s, size %p, unix_prot %#x\n",
-                     strerror(errno), (void *)view_size, get_unix_prot( vprot ) );
+                     strerror(errno), (void *)view_size, unix_prot );
                 return status;
             }
             TRACE( "got mem with anon mmap %p-%p\n", ptr, (char *)ptr + size );
