@@ -497,7 +497,7 @@ DWORD add_request_headers( struct request *request, const WCHAR *headers, DWORD 
         for (q = p; q < headers + len && *q != '\r' && *q != '\n'; ++q)
             ;
         end = q;
-        while (*q == '\r' || *q == '\n')
+        while (q < headers + len && (*q == '\r' || *q == '\n'))
             ++q;
 
         if ((header = parse_header( p, end - p, FALSE )))
@@ -1978,7 +1978,7 @@ static BOOL end_of_read_data( struct request *request )
 {
     if (!request->content_length) return TRUE;
     if (request->read_chunked) return request->read_chunked_eof;
-    if (request->content_length == ~0u) return FALSE;
+    if (request->content_length == ~0ull) return FALSE;
     return (request->content_length == request->content_read);
 }
 
@@ -2011,7 +2011,7 @@ static DWORD read_data( struct request *request, void *buffer, DWORD size, DWORD
     if (request->read_chunked && !request->read_chunked_size) ret = refill_buffer( request, async );
 
 done:
-    TRACE( "retrieved %u bytes (%lu/%lu)\n", bytes_read, request->content_read, request->content_length );
+    TRACE( "retrieved %u bytes (%I64u/%I64u)\n", bytes_read, request->content_read, request->content_length );
     if (end_of_read_data( request )) finished_reading( request );
     if (async)
     {
@@ -2240,8 +2240,9 @@ static DWORD send_request( struct request *request, const WCHAR *headers, DWORD 
 {
     struct connect *connect = request->connect;
     struct session *session = connect->session;
-    DWORD ret, len, buflen, content_length;
-    WCHAR encoding[20];
+    DWORD ret, len, buflen;
+    UINT64 content_length;
+    WCHAR buf[21];
     char *wire_req;
     int bytes_sent;
     BOOL chunked;
@@ -2272,9 +2273,9 @@ static DWORD send_request( struct request *request, const WCHAR *headers, DWORD 
     if (request->creds[TARGET_SERVER][SCHEME_BASIC].username)
         do_authorization( request, WINHTTP_AUTH_TARGET_SERVER, WINHTTP_AUTH_SCHEME_BASIC );
 
-    buflen = sizeof(encoding);
+    buflen = sizeof(buf);
     chunked = !query_headers( request, WINHTTP_QUERY_FLAG_REQUEST_HEADERS | WINHTTP_QUERY_TRANSFER_ENCODING,
-                              NULL, encoding, &buflen, NULL ) && !wcsicmp( encoding, L"chunked" );
+                              NULL, buf, &buflen, NULL ) && !wcsicmp( buf, L"chunked" );
     if (!chunked && (total_len || (request->verb && (!wcscmp( request->verb, L"POST" )
                                || !wcscmp( request->verb, L"PUT" )))))
     {
@@ -2337,10 +2338,12 @@ static DWORD send_request( struct request *request, const WCHAR *headers, DWORD 
     }
     send_callback( &request->hdr, WINHTTP_CALLBACK_STATUS_REQUEST_SENT, &len, sizeof(len) );
 
-    buflen = sizeof(content_length);
-    if (query_headers( request, WINHTTP_QUERY_FLAG_REQUEST_HEADERS | WINHTTP_QUERY_CONTENT_LENGTH
-                       | WINHTTP_QUERY_FLAG_NUMBER, NULL, &content_length, &buflen, NULL ))
+    buflen = sizeof(buf);
+    if (query_headers( request, WINHTTP_QUERY_FLAG_REQUEST_HEADERS | WINHTTP_QUERY_CONTENT_LENGTH,
+                       NULL, buf, &buflen, NULL ))
         content_length = total_len;
+    else
+        content_length = wcstoull( buf, NULL, 10 );
 
     if (!chunked && content_length <= optional_len)
     {
@@ -2549,8 +2552,8 @@ static DWORD handle_authorization( struct request *request, DWORD status )
 /* set the request content length based on the headers */
 static void set_content_length( struct request *request, DWORD status )
 {
-    WCHAR encoding[20];
-    DWORD buflen = sizeof(request->content_length);
+    WCHAR buf[21];
+    DWORD buflen = sizeof(buf);
 
     if (status == HTTP_STATUS_NO_CONTENT || status == HTTP_STATUS_NOT_MODIFIED ||
         status == HTTP_STATUS_SWITCH_PROTOCOLS || !wcscmp( request->verb, L"HEAD" ))
@@ -2559,15 +2562,16 @@ static void set_content_length( struct request *request, DWORD status )
     }
     else
     {
-        if (query_headers( request, WINHTTP_QUERY_CONTENT_LENGTH|WINHTTP_QUERY_FLAG_NUMBER,
-                           NULL, &request->content_length, &buflen, NULL ))
-            request->content_length = ~0u;
+        if (query_headers( request, WINHTTP_QUERY_CONTENT_LENGTH, NULL, buf, &buflen, NULL ))
+            request->content_length = ~0ull;
+        else
+            request->content_length = wcstoull( buf, NULL, 10 );
 
-        buflen = sizeof(encoding);
-        if (!query_headers( request, WINHTTP_QUERY_TRANSFER_ENCODING, NULL, encoding, &buflen, NULL ) &&
-            !wcsicmp( encoding, L"chunked" ))
+        buflen = sizeof(buf);
+        if (!query_headers( request, WINHTTP_QUERY_TRANSFER_ENCODING, NULL, buf, &buflen, NULL ) &&
+            !wcsicmp( buf, L"chunked" ))
         {
-            request->content_length = ~0u;
+            request->content_length = ~0ull;
             request->read_chunked = TRUE;
             request->read_chunked_size = ~0u;
             request->read_chunked_eof = FALSE;
@@ -2622,9 +2626,9 @@ static DWORD read_reply( struct request *request )
 {
     char buffer[MAX_REPLY_LEN];
     DWORD ret, buflen, len, offset, crlf_len = 2; /* lstrlenW(crlf) */
-    char *status_code, *status_text;
+    const char *status_text, *ptr;
     WCHAR *versionW, *status_textW, *raw_headers;
-    WCHAR status_codeW[4]; /* sizeof("nnn") */
+    WCHAR status_code[4]; /* sizeof("nnn") */
 
     if (!request->netconn) return ERROR_WINHTTP_INCORRECT_HANDLE_STATE;
 
@@ -2634,34 +2638,35 @@ static DWORD read_reply( struct request *request )
         if ((ret = read_line( request, buffer, &buflen ))) return ret;
 
         /* first line should look like 'HTTP/1.x nnn OK' where nnn is the status code */
-        if (!(status_code = strchr( buffer, ' ' ))) return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
-        status_code++;
-        if (!(status_text = strchr( status_code, ' ' ))) return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
-        if ((len = status_text - status_code) != sizeof("nnn") - 1) return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
-        status_text++;
+        if (!(ptr = strchr( buffer, ' ' ))) return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
+        len = ptr - buffer;
 
-        TRACE("version [%s] status code [%s] status text [%s]\n",
-              debugstr_an(buffer, status_code - buffer - 1),
-              debugstr_an(status_code, len),
-              debugstr_a(status_text));
+        while (*ptr == ' ') ptr++;
+        if (!isdigit( ptr[0] ) || !isdigit( ptr[1] ) || !isdigit( ptr[2] )) return ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
+        status_code[0] = *ptr++;
+        status_code[1] = *ptr++;
+        status_code[2] = *ptr++;
+        status_code[3] = 0;
 
-    } while (!memcmp( status_code, "100", len )); /* ignore "100 Continue" responses */
+        while (*ptr == ' ') ptr++;
+        status_text = ptr;
 
-    /*  we rely on the fact that the protocol is ascii */
-    MultiByteToWideChar( CP_ACP, 0, status_code, len, status_codeW, len );
-    status_codeW[len] = 0;
-    if ((ret = process_header( request, L"Status", status_codeW,
+        TRACE( "version [%s] status code [%s] status text [%s]\n", debugstr_an(buffer, len),
+               debugstr_w(status_code), debugstr_a(status_text) );
+
+    } while (!wcscmp( status_code, L"100" )); /* ignore "100 Continue" responses */
+
+    if ((ret = process_header( request, L"Status", status_code,
                                WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE, FALSE ))) return ret;
 
-    len = status_code - buffer;
-    if (!(versionW = malloc( len * sizeof(WCHAR) ))) return ERROR_OUTOFMEMORY;
-    MultiByteToWideChar( CP_ACP, 0, buffer, len - 1, versionW, len -1 );
-    versionW[len - 1] = 0;
+    if (!(versionW = malloc( (len + 1) * sizeof(WCHAR) ))) return ERROR_OUTOFMEMORY;
+    MultiByteToWideChar( CP_ACP, 0, buffer, len, versionW, len );
+    versionW[len] = 0;
 
     free( request->version );
     request->version = versionW;
 
-    len = buflen - (status_text - buffer);
+    len = strlen( status_text ) + 1;
     if (!(status_textW = malloc( len * sizeof(WCHAR) ))) return ERROR_OUTOFMEMORY;
     MultiByteToWideChar( CP_ACP, 0, status_text, len, status_textW, len );
 
@@ -2871,7 +2876,8 @@ static DWORD handle_redirect( struct request *request, DWORD status )
         else request->path = wcsdup( L"/" );
     }
 
-    if (status != HTTP_STATUS_REDIRECT_KEEP_VERB && !wcscmp( request->verb, L"POST" ))
+    if (status != HTTP_STATUS_REDIRECT_KEEP_VERB && status != HTTP_STATUS_PERMANENT_REDIRECT &&
+        !wcscmp( request->verb, L"POST" ))
     {
         free( request->verb );
         request->verb = wcsdup( L"GET" );
@@ -3002,7 +3008,8 @@ static DWORD receive_response( struct request *request )
         ret = handle_passport_redirect( request );
         goto done;
     }
-    if (status == HTTP_STATUS_MOVED || status == HTTP_STATUS_REDIRECT || status == HTTP_STATUS_REDIRECT_KEEP_VERB)
+    if (status == HTTP_STATUS_MOVED || status == HTTP_STATUS_REDIRECT ||
+        status == HTTP_STATUS_REDIRECT_KEEP_VERB || status == HTTP_STATUS_PERMANENT_REDIRECT)
     {
         if (request->hdr.disable_flags & WINHTTP_DISABLE_REDIRECTS ||
             request->hdr.redirect_policy == WINHTTP_OPTION_REDIRECT_POLICY_NEVER) goto done;

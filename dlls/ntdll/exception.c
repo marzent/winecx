@@ -302,16 +302,6 @@ NTSTATUS WINAPI dispatch_user_callback( void *args, ULONG len, ULONG id )
 
 #endif
 
-/*******************************************************************
- *         nested_exception_handler
- */
-EXCEPTION_DISPOSITION WINAPI nested_exception_handler( EXCEPTION_RECORD *rec, void *frame,
-                                                       CONTEXT *context, void *dispatch )
-{
-    if (rec->ExceptionFlags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND)) return ExceptionContinueSearch;
-    return ExceptionNestedException;
-}
-
 
 /*******************************************************************
  *		raise_status
@@ -465,7 +455,7 @@ void __cdecl __wine_spec_unimplemented_stub( const char *module, const char *fun
  *
  * IsBadStringPtrA replacement for ntdll, to catch exception in debug traces.
  */
-BOOL WINAPI IsBadStringPtrA( LPCSTR str, UINT_PTR max )
+BOOL DECLSPEC_NOINLINE WINAPI IsBadStringPtrA( LPCSTR str, UINT_PTR max )
 {
     if (!str) return TRUE;
     __TRY
@@ -486,7 +476,7 @@ BOOL WINAPI IsBadStringPtrA( LPCSTR str, UINT_PTR max )
  *
  * IsBadStringPtrW replacement for ntdll, to catch exception in debug traces.
  */
-BOOL WINAPI IsBadStringPtrW( LPCWSTR str, UINT_PTR max )
+BOOL DECLSPEC_NOINLINE WINAPI IsBadStringPtrW( LPCWSTR str, UINT_PTR max )
 {
     if (!str) return TRUE;
     __TRY

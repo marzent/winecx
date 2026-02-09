@@ -679,11 +679,6 @@ BOOL WINAPI PathQualifyAW(LPCVOID pszPath)
 	return PathQualifyA(pszPath);
 }
 
-BOOL WINAPI PathFindOnPathExA(LPSTR,LPCSTR *,DWORD);
-BOOL WINAPI PathFindOnPathExW(LPWSTR,LPCWSTR *,DWORD);
-BOOL WINAPI PathFileExistsDefExtA(LPSTR,DWORD);
-BOOL WINAPI PathFileExistsDefExtW(LPWSTR,DWORD);
-
 static BOOL PathResolveA(char *path, const char **dirs, DWORD flags)
 {
     BOOL is_file_spec = PathIsFileSpecA(path);
@@ -2044,7 +2039,7 @@ static const CSIDL_DATA CSIDL_Data[] =
     },
     { /* 0x6e */
         .id         = &FOLDERID_UserProgramFiles,
-        .type       = CSIDL_Type_Disallowed, /* FIXME */
+        .type       = CSIDL_Type_User,
         .category   = KF_CATEGORY_PERUSER,
         .name       = L"UserProgramFiles",
         .parent     = &FOLDERID_LocalAppData,
@@ -2079,7 +2074,26 @@ static const CSIDL_DATA CSIDL_Data[] =
         .name       = L"VideosLibrary",
         .path       = L"Videos.library-ms",
         .parsing    = L"::{031E4825-7B94-4dc3-B131-E946B44C8DD5}\\{491E922F-5643-4af4-A7EB-4E7A138D8174}",
-    }
+    },
+    { /* 0x73 */
+        .id         = &FOLDERID_AccountPictures,
+        .type       = CSIDL_Type_User,
+        .category   = KF_CATEGORY_PERUSER,
+        .name       = L"AccountPictures",
+        .parent     = &FOLDERID_RoamingAppData,
+        .path       = L"Microsoft\\Windows\\AccountPictures",
+        .attributes = FILE_ATTRIBUTE_READONLY,
+        .flags      = KFDF_PRECREATE | KFDF_ROAMABLE,
+    },
+    { /* 0x74 */
+        .id         = &FOLDERID_Screenshots,
+        .type       = CSIDL_Type_User,
+        .category   = KF_CATEGORY_PERUSER,
+        .name       = L"Screenshots",
+        .parent     = &FOLDERID_Pictures,
+        .path       = L"Screenshots",
+        .flags      = KFDF_PRECREATE | KFDF_ROAMABLE,
+    },
 };
 
 static int csidl_from_id( const KNOWNFOLDERID *id )
@@ -2661,7 +2675,7 @@ static BOOL WINAPI init_xdg_dirs( INIT_ONCE *once, void *param, void **context )
     HANDLE file;
     DWORD len;
 
-    if (!(var = _wgetenv( L"XDG_CONFIG_HOME" )) || var[0] != '/')
+    if (!(var = _wgetenv( L"WINE_HOST_XDG_CONFIG_HOME" )) || var[0] != '/')
     {
         if (!(var = _wgetenv( L"WINEHOMEDIR" ))) return TRUE;
         fmt = L"%s/.config/user-dirs.dirs";
@@ -2795,11 +2809,6 @@ done:
 static void _SHCreateDesktopSymbolicLink( const WCHAR *path )
 {
     extern void CDECL wine_get_host_version( const char **sysname, const char **release );
-#ifdef __ANDROID__
-    static const WCHAR DownloadW[] = {'D','o','w','n','l','o','a','d','\0'};
-    char target[FILENAME_MAX], link[FILENAME_MAX], *favorites;
-    char *pszDownloads;
-#endif
 
     /* CrossOver Hack 12791:
      * Create the Desktop folder and put a link to the native one inside.
@@ -2837,27 +2846,6 @@ static void _SHCreateDesktopSymbolicLink( const WCHAR *path )
             HeapFree(GetProcessHeap(), 0, pszDesktopLink);
         }
     }
-
-#ifdef __ANDROID__
-    hr = SHGetFolderPathW(NULL, CSIDL_FAVORITES|CSIDL_FLAG_CREATE, NULL,
-                          SHGFP_TYPE_DEFAULT, wszTempPath);
-    if (SUCCEEDED(hr) && (favorites = wine_get_unix_file_name(wszTempPath)))
-    {
-#define CREATE_SYMLINK(name) \
-        build_path( target, pszHome, name ); \
-        build_path( link, favorites, name ); \
-        FIXME( "%s -> %s\n", debugstr_a(link), debugstr_a(target) ); \
-        symlink(target, link);
-
-        CREATE_SYMLINK(DocumentsW)
-        CREATE_SYMLINK(PicturesW)
-        CREATE_SYMLINK(MusicW)
-        CREATE_SYMLINK(MoviesW)
-        CREATE_SYMLINK(DownloadW)
-        CREATE_SYMLINK(DesktopW)
-#undef CREATE_SYMLINK
-    }
-#endif
 }
 
 /******************************************************************************
@@ -3093,7 +3081,8 @@ HRESULT WINAPI SHGetFolderPathAndSubDirW(
 
     /* create symbolic links rather than directories for specific
      * user shell folders */
-    _SHCreateSymbolicLink(folder, szBuildPath);
+    if (!pszSubPath)
+        _SHCreateSymbolicLink(folder, szBuildPath);
 
     /* create directory/directories */
     ret = SHCreateDirectoryExW(hwndOwner, szBuildPath, NULL);
@@ -3402,6 +3391,16 @@ static HRESULT create_extra_folders(void)
     {
         hr = SHGetFolderPathAndSubDirW(0, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL,
                                        SHGFP_TYPE_DEFAULT, L"Microsoft\\Windows\\Themes", path);
+    }
+    if (SUCCEEDED(hr))
+    {
+        hr = SHGetFolderPathAndSubDirW(0, CSIDL_APPDATA | CSIDL_FLAG_CREATE, NULL,
+                                       SHGFP_TYPE_DEFAULT, L"Microsoft\\Windows\\AccountPictures", path);
+    }
+    if (SUCCEEDED(hr))
+    {
+        hr = SHGetFolderPathAndSubDirW(0, CSIDL_MYPICTURES | CSIDL_FLAG_CREATE, NULL,
+                                       SHGFP_TYPE_DEFAULT, L"Screenshots", path);
     }
     return hr;
 }
@@ -3998,7 +3997,7 @@ static HRESULT knownfolder_set_id(
     /* check is it registry-registered folder */
     hr = get_known_folder_registry_path(kfid, NULL, &knownfolder->registryPath);
     if(SUCCEEDED(hr))
-        hr = HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_LOCAL_MACHINE, knownfolder->registryPath, 0, 0, &hKey));
+        hr = HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_LOCAL_MACHINE, knownfolder->registryPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey));
 
     if(SUCCEEDED(hr))
     {
@@ -4444,7 +4443,7 @@ static BOOL is_knownfolder( struct foldermanager *fm, const KNOWNFOLDERID *id )
     hr = get_known_folder_registry_path(id, NULL, &registryPath);
     if(SUCCEEDED(hr))
     {
-        hr = HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_LOCAL_MACHINE, registryPath, 0, 0, &hKey));
+        hr = HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_LOCAL_MACHINE, registryPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey));
         free(registryPath);
     }
 

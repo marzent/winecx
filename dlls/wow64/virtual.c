@@ -230,6 +230,36 @@ NTSTATUS WINAPI wow64_NtAreMappedFilesTheSame( UINT *args )
 
 
 /**********************************************************************
+ *           wow64_NtCreateSectionEx
+ */
+NTSTATUS WINAPI wow64_NtCreateSectionEx( UINT *args )
+{
+    ULONG *handle_ptr = get_ptr( &args );
+    ACCESS_MASK access = get_ulong( &args );
+    OBJECT_ATTRIBUTES32 *attr32 = get_ptr( &args );
+    const LARGE_INTEGER *size = get_ptr( &args );
+    ULONG protect = get_ulong( &args );
+    ULONG flags = get_ulong( &args );
+    HANDLE file = get_handle( &args );
+    MEM_EXTENDED_PARAMETER32 *params32 = get_ptr( &args );
+    ULONG count = get_ulong( &args );
+
+    MEM_EXTENDED_PARAMETER *params64;
+    struct object_attr64 attr;
+    HANDLE handle = 0;
+    NTSTATUS status;
+
+    if ((status = mem_extended_parameters_32to64( &params64, params32, &count, FALSE ))) return status;
+
+    *handle_ptr = 0;
+    status = NtCreateSectionEx( &handle, access, objattr_32to64( &attr, attr32 ),
+                                size, protect, flags, file, params64, count );
+    put_handle( handle_ptr, handle );
+    return status;
+}
+
+
+/**********************************************************************
  *           wow64_NtFlushInstructionCache
  */
 NTSTATUS WINAPI wow64_NtFlushInstructionCache( UINT *args )
@@ -747,15 +777,23 @@ NTSTATUS WINAPI wow64_NtSetInformationVirtualMemory( UINT *args )
 NTSTATUS WINAPI wow64_NtSetLdtEntries( UINT *args )
 {
     ULONG sel1 = get_ulong( &args );
-    ULONG entry1_low = get_ulong( &args );
-    ULONG entry1_high = get_ulong( &args );
+    ULONG64 entry1 = get_ulong64( &args );
     ULONG sel2 = get_ulong( &args );
-    ULONG entry2_low = get_ulong( &args );
-    ULONG entry2_high = get_ulong( &args );
+    ULONG64 entry2 = get_ulong64( &args );
 
-    FIXME( "%04lx %08lx %08lx %04lx %08lx %08lx: stub\n",
-           sel1, entry1_low, entry1_high, sel2, entry2_low, entry2_high );
-    return STATUS_NOT_IMPLEMENTED;
+    /* CW Hack 26470 & 26456: Rosetta hangs if you try to set a 16-bit LDT */
+    {
+        char buffer[64];
+        NTSTATUS status = NtQuerySystemInformation( SystemProcessorBrandString, buffer, sizeof(buffer), NULL );
+
+        if (!status && strstr( buffer, "VirtualApple" ))
+        {
+            ERR("HACK: not calling NtSetLdtEntries()\n");
+            return STATUS_NOT_IMPLEMENTED;
+        }
+    }
+
+    return NtSetLdtEntries( sel1, *(LDT_ENTRY *)&entry1, sel2, *(LDT_ENTRY *)&entry2 );
 }
 
 

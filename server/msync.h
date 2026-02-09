@@ -20,17 +20,32 @@
  */
 
 extern int do_msync(void);
+extern void msync_init_shm(void);
 extern void msync_init(void);
-extern unsigned int msync_alloc_shm( int low, int high );
-extern void msync_signal_all( unsigned int shm_idx );
-extern void msync_clear_shm( unsigned int shm_idx );
-extern void msync_destroy_semaphore( unsigned int shm_idx );
-extern void msync_wake_up( struct object *obj );
-extern void msync_clear( struct object *obj );
 
-struct msync;
+#ifdef __APPLE__
 
-extern const struct object_ops msync_ops;
+enum msync_type
+{
+    MSYNC_SEMAPHORE = 1,
+    MSYNC_AUTO_EVENT,
+    MSYNC_MANUAL_EVENT,
+    MSYNC_MUTEX,
+    MSYNC_AUTO_SERVER,
+    MSYNC_MANUAL_SERVER,
+};
+
+struct msync
+{
+    unsigned int    shm_idx;
+    struct list     mutex_entry;
+};
+
+extern struct msync *create_msync( int low, int high, enum msync_type type );
+extern void msync_grab_object( struct msync *msync );
+extern void msync_destroy( struct msync *msync );
 extern void msync_set_event( struct msync *msync );
 extern void msync_reset_event( struct msync *msync );
-extern void msync_abandon_mutexes( struct thread *thread );
+extern void msync_abandon_mutexes( thread_id_t tid );
+
+#endif /* __APPLE__ */

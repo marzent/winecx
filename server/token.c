@@ -148,6 +148,7 @@ static const struct object_ops token_ops =
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
+    default_get_sync,          /* get_sync */
     default_map_access,        /* map_access */
     default_get_sd,            /* get_sd */
     token_set_sd,              /* set_sd */
@@ -1540,7 +1541,14 @@ DECL_HANDLER(get_token_info)
         reply->session_id = token->session_id;
         reply->primary = token->primary;
         reply->impersonation_level = token->impersonation_level;
-        reply->elevation = token->elevation;
+        reply->elevation_type = token->elevation;
+        /* Tokens with TokenElevationTypeDefault are considered elevated for the
+           purposes of GetTokenInformation(TokenElevation) if they belong to the
+           admins group. */
+        if (token->elevation == TokenElevationTypeDefault)
+            reply->is_elevated = token_sid_present( token, &builtin_admins_sid, FALSE );
+        else
+            reply->is_elevated = token->elevation == TokenElevationTypeFull;
         reply->group_count = list_count( &token->groups );
         reply->privilege_count = list_count( &token->privileges );
         release_object( token );

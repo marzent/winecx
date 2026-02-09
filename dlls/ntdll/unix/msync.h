@@ -21,30 +21,29 @@
 
 extern int do_msync(void);
 extern void msync_init(void);
-extern NTSTATUS msync_close( HANDLE handle );
+extern void msync_close( int obj );
 
-extern NTSTATUS msync_create_semaphore(HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr, LONG initial, LONG max);
-extern NTSTATUS msync_release_semaphore( HANDLE handle, ULONG count, ULONG *prev );
-extern NTSTATUS msync_open_semaphore( HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr );
-extern NTSTATUS msync_query_semaphore( HANDLE handle, void *info, ULONG *ret_len );
-extern NTSTATUS msync_create_event( HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr, EVENT_TYPE type, BOOLEAN initial );
-extern NTSTATUS msync_open_event( HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr );
-extern NTSTATUS msync_set_event( HANDLE handle, LONG *prev );
-extern NTSTATUS msync_reset_event( HANDLE handle, LONG *prev );
-extern NTSTATUS msync_pulse_event( HANDLE handle, LONG *prev );
-extern NTSTATUS msync_query_event( HANDLE handle, void *info, ULONG *ret_len );
-extern NTSTATUS msync_create_mutex( HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr, BOOLEAN initial );
-extern NTSTATUS msync_open_mutex( HANDLE *handle, ACCESS_MASK access,
-    const OBJECT_ATTRIBUTES *attr );
-extern NTSTATUS msync_release_mutex( HANDLE handle, LONG *prev );
-extern NTSTATUS msync_query_mutex( HANDLE handle, void *info, ULONG *ret_len );
+#ifdef __APPLE__
 
-extern NTSTATUS msync_wait_objects( DWORD count, const HANDLE *handles, BOOLEAN wait_any,
-                                    BOOLEAN alertable, const LARGE_INTEGER *timeout );
-extern NTSTATUS msync_signal_and_wait( HANDLE signal, HANDLE wait,
-    BOOLEAN alertable, const LARGE_INTEGER *timeout );
+enum msync_type
+{
+    MSYNC_SEMAPHORE = 1,
+    MSYNC_AUTO_EVENT,
+    MSYNC_MANUAL_EVENT,
+    MSYNC_MUTEX,
+    MSYNC_AUTO_SERVER,
+    MSYNC_MANUAL_SERVER,
+};
+
+extern NTSTATUS msync_release_semaphore_obj( int obj, ULONG count, ULONG *prev_count );
+extern NTSTATUS msync_query_semaphore_obj( int obj, SEMAPHORE_BASIC_INFORMATION *info );
+extern NTSTATUS msync_set_event_obj( int obj, LONG *prev_state );
+extern NTSTATUS msync_reset_event_obj( int obj, LONG *prev_state );
+extern NTSTATUS msync_pulse_event_obj( int obj, LONG *prev_state );
+extern NTSTATUS msync_query_event_obj( int obj, EVENT_BASIC_INFORMATION *info );
+extern NTSTATUS msync_release_mutex_obj( int obj, LONG *prev_count );
+extern NTSTATUS msync_query_mutex_obj( int obj, MUTANT_BASIC_INFORMATION *info );
+extern NTSTATUS msync_wait_objs( const DWORD count, const int *objs, BOOLEAN wait_any,
+                                 int alert_obj, const LARGE_INTEGER *timeout );
+
+#endif /* __APPLE__ */

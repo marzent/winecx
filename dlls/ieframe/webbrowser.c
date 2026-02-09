@@ -402,28 +402,6 @@ static HRESULT WINAPI WebBrowser_get_Document(IWebBrowser2 *iface, IDispatch **p
             if(SUCCEEDED(hres)) {
                 IDispatch_Release(disp);
                 disp = html_doc;
-
-                /* CX HACK 11688: Return marshaled MSHTML document if requested from wrong thread. */
-                if(This->tid != GetCurrentThreadId() && This->shell_embedding_hwnd) {
-                    IStream *stream = NULL;
-
-                    FIXME("HACK! Document interface requested from wrong object.\n");
-
-                    SendMessageW(This->shell_embedding_hwnd, WM_GETMARSHALEDDOC, 0, (LPARAM)&stream);
-                    if(stream) {
-                        IDispatch *mdisp;
-                        HRESULT init_hres;
-
-                        init_hres = CoInitialize(NULL);
-                        hres = CoUnmarshalInterface(stream, &IID_IDispatch, (void**)&mdisp);
-                        if(SUCCEEDED(init_hres))
-                            CoUninitialize();
-                        if(SUCCEEDED(hres)) {
-                            IDispatch_Release(disp);
-                            disp = mdisp;
-                        }
-                    }
-                }
             }
         }
     }
@@ -634,13 +612,11 @@ static HRESULT WINAPI WebBrowser_GetProperty(IWebBrowser2 *iface, BSTR szPropert
 
 static HRESULT WINAPI WebBrowser_get_Name(IWebBrowser2 *iface, BSTR *Name)
 {
-    static const WCHAR sName[] = {'M','i','c','r','o','s','o','f','t',' ','W','e','b',
-                                  ' ','B','r','o','w','s','e','r',' ','C','o','n','t','r','o','l',0};
     WebBrowser *This = impl_from_IWebBrowser2(iface);
 
     TRACE("(%p)->(%p)\n", This, Name);
 
-    *Name = SysAllocString(sName);
+    *Name = SysAllocString(L"Microsoft Web Browser Control");
 
     return S_OK;
 }
@@ -1316,7 +1292,6 @@ static HRESULT create_webbrowser(int version, IUnknown *outer, REFIID riid, void
     ret->IServiceProvider_iface.lpVtbl = &ServiceProviderVtbl;
     ret->ref = 1;
     ret->version = version;
-    ret->tid = GetCurrentThreadId();
 
     HlinkFrame_Init(&ret->hlink_frame, outer ? outer :  &ret->IUnknown_inner, &ret->doc_host);
     DocHost_Init(&ret->doc_host, &ret->IWebBrowser2_iface, &DocHostContainerVtbl);

@@ -136,7 +136,6 @@ struct is_format_supported_params
     EDataFlow flow;
     AUDCLNT_SHAREMODE share;
     const WAVEFORMATEX *fmt_in;
-    WAVEFORMATEXTENSIBLE *fmt_out;
     HRESULT result;
 };
 
@@ -344,6 +343,7 @@ enum unix_funcs
     test_connect,
     is_started,
     get_prop_value,
+    midi_get_driver,
     midi_init,
     midi_release,
     midi_out_message,

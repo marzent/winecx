@@ -154,7 +154,7 @@ static const struct
     },
     /* Windows 10 */
     {
-        { 10, 0, 19043 },
+        { 10, 0, 19045 },
         {0x8e0f7a12,0xbfb3,0x4fe8,{0xb9,0xa5,0x48,0xfd,0x50,0xa1,0x5a,0x9a}}
     }
 };
@@ -748,28 +748,6 @@ DWORD WINAPI GetFileVersionInfoSizeA( LPCSTR filename, LPDWORD handle )
     return GetFileVersionInfoSizeExA( FILE_VER_GET_LOCALISED, filename, handle );
 }
 
-/* CW Hack 24309 */
-static BOOL needs_manor_lords_hack(const WCHAR *dll)
-{
-    static int is_manor_lords = -1;
-    WCHAR path[MAX_PATH], *appname = path, *p;
-
-    if (is_manor_lords == -1)
-    {
-        if (GetModuleFileNameW(NULL, path, MAX_PATH))
-        {
-            if ((p = wcsrchr(path, '/'))) appname = p + 1;
-            if ((p = wcsrchr(path, '\\'))) appname = p + 1;
-            is_manor_lords = !wcsicmp(appname, L"ManorLords.exe");
-        }
-        else
-            is_manor_lords = 0;
-    }
-
-    return is_manor_lords &&
-           (!wcscmp(dll, L"msvcp140_2.dll") || !wcscmp(dll, L"vcruntime140_1.dll"));
-}
-
 /******************************************************************************
  *           GetFileVersionInfoSizeExW       (kernelbase.@)
  */
@@ -777,7 +755,6 @@ DWORD WINAPI GetFileVersionInfoSizeExW( DWORD flags, LPCWSTR filename, LPDWORD r
 {
     DWORD len, offset, magic = 1;
     HMODULE hModule;
-    BOOL manor_lords_hack = needs_manor_lords_hack(filename);  /* CW Hack 24309 */
 
     TRACE("(0x%lx,%s,%p)\n", flags, debugstr_w(filename), ret_handle );
 
@@ -796,9 +773,30 @@ DWORD WINAPI GetFileVersionInfoSizeExW( DWORD flags, LPCWSTR filename, LPDWORD r
     if (flags & ~FILE_VER_GET_LOCALISED)
         FIXME("flags 0x%lx ignored\n", flags & ~FILE_VER_GET_LOCALISED);
 
-    if (!manor_lords_hack && (hModule = LoadLibraryExW( filename, 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE )))
+    if ((hModule = LoadLibraryExW( filename, 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE )))
     {
         HRSRC hRsrc = NULL;
+
+        {
+            /* CW Hack 25427 */
+            static const char builtin_signature[] = "Wine builtin DLL";
+            WCHAR env_val[2];
+            HMODULE mod = (HMODULE)((ULONG_PTR)hModule & ~(ULONG_PTR)3);
+            char *signature = (char *)((IMAGE_DOS_HEADER *)mod + 1);
+            IMAGE_NT_HEADERS *nt;
+
+            if (GetEnvironmentVariableW( L"CX_HIDE_BUILTIN_VERSION_RESOURCES", env_val, ARRAY_SIZE(env_val) ) > 0
+                && env_val[0] == '1'
+                && (nt = RtlImageNtHeader( mod )) && (char *)nt - signature >= sizeof(builtin_signature)
+                && !memcmp( signature, builtin_signature, sizeof(builtin_signature) ))
+            {
+                ERR("HACK: not exposing version info.\n");
+                FreeLibrary( hModule );
+                SetLastError( ERROR_RESOURCE_NAME_NOT_FOUND );
+                return 0;
+            }
+        }
+
         if (!(flags & FILE_VER_GET_LOCALISED))
         {
             LANGID english = MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT );
@@ -817,19 +815,8 @@ DWORD WINAPI GetFileVersionInfoSizeExW( DWORD flags, LPCWSTR filename, LPDWORD r
     }
     else
     {
-        HANDLE handle;
-
-        /* CW Hack 24309 */
-        WCHAR hacked_filename[MAX_PATH];
-        if (manor_lords_hack)
-        {
-            wcscpy(hacked_filename, L"c:\\windows\\system32\\");
-            wcscat(hacked_filename, filename);
-            filename = hacked_filename;
-        }
-
-        handle = CreateFileW( filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                              NULL, OPEN_EXISTING, 0, 0 );
+        HANDLE handle = CreateFileW( filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     NULL, OPEN_EXISTING, 0, 0 );
         if (handle == INVALID_HANDLE_VALUE) return 0;
         magic = find_version_resource( handle, &len, &offset, flags );
         CloseHandle( handle );
@@ -900,7 +887,6 @@ BOOL WINAPI GetFileVersionInfoExW( DWORD flags, LPCWSTR filename, DWORD ignored,
     DWORD len, offset, magic = 1;
     HMODULE hModule;
     VS_VERSION_INFO_STRUCT32* vvis = data;
-    BOOL manor_lords_hack = needs_manor_lords_hack(filename);  /* CW Hack 24309 */
 
     TRACE("(0x%lx,%s,%ld,size=%ld,data=%p)\n",
           flags, debugstr_w(filename), ignored, datasize, data );
@@ -913,7 +899,7 @@ BOOL WINAPI GetFileVersionInfoExW( DWORD flags, LPCWSTR filename, DWORD ignored,
     if (flags & ~FILE_VER_GET_LOCALISED)
         FIXME("flags 0x%lx ignored\n", flags & ~FILE_VER_GET_LOCALISED);
 
-    if (!manor_lords_hack && (hModule = LoadLibraryExW( filename, 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE )))
+    if ((hModule = LoadLibraryExW( filename, 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE )))
     {
         HRSRC hRsrc = NULL;
         if (!(flags & FILE_VER_GET_LOCALISED))
@@ -937,19 +923,8 @@ BOOL WINAPI GetFileVersionInfoExW( DWORD flags, LPCWSTR filename, DWORD ignored,
     }
     else
     {
-        HANDLE handle;
-
-        /* CW Hack 24309 */
-        WCHAR hacked_filename[MAX_PATH];
-        if (manor_lords_hack)
-        {
-            wcscpy(hacked_filename, L"c:\\windows\\system32\\");
-            wcscat(hacked_filename, filename);
-            filename = hacked_filename;
-        }
-
-        handle = CreateFileW( filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                              NULL, OPEN_EXISTING, 0, 0 );
+        HANDLE handle = CreateFileW( filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     NULL, OPEN_EXISTING, 0, 0 );
         if (handle == INVALID_HANDLE_VALUE) return 0;
         if ((magic = find_version_resource( handle, &len, &offset, flags )))
             len = read_data( handle, offset, data, min( len, datasize ));
@@ -1115,6 +1090,7 @@ static BOOL VersionInfo16_QueryValue( const VS_VERSION_INFO_STRUCT16 *info, LPCS
 static BOOL VersionInfo32_QueryValue( const VS_VERSION_INFO_STRUCT32 *info, LPCWSTR lpSubBlock,
                                       LPVOID *lplpBuffer, UINT *puLen, BOOL *pbText )
 {
+    PVOID ptr;
     TRACE("lpSubBlock : (%s)\n", debugstr_w(lpSubBlock));
 
     while ( *lpSubBlock )
@@ -1146,7 +1122,11 @@ static BOOL VersionInfo32_QueryValue( const VS_VERSION_INFO_STRUCT32 *info, LPCW
     }
 
     /* Return value */
-    *lplpBuffer = VersionInfo32_Value( info );
+    ptr = VersionInfo32_Value(info);
+    if ((PBYTE)ptr >= ((PBYTE)info + info->wLength))  /* empty value */
+        ptr = (WCHAR*)info->szKey + wcslen(info->szKey);
+
+    *lplpBuffer = ptr;
     if (puLen)
         *puLen = info->wValueLength;
     if (pbText)
@@ -1588,6 +1568,14 @@ BOOL WINAPI GetVersionExW( OSVERSIONINFOW *info )
     return TRUE;
 }
 
+/***********************************************************************
+ *         GetCurrentApplicationUserModelId   (kernelbase.@)
+ */
+LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentApplicationUserModelId( UINT32 *length, WCHAR *id )
+{
+    FIXME( "(%p %p): stub\n", length, id );
+    return APPMODEL_ERROR_NO_APPLICATION;
+}
 
 /***********************************************************************
  *         GetCurrentPackageFamilyName   (kernelbase.@)

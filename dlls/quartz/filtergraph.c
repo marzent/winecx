@@ -36,7 +36,6 @@
 #include "strmif.h"
 #include "vfwmsgs.h"
 #include "evcode.h"
-#include "wine/heap.h"
 #include "wine/list.h"
 
 
@@ -134,7 +133,6 @@ struct filter_graph
     int HandleEcComplete;
     int HandleEcRepaint;
     int HandleEcClockChanged;
-    unsigned int got_ec_complete : 1;
     unsigned int media_events_disabled : 1;
 
     CRITICAL_SECTION cs;
@@ -207,7 +205,7 @@ static ULONG WINAPI EnumFilters_Release(IEnumFilters *iface)
     if (!ref)
     {
         IUnknown_Release(enum_filters->graph->outer_unk);
-        heap_free(enum_filters);
+        free(enum_filters);
     }
 
     return ref;
@@ -301,7 +299,7 @@ static HRESULT create_enum_filters(struct filter_graph *graph, struct list *curs
 {
     struct enum_filters *enum_filters;
 
-    if (!(enum_filters = heap_alloc(sizeof(*enum_filters))))
+    if (!(enum_filters = malloc(sizeof(*enum_filters))))
         return E_OUTOFMEMORY;
 
     enum_filters->IEnumFilters_iface.lpVtbl = &EnumFilters_vtbl;
@@ -619,12 +617,12 @@ static HRESULT WINAPI FilterGraph2_AddFilter(IFilterGraph2 *iface,
     if (!filter)
         return E_POINTER;
 
-    if (!(entry = heap_alloc(sizeof(*entry))))
+    if (!(entry = malloc(sizeof(*entry))))
         return E_OUTOFMEMORY;
 
     if (!(entry->name = CoTaskMemAlloc((name ? wcslen(name) + 6 : 5) * sizeof(WCHAR))))
     {
-        heap_free(entry);
+        free(entry);
         return E_OUTOFMEMORY;
     }
 
@@ -649,7 +647,7 @@ static HRESULT WINAPI FilterGraph2_AddFilter(IFilterGraph2 *iface,
         if (i == 10000)
         {
             CoTaskMemFree(entry->name);
-            heap_free(entry);
+            free(entry);
             return VFW_E_DUPLICATE_NAME;
         }
     }
@@ -660,7 +658,7 @@ static HRESULT WINAPI FilterGraph2_AddFilter(IFilterGraph2 *iface,
             (IFilterGraph *)&graph->IFilterGraph2_iface, entry->name)))
     {
         CoTaskMemFree(entry->name);
-        heap_free(entry);
+        free(entry);
         return hr;
     }
 
@@ -742,7 +740,7 @@ static HRESULT WINAPI FilterGraph2_RemoveFilter(IFilterGraph2 *iface, IBaseFilte
                     IMediaSeeking_Release(entry->seeking);
                 list_remove(&entry->entry);
                 CoTaskMemFree(entry->name);
-                heap_free(entry);
+                free(entry);
                 This->version++;
                 /* Invalidate interfaces in the cache */
                 for (i = 0; i < This->nItfCacheEntries; i++)
@@ -2378,16 +2376,16 @@ static HRESULT WINAPI MediaSeeking_GetCurrentPosition(IMediaSeeking *iface, LONG
 
     EnterCriticalSection(&graph->cs);
 
-    if (graph->got_ec_complete)
-    {
-        ret = graph->stream_stop;
-    }
-    else if (graph->state == State_Running && !graph->needs_async_run && graph->refClock)
+    if (graph->state == State_Running && !graph->needs_async_run && graph->refClock)
     {
         REFERENCE_TIME time;
         IReferenceClock_GetTime(graph->refClock, &time);
         if (time)
+        {
             ret += time - graph->stream_start;
+            if (ret > graph->stream_stop)
+                ret = graph->stream_stop;
+        }
     }
 
     LeaveCriticalSection(&graph->cs);
@@ -5100,7 +5098,6 @@ static HRESULT WINAPI MediaFilter_Stop(IMediaFilter *iface)
     graph->state = State_Stopped;
     graph->needs_async_run = 0;
     work = graph->async_run_work;
-    graph->got_ec_complete = 0;
 
     /* Update the current position, probably to synchronize multiple streams. */
     IMediaSeeking_SetPositions(&graph->IMediaSeeking_iface, &graph->current_pos,
@@ -5399,7 +5396,7 @@ static HRESULT WINAPI MediaEventSink_Notify(IMediaEventSink *iface, LONG code,
             else
                 queue_media_event(graph, EC_COMPLETE, S_OK, 0);
             graph->CompletionStatus = EC_COMPLETE;
-            graph->got_ec_complete = 1;
+            graph->current_pos = graph->stream_stop;
             SetEvent(graph->hEventCompletion);
         }
     }

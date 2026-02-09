@@ -20,13 +20,9 @@
 
 #include <stdio.h>
 
-#define COBJMACROS
-
 #include <windows.h>
 #include <winternl.h>
 #include <shlobj.h>
-#include <shlwapi.h>
-#include <errno.h>
 #include "wine/debug.h"
 #include "cxmenu.h"
 
@@ -37,8 +33,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(menubuilder);
 int cx_mode = 1;
 int cx_dump_menus = 0;
 
-static BOOL cx_link_is_64_bit(IShellLinkW *sl, int recurse_level);
-
 
 /*
  * Functions to invoke the CrossOver menu management scripts.
@@ -46,7 +40,7 @@ static BOOL cx_link_is_64_bit(IShellLinkW *sl, int recurse_level);
 
 static int cx_wineshelllink(LPCWSTR linkW, int is_desktop, LPCWSTR rootW,
                             LPCWSTR pathW, LPCWSTR argsW,
-                            LPCWSTR icon_name, LPCWSTR description, LPCWSTR arch)
+                            LPCWSTR icon_name, LPCWSTR description)
 {
     const char *argv[20];
     int pos = 0;
@@ -75,11 +69,6 @@ static int cx_wineshelllink(LPCWSTR linkW, int is_desktop, LPCWSTR rootW,
     {
         argv[pos++] = "--descr";
         argv[pos++] = wchars_to_utf8_chars(description);
-    }
-    if (arch && *arch)
-    {
-        argv[pos++] = "--arch";
-        argv[pos++] = wchars_to_utf8_chars(arch);
     }
     argv[pos] = NULL;
 
@@ -146,7 +135,6 @@ static void cx_print_value(const char* name, const WCHAR* value)
         strA = wchars_to_utf8_chars(str);
 
         printf("\"%s\"=\"%s\"\n", name, strA);
-
         HeapFree(GetProcessHeap(), 0, str);
         HeapFree(GetProcessHeap(), 0, strA);
     }
@@ -154,15 +142,8 @@ static void cx_print_value(const char* name, const WCHAR* value)
 
 static void cx_dump_menu(LPCWSTR linkW, int is_desktop, LPCWSTR rootW,
                          LPCWSTR pathW, LPCWSTR argsW,
-                         LPCWSTR icon_name, LPCWSTR description, LPCWSTR arch)
+                         LPCWSTR icon_name, LPCWSTR description)
 {
-    /* -----------------------------------------------------------
-    **   The Menu hack in particular is tracked by 
-    ** CrossOver Hack 13785.
-    ** (the whole system of cx_mode hacks in winemenubuilder
-    ** is a diff from winehq which does not appear to be tracked
-    ** by a bug in the hacks milestone.)
-    ** ----------------------------------------------------------- */
     char *link = wchars_to_utf8_chars(linkW);
 
     printf("[%s]\n", link);
@@ -172,7 +153,6 @@ static void cx_dump_menu(LPCWSTR linkW, int is_desktop, LPCWSTR rootW,
     cx_print_value("Args", argsW);
     cx_print_value("Icon", icon_name);
     cx_print_value("Description", description);
-    cx_print_value("Arch", arch);
     printf("\n");
 
     HeapFree(GetProcessHeap(), 0, link);
@@ -180,86 +160,23 @@ static void cx_dump_menu(LPCWSTR linkW, int is_desktop, LPCWSTR rootW,
 
 int cx_process_menu(LPCWSTR linkW, BOOL is_desktop, DWORD root_csidl,
                     LPCWSTR pathW, LPCWSTR argsW,
-                    LPCWSTR icon_name, LPCWSTR description, IShellLinkW *sl)
+                    LPCWSTR icon_name, LPCWSTR description)
 {
-    const WCHAR *arch = NULL; /* CrossOver hack 14227 */
     WCHAR rootW[MAX_PATH];
-    int rc;
-
-    /* CrossOver hack 14227 */
-    if (sl && cx_link_is_64_bit(sl, 0)) arch = L"x86_64";
+    int rc = 0;
 
     SHGetSpecialFolderPathW(NULL, rootW, root_csidl, FALSE);
 
-    WINE_TRACE("link=%s %s: %s path=%s args=%s icon=%s desc=%s arch=%s\n",
+    WINE_TRACE("link=%s %s: %s path=%s args=%s icon=%s desc=%s\n",
                debugstr_w(linkW), is_desktop ? "desktop" : "menu", debugstr_w(rootW),
-               debugstr_w(pathW), debugstr_w(argsW), debugstr_w(icon_name), debugstr_w(description),
-               debugstr_w(arch));
+               debugstr_w(pathW), debugstr_w(argsW), debugstr_w(icon_name), debugstr_w(description));
 
     if (cx_dump_menus)
-    {
-        rc = 0;
-        cx_dump_menu(linkW, is_desktop, rootW, pathW, argsW, icon_name, description, arch);
-    }
+        cx_dump_menu(linkW, is_desktop, rootW, pathW, argsW, icon_name, description);
     else
-        rc = cx_wineshelllink(linkW, is_desktop, rootW, pathW, argsW, icon_name, description, arch);
+        rc = cx_wineshelllink(linkW, is_desktop, rootW, pathW, argsW, icon_name, description);
 
     return rc;
-}
-
-static IShellLinkW* load_link(const WCHAR* link)
-{
-    HRESULT r;
-    IShellLinkW *sl;
-    IPersistFile *pf;
-
-    r = CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, &IID_IShellLinkW, (void**)&sl);
-    if (SUCCEEDED(r))
-        r = IShellLinkW_QueryInterface(sl, &IID_IPersistFile, (void**)&pf);
-    if (SUCCEEDED(r))
-    {
-        r = IPersistFile_Load(pf, link, STGM_READ);
-        IPersistFile_Release(pf);
-    }
-
-    if (FAILED(r))
-    {
-        IShellLinkW_Release(sl);
-        sl = NULL;
-    }
-
-    return sl;
-}
-
-static BOOL cx_link_is_64_bit(IShellLinkW *sl, int recurse_level)
-{
-    HRESULT hr;
-    WCHAR temp[MAX_PATH];
-    WCHAR path[MAX_PATH];
-    const WCHAR *ext;
-    DWORD type;
-
-    hr = IShellLinkW_GetPath(sl, temp, sizeof(temp)/sizeof(temp[0]), NULL, SLGP_RAWPATH);
-    if (hr != S_OK || !temp[0])
-        return FALSE;
-    ExpandEnvironmentStringsW(temp, path, sizeof(path)/sizeof(path[0]));
-
-    ext = PathFindExtensionW(path);
-    if (!lstrcmpiW(ext, L".lnk") && recurse_level < 5)
-    {
-        IShellLinkW *sl2 = load_link(path);
-        if (sl2)
-        {
-            BOOL ret = cx_link_is_64_bit(sl2, recurse_level + 1);
-            IShellLinkW_Release(sl2);
-            return ret;
-        }
-    }
-
-    if (!GetBinaryTypeW(path, &type))
-        return FALSE;
-
-    return (type == SCS_64BIT_BINARY);
 }
 
 /*

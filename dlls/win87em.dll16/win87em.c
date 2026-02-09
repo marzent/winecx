@@ -61,11 +61,7 @@ static void WIN87_ClearCtrlWord( CONTEXT *context )
 {
     context->Eax &= ~0xffff;  /* set AX to 0 */
     if (Installed)
-#ifdef __i386__
         __asm__("fclex");
-#else
-        ;
-#endif
     StatusWord_3 = StatusWord_2 = 0;
 }
 
@@ -75,9 +71,7 @@ static void WIN87_SetCtrlWord( CONTEXT *context )
     context->Eax &= ~0x00c3;
     if (Installed) {
         CtrlWord_Internal = LOWORD(context->Eax);
-#ifdef __i386__
         __asm__("wait;fldcw %0" : : "m" (CtrlWord_Internal));
-#endif
     }
     CtrlWord_2 = LOWORD(context->Eax);
 }
@@ -85,10 +79,8 @@ static void WIN87_SetCtrlWord( CONTEXT *context )
 static void WIN87_Init( CONTEXT *context )
 {
     if (Installed) {
-#ifdef __i386__
         __asm__("fninit");
         __asm__("fninit");
-#endif
     }
     StackBottom = StackTop;
     context->Eax = (context->Eax & ~0xffff) | 0x1332;
@@ -97,9 +89,9 @@ static void WIN87_Init( CONTEXT *context )
 }
 
 /***********************************************************************
- *		_fpMath (WIN87EM.1)
+ *		__fpMath (WIN87EM.1)
  */
-void WINAPI _fpMath( CONTEXT *context )
+void WINAPI __fpMath( CONTEXT *context )
 {
     TRACE("(cs:eip=%04lx:%04lx es=%04lx bx=%04lx ax=%04lx dx=%04lx)\n",
           context->SegCs, context->Eip, context->SegEs, context->Ebx,
@@ -153,14 +145,12 @@ void WINAPI _fpMath( CONTEXT *context )
             /* I don't know much about asm() programming. This could be
              * wrong.
              */
-#ifdef __i386__
            __asm__ __volatile__("fstcw %0;wait" : "=m" (save) : : "memory");
            __asm__ __volatile__("fstcw %0;wait" : "=m" (mask) : : "memory");
            __asm__ __volatile__("orw $0xC00,%0" : "=m" (mask) : : "memory");
            __asm__ __volatile__("fldcw %0;wait" : : "m" (mask));
            __asm__ __volatile__("frndint");
            __asm__ __volatile__("fldcw %0" : : "m" (save));
-#endif
         }
         break;
 
@@ -183,9 +173,7 @@ void WINAPI _fpMath( CONTEXT *context )
     case 8: /* restore internal status words from emulator status word */
         context->Eax &= ~0xffff;  /* set AX to 0 */
         if (Installed) {
-#ifdef __i386__
             __asm__("fstsw %0;wait" : "=m" (StatusWord_1));
-#endif
             context->Eax |= StatusWord_1 & 0x3f;
         }
         context->Eax = (context->Eax | StatusWord_2) & ~0xe000;

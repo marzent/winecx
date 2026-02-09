@@ -384,11 +384,10 @@ static HRESULT WINAPI domelem_get_nodeTypeString(
     BSTR* p)
 {
     domelem *This = impl_from_IXMLDOMElement( iface );
-    static const WCHAR elementW[] = {'e','l','e','m','e','n','t',0};
 
     TRACE("(%p)->(%p)\n", This, p);
 
-    return return_bstr(elementW, p);
+    return return_bstr(L"element", p);
 }
 
 static HRESULT WINAPI domelem_get_text(
@@ -1414,7 +1413,6 @@ static HRESULT WINAPI domelem_setAttributeNode(
     IXMLDOMAttribute** old)
 {
     domelem *This = impl_from_IXMLDOMElement( iface );
-    static const WCHAR xmlnsW[] = {'x','m','l','n','s',0};
     xmlChar *name, *value;
     BSTR nameW, prefix;
     xmlnode *attr_node;
@@ -1439,7 +1437,7 @@ static HRESULT WINAPI domelem_setAttributeNode(
     if (hr != S_OK) return hr;
 
     /* adding xmlns attribute doesn't change a tree or existing namespace definition */
-    if (!wcscmp(nameW, xmlnsW))
+    if (!wcscmp(nameW, L"xmlns"))
     {
         SysFreeString(nameW);
         return DISP_E_UNKNOWNNAME;
@@ -1493,8 +1491,28 @@ static HRESULT WINAPI domelem_removeAttributeNode(
     IXMLDOMAttribute** attributeNode)
 {
     domelem *This = impl_from_IXMLDOMElement( iface );
-    FIXME("(%p)->(%p %p)\n", This, domAttribute, attributeNode);
-    return E_NOTIMPL;
+    xmlnode *attr_node;
+
+    TRACE("(%p)->(%p %p)\n", This, domAttribute, attributeNode);
+
+    if (!domAttribute)
+        return E_INVALIDARG;
+    attr_node = get_node_obj((IXMLDOMNode*)domAttribute);
+    if (This->node.node != attr_node->node->parent)
+        return E_INVALIDARG;
+
+    if (attributeNode)
+    {
+        xmlUnlinkNode(attr_node->node );
+        xmldoc_add_orphan(attr_node->node->doc, attr_node->node);
+        *attributeNode = (IXMLDOMAttribute*)create_node(attr_node->node);
+    }
+    else
+    {
+        if (xmlRemoveProp((xmlAttrPtr)attr_node->node) == -1)
+            return E_INVALIDARG;
+    }
+    return S_OK;
 }
 
 static HRESULT WINAPI domelem_getElementsByTagName(
@@ -1814,6 +1832,8 @@ static HRESULT domelem_get_item(const xmlNodePtr node, LONG index, IXMLDOMNode *
             *item = create_node( (xmlNodePtr) curr );
             return S_OK;
         }
+
+        ++attrIndex;
     }
 
     if (!node->nsDef)

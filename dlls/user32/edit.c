@@ -188,7 +188,7 @@ static inline void EDIT_EM_EmptyUndoBuffer(EDITSTATE *es)
  * applications with an expected version 0f 4.0 or higher.
  *
  */
-static DWORD get_app_version(void)
+DWORD get_app_version(void)
 {
     static DWORD version;
     if (!version)
@@ -387,10 +387,17 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData_linedef(EDITSTATE *es, HD
 		tabdef.pTabStops = es->tabs;
 		tabdef.iTabOrigin = 0;
 
-		hr = ScriptStringAnalyse(udc, &es->text[index], line_def->net_length,
-                                         (1.5*line_def->net_length+16), -1,
-                                         SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_TAB, -1,
-                                         NULL, NULL, NULL, &tabdef, NULL, &line_def->ssa);
+		if (es->style & ES_PASSWORD)
+			hr = ScriptStringAnalyse(udc, &es->password_char, line_def->net_length,
+                                                  (1.5*line_def->net_length+16), -1,
+                                                  SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_TAB|SSA_PASSWORD, -1,
+                                                  NULL, NULL, NULL, &tabdef, NULL, &line_def->ssa);
+		else
+			hr = ScriptStringAnalyse(udc, &es->text[index], line_def->net_length,
+                                                  (1.5*line_def->net_length+16), -1,
+                                                  SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_TAB, -1,
+                                                  NULL, NULL, NULL, &tabdef, NULL, &line_def->ssa);
+
 		if (FAILED(hr))
 		{
 			WARN("ScriptStringAnalyse failed (%lx)\n",hr);
@@ -1804,7 +1811,7 @@ static void EDIT_SetCaretPos(EDITSTATE *es, INT pos,
 	{
 		res = EDIT_EM_PosFromChar(es, pos, after_wrap);
 		TRACE("%d - %dx%d\n", pos, (short)LOWORD(res), (short)HIWORD(res));
-		SetCaretPos((short)LOWORD(res), (short)HIWORD(res));
+		NtUserSetCaretPos((short)LOWORD(res), (short)HIWORD(res));
 		EDIT_UpdateImmCompositionWindow(es, (short)LOWORD(res), (short)HIWORD(res));
 	}
 }
@@ -2960,15 +2967,12 @@ static void EDIT_EM_SetMargins(EDITSTATE *es, INT action,
  *	EM_SETPASSWORDCHAR
  *
  */
-static void EDIT_EM_SetPasswordChar(EDITSTATE *es, WCHAR c)
+static BOOL EDIT_EM_SetPasswordChar(EDITSTATE *es, WCHAR c)
 {
 	LONG style;
 
-	if (es->style & ES_MULTILINE)
-		return;
-
 	if (es->password_char == c)
-		return;
+		return TRUE;
 
         style = GetWindowLongW( es->hwndSelf, GWL_STYLE );
 	es->password_char = c;
@@ -2981,6 +2985,7 @@ static void EDIT_EM_SetPasswordChar(EDITSTATE *es, WCHAR c)
 	}
 	EDIT_InvalidateUniscribeData(es);
 	EDIT_UpdateText(es, NULL, TRUE);
+	return TRUE;
 }
 
 
@@ -3177,6 +3182,9 @@ static inline void EDIT_WM_Cut(EDITSTATE *es)
 static LRESULT EDIT_WM_Char(EDITSTATE *es, WCHAR c)
 {
         BOOL control;
+
+	if (es->bCaptureState)
+		return 1;
 
 	control = NtUserGetKeyState(VK_CONTROL) & 0x8000;
 
@@ -3450,6 +3458,9 @@ static LRESULT EDIT_WM_KeyDown(EDITSTATE *es, INT key)
 	BOOL shift;
 	BOOL control;
 
+	if (es->bCaptureState)
+		return 1;
+
 	if (NtUserGetKeyState(VK_MENU) & 0x8000)
 		return 0;
 
@@ -3572,7 +3583,7 @@ static LRESULT EDIT_WM_KeyDown(EDITSTATE *es, INT key)
 static LRESULT EDIT_WM_KillFocus(EDITSTATE *es)
 {
 	es->flags &= ~EF_FOCUSED;
-	DestroyCaret();
+	NtUserDestroyCaret();
 	if(!(es->style & ES_NOHIDESEL))
 		EDIT_InvalidateText(es, es->selection_start, es->selection_end);
 	if (!notify_parent(es, EN_KILLFOCUS)) return 0;
@@ -3643,7 +3654,7 @@ static LRESULT EDIT_WM_LButtonDown(EDITSTATE *es, DWORD keys, INT x, INT y)
 static LRESULT EDIT_WM_LButtonUp(EDITSTATE *es)
 {
 	if (es->bCaptureState) {
-		if (GetCapture() == es->hwndSelf) ReleaseCapture();
+		if (GetCapture() == es->hwndSelf) NtUserReleaseCapture();
 	}
 	es->bCaptureState = FALSE;
 	return 0;
@@ -3892,7 +3903,7 @@ static void EDIT_WM_SetFont(EDITSTATE *es, HFONT font, BOOL redraw)
 	if (redraw)
 		EDIT_UpdateText(es, NULL, TRUE);
 	if (es->flags & EF_FOCUSED) {
-		DestroyCaret();
+		NtUserDestroyCaret();
 		NtUserCreateCaret( es->hwndSelf, 0, 1, es->line_height );
 		EDIT_SetCaretPos(es, es->selection_end,
 				 es->flags & EF_AFTER_WRAP);
@@ -4738,7 +4749,7 @@ LRESULT EditWndProc_common( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, B
 		    MultiByteToWideChar(CP_ACP, 0, &charA, 1, &charW, 1);
 		}
 
-		EDIT_EM_SetPasswordChar(es, charW);
+		result = EDIT_EM_SetPasswordChar(es, charW);
 		break;
 	}
 
@@ -5057,6 +5068,10 @@ LRESULT EditWndProc_common( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, B
 	case WM_VSCROLL:
 		result = EDIT_WM_VScroll(es, LOWORD(wParam), (short)HIWORD(wParam));
 		break;
+
+        case WM_CAPTURECHANGED:
+            es->bCaptureState = FALSE;
+            break;
 
         case WM_MOUSEWHEEL:
                 {

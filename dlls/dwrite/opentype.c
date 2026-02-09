@@ -131,7 +131,7 @@ enum opentype_cmap_table_encoding
 };
 
 /* PANOSE is 10 bytes in size, need to pack the structure properly */
-#include "pshpack2.h"
+#pragma pack(push,2)
 struct tt_head
 {
     USHORT majorVersion;
@@ -841,7 +841,7 @@ struct kern_subtable_header
     uint16_t coverage;
 };
 
-#include "poppack.h"
+#pragma pack(pop)
 
 enum TT_NAME_WINDOWS_ENCODING_ID
 {
@@ -1415,7 +1415,7 @@ static HRESULT opentype_otf_analyzer(IDWriteFontFileStream *stream, UINT32 *font
 static HRESULT opentype_type1_analyzer(IDWriteFontFileStream *stream, UINT32 *font_count, DWRITE_FONT_FILE_TYPE *file_type,
     DWRITE_FONT_FACE_TYPE *face_type)
 {
-#include "pshpack1.h"
+#pragma pack(push,1)
     /* Specified in Adobe TechNote #5178 */
     struct pfm_header {
         WORD  dfVersion;
@@ -1424,7 +1424,7 @@ static HRESULT opentype_type1_analyzer(IDWriteFontFileStream *stream, UINT32 *fo
         DWORD dfDevice;
         char  data1[12];
     };
-#include "poppack.h"
+#pragma pack(pop)
     struct type1_header {
         WORD tag;
         char data[14];
@@ -4822,7 +4822,7 @@ static unsigned int shaping_features_get_mask(const struct shaping_features *fea
 unsigned int shape_get_feature_1_mask(const struct shaping_features *features, unsigned int tag)
 {
     unsigned int shift, mask = shaping_features_get_mask(features, tag, &shift);
-    return (1 << shift) & mask;
+    return mask ? ((1 << shift) & mask) : 0;
 }
 
 static void opentype_layout_get_glyph_range_for_text(struct scriptshaping_context *context, unsigned int start_char,
@@ -6002,6 +6002,27 @@ static unsigned int opentype_is_default_ignorable(unsigned int codepoint)
             (codepoint >= 0xfff0 && codepoint <= 0xfff8) ||
             (codepoint >= 0x1d173 && codepoint <= 0x1d17a) ||
             (codepoint >= 0xe0000 && codepoint <= 0xe0fff);
+}
+
+/*
+    * 0009..000D # TABs, FF, CR
+    * 0020       # SPACE
+    * 0085       # NL
+    * 00A0       # NBSP
+    * 1680       # OGHAM SPACE MARK
+    * 2000..200A # NQSP, MQSP, ENSP, EMSP, 3/MSP, 4/MSP, 6/MSP, FSP, PSP, THSP, HSP
+    * 2028..2029 # LSEP, PSEP
+    * 202F       # NNBSP
+    * 205F       # MMSP
+    * 3000       # IDSP
+*/
+bool opentype_is_whitespace(unsigned int codepoint)
+{
+    return (codepoint >= 0x9 && codepoint <= 0xd) ||
+            codepoint == 0x20 || codepoint == 0x85 || codepoint == 0xa0 ||
+            codepoint == 0x1680 || (codepoint >= 0x2000 && codepoint <= 0x200a) ||
+            codepoint == 0x2028 || codepoint == 0x2029 || codepoint == 0x202f ||
+            codepoint == 0x205f || codepoint == 0x3000;
 }
 
 static unsigned int opentype_is_diacritic(unsigned int codepoint)

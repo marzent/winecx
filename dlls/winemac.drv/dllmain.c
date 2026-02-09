@@ -18,18 +18,22 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <stdarg.h>
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
-#include "macdrv_dll.h"
+#include "windef.h"
+#include "winbase.h"
+#include "ntgdi.h"
 #include "macdrv_res.h"
 #include "shellapi.h"
 #include "winreg.h"
+#include "unixlib.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(macdrv);
 
 
-HMODULE macdrv_module = 0;
+static HMODULE macdrv_module = 0;
 
 struct quit_info {
     HWND               *wins;
@@ -46,6 +50,20 @@ static BOOL CALLBACK get_process_windows(HWND hwnd, LPARAM lp)
 {
     struct quit_info *qi = (struct quit_info*)lp;
     DWORD pid;
+
+    /* CW Hack #26261 */
+    {
+        static const WCHAR chrome_statustraywindowW[] = {'C','h','r','o','m','e','_','S','t','a','t','u','s','T','r','a','y','W','i','n','d','o','w',0};
+        WCHAR buffer[sizeof(chrome_statustraywindowW) / sizeof(WCHAR)];
+        UNICODE_STRING name = { .Buffer = buffer, .MaximumLength = sizeof(chrome_statustraywindowW) };
+
+        if (NtUserGetClassName(hwnd, FALSE, &name) &&
+            !memcmp(chrome_statustraywindowW, buffer, sizeof(chrome_statustraywindowW)))
+        {
+            WARN("HACK: not sending session end messages to Chrome_StatusTrayWindow hwnd %p\n", hwnd);
+            return TRUE;
+        }
+    }
 
     NtUserGetWindowThread(hwnd, &pid);
     if (pid == GetCurrentProcessId())
@@ -65,7 +83,7 @@ static BOOL CALLBACK get_process_windows(HWND hwnd, LPARAM lp)
     return TRUE;
 }
 
-#include "pshpack1.h"
+#pragma pack(push,1)
 
 typedef struct
 {
@@ -87,7 +105,7 @@ typedef struct
     GRPICONDIRENTRY idEntries[1];
 } GRPICONDIR;
 
-#include "poppack.h"
+#pragma pack(pop)
 
 static void quit_reply(int reply)
 {

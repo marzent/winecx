@@ -140,7 +140,7 @@ struct IDirectSoundBufferImpl
     SRWLOCK                     lock;
     PWAVEFORMATEX               pwfx;
     BufferMemory*               buffer;
-    DWORD                       playflags,state,leadin;
+    DWORD                       playflags,state;
     DWORD                       writelead,maxwritelead,buflen;
     DWORD                       freq;
     DSVOLUMEPAN                 volpan;
@@ -242,7 +242,7 @@ DWORD CALLBACK DSOUND_mixthread(void *ptr);
 void DSOUND_Calc3DBuffer(IDirectSoundBufferImpl *dsb);
 
 /* capture.c */
- 
+
 HRESULT DSOUND_CaptureCreate(REFIID riid, void **ppv);
 HRESULT DSOUND_CaptureCreate8(REFIID riid, void **ppv);
 HRESULT IDirectSoundCaptureImpl_Create(IUnknown *outer_unk, REFIID riid, void **ppv, BOOL has_dsc8);
@@ -259,13 +259,9 @@ extern struct list DSOUND_renderers;
 extern GUID *DSOUND_renderer_guids;
 extern GUID *DSOUND_capture_guids;
 
-extern const WCHAR wine_vxd_drv[];
-
 void setup_dsound_options(void);
 
 HRESULT get_mmdevice(EDataFlow flow, const GUID *tgt, IMMDevice **device);
 
-BOOL DSOUND_check_supported(IAudioClient *client, DWORD rate,
-        DWORD depth, WORD channels);
 HRESULT enumerate_mmdevices(EDataFlow flow, GUID *guids,
         LPDSENUMCALLBACKW cb, void *user);

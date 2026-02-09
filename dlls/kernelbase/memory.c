@@ -42,6 +42,14 @@ WINE_DECLARE_DEBUG_CHANNEL(virtual);
 WINE_DECLARE_DEBUG_CHANNEL(globalmem);
 
 
+static CRITICAL_SECTION memstatus_section;
+static CRITICAL_SECTION_DEBUG critsect_debug =
+{
+    0, 0, &memstatus_section,
+    { &critsect_debug.ProcessLocksList, &critsect_debug.ProcessLocksList },
+      0, 0, { (DWORD_PTR)(__FILE__ ": memstatus_section") }
+};
+static CRITICAL_SECTION memstatus_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 static CROSS_PROCESS_WORK_LIST *open_cross_process_connection( HANDLE process )
 {
@@ -156,8 +164,8 @@ static void fill_system_info( SYSTEM_INFO *si, const SYSTEM_BASIC_INFORMATION *b
     si->lpMinimumApplicationAddress = basic_info->LowestUserAddress;
     si->lpMaximumApplicationAddress = basic_info->HighestUserAddress;
     si->dwActiveProcessorMask       = basic_info->ActiveProcessorsAffinityMask;
-    si->dwNumberOfProcessors        = basic_info->NumberOfProcessors;
     si->dwAllocationGranularity     = basic_info->AllocationGranularity;
+    si->dwNumberOfProcessors        = cpu_info->MaximumProcessors;
     si->wProcessorLevel             = cpu_info->ProcessorLevel;
     si->wProcessorRevision          = cpu_info->ProcessorRevision;
 
@@ -564,6 +572,15 @@ BOOL WINAPI DECLSPEC_HOTPATCH VirtualProtectEx( HANDLE process, void *addr, SIZE
     return set_ntstatus( NtProtectVirtualMemory( process, &addr, &size, new_prot, old_prot ));
 }
 
+/***********************************************************************
+ *             VirtualProtectFromApp   (kernelbase.@)
+ */
+BOOL WINAPI VirtualProtectFromApp( void *addr, SIZE_T size,
+                                   ULONG new_prot, ULONG *old_prot )
+{
+    /* Contrary to the documentation, VirtualProtectFromApp allows write+execute on desktop. */
+    return VirtualProtect( addr, size, new_prot, old_prot );
+}
 
 /***********************************************************************
  *             VirtualQuery   (kernelbase.@)
@@ -766,6 +783,58 @@ BOOL WINAPI HeapQueryInformation( HANDLE heap, HEAP_INFORMATION_CLASS info_class
 BOOL WINAPI HeapSetInformation( HANDLE heap, HEAP_INFORMATION_CLASS infoclass, PVOID info, SIZE_T size )
 {
     return set_ntstatus( RtlSetHeapInformation( heap, infoclass, info, size ));
+}
+
+
+/***********************************************************************
+ *           HeapSummary   (kernelbase.@)
+ */
+BOOL WINAPI HeapSummary( HANDLE heap, DWORD flags, LPHEAP_SUMMARY heap_summary )
+{
+    SIZE_T allocated = 0;
+    SIZE_T committed = 0;
+    SIZE_T uncommitted = 0;
+    PROCESS_HEAP_ENTRY entry;
+
+    if (heap_summary->cb != sizeof(*heap_summary))
+    {
+        /* needs to be set to the exact size by the caller */
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    memset( &entry, 0, sizeof(entry) );
+
+    if (!HeapLock( heap ))
+        return FALSE;
+
+    while (HeapWalk( heap, &entry ))
+    {
+        if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY)
+        {
+            allocated += entry.cbData;
+        }
+        else if (entry.wFlags & PROCESS_HEAP_REGION)
+        {
+            committed += entry.Region.dwCommittedSize;
+            uncommitted += entry.Region.dwUnCommittedSize;
+        }
+    }
+
+    if (GetLastError() != ERROR_NO_MORE_ITEMS)
+    {
+        /* HeapWalk unsuccessful */
+        HeapUnlock( heap );
+        return FALSE;
+    }
+
+    HeapUnlock( heap );
+    heap_summary->cbAllocated = allocated;
+    heap_summary->cbCommitted = committed;
+    heap_summary->cbReserved = committed + uncommitted;
+    heap_summary->cbMaxReserve = heap_summary->cbReserved;
+
+    return TRUE;
 }
 
 
@@ -1333,7 +1402,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetPhysicallyInstalledSystemMemory( ULONGLONG *mem
 BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
 {
     static MEMORYSTATUSEX cached_status;
-    static DWORD last_check;
+    static ULONGLONG last_check;
     SYSTEM_BASIC_INFORMATION basic_info;
     SYSTEM_PERFORMANCE_INFORMATION perf_info;
     VM_COUNTERS_EX vmc;
@@ -1343,12 +1412,13 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
-    if ((NtGetTickCount() - last_check) < 1000)
+    RtlEnterCriticalSection(&memstatus_section);
+    if ((GetTickCount64() - last_check) < 1000 && cached_status.dwLength > 0)
     {
 	*status = cached_status;
+	RtlLeaveCriticalSection(&memstatus_section);
 	return TRUE;
     }
-    last_check = NtGetTickCount();
 
     if (!set_ntstatus( NtQuerySystemInformation( SystemBasicInformation,
                                                  &basic_info, sizeof(basic_info), NULL )) ||
@@ -1356,7 +1426,10 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
                                                  &perf_info, sizeof(perf_info), NULL)) ||
         !set_ntstatus( NtQueryInformationProcess( GetCurrentProcess(), ProcessVmCounters,
                                                   &vmc, sizeof(vmc), NULL )))
+    {
+        RtlLeaveCriticalSection(&memstatus_section);
         return FALSE;
+    }
 
     status->dwMemoryLoad     = 0;
     status->ullTotalPhys     = basic_info.MmNumberOfPhysicalPages;
@@ -1381,6 +1454,8 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
                      status->ullAvailPageFile, status->ullTotalVirtual, status->ullAvailVirtual );
 
     cached_status = *status;
+    last_check = GetTickCount64();
+    RtlLeaveCriticalSection(&memstatus_section);
     return TRUE;
 }
 

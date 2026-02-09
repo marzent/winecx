@@ -49,16 +49,22 @@ static const char devicemap_video_keyA[] = "\\Registry\\Machine\\HARDWARE\\DEVIC
 static const char enum_keyA[] = "\\Registry\\Machine\\System\\CurrentControlSet\\Enum";
 static const char control_keyA[] = "\\Registry\\Machine\\System\\CurrentControlSet\\Control";
 static const char config_keyA[] = "\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\Current";
+static const char directx_keyA[] = "\\Registry\\Machine\\Software\\Microsoft\\DirectX";
 
 static const char devpropkey_gpu_vulkan_uuidA[] = "Properties\\{233A9EF3-AFC4-4ABD-B564-C32F21F1535C}\\0002";
 static const char devpropkey_gpu_luidA[] = "Properties\\{60B193CB-5276-4D0F-96FC-F173ABAD3EC6}\\0002";
+static const char devpkey_device_driver_date[] = "Properties\\{A8B865DD-2E3D-4094-AD97-E593A70C75D6}\\0002";
+static const char devpkey_device_driver_version[] = "Properties\\{A8B865DD-2E3D-4094-AD97-E593A70C75D6}\\0003";
+static const char devpkey_device_driver_desc[] = "Properties\\{A8B865DD-2E3D-4094-AD97-E593A70C75D6}\\0004";
 static const char devpkey_device_matching_device_id[] = "Properties\\{A8B865DD-2E3D-4094-AD97-E593A70C75D6}\\0008";
+static const char devpkey_device_driver_provider[] = "Properties\\{A8B865DD-2E3D-4094-AD97-E593A70C75D6}\\0009";
 static const char devpkey_device_bus_number[] = "Properties\\{A45C254E-DF1C-4EFD-8020-67D146A850E0}\\0017";
 static const char devpkey_device_removal_policy[] = "Properties\\{A45C254E-DF1C-4EFD-8020-67D146A850E0}\\0021";
 static const char devpropkey_device_ispresentA[] = "Properties\\{540B947E-8B40-45BC-A8A2-6A0B894CBDA2}\\0005";
 static const char devpropkey_monitor_gpu_luidA[] = "Properties\\{CA085853-16CE-48AA-B114-DE9C72334223}\\0001";
 static const char devpropkey_monitor_output_idA[] = "Properties\\{CA085853-16CE-48AA-B114-DE9C72334223}\\0002";
 static const char wine_devpropkey_monitor_rcworkA[] = "Properties\\{233a9ef3-afc4-4abd-b564-c32f21f1535b}\\0004";
+static const char wine_devpropkey_monitor_hdr_enabledA[] = "Properties\\{233a9ef3-afc4-4abd-b564-c32f21f1535b}\\0006";
 
 static const WCHAR linkedW[] = {'L','i','n','k','e','d',0};
 static const WCHAR symbolic_link_valueW[] =
@@ -150,6 +156,7 @@ struct monitor
     RECT rc_work;
     BOOL is_clone;
     struct edid_monitor_info edid_info;
+    BOOL hdr_enabled;
 };
 
 static struct list gpus = LIST_INIT(gpus);
@@ -326,7 +333,7 @@ static HANDLE get_display_device_init_mutex( void )
     HANDLE mutex;
 
     snprintf( buffer, ARRAY_SIZE(buffer), "\\Sessions\\%u\\BaseNamedObjects\\display_device_init",
-              (int)NtCurrentTeb()->Peb->SessionId );
+              NtCurrentTeb()->Peb->SessionId );
     name.MaximumLength = asciiz_to_unicode( bufferW, buffer );
     name.Length = name.MaximumLength - sizeof(WCHAR);
 
@@ -444,11 +451,35 @@ static const char *debugstr_devmodew( const DEVMODEW *devmode )
     char position[32] = {0};
     if (devmode->dmFields & DM_POSITION) snprintf( position, sizeof(position), " at %s", wine_dbgstr_point( (POINT *)&devmode->dmPosition ) );
     return wine_dbg_sprintf( "%ux%u %ubits %uHz rotated %u degrees %sstretched %sinterlaced%s",
-                             (UINT)devmode->dmPelsWidth, (UINT)devmode->dmPelsHeight, (UINT)devmode->dmBitsPerPel,
-                             (UINT)devmode->dmDisplayFrequency, (UINT)devmode->dmDisplayOrientation * 90,
+                             devmode->dmPelsWidth, devmode->dmPelsHeight, devmode->dmBitsPerPel,
+                             devmode->dmDisplayFrequency, devmode->dmDisplayOrientation * 90,
                              devmode->dmDisplayFixedOutput == DMDFO_STRETCH ? "" : "un",
                              devmode->dmDisplayFlags & DM_INTERLACED ? "" : "non-",
                              position );
+}
+
+static UINT devmode_get( const DEVMODEW *mode, UINT field )
+{
+    switch (field)
+    {
+    case DM_DISPLAYORIENTATION: return mode->dmFields & DM_DISPLAYORIENTATION ? mode->dmDisplayOrientation : 0;
+    case DM_BITSPERPEL: return mode->dmFields & DM_BITSPERPEL ? mode->dmBitsPerPel : 0;
+    case DM_PELSWIDTH: return mode->dmFields & DM_PELSWIDTH ? mode->dmPelsWidth : 0;
+    case DM_PELSHEIGHT: return mode->dmFields & DM_PELSHEIGHT ? mode->dmPelsHeight : 0;
+    case DM_DISPLAYFLAGS: return mode->dmFields & DM_DISPLAYFLAGS ? mode->dmDisplayFlags : 0;
+    case DM_DISPLAYFREQUENCY: return mode->dmFields & DM_DISPLAYFREQUENCY ? mode->dmDisplayFrequency : 0;
+    case DM_DISPLAYFIXEDOUTPUT: return mode->dmFields & DM_DISPLAYFIXEDOUTPUT ? mode->dmDisplayFixedOutput : 0;
+    }
+    return 0;
+}
+
+static BOOL is_detached_mode( const DEVMODEW *mode )
+{
+    return mode->dmFields & DM_POSITION &&
+           mode->dmFields & DM_PELSWIDTH &&
+           mode->dmFields & DM_PELSHEIGHT &&
+           mode->dmPelsWidth == 0 &&
+           mode->dmPelsHeight == 0;
 }
 
 static BOOL write_source_mode( HKEY hkey, UINT index, const DEVMODEW *mode )
@@ -479,7 +510,7 @@ static BOOL read_source_mode( HKEY hkey, UINT index, DEVMODEW *mode )
     else return FALSE;
 
     if (!query_reg_ascii_value( hkey, key, value, sizeof(value_buf) )) return FALSE;
-    memcpy( &mode->dmFields, value->Data, sizeof(*mode) - offsetof(DEVMODEW, dmFields) );
+    memcpy( &mode->dmFields, value->Data, offsetof(DEVMODEW, dmICMMethod) - offsetof(DEVMODEW, dmFields) );
     return TRUE;
 }
 
@@ -523,7 +554,7 @@ static BOOL source_set_registry_settings( const struct source *source, const DEV
 
 static BOOL source_get_current_settings( const struct source *source, DEVMODEW *mode )
 {
-    memcpy( &mode->dmFields, &source->current.dmFields, sizeof(*mode) - offsetof(DEVMODEW, dmFields) );
+    memcpy( &mode->dmFields, &source->current.dmFields, offsetof(DEVMODEW, dmICMMethod) - offsetof(DEVMODEW, dmFields) );
     if (source->depth) mode->dmBitsPerPel = source->depth;
     return TRUE;
 }
@@ -726,6 +757,16 @@ static BOOL read_monitor_from_registry( struct monitor *monitor )
         NtClose( subkey );
     }
 
+    /* WINE_DEVPROPKEY_MONITOR_HDR_ENABLED */
+    size = query_reg_subkey_value( hkey, wine_devpropkey_monitor_hdr_enabledA,
+                                   value, sizeof(buffer) );
+    if (size != sizeof(monitor->hdr_enabled))
+    {
+        NtClose( hkey );
+        return FALSE;
+    }
+    monitor->hdr_enabled = *(const BOOL *)value->Data;
+
     NtClose( hkey );
     return TRUE;
 }
@@ -746,7 +787,7 @@ static BOOL read_source_monitor_path( HKEY hkey, UINT index, char *path )
     return TRUE;
 }
 
-static void reg_empty_key( HKEY root, const char *key_name )
+static void reg_empty_key( HKEY root, const char *key_name, BOOL subkeys_only )
 {
     char buffer[4096];
     KEY_NODE_INFORMATION *key = (KEY_NODE_INFORMATION *)buffer;
@@ -757,10 +798,13 @@ static void reg_empty_key( HKEY root, const char *key_name )
     while (!NtEnumerateKey( hkey, 0, KeyNodeInformation, key, sizeof(buffer), &size ))
         reg_delete_tree( hkey, key->Name, key->NameLength );
 
-    while (!NtEnumerateValueKey( hkey, 0, KeyValueFullInformation, value, sizeof(buffer), &size ))
+    if (!subkeys_only)
     {
-        UNICODE_STRING name = { value->NameLength, value->NameLength, value->Name };
-        NtDeleteValueKey( hkey, &name );
+        while (!NtEnumerateValueKey( hkey, 0, KeyValueFullInformation, value, sizeof(buffer), &size ))
+        {
+            UNICODE_STRING name = { value->NameLength, value->NameLength, value->Name };
+            NtDeleteValueKey( hkey, &name );
+        }
     }
 
     if (hkey != root) NtClose( hkey );
@@ -817,24 +861,29 @@ static void prepare_devices(void)
     if (!video_key) video_key = reg_create_ascii_key( NULL, devicemap_video_keyA, REG_OPTION_VOLATILE, NULL );
 
     /* delete monitors */
-    reg_empty_key( enum_key, "DISPLAY" );
+    reg_empty_key( enum_key, "DISPLAY", FALSE );
     snprintf( buffer, sizeof(buffer), "Class\\%s", guid_devclass_monitorA );
     hkey = reg_create_ascii_key( control_key, buffer, 0, NULL );
-    reg_empty_key( hkey, NULL );
+    reg_empty_key( hkey, NULL, FALSE );
     set_reg_ascii_value( hkey, "", "Monitors" );
     set_reg_ascii_value( hkey, "Class", "Monitor" );
     NtClose( hkey );
 
     /* delete sources */
-    reg_empty_key( video_key, NULL );
+    reg_empty_key( video_key, NULL, FALSE );
 
     /* clean GPUs */
     snprintf( buffer, sizeof(buffer), "Class\\%s", guid_devclass_displayA );
     hkey = reg_create_ascii_key( control_key, buffer, 0, NULL );
-    reg_empty_key( hkey, NULL );
+    reg_empty_key( hkey, NULL, FALSE );
     set_reg_ascii_value( hkey, "", "Display adapters" );
     set_reg_ascii_value( hkey, "Class", "Display" );
     NtClose( hkey );
+    if ((hkey = reg_create_ascii_key( NULL, directx_keyA, 0, NULL )))
+    {
+        reg_empty_key( hkey, NULL, TRUE );
+        NtClose( hkey );
+    }
 
     hkey = reg_open_ascii_key( enum_key, "PCI" );
 
@@ -1059,20 +1108,378 @@ static BOOL read_gpu_from_registry( struct gpu *gpu )
     return TRUE;
 }
 
+static const char* driver_vendor_to_version( UINT16 vendor )
+{
+    /* The last seven digits are the driver number. */
+    switch (vendor)
+    {
+    case 0x8086: /* Intel */    return "35.0.101.6314";
+    case 0x1002: /* AMD */      return "35.0.21025.1024";
+    case 0x10de: /* Nvidia */   return "35.0.15.6094";
+    default:                    return "35.0.10.1000";
+    }
+}
+
+static const char* driver_vendor_to_name( UINT16 vendor )
+{
+    switch (vendor)
+    {
+    case 0x8086: return "Intel Corporation";
+    case 0x1002: return "Advanced Micro Devices, Inc.";
+    case 0x10de: return "NVIDIA";
+    default:     return "";
+    }
+}
+
+const char *gpu_device_name( UINT16 vendor, UINT16 device, const char *default_name )
+{
+    switch (MAKELONG(vendor, device))
+    {
+    /* Nvidia cards */
+    case MAKELONG(0x10de, 0x0018): return "NVIDIA RIVA 128";
+    case MAKELONG(0x10de, 0x0020): return "NVIDIA RIVA TNT";
+    case MAKELONG(0x10de, 0x0028): return "NVIDIA RIVA TNT2/TNT2 Pro";
+    case MAKELONG(0x10de, 0x0100): return "NVIDIA GeForce 256";
+    case MAKELONG(0x10de, 0x0150): return "NVIDIA GeForce2 GTS/GeForce2 Pro";
+    case MAKELONG(0x10de, 0x0110): return "NVIDIA GeForce2 MX/MX 400";
+    case MAKELONG(0x10de, 0x0200): return "NVIDIA GeForce3";
+    case MAKELONG(0x10de, 0x0170): return "NVIDIA GeForce4 MX 460";
+    case MAKELONG(0x10de, 0x0253): return "NVIDIA GeForce4 Ti 4200";
+    case MAKELONG(0x10de, 0x0320): return "NVIDIA GeForce FX 5200";
+    case MAKELONG(0x10de, 0x0312): return "NVIDIA GeForce FX 5600";
+    case MAKELONG(0x10de, 0x0302): return "NVIDIA GeForce FX 5800";
+    case MAKELONG(0x10de, 0x014f): return "NVIDIA GeForce 6200";
+    case MAKELONG(0x10de, 0x0140): return "NVIDIA GeForce 6600 GT";
+    case MAKELONG(0x10de, 0x0041): return "NVIDIA GeForce 6800";
+    case MAKELONG(0x10de, 0x01d7): return "NVIDIA GeForce Go 7300";
+    case MAKELONG(0x10de, 0x01d8): return "NVIDIA GeForce Go 7400";
+    case MAKELONG(0x10de, 0x0391): return "NVIDIA GeForce 7600 GT";
+    case MAKELONG(0x10de, 0x0092): return "NVIDIA GeForce 7800 GT";
+    case MAKELONG(0x10de, 0x0849): return "NVIDIA GeForce 8200";
+    case MAKELONG(0x10de, 0x084b): return "NVIDIA GeForce 8200";
+    case MAKELONG(0x10de, 0x0423): return "NVIDIA GeForce 8300 GS";
+    case MAKELONG(0x10de, 0x0404): return "NVIDIA GeForce 8400 GS";
+    case MAKELONG(0x10de, 0x0421): return "NVIDIA GeForce 8500 GT";
+    case MAKELONG(0x10de, 0x0402): return "NVIDIA GeForce 8600 GT";
+    case MAKELONG(0x10de, 0x0407): return "NVIDIA GeForce 8600M GT";
+    case MAKELONG(0x10de, 0x0193): return "NVIDIA GeForce 8800 GTS";
+    case MAKELONG(0x10de, 0x0191): return "NVIDIA GeForce 8800 GTX";
+    case MAKELONG(0x10de, 0x086d): return "NVIDIA GeForce 9200";
+    case MAKELONG(0x10de, 0x086c): return "NVIDIA GeForce 9300";
+    case MAKELONG(0x10de, 0x0863): return "NVIDIA GeForce 9400M";
+    case MAKELONG(0x10de, 0x042c): return "NVIDIA GeForce 9400 GT";
+    case MAKELONG(0x10de, 0x0640): return "NVIDIA GeForce 9500 GT";
+    case MAKELONG(0x10de, 0x0622): return "NVIDIA GeForce 9600 GT";
+    case MAKELONG(0x10de, 0x064a): return "NVIDIA GeForce 9700M GT";
+    case MAKELONG(0x10de, 0x0614): return "NVIDIA GeForce 9800 GT";
+    case MAKELONG(0x10de, 0x0a23): return "NVIDIA GeForce 210";
+    case MAKELONG(0x10de, 0x0a20): return "NVIDIA GeForce GT 220";
+    case MAKELONG(0x10de, 0x0ca3): return "NVIDIA GeForce GT 240";
+    case MAKELONG(0x10de, 0x0615): return "NVIDIA GeForce GTS 250";
+    case MAKELONG(0x10de, 0x05e2): return "NVIDIA GeForce GTX 260";
+    case MAKELONG(0x10de, 0x05e6): return "NVIDIA GeForce GTX 275";
+    case MAKELONG(0x10de, 0x05e1): return "NVIDIA GeForce GTX 280";
+    case MAKELONG(0x10de, 0x0a7a): return "NVIDIA GeForce 315M";
+    case MAKELONG(0x10de, 0x08a3): return "NVIDIA GeForce 320M";
+    case MAKELONG(0x10de, 0x0a2d): return "NVIDIA GeForce GT 320M";
+    case MAKELONG(0x10de, 0x0a35): return "NVIDIA GeForce GT 325M";
+    case MAKELONG(0x10de, 0x0ca0): return "NVIDIA GeForce GT 330";
+    case MAKELONG(0x10de, 0x0cb0): return "NVIDIA GeForce GTS 350M";
+    case MAKELONG(0x10de, 0x1055): return "NVIDIA GeForce 410M";
+    case MAKELONG(0x10de, 0x0de2): return "NVIDIA GeForce GT 420";
+    case MAKELONG(0x10de, 0x0df0): return "NVIDIA GeForce GT 425M";
+    case MAKELONG(0x10de, 0x0de1): return "NVIDIA GeForce GT 430";
+    case MAKELONG(0x10de, 0x0de0): return "NVIDIA GeForce GT 440";
+    case MAKELONG(0x10de, 0x0dc4): return "NVIDIA GeForce GTS 450";
+    case MAKELONG(0x10de, 0x0e22): return "NVIDIA GeForce GTX 460";
+    case MAKELONG(0x10de, 0x0dd1): return "NVIDIA GeForce GTX 460M";
+    case MAKELONG(0x10de, 0x06c4): return "NVIDIA GeForce GTX 465";
+    case MAKELONG(0x10de, 0x06cd): return "NVIDIA GeForce GTX 470";
+    case MAKELONG(0x10de, 0x06c0): return "NVIDIA GeForce GTX 480";
+    case MAKELONG(0x10de, 0x1040): return "NVIDIA GeForce GT 520";
+    case MAKELONG(0x10de, 0x0dec): return "NVIDIA GeForce GT 525M";
+    case MAKELONG(0x10de, 0x0df4): return "NVIDIA GeForce GT 540M";
+    case MAKELONG(0x10de, 0x1244): return "NVIDIA GeForce GTX 550 Ti";
+    case MAKELONG(0x10de, 0x04b8): return "NVIDIA GeForce GT 555M";
+    case MAKELONG(0x10de, 0x1200): return "NVIDIA GeForce GTX 560 Ti";
+    case MAKELONG(0x10de, 0x1251): return "NVIDIA GeForce GTX 560M";
+    case MAKELONG(0x10de, 0x1201): return "NVIDIA GeForce GTX 560";
+    case MAKELONG(0x10de, 0x1081): return "NVIDIA GeForce GTX 570";
+    case MAKELONG(0x10de, 0x1080): return "NVIDIA GeForce GTX 580";
+    case MAKELONG(0x10de, 0x104a): return "NVIDIA GeForce GT 610";
+    case MAKELONG(0x10de, 0x0f00): return "NVIDIA GeForce GT 630";
+    case MAKELONG(0x10de, 0x0de9): return "NVIDIA GeForce GT 630M";
+    case MAKELONG(0x10de, 0x0fc1): return "NVIDIA GeForce GT 640";
+    case MAKELONG(0x10de, 0x0fd2): return "NVIDIA GeForce GT 640M";
+    case MAKELONG(0x10de, 0x0fd1): return "NVIDIA GeForce GT 650M";
+    case MAKELONG(0x10de, 0x0fc6): return "NVIDIA GeForce GTX 650";
+    case MAKELONG(0x10de, 0x11c6): return "NVIDIA GeForce GTX 650 Ti";
+    case MAKELONG(0x10de, 0x11c0): return "NVIDIA GeForce GTX 660";
+    case MAKELONG(0x10de, 0x0fd4): return "NVIDIA GeForce GTX 660M";
+    case MAKELONG(0x10de, 0x1183): return "NVIDIA GeForce GTX 660 Ti";
+    case MAKELONG(0x10de, 0x1189): return "NVIDIA GeForce GTX 670";
+    case MAKELONG(0x10de, 0x11a1): return "NVIDIA GeForce GTX 670MX";
+    case MAKELONG(0x10de, 0x11a7): return "NVIDIA GeForce GTX 675MX";
+    case MAKELONG(0x10de, 0x11a2): return "NVIDIA GeForce GTX 675MX";
+    case MAKELONG(0x10de, 0x1180): return "NVIDIA GeForce GTX 680";
+    case MAKELONG(0x10de, 0x1188): return "NVIDIA GeForce GTX 690";
+    case MAKELONG(0x10de, 0x128b): return "NVIDIA GeForce GT 720";
+    case MAKELONG(0x10de, 0x1287): return "NVIDIA GeForce GT 730";
+    case MAKELONG(0x10de, 0x0fe1): return "NVIDIA GeForce GT 730M";
+    case MAKELONG(0x10de, 0x1292): return "NVIDIA GeForce GT 740M";
+    case MAKELONG(0x10de, 0x0fe9): return "NVIDIA GeForce GT 750M";
+    case MAKELONG(0x10de, 0x0fcd): return "NVIDIA GeForce GT 755M";
+    case MAKELONG(0x10de, 0x1381): return "NVIDIA GeForce GTX 750";
+    case MAKELONG(0x10de, 0x1380): return "NVIDIA GeForce GTX 750 Ti";
+    case MAKELONG(0x10de, 0x1187): return "NVIDIA GeForce GTX 760";
+    case MAKELONG(0x10de, 0x1193): return "NVIDIA GeForce GTX 760 Ti";
+    case MAKELONG(0x10de, 0x11e2): return "NVIDIA GeForce GTX 765M";
+    case MAKELONG(0x10de, 0x11e0): return "NVIDIA GeForce GTX 770M";
+    case MAKELONG(0x10de, 0x1184): return "NVIDIA GeForce GTX 770";
+    case MAKELONG(0x10de, 0x119d): return "NVIDIA GeForce GTX 775M";
+    case MAKELONG(0x10de, 0x1004): return "NVIDIA GeForce GTX 780";
+    case MAKELONG(0x10de, 0x119e): return "NVIDIA GeForce GTX 780M";
+    case MAKELONG(0x10de, 0x100a): return "NVIDIA GeForce GTX 780 Ti";
+    case MAKELONG(0x10de, 0x1005): return "NVIDIA GeForce GTX TITAN";
+    case MAKELONG(0x10de, 0x100c): return "NVIDIA GeForce GTX TITAN Black";
+    case MAKELONG(0x10de, 0x17c2): return "NVIDIA GeForce GTX TITAN X";
+    case MAKELONG(0x10de, 0x1001): return "NVIDIA GeForce GTX TITAN Z";
+    case MAKELONG(0x10de, 0x0fed): return "NVIDIA GeForce 820M";
+    case MAKELONG(0x10de, 0x1340): return "NVIDIA GeForce 830M";
+    case MAKELONG(0x10de, 0x1341): return "NVIDIA GeForce 840M";
+    case MAKELONG(0x10de, 0x1344): return "NVIDIA GeForce 845M";
+    case MAKELONG(0x10de, 0x1391): return "NVIDIA GeForce GTX 850M";
+    case MAKELONG(0x10de, 0x1392): return "NVIDIA GeForce GTX 860M";
+    case MAKELONG(0x10de, 0x119a): return "NVIDIA GeForce GTX 860M";
+    case MAKELONG(0x10de, 0x1199): return "NVIDIA GeForce GTX 870M";
+    case MAKELONG(0x10de, 0x1198): return "NVIDIA GeForce GTX 880M";
+    case MAKELONG(0x10de, 0x1347): return "NVIDIA GeForce 940M";
+    case MAKELONG(0x10de, 0x1402): return "NVIDIA GeForce GTX 950";
+    case MAKELONG(0x10de, 0x139a): return "NVIDIA GeForce GTX 950M";
+    case MAKELONG(0x10de, 0x1401): return "NVIDIA GeForce GTX 960";
+    case MAKELONG(0x10de, 0x139b): return "NVIDIA GeForce GTX 960M";
+    case MAKELONG(0x10de, 0x13c2): return "NVIDIA GeForce GTX 970";
+    case MAKELONG(0x10de, 0x13d8): return "NVIDIA GeForce GTX 970M";
+    case MAKELONG(0x10de, 0x13c0): return "NVIDIA GeForce GTX 980";
+    case MAKELONG(0x10de, 0x17c8): return "NVIDIA GeForce GTX 980 Ti";
+    case MAKELONG(0x10de, 0x1d01): return "NVIDIA GeForce GT 1030";
+    case MAKELONG(0x10de, 0x1c81): return "NVIDIA GeForce GTX 1050";
+    case MAKELONG(0x10de, 0x1c82): return "NVIDIA GeForce GTX 1050 Ti";
+    case MAKELONG(0x10de, 0x1c02): return "NVIDIA GeForce GTX 1060 3GB";
+    case MAKELONG(0x10de, 0x1c03): return "NVIDIA GeForce GTX 1060";
+    case MAKELONG(0x10de, 0x1c20): return "NVIDIA GeForce GTX 1060M";
+    case MAKELONG(0x10de, 0x1b81): return "NVIDIA GeForce GTX 1070";
+    case MAKELONG(0x10de, 0x1be1): return "NVIDIA GeForce GTX 1070M";
+    case MAKELONG(0x10de, 0x1b80): return "NVIDIA GeForce GTX 1080";
+    case MAKELONG(0x10de, 0x1be0): return "NVIDIA GeForce GTX 1080M";
+    case MAKELONG(0x10de, 0x1b06): return "NVIDIA GeForce GTX 1080 Ti";
+    case MAKELONG(0x10de, 0x1b00): return "NVIDIA TITAN X (Pascal)";
+    case MAKELONG(0x10de, 0x1d81): return "NVIDIA TITAN V";
+    case MAKELONG(0x10de, 0x1f82): return "NVIDIA GeForce GTX 1650";
+    case MAKELONG(0x10de, 0x2187): return "NVIDIA GeForce GTX 1650 SUPER";
+    case MAKELONG(0x10de, 0x21c4): return "NVIDIA GeForce GTX 1660 SUPER";
+    case MAKELONG(0x10de, 0x2182): return "NVIDIA GeForce GTX 1660 Ti";
+    case MAKELONG(0x10de, 0x1f08): return "NVIDIA GeForce RTX 2060";
+    case MAKELONG(0x10de, 0x1f07): return "NVIDIA GeForce RTX 2070";
+    case MAKELONG(0x10de, 0x1e87): return "NVIDIA GeForce RTX 2080";
+    case MAKELONG(0x10de, 0x1e07): return "NVIDIA GeForce RTX 2080 Ti";
+    case MAKELONG(0x10de, 0x2507): return "NVIDIA GeForce RTX 3050";
+    case MAKELONG(0x10de, 0x2544): return "NVIDIA GeForce RTX 3060";
+    case MAKELONG(0x10de, 0x2504): return "NVIDIA GeForce RTX 3060 (Low Hash Rate)";
+    case MAKELONG(0x10de, 0x2414): return "NVIDIA GeForce RTX 3060 Ti (GA103)";
+    case MAKELONG(0x10de, 0x2486): return "NVIDIA GeForce RTX 3060 Ti (GA104)";
+    case MAKELONG(0x10de, 0x2489): return "NVIDIA GeForce RTX 3060 Ti (GA104, Low Hash Rate)";
+    case MAKELONG(0x10de, 0x2484): return "NVIDIA GeForce RTX 3070";
+    case MAKELONG(0x10de, 0x2488): return "NVIDIA GeForce RTX 3070 (Low Hash Rate)";
+    case MAKELONG(0x10de, 0x249d): return "NVIDIA GeForce RTX 3070 (mobile)";
+    case MAKELONG(0x10de, 0x2482): return "NVIDIA GeForce RTX 3070 Ti";
+    case MAKELONG(0x10de, 0x2206): return "NVIDIA GeForce RTX 3080 10GB";
+    case MAKELONG(0x10de, 0x2216): return "NVIDIA GeForce RTX 3080 10GB (Low Hash Rate)";
+    case MAKELONG(0x10de, 0x220a): return "NVIDIA GeForce RTX 3080 12GB";
+    case MAKELONG(0x10de, 0x2208): return "NVIDIA GeForce RTX 3080 Ti";
+    case MAKELONG(0x10de, 0x2204): return "NVIDIA GeForce RTX 3090";
+    case MAKELONG(0x10de, 0x2203): return "NVIDIA GeForce RTX 3090 Ti";
+    case MAKELONG(0x10de, 0x1eb8): return "NVIDIA Tesla T4";
+    case MAKELONG(0x10de, 0x2236): return "NVIDIA Ampere A10";
+    case MAKELONG(0x10de, 0x2882): return "NVIDIA GeForce RTX 4060";
+    case MAKELONG(0x10de, 0x28a0): return "NVIDIA GeForce RTX 4060M";
+    case MAKELONG(0x10de, 0x2803): return "NVIDIA GeForce RTX 4060 Ti 8GB";
+    case MAKELONG(0x10de, 0x2805): return "NVIDIA GeForce RTX 4060 Ti 16GB";
+    case MAKELONG(0x10de, 0x2786): return "NVIDIA GeForce RTX 4070";
+    case MAKELONG(0x10de, 0x2783): return "NVIDIA GeForce RTX 4070 SUPER";
+    case MAKELONG(0x10de, 0x2782): return "NVIDIA GeForce RTX 4070 Ti";
+    case MAKELONG(0x10de, 0x2705): return "NVIDIA GeForce RTX 4070 Ti SUPER";
+    case MAKELONG(0x10de, 0x2704): return "NVIDIA GeForce RTX 4080";
+    case MAKELONG(0x10de, 0x2702): return "NVIDIA GeForce RTX 4080 SUPER";
+    case MAKELONG(0x10de, 0x2684): return "NVIDIA GeForce RTX 4090";
+
+    /* AMD cards */
+    case MAKELONG(0x1002, 0x5246): return "ATI Rage Fury";
+    case MAKELONG(0x1002, 0x5144): return "ATI RADEON 7200 SERIES";
+    case MAKELONG(0x1002, 0x514c): return "ATI RADEON 8500 SERIES";
+    case MAKELONG(0x1002, 0x4144): return "ATI Radeon 9500";
+    case MAKELONG(0x1002, 0x5955): return "ATI RADEON XPRESS 200M Series";
+    case MAKELONG(0x1002, 0x5e4c): return "ATI Radeon X700 SE";
+    case MAKELONG(0x1002, 0x71c2): return "ATI Radeon X1600 Series";
+    case MAKELONG(0x1002, 0x94c7): return "ATI Mobility Radeon HD 2350";
+    case MAKELONG(0x1002, 0x9581): return "ATI Mobility Radeon HD 2600";
+    case MAKELONG(0x1002, 0x9400): return "ATI Radeon HD 2900 XT";
+    case MAKELONG(0x1002, 0x9620): return "ATI Radeon HD 3200 Graphics";
+    case MAKELONG(0x1002, 0x9515): return "ATI Radeon HD 3850 AGP";
+    case MAKELONG(0x1002, 0x9712): return "ATI Mobility Radeon HD 4200";
+    case MAKELONG(0x1002, 0x954f): return "ATI Radeon HD 4350";
+    case MAKELONG(0x1002, 0x9495): return "ATI Radeon HD 4600 Series";
+    case MAKELONG(0x1002, 0x944e): return "ATI Radeon HD 4700 Series";
+    case MAKELONG(0x1002, 0x944c): return "ATI Radeon HD 4800 Series";
+    case MAKELONG(0x1002, 0x68f9): return "ATI Radeon HD 5400 Series";
+    case MAKELONG(0x1002, 0x68d8): return "ATI Radeon HD 5600 Series";
+    case MAKELONG(0x1002, 0x68be): return "ATI Radeon HD 5700 Series";
+    case MAKELONG(0x1002, 0x6898): return "ATI Radeon HD 5800 Series";
+    case MAKELONG(0x1002, 0x689c): return "ATI Radeon HD 5900 Series";
+    case MAKELONG(0x1002, 0x9803): return "AMD Radeon HD 6300 series Graphics";
+    case MAKELONG(0x1002, 0x6770): return "AMD Radeon HD 6400 Series";
+    case MAKELONG(0x1002, 0x9644): return "AMD Radeon HD 6410D";
+    case MAKELONG(0x1002, 0x9648): return "AMD Radeon HD 6480G";
+    case MAKELONG(0x1002, 0x6760): return "AMD Radeon HD 6490M";
+    case MAKELONG(0x1002, 0x9640): return "AMD Radeon HD 6550D";
+    case MAKELONG(0x1002, 0x6758): return "AMD Radeon HD 6600 Series";
+    case MAKELONG(0x1002, 0x6741): return "AMD Radeon HD 6600M Series";
+    case MAKELONG(0x1002, 0x68ba): return "AMD Radeon HD 6700 Series";
+    case MAKELONG(0x1002, 0x6739): return "AMD Radeon HD 6800 Series";
+    case MAKELONG(0x1002, 0x6719): return "AMD Radeon HD 6900 Series";
+    case MAKELONG(0x1002, 0x9901): return "AMD Radeon HD 7660D";
+    case MAKELONG(0x1002, 0x683d): return "AMD Radeon HD 7700 Series";
+    case MAKELONG(0x1002, 0x6819): return "AMD Radeon HD 7800 Series";
+    case MAKELONG(0x1002, 0x6818): return "AMD Radeon HD 7870 Series";
+    case MAKELONG(0x1002, 0x679a): return "AMD Radeon HD 7900 Series";
+    case MAKELONG(0x1002, 0x6660): return "AMD Radeon HD 8600M Series";
+    case MAKELONG(0x1002, 0x6610): return "AMD Radeon HD 8670";
+    case MAKELONG(0x1002, 0x665c): return "AMD Radeon HD 8770";
+    case MAKELONG(0x1002, 0x9830): return "AMD Radeon HD 8400 / R3 Series";
+    case MAKELONG(0x1002, 0x130f): return "AMD Radeon(TM) R7 Graphics";
+    case MAKELONG(0x1002, 0x6939): return "AMD Radeon R9 285";
+    case MAKELONG(0x1002, 0x67b1): return "AMD Radeon R9 290";
+    case MAKELONG(0x1002, 0x67b0): return "AMD Radeon R9 290X";
+    case MAKELONG(0x1002, 0x7300): return "AMD Radeon (TM) R9 Fury Series";
+    case MAKELONG(0x1002, 0x6821): return "AMD Radeon R9 M370X";
+    case MAKELONG(0x1002, 0x6647): return "AMD Radeon R9 M380";
+    case MAKELONG(0x1002, 0x6920): return "AMD Radeon R9 M395X";
+    case MAKELONG(0x1002, 0x67ef): return "Radeon(TM) RX 460 Graphics";
+    case MAKELONG(0x1002, 0x67df): return "Radeon (TM) RX 480 Graphics";
+    case MAKELONG(0x1002, 0x73df): return "AMD Radeon RX 6700 XT";
+    case MAKELONG(0x1002, 0x687f): return "Radeon RX Vega";
+    case MAKELONG(0x1002, 0x69af): return "Radeon Pro Vega 20";
+    case MAKELONG(0x1002, 0x15dd): return "AMD Radeon(TM) Vega 10 Mobile Graphics";
+    case MAKELONG(0x1002, 0x66af): return "Radeon RX Vega 20";
+    case MAKELONG(0x1002, 0x731f): return "Radeon RX 5700 / 5700 XT";
+    case MAKELONG(0x1002, 0x7340): return "Radeon RX 5500M";
+    case MAKELONG(0x1002, 0x73bf): return "Radeon RX 6800/6800 XT / 6900 XT";
+    case MAKELONG(0x1002, 0x7480): return "AMD Radeon RX 7600 XT";
+    case MAKELONG(0x1002, 0x7590): return "AMD Radeon RX 9060 XT";
+    case MAKELONG(0x1002, 0x73a1): return "Radeon Pro V620";
+    case MAKELONG(0x1002, 0x73ae): return "Radeon Pro V620 VF";
+    case MAKELONG(0x1002, 0x163f): return "AMD VANGOGH";
+    case MAKELONG(0x1002, 0x164e): return "AMD Radeon(TM) Graphics";
+
+    /* Intel cards */
+    case MAKELONG(0x8086, 0x3577): return "Intel(R) 82830M Graphics Controller";
+    case MAKELONG(0x8086, 0x3582): return "Intel(R) 82852/82855 GM/GME Graphics Controller";
+    case MAKELONG(0x8086, 0x2562): return "Intel(R) 845G";
+    case MAKELONG(0x8086, 0x2572): return "Intel(R) 82865G Graphics Controller";
+    case MAKELONG(0x8086, 0x2582): return "Intel(R) 82915G/GV/910GL Express Chipset Family";
+    case MAKELONG(0x8086, 0x258a): return "Intel(R) E7221G";
+    case MAKELONG(0x8086, 0x2592): return "Mobile Intel(R) 915GM/GMS,910GML Express Chipset Family";
+    case MAKELONG(0x8086, 0x2772): return "Intel(R) 945G";
+    case MAKELONG(0x8086, 0x27a2): return "Mobile Intel(R) 945GM Express Chipset Family";
+    case MAKELONG(0x8086, 0x27ae): return "Intel(R) 945GME";
+    case MAKELONG(0x8086, 0x29b2): return "Intel(R) Q35";
+    case MAKELONG(0x8086, 0x29c2): return "Intel(R) G33";
+    case MAKELONG(0x8086, 0x29d2): return "Intel(R) Q33";
+    case MAKELONG(0x8086, 0xa001): return "Intel(R) IGD";
+    case MAKELONG(0x8086, 0xa011): return "Intel(R) IGD";
+    case MAKELONG(0x8086, 0x2992): return "Intel(R) 965Q";
+    case MAKELONG(0x8086, 0x2982): return "Intel(R) 965G";
+    case MAKELONG(0x8086, 0x2972): return "Intel(R) 946GZ";
+    case MAKELONG(0x8086, 0x2a02): return "Mobile Intel(R) 965 Express Chipset Family";
+    case MAKELONG(0x8086, 0x2a12): return "Intel(R) 965GME";
+    case MAKELONG(0x8086, 0x2a42): return "Mobile Intel(R) GM45 Express Chipset Family";
+    case MAKELONG(0x8086, 0x2e02): return "Intel(R) Integrated Graphics Device";
+    case MAKELONG(0x8086, 0x2e22): return "Intel(R) G45/G43";
+    case MAKELONG(0x8086, 0x2e12): return "Intel(R) Q45/Q43";
+    case MAKELONG(0x8086, 0x2e32): return "Intel(R) G41";
+    case MAKELONG(0x8086, 0x2e92): return "Intel(R) B43";
+    case MAKELONG(0x8086, 0x0042): return "Intel(R) HD Graphics";
+    case MAKELONG(0x8086, 0x0046): return "Intel(R) HD Graphics";
+    case MAKELONG(0x8086, 0x0122): return "Intel(R) HD Graphics 3000";
+    case MAKELONG(0x8086, 0x0126): return "Intel(R) HD Graphics 3000";
+    case MAKELONG(0x8086, 0x010a): return "Intel(R) HD Graphics Family";
+    case MAKELONG(0x8086, 0x0162): return "Intel(R) HD Graphics 4000";
+    case MAKELONG(0x8086, 0x0166): return "Intel(R) HD Graphics 4000";
+    case MAKELONG(0x8086, 0x015a): return "Intel(R) HD Graphics Family";
+    case MAKELONG(0x8086, 0x0412): return "Intel(R) HD Graphics 4600";
+    case MAKELONG(0x8086, 0x0416): return "Intel(R) HD Graphics 4600";
+    case MAKELONG(0x8086, 0x0a26): return "Intel(R) HD Graphics 5000";
+    case MAKELONG(0x8086, 0x0422): return "Intel(R) HD Graphics 5000";
+    case MAKELONG(0x8086, 0x0a22): return "Intel(R) Iris(TM) Graphics 5100";
+    case MAKELONG(0x8086, 0x0a2a): return "Intel(R) Iris(TM) Graphics 5100";
+    case MAKELONG(0x8086, 0x0a2b): return "Intel(R) Iris(TM) Graphics 5100";
+    case MAKELONG(0x8086, 0x0a2e): return "Intel(R) Iris(TM) Graphics 5100";
+    case MAKELONG(0x8086, 0x0d22): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x0d26): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x0d2a): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x0d2b): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x0d2e): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x0c22): return "Intel(R) Iris(TM) Pro Graphics 5200";
+    case MAKELONG(0x8086, 0x161e): return "Intel(R) HD Graphics 5300";
+    case MAKELONG(0x8086, 0x1616): return "Intel(R) HD Graphics 5500";
+    case MAKELONG(0x8086, 0x1612): return "Intel(R) HD Graphics 5600";
+    case MAKELONG(0x8086, 0x1626): return "Intel(R) HD Graphics 6000";
+    case MAKELONG(0x8086, 0x162b): return "Intel(R) Iris(TM) Graphics 6100";
+    case MAKELONG(0x8086, 0x1622): return "Intel(R) Iris(TM) Pro Graphics 6200";
+    case MAKELONG(0x8086, 0x162a): return "Intel(R) Iris(TM) Pro Graphics P6300";
+    case MAKELONG(0x8086, 0x1902): return "Intel(R) HD Graphics 510";
+    case MAKELONG(0x8086, 0x1906): return "Intel(R) HD Graphics 510";
+    case MAKELONG(0x8086, 0x190b): return "Intel(R) HD Graphics 510";
+    case MAKELONG(0x8086, 0x191e): return "Intel(R) HD Graphics 515";
+    case MAKELONG(0x8086, 0x1916): return "Intel(R) HD Graphics 520";
+    case MAKELONG(0x8086, 0x1921): return "Intel(R) HD Graphics 520";
+    case MAKELONG(0x8086, 0x1912): return "Intel(R) HD Graphics 530";
+    case MAKELONG(0x8086, 0x191b): return "Intel(R) HD Graphics 530";
+    case MAKELONG(0x8086, 0x191d): return "Intel(R) HD Graphics P530";
+    case MAKELONG(0x8086, 0x1926): return "Intel(R) Iris(TM) Graphics 540";
+    case MAKELONG(0x8086, 0x1927): return "Intel(R) Iris(TM) Graphics 550";
+    case MAKELONG(0x8086, 0x192b): return "Intel(R) Iris(TM) Graphics 555";
+    case MAKELONG(0x8086, 0x192d): return "Intel(R) Iris(TM) Graphics P555";
+    case MAKELONG(0x8086, 0x1932): return "Intel(R) Iris(TM) Pro Graphics 580";
+    case MAKELONG(0x8086, 0x193b): return "Intel(R) Iris(TM) Pro Graphics 580";
+    case MAKELONG(0x8086, 0x193a): return "Intel(R) Iris(TM) Pro Graphics P580";
+    case MAKELONG(0x8086, 0x193d): return "Intel(R) Iris(TM) Pro Graphics P580";
+    case MAKELONG(0x8086, 0x87c0): return "Intel(R) UHD Graphics 617";
+    case MAKELONG(0x8086, 0x3ea0): return "Intel(R) UHD Graphics 620";
+    case MAKELONG(0x8086, 0x591e): return "Intel(R) HD Graphics 615";
+    case MAKELONG(0x8086, 0x5916): return "Intel(R) HD Graphics 620";
+    case MAKELONG(0x8086, 0x5912): return "Intel(R) HD Graphics 630";
+    case MAKELONG(0x8086, 0x591b): return "Intel(R) HD Graphics 630";
+    case MAKELONG(0x8086, 0x3e9b): return "Intel(R) UHD Graphics 630";
+    case MAKELONG(0x8086, 0x3e91): return "Intel(R) UHD Graphics 630";
+    }
+
+    if (!default_name) return "Wine Adapter";
+    return default_name;
+};
+
 static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *pci,
                                    ULONGLONG memory_size )
 {
-    const WCHAR *desc;
+    unsigned int size, name_size = (wcslen( gpu->name ) + 1) * sizeof(WCHAR);
     char buffer[4096], *tmp;
     WCHAR bufferW[512];
-    unsigned int size;
     HKEY subkey;
     LARGE_INTEGER ft;
     ULONG value;
     HKEY hkey;
 
     static const BOOL present = TRUE;
-    static const WCHAR wine_adapterW[] = {'W','i','n','e',' ','A','d','a','p','t','e','r',0};
     static const WCHAR driver_date_dataW[] =
         {'D','r','i','v','e','r','D','a','t','e','D','a','t','a',0};
     static const WCHAR adapter_stringW[] =
@@ -1121,6 +1528,34 @@ static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *p
         NtClose( subkey );
     }
 
+    NtQuerySystemTime( &ft );
+    ft.QuadPart -= ft.QuadPart % 864000000000;
+    if ((subkey = reg_create_ascii_key( hkey, devpkey_device_driver_date, 0, NULL )))
+    {
+        set_reg_value( subkey, NULL, 0xffff0000 | DEVPROP_TYPE_FILETIME, &ft, sizeof(LARGE_INTEGER));
+        NtClose( subkey );
+    }
+
+    if ((subkey = reg_create_ascii_key( hkey, devpkey_device_driver_version, 0, NULL )))
+    {
+        set_reg_value( subkey, NULL, 0xffff0000 | DEVPROP_TYPE_STRING, bufferW,
+                       asciiz_to_unicode( bufferW, driver_vendor_to_version( pci->vendor ) ));
+        NtClose( subkey );
+    }
+
+    if ((subkey = reg_create_ascii_key( hkey, devpkey_device_driver_desc, 0, NULL )))
+    {
+        set_reg_value( subkey, NULL, 0xffff0000 | DEVPROP_TYPE_STRING, gpu->name, name_size );
+        NtClose( subkey );
+    }
+
+    if ((subkey = reg_create_ascii_key( hkey, devpkey_device_driver_provider, 0, NULL )))
+    {
+        set_reg_value( subkey, NULL, 0xffff0000 | DEVPROP_TYPE_STRING, bufferW,
+                       asciiz_to_unicode( bufferW, driver_vendor_to_name( pci->vendor ) ));
+        NtClose( subkey );
+    }
+
     if (pci->vendor && pci->device)
     {
         if ((subkey = reg_create_ascii_key( hkey, devpkey_device_bus_number, 0, NULL )))
@@ -1140,9 +1575,7 @@ static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *p
         NtClose( subkey );
     }
 
-    desc = gpu->name;
-    if (!desc[0]) desc = wine_adapterW;
-    set_reg_value( hkey, device_descW, REG_SZ, desc, (lstrlenW( desc ) + 1) * sizeof(WCHAR) );
+    set_reg_value( hkey, device_descW, REG_SZ, gpu->name, name_size );
 
     if ((subkey = reg_create_ascii_key( hkey, "Device Parameters", 0, NULL )))
     {
@@ -1177,16 +1610,12 @@ static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *p
     snprintf( buffer, sizeof(buffer), "Class\\%s\\%04X", guid_devclass_displayA, gpu->index );
     if (!(hkey = reg_create_ascii_key( control_key, buffer, 0, NULL ))) return FALSE;
 
-    NtQuerySystemTime( &ft );
     set_reg_value( hkey, driver_dateW, REG_SZ, bufferW, format_date( bufferW, ft.QuadPart ));
-
     set_reg_value( hkey, driver_date_dataW, REG_BINARY, &ft, sizeof(ft) );
-
-    size = (lstrlenW( desc ) + 1) * sizeof(WCHAR);
-    set_reg_value( hkey, driver_descW, REG_SZ, desc, size );
-    set_reg_value( hkey, adapter_stringW, REG_SZ, desc, size );
-    set_reg_value( hkey, bios_stringW, REG_SZ, desc, size );
-    set_reg_value( hkey, chip_typeW, REG_SZ, desc, size );
+    set_reg_value( hkey, driver_descW, REG_SZ, gpu->name, name_size );
+    set_reg_value( hkey, adapter_stringW, REG_SZ, gpu->name, name_size );
+    set_reg_value( hkey, bios_stringW, REG_SZ, gpu->name, name_size );
+    set_reg_value( hkey, chip_typeW, REG_SZ, gpu->name, name_size );
     set_reg_value( hkey, dac_typeW, REG_SZ, ramdacW, sizeof(ramdacW) );
 
     /* If we failed to retrieve the gpu memory size set a default of 1Gb */
@@ -1196,37 +1625,34 @@ static BOOL write_gpu_to_registry( const struct gpu *gpu, const struct pci_id *p
     value = (ULONG)min( memory_size, (ULONGLONG)ULONG_MAX );
     set_reg_value( hkey, memory_sizeW, REG_DWORD, &value, sizeof(value) );
 
-    if (pci->vendor && pci->device)
-    {
-        /* The last seven digits are the driver number. */
-        switch (pci->vendor)
-        {
-        /* Intel */
-        case 0x8086:
-            strcpy( buffer, "31.0.101.4576" );
-            break;
-        /* AMD */
-        case 0x1002:
-            strcpy( buffer, "31.0.14051.5006" );
-            break;
-        /* Nvidia */
-        case 0x10de:
-            strcpy( buffer, "31.0.15.3625" );
-            break;
-        /* Default value for any other vendor. */
-        default:
-            strcpy( buffer, "31.0.10.1000" );
-            break;
-        }
-        set_reg_ascii_value( hkey, "DriverVersion", buffer );
-    }
-
+    set_reg_ascii_value( hkey, "DriverVersion", driver_vendor_to_version( pci->vendor ) );
     NtClose( hkey );
 
 
     link_device( gpu->path, guid_devinterface_display_adapterA );
     link_device( gpu->path, guid_display_device_arrivalA );
 
+    snprintf( buffer, sizeof(buffer), "%s\\%s", directx_keyA, gpu->guid );
+    hkey = reg_create_ascii_key( NULL, buffer, REG_OPTION_VOLATILE, NULL );
+    if (hkey)
+    {
+        UINT64 ver = 0x230000000f1ff4; /* Some version in the future. */
+
+        asciiz_to_unicode( bufferW, "AdapterLuid" );
+        set_reg_value( hkey, bufferW, REG_QWORD, &gpu->luid, sizeof(gpu->luid) );
+        asciiz_to_unicode( bufferW, "DriverVersion" );
+        set_reg_value( hkey, bufferW, REG_QWORD, &ver, sizeof(ver) );
+        asciiz_to_unicode( bufferW, "Description" );
+        set_reg_value( hkey, bufferW, REG_SZ, gpu->name, name_size );
+        if (pci->vendor && pci->device)
+        {
+            asciiz_to_unicode( bufferW, "DeviceId" );
+            set_reg_value( hkey, bufferW, REG_DWORD, &pci->device, sizeof(pci->device) );
+            asciiz_to_unicode( bufferW, "VendorId" );
+            set_reg_value( hkey, bufferW, REG_DWORD, &pci->vendor, sizeof(pci->vendor) );
+        }
+        NtClose( hkey );
+    }
     return TRUE;
 }
 
@@ -1302,8 +1728,9 @@ static void add_gpu( const char *name, const struct pci_id *pci_id, const GUID *
 
     if (!pci_id->vendor && !pci_id->device && vulkan_gpu) pci_id = &vulkan_gpu->pci_id;
 
-    if ((!name || !strcmp( name, "Wine GPU" )) && vulkan_gpu) name = vulkan_gpu->name;
-    if (name) RtlUTF8ToUnicodeN( gpu->name, sizeof(gpu->name) - sizeof(WCHAR), &len, name, strlen( name ) );
+    name = gpu_device_name( pci_id->vendor, pci_id->device, name );
+    if (!strcmp( name, "Wine Adapter" ) && vulkan_gpu) name = vulkan_gpu->name;
+    RtlUTF8ToUnicodeN( gpu->name, sizeof(gpu->name) - sizeof(WCHAR), &len, name, strlen( name ) );
 
     snprintf( gpu->path, sizeof(gpu->path), "PCI\\VEN_%04X&DEV_%04X&SUBSYS_%08X&REV_%02X\\%08X",
               pci_id->vendor, pci_id->device, pci_id->subsystem, pci_id->revision, gpu->index );
@@ -1334,12 +1761,12 @@ static void add_gpu( const char *name, const struct pci_id *pci_id, const GUID *
         if (query_reg_value( subkey, NULL, value, sizeof(buffer) ) != sizeof(LUID))
         {
             NtAllocateLocallyUniqueId( &gpu->luid );
-            TRACE("allocated luid %08x%08x\n", (int)gpu->luid.HighPart, (int)gpu->luid.LowPart );
+            TRACE("allocated luid %08x%08x\n", gpu->luid.HighPart, gpu->luid.LowPart );
         }
         else
         {
             memcpy( &gpu->luid, value->Data, sizeof(gpu->luid) );
-            TRACE("got luid %08x%08x\n", (int)gpu->luid.HighPart, (int)gpu->luid.LowPart );
+            TRACE("got luid %08x%08x\n", gpu->luid.HighPart, gpu->luid.LowPart );
         }
         NtClose( subkey );
     }
@@ -1513,6 +1940,14 @@ static BOOL write_monitor_to_registry( struct monitor *monitor, const BYTE *edid
         NtClose( subkey );
     }
 
+    /* WINE_DEVPROPKEY_MONITOR_HDR_ENABLED */
+    if ((subkey = reg_create_ascii_key( hkey, wine_devpropkey_monitor_hdr_enabledA, 0, NULL )))
+    {
+        set_reg_value( subkey, NULL, 0xffff0000 | DEVPROP_TYPE_BOOLEAN,
+                       &monitor->hdr_enabled, sizeof(monitor->hdr_enabled) );
+        NtClose( subkey );
+    }
+
     NtClose( hkey );
 
 
@@ -1542,6 +1977,7 @@ static void add_monitor( const struct gdi_monitor *gdi_monitor, void *param )
     monitor->id = source->monitor_count;
     monitor->output_id = ctx->monitor_count;
     monitor->rc_work = gdi_monitor->rc_work;
+    monitor->hdr_enabled = gdi_monitor->hdr_enabled;
 
     TRACE( "%u %s %s\n", monitor->id, wine_dbgstr_rect(&gdi_monitor->rc_monitor), wine_dbgstr_rect(&gdi_monitor->rc_work) );
 
@@ -1569,103 +2005,161 @@ static void add_monitor( const struct gdi_monitor *gdi_monitor, void *param )
     }
 }
 
-static DEVMODEW *get_virtual_modes( const DEVMODEW *current, const DEVMODEW *initial,
-                                    const DEVMODEW *maximum, UINT32 *modes_count )
+static UINT add_screen_size( SIZE *sizes, UINT count, SIZE size )
 {
-    static struct screen_size
+    UINT i = 0;
+
+    while (i < count && memcmp( sizes + i, &size, sizeof(size) )) i++;
+    if (i < count) return 0;
+
+    TRACE( "adding size %s\n", wine_dbgstr_point((POINT *)&size) );
+    sizes[i] = size;
+    return 1;
+}
+
+static UINT add_virtual_mode( DEVMODEW *modes, UINT count, const DEVMODEW *mode )
+{
+    TRACE( "adding mode %s\n", debugstr_devmodew(mode) );
+    modes[count] = *mode;
+    return 1;
+}
+
+static SIZE *get_screen_sizes( const DEVMODEW *maximum, const DEVMODEW *modes, UINT modes_count,
+                               UINT *sizes_count )
+{
+    static SIZE default_sizes[] =
     {
-        unsigned int width;
-        unsigned int height;
-    } screen_sizes[] = {
         /* 4:3 */
-        { 320,  240},
-        { 400,  300},
-        { 512,  384},
         { 640,  480},
-        { 768,  576},
         { 800,  600},
         {1024,  768},
         {1152,  864},
         {1280,  960},
-        {1400, 1050},
         {1600, 1200},
-        {2048, 1536},
-        /* 5:4 */
-        {1280, 1024},
-        {2560, 2048},
         /* 16:9 */
+        { 960,  540},
         {1280,  720},
-        {1366,  768},
         {1600,  900},
         {1920, 1080},
         {2560, 1440},
-        {3840, 2160},
+        {2880, 1620},
+        {3200, 1800},
         /* 16:10 */
-        { 320,  200},
-        { 640,  400},
-        {1280,  800},
         {1440,  900},
         {1680, 1050},
         {1920, 1200},
-        {2560, 1600}
+        {2560, 1600},
+        /* 3:2 */
+        {1440,  960},
+        {1920, 1280},
+        /* 21:9 ultra-wide */
+        {2560, 1080},
+        /* 12:5 */
+        {1920,  800},
+        {3840, 1600},
+        /* 5:4 */
+        {1280, 1024},
+        /* 5:3 */
+        {1280,  768},
     };
-    UINT depths[] = {8, 16, initial->dmBitsPerPel}, i, j, count;
+    UINT max_width = devmode_get( maximum, DM_PELSWIDTH ), max_height = devmode_get( maximum, DM_PELSHEIGHT );
+    SIZE *sizes, max_size = {.cx = max( max_width, max_height ), .cy = min( max_width, max_height )};
+    const DEVMODEW *mode;
+    UINT i, count;
+
+    count = 1 + ARRAY_SIZE(default_sizes) + modes_count;
+    if (!(sizes = malloc( count * sizeof(*sizes) ))) return NULL;
+
+    count = add_screen_size( sizes, 0, max_size );
+    for (i = 0; i < ARRAY_SIZE(default_sizes); i++)
+    {
+        if (default_sizes[i].cx > max_size.cx || default_sizes[i].cy > max_size.cy) continue;
+        count += add_screen_size( sizes, count, default_sizes[i] );
+    }
+
+    for (mode = modes; mode && modes_count; mode = NEXT_DEVMODEW(mode), modes_count--)
+    {
+        UINT width = devmode_get( mode, DM_PELSWIDTH ), height = devmode_get( mode, DM_PELSHEIGHT );
+        SIZE size = {.cx = max( width, height ), .cy = min( width, height )};
+        if (!size.cx || size.cx > max_size.cx) continue;
+        if (!size.cy || size.cy > max_size.cy) continue;
+        count += add_screen_size( sizes, count, size );
+    }
+
+    *sizes_count = count;
+    return sizes;
+}
+
+static DEVMODEW *get_virtual_modes( const DEVMODEW *initial, const DEVMODEW *maximum,
+                                    const DEVMODEW *host_modes, UINT host_modes_count, UINT32 *modes_count )
+{
+    UINT depths[] = {8, 16, initial->dmBitsPerPel}, freqs[] = {60, -1}, sizes_count, i, j, f, count = 0;
+    DEVMODEW *modes = NULL;
+    SIZE *screen_sizes;
     BOOL vertical;
-    DEVMODEW *modes;
 
     /* Check the ratio of dmPelsWidth to dmPelsHeight to determine whether the initial display mode
      * is in horizontal or vertical orientation. DMDO_DEFAULT is the natural orientation of the
      * device, which isn't necessarily a horizontal mode */
     vertical = initial->dmPelsHeight > initial->dmPelsWidth;
 
-    modes = malloc( ARRAY_SIZE(depths) * (ARRAY_SIZE(screen_sizes) + 2) * sizeof(*modes) );
+    freqs[1] = devmode_get( initial, DM_DISPLAYFREQUENCY );
+    if (freqs[1] <= 60) freqs[1] = 0;
 
-    for (count = i = 0; modes && i < ARRAY_SIZE(depths); ++i)
+    if (!(screen_sizes = get_screen_sizes( maximum, host_modes, host_modes_count, &sizes_count ))) return NULL;
+    modes = malloc( ARRAY_SIZE(freqs) * ARRAY_SIZE(depths) * (sizes_count + 2) * sizeof(*modes) );
+
+    for (i = 0; modes && i < ARRAY_SIZE(depths); ++i)
+    for (f = 0; f < ARRAY_SIZE(freqs); ++f)
     {
         DEVMODEW mode =
         {
             .dmSize = sizeof(mode),
             .dmFields = DM_DISPLAYORIENTATION | DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY,
-            .dmDisplayFrequency = 60,
+            .dmDisplayFrequency = freqs[f],
             .dmBitsPerPel = depths[i],
             .dmDisplayOrientation = initial->dmDisplayOrientation,
         };
+        if (!mode.dmDisplayFrequency) continue;
 
-        for (j = 0; j < ARRAY_SIZE(screen_sizes); ++j)
+        for (j = 0; j < sizes_count; ++j)
         {
-            mode.dmPelsWidth = vertical ? screen_sizes[j].height : screen_sizes[j].width;
-            mode.dmPelsHeight = vertical ? screen_sizes[j].width : screen_sizes[j].height;
+            mode.dmPelsWidth = vertical ? screen_sizes[j].cy : screen_sizes[j].cx;
+            mode.dmPelsHeight = vertical ? screen_sizes[j].cx : screen_sizes[j].cy;
 
             if (mode.dmPelsWidth > maximum->dmPelsWidth || mode.dmPelsHeight > maximum->dmPelsHeight) continue;
             if (mode.dmPelsWidth == maximum->dmPelsWidth && mode.dmPelsHeight == maximum->dmPelsHeight) continue;
             if (mode.dmPelsWidth == initial->dmPelsWidth && mode.dmPelsHeight == initial->dmPelsHeight) continue;
-            modes[count++] = mode;
+            count += add_virtual_mode( modes, count, &mode );
         }
 
         mode.dmPelsWidth = vertical ? initial->dmPelsHeight : initial->dmPelsWidth;
         mode.dmPelsHeight = vertical ? initial->dmPelsWidth : initial->dmPelsHeight;
-        modes[count++] = mode;
+        count += add_virtual_mode( modes, count, &mode );
 
         if (maximum->dmPelsWidth != initial->dmPelsWidth || maximum->dmPelsHeight != initial->dmPelsHeight)
         {
             mode.dmPelsWidth = vertical ? maximum->dmPelsHeight : maximum->dmPelsWidth;
             mode.dmPelsHeight = vertical ? maximum->dmPelsWidth : maximum->dmPelsHeight;
-            modes[count++] = mode;
+            count += add_virtual_mode( modes, count, &mode );
         }
     }
 
     *modes_count = count;
+    free( screen_sizes );
     return modes;
 }
 
-static void add_modes( const DEVMODEW *current, UINT modes_count, const DEVMODEW *modes, void *param )
+static void add_modes( const DEVMODEW *current, UINT host_modes_count, const DEVMODEW *host_modes, void *param )
 {
     struct device_manager_ctx *ctx = param;
     DEVMODEW dummy, physical, detached = *current, virtual, *virtual_modes = NULL;
+    UINT virtual_count, modes_count = host_modes_count;
+    const DEVMODEW *modes = host_modes;
     struct source *source;
-    UINT virtual_count;
 
-    TRACE( "current %s, modes_count %u, modes %p, param %p\n", debugstr_devmodew( current ), modes_count, modes, param );
+    TRACE( "current %s, host_modes_count %u, host_modes %p, param %p\n", debugstr_devmodew( current ),
+           host_modes_count, host_modes, param );
 
     assert( !list_empty( &sources ) );
     source = LIST_ENTRY( list_tail( &sources ), struct source, entry );
@@ -1690,10 +2184,10 @@ static void add_modes( const DEVMODEW *current, UINT modes_count, const DEVMODEW
     }
     else
     {
-        if (!read_source_mode( source->key, ENUM_CURRENT_SETTINGS, &virtual ))
+        if (!read_source_mode( source->key, ENUM_CURRENT_SETTINGS, &virtual ) || is_detached_mode( &virtual ))
             virtual = physical;
 
-        if ((virtual_modes = get_virtual_modes( &virtual, current, &physical, &virtual_count )))
+        if ((virtual_modes = get_virtual_modes( current, &physical, host_modes, host_modes_count, &virtual_count )))
         {
             modes_count = virtual_count;
             modes = virtual_modes;
@@ -1742,15 +2236,6 @@ static void release_display_manager_ctx( struct device_manager_ctx *ctx )
         list_remove( &gpu->entry );
         free_vulkan_gpu( gpu );
     }
-}
-
-static BOOL is_detached_mode( const DEVMODEW *mode )
-{
-    return mode->dmFields & DM_POSITION &&
-           mode->dmFields & DM_PELSWIDTH &&
-           mode->dmFields & DM_PELSHEIGHT &&
-           mode->dmPelsWidth == 0 &&
-           mode->dmPelsHeight == 0;
 }
 
 static BOOL is_monitor_active( struct monitor *monitor )
@@ -1813,6 +2298,64 @@ static UINT monitor_get_dpi( struct monitor *monitor, MONITOR_DPI_TYPE type, UIN
 }
 
 /* display_lock must be held */
+static RECT map_monitor_rect( struct monitor *monitor, RECT rect, UINT dpi_from, MONITOR_DPI_TYPE type_from,
+                              UINT dpi_to, MONITOR_DPI_TYPE type_to )
+{
+    UINT x, y;
+
+    assert( type_from != type_to );
+
+    if (monitor->source)
+    {
+        double points[4] = {rect.left, rect.top, rect.right, rect.bottom}, from[2], to[2];
+        DEVMODEW current_mode = {.dmSize = sizeof(DEVMODEW)}, physical_mode;
+        UINT num, den, dpi;
+
+        source_get_current_settings( monitor->source, &current_mode );
+        physical_mode = monitor->source->physical;
+
+        dpi = monitor_get_dpi( monitor, MDT_DEFAULT, &x, &y );
+        if (!dpi_from) dpi_from = dpi;
+        if (!dpi_to) dpi_to = dpi;
+
+        if (type_from == MDT_RAW_DPI)
+        {
+            monitor_virt_to_raw_ratio( monitor, &den, &num );
+            from[0] = physical_mode.dmPosition.x + physical_mode.dmPelsWidth / 2.0;
+            from[1] = physical_mode.dmPosition.y + physical_mode.dmPelsHeight / 2.0;
+            to[0] = current_mode.dmPosition.x + current_mode.dmPelsWidth / 2.0;
+            to[1] = current_mode.dmPosition.y + current_mode.dmPelsHeight / 2.0;
+        }
+        else
+        {
+            monitor_virt_to_raw_ratio( monitor, &num, &den );
+            from[0] = current_mode.dmPosition.x + current_mode.dmPelsWidth / 2.0;
+            from[1] = current_mode.dmPosition.y + current_mode.dmPelsHeight / 2.0;
+            to[0] = physical_mode.dmPosition.x + physical_mode.dmPelsWidth / 2.0;
+            to[1] = physical_mode.dmPosition.y + physical_mode.dmPelsHeight / 2.0;
+        }
+
+        for (int i = 0; i < ARRAY_SIZE(points); i++)
+        {
+            points[i] *= (double)dpi / dpi_from;
+            points[i] -= from[i & 1];
+            points[i] *= (double)num / den;
+            points[i] += to[i & 1];
+            points[i] *= (double)dpi_to / dpi;
+            points[i] = roundf( points[i] );
+            points[i] = min( INT_MAX, max( INT_MIN, (INT64)points[i] ));
+        }
+
+        SetRect( &rect, points[0], points[1], points[2], points[3] );
+        return rect;
+    }
+
+    if (!dpi_from) dpi_from = monitor_get_dpi( monitor, type_from, &x, &y );
+    if (!dpi_to) dpi_to = monitor_get_dpi( monitor, type_to, &x, &y );
+    return map_dpi_rect( rect, dpi_from, dpi_to );
+}
+
+/* display_lock must be held */
 static RECT monitor_get_rect( struct monitor *monitor, UINT dpi, MONITOR_DPI_TYPE type )
 {
     DEVMODEW current_mode = {.dmSize = sizeof(DEVMODEW)};
@@ -1840,10 +2383,9 @@ static RECT monitor_get_rect( struct monitor *monitor, UINT dpi, MONITOR_DPI_TYP
 /* display_lock must be held */
 static void monitor_get_info( struct monitor *monitor, MONITORINFO *info, UINT dpi )
 {
-    UINT x, y;
-
     info->rcMonitor = monitor_get_rect( monitor, dpi, MDT_DEFAULT );
-    info->rcWork = map_dpi_rect( monitor->rc_work, monitor_get_dpi( monitor, MDT_DEFAULT, &x, &y ), dpi );
+    info->rcWork = map_monitor_rect( monitor, monitor->rc_work, 0, MDT_RAW_DPI, dpi, MDT_DEFAULT );
+    intersect_rect( &info->rcWork, &info->rcWork, &info->rcMonitor );
     info->dwFlags = is_monitor_primary( monitor ) ? MONITORINFOF_PRIMARY : 0;
 
     if (info->cbSize >= sizeof(MONITORINFOEXW))
@@ -1985,7 +2527,7 @@ static BOOL update_display_cache_from_registry( UINT64 serial )
     HKEY hkey;
     BOOL ret;
 
-    /* If user driver did initialize the registry, then exit */
+    /* If user driver didn't initialize the registry, then exit */
     if (!enum_key && !(enum_key = reg_open_ascii_key( NULL, enum_keyA )))
         return FALSE;
     if (!video_key && !(video_key = reg_open_ascii_key( NULL, devicemap_video_keyA )))
@@ -2094,7 +2636,7 @@ static NTSTATUS default_update_display_devices( struct device_manager_ctx *ctx )
     DEVMODEW mode = {.dmSize = sizeof(mode)};
     struct source *source;
 
-    add_gpu( "Wine GPU", &pci_id, NULL, ctx );
+    add_gpu( NULL, &pci_id, NULL, ctx );
     add_source( "Default", source_flags, system_dpi, ctx );
 
     assert( !list_empty( &sources ) );
@@ -2210,7 +2752,7 @@ static BOOL add_virtual_source( struct device_manager_ctx *ctx )
     add_monitor( &monitor, ctx );
 
     /* Expose the virtual source display modes as physical modes, to avoid DPI scaling */
-    if (!(modes = get_virtual_modes( &current, &initial, &maximum, &modes_count ))) return STATUS_NO_MEMORY;
+    if (!(modes = get_virtual_modes( &initial, &maximum, NULL, 0, &modes_count ))) return STATUS_NO_MEMORY;
     add_modes( &current, modes_count, modes, ctx );
     free( modes );
 
@@ -2458,51 +3000,6 @@ static RECT monitors_get_union_rect( UINT dpi, MONITOR_DPI_TYPE type )
     return rect;
 }
 
-static RECT map_monitor_rect( struct monitor *monitor, RECT rect, UINT dpi_from, MONITOR_DPI_TYPE type_from,
-                              UINT dpi_to, MONITOR_DPI_TYPE type_to )
-{
-    UINT x, y;
-
-    assert( type_from != type_to );
-
-    if (monitor->source)
-    {
-        DEVMODEW current_mode = {.dmSize = sizeof(DEVMODEW)}, *mode_from, *mode_to;
-        UINT num, den, dpi;
-
-        source_get_current_settings( monitor->source, &current_mode );
-
-        dpi = monitor_get_dpi( monitor, MDT_DEFAULT, &x, &y );
-        if (!dpi_from) dpi_from = dpi;
-        if (!dpi_to) dpi_to = dpi;
-
-        if (type_from == MDT_RAW_DPI)
-        {
-            monitor_virt_to_raw_ratio( monitor, &den, &num );
-            mode_from = &monitor->source->physical;
-            mode_to = &current_mode;
-        }
-        else
-        {
-            monitor_virt_to_raw_ratio( monitor, &num, &den );
-            mode_from = &current_mode;
-            mode_to = &monitor->source->physical;
-        }
-
-        rect = map_dpi_rect( rect, dpi_from, dpi * 2 );
-        OffsetRect( &rect, -mode_from->dmPosition.x * 2 - mode_from->dmPelsWidth,
-                    -mode_from->dmPosition.y * 2 - mode_from->dmPelsHeight );
-        rect = map_dpi_rect( rect, den, num );
-        OffsetRect( &rect, mode_to->dmPosition.x * 2 + mode_to->dmPelsWidth,
-                    mode_to->dmPosition.y * 2 + mode_to->dmPelsHeight );
-        return map_dpi_rect( rect, dpi * 2, dpi_to );
-    }
-
-    if (!dpi_from) dpi_from = monitor_get_dpi( monitor, type_from, &x, &y );
-    if (!dpi_to) dpi_to = monitor_get_dpi( monitor, type_to, &x, &y );
-    return map_dpi_rect( rect, dpi_from, dpi_to );
-}
-
 /* map a monitor rect from MDT_RAW_DPI to MDT_DEFAULT coordinates */
 RECT map_rect_raw_to_virt( RECT rect, UINT dpi_to )
 {
@@ -2534,22 +3031,29 @@ RECT map_rect_virt_to_raw( RECT rect, UINT dpi_from )
 /* map (absolute) window rects from MDT_DEFAULT to MDT_RAW_DPI coordinates */
 struct window_rects map_window_rects_virt_to_raw( struct window_rects rects, UINT dpi_from )
 {
+    RECT rect, monitor_rect, virt_visible_rect = rects.visible;
     struct monitor *monitor;
-    RECT rect, monitor_rect;
     BOOL is_fullscreen;
 
     if (!lock_display_devices( FALSE )) return rects;
     if ((monitor = get_monitor_from_rect( rects.window, MONITOR_DEFAULTTONEAREST, dpi_from, MDT_DEFAULT )))
     {
-        /* if the visible rect is fullscreen, make it cover the full raw monitor, regardless of aspect ratio */
-        monitor_rect = monitor_get_rect( monitor, dpi_from, MDT_DEFAULT );
-
-        is_fullscreen = intersect_rect( &rect, &monitor_rect, &rects.visible ) && EqualRect( &rect, &monitor_rect );
-        if (is_fullscreen) rects.visible = monitor_get_rect( monitor, 0, MDT_RAW_DPI );
-        else rects.visible = map_monitor_rect( monitor, rects.visible, dpi_from, MDT_DEFAULT, 0, MDT_RAW_DPI );
-
+        rects.visible = map_monitor_rect( monitor, rects.visible, dpi_from, MDT_DEFAULT, 0, MDT_RAW_DPI );
         rects.window = map_monitor_rect( monitor, rects.window, dpi_from, MDT_DEFAULT, 0, MDT_RAW_DPI );
         rects.client = map_monitor_rect( monitor, rects.client, dpi_from, MDT_DEFAULT, 0, MDT_RAW_DPI );
+    }
+    /* if the visible rect is fullscreen, make it cover the full raw monitor, regardless of aspect ratio */
+    LIST_FOR_EACH_ENTRY(monitor, &monitors, struct monitor, entry)
+    {
+        if (!is_monitor_active( monitor ) || monitor->is_clone) continue;
+
+        monitor_rect = monitor_get_rect( monitor, dpi_from, MDT_DEFAULT );
+        is_fullscreen = intersect_rect( &rect, &monitor_rect, &virt_visible_rect ) && EqualRect( &rect, &monitor_rect );
+        if (is_fullscreen)
+        {
+            rect = monitor_get_rect( monitor, 0, MDT_RAW_DPI );
+            union_rect( &rects.visible, &rects.visible, &rect );
+        }
     }
     unlock_display_devices();
 
@@ -2597,7 +3101,7 @@ UINT get_win_monitor_dpi( HWND hwnd, UINT *raw_dpi )
     }
     else
     {
-        rect = win->rects.window;
+        rect = is_iconic( hwnd ) ? win->normal_rect : win->rects.window;
         release_win_ptr( win );
     }
 
@@ -2809,32 +3313,6 @@ RECT get_virtual_screen_rect( UINT dpi, MONITOR_DPI_TYPE type )
     unlock_display_devices();
 
     return rect;
-}
-
-BOOL is_window_rect_full_screen( const RECT *rect, UINT dpi )
-{
-    struct monitor *monitor;
-    BOOL ret = FALSE;
-
-    if (!lock_display_devices( FALSE )) return FALSE;
-
-    LIST_FOR_EACH_ENTRY( monitor, &monitors, struct monitor, entry )
-    {
-        RECT monrect;
-
-        if (!is_monitor_active( monitor ) || monitor->is_clone) continue;
-
-        monrect = monitor_get_rect( monitor, dpi, MDT_DEFAULT );
-        if (rect->left <= monrect.left && rect->right >= monrect.right &&
-            rect->top <= monrect.top && rect->bottom >= monrect.bottom)
-        {
-            ret = TRUE;
-            break;
-        }
-    }
-
-    unlock_display_devices();
-    return ret;
 }
 
 static UINT get_display_index( const UNICODE_STRING *name )
@@ -3341,7 +3819,7 @@ NTSTATUS WINAPI NtUserEnumDisplayDevices( UNICODE_STRING *device, DWORD index,
     struct source *source = NULL;
     BOOL found = FALSE;
 
-    TRACE( "%s %u %p %#x\n", debugstr_us( device ), (int)index, info, (int)flags );
+    TRACE( "%s %u %p %#x\n", debugstr_us( device ), index, info, flags );
 
     if (!info || !info->cb) return STATUS_UNSUCCESSFUL;
 
@@ -3467,19 +3945,19 @@ static void trace_devmode( const DEVMODEW *devmode )
 {
     TRACE( "dmFields=%s ", _DM_fields(devmode->dmFields) );
     if (devmode->dmFields & DM_BITSPERPEL)
-        TRACE( "dmBitsPerPel=%u ", (int)devmode->dmBitsPerPel );
+        TRACE( "dmBitsPerPel=%u ", devmode->dmBitsPerPel );
     if (devmode->dmFields & DM_PELSWIDTH)
-        TRACE( "dmPelsWidth=%u ", (int)devmode->dmPelsWidth );
+        TRACE( "dmPelsWidth=%u ", devmode->dmPelsWidth );
     if (devmode->dmFields & DM_PELSHEIGHT)
-        TRACE( "dmPelsHeight=%u ", (int)devmode->dmPelsHeight );
+        TRACE( "dmPelsHeight=%u ", devmode->dmPelsHeight );
     if (devmode->dmFields & DM_DISPLAYFREQUENCY)
-        TRACE( "dmDisplayFrequency=%u ", (int)devmode->dmDisplayFrequency );
+        TRACE( "dmDisplayFrequency=%u ", devmode->dmDisplayFrequency );
     if (devmode->dmFields & DM_POSITION)
-        TRACE( "dmPosition=(%d,%d) ", (int)devmode->dmPosition.x, (int)devmode->dmPosition.y );
+        TRACE( "dmPosition=(%d,%d) ", devmode->dmPosition.x, devmode->dmPosition.y );
     if (devmode->dmFields & DM_DISPLAYFLAGS)
-        TRACE( "dmDisplayFlags=%#x ", (int)devmode->dmDisplayFlags );
+        TRACE( "dmDisplayFlags=%#x ", devmode->dmDisplayFlags );
     if (devmode->dmFields & DM_DISPLAYORIENTATION)
-        TRACE( "dmDisplayOrientation=%u ", (int)devmode->dmDisplayOrientation );
+        TRACE( "dmDisplayOrientation=%u ", devmode->dmDisplayOrientation );
     TRACE("\n");
 }
 
@@ -3543,7 +4021,7 @@ static BOOL source_get_full_mode( const struct source *source, const DEVMODEW *d
 
     if ((full_mode->dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT)) != (DM_PELSWIDTH | DM_PELSHEIGHT))
     {
-        WARN( "devmode doesn't specify the resolution: %#x\n", (int)full_mode->dmFields );
+        WARN( "devmode doesn't specify the resolution: %#x\n", full_mode->dmFields );
         return FALSE;
     }
 
@@ -3930,7 +4408,7 @@ LONG WINAPI NtUserChangeDisplaySettings( UNICODE_STRING *devname, DEVMODEW *devm
     int ret = DISP_CHANGE_SUCCESSFUL;
     struct source *source;
 
-    TRACE( "%s %p %p %#x %p\n", debugstr_us(devname), devmode, hwnd, (int)flags, lparam );
+    TRACE( "%s %p %p %#x %p\n", debugstr_us(devname), devmode, hwnd, flags, lparam );
     TRACE( "flags=%s\n", _CDS_flags(flags) );
 
     if ((!devname || !devname->Length) && !devmode) return apply_display_settings( NULL, NULL, hwnd, flags, lparam );
@@ -3969,7 +4447,7 @@ static BOOL source_enum_display_settings( const struct source *source, UINT inde
             continue;
         if (!i--)
         {
-            memcpy( &devmode->dmFields, &source_mode->dmFields, devmode->dmSize - FIELD_OFFSET(DEVMODEW, dmFields) );
+            memcpy( &devmode->dmFields, &source_mode->dmFields, offsetof(DEVMODEW, dmICMMethod) - FIELD_OFFSET(DEVMODEW, dmFields) );
             devmode->dmDisplayFlags &= ~WINE_DM_UNSUPPORTED;
             return TRUE;
         }
@@ -3990,7 +4468,7 @@ BOOL WINAPI NtUserEnumDisplaySettings( UNICODE_STRING *device, DWORD index, DEVM
     BOOL ret;
 
     TRACE( "device %s, index %#x, devmode %p, flags %#x\n",
-           debugstr_us(device), (int)index, devmode, (int)flags );
+           debugstr_us(device), index, devmode, flags );
 
     if (!(source = find_source( device ))) return FALSE;
 
@@ -4008,9 +4486,9 @@ BOOL WINAPI NtUserEnumDisplaySettings( UNICODE_STRING *device, DWORD index, DEVM
 
     if (!ret) WARN( "Failed to query %s display settings.\n", debugstr_us(device) );
     else TRACE( "position %dx%d, resolution %ux%u, frequency %u, depth %u, orientation %#x.\n",
-                (int)devmode->dmPosition.x, (int)devmode->dmPosition.y, (int)devmode->dmPelsWidth,
-                (int)devmode->dmPelsHeight, (int)devmode->dmDisplayFrequency,
-                (int)devmode->dmBitsPerPel, (int)devmode->dmDisplayOrientation );
+                devmode->dmPosition.x, devmode->dmPosition.y, devmode->dmPelsWidth,
+                devmode->dmPelsHeight, devmode->dmDisplayFrequency,
+                devmode->dmBitsPerPel, devmode->dmDisplayOrientation );
     return ret;
 }
 
@@ -4164,7 +4642,7 @@ static BOOL get_monitor_info( HMONITOR handle, MONITORINFO *info, UINT dpi )
         monitor_get_info( monitor, info, dpi );
         unlock_display_devices();
 
-        TRACE( "flags %04x, monitor %s, work %s\n", (int)info->dwFlags,
+        TRACE( "flags %04x, monitor %s, work %s\n", info->dwFlags,
                wine_dbgstr_rect(&info->rcMonitor), wine_dbgstr_rect(&info->rcWork));
         return TRUE;
     }
@@ -6889,7 +7367,7 @@ BOOL WINAPI NtUserSetProcessDpiAwarenessContext( ULONG context, ULONG unknown )
         return FALSE;
     }
 
-    TRACE( "set to %#x\n", (UINT)context );
+    TRACE( "set to %#x\n", context );
     return TRUE;
 }
 
@@ -6911,12 +7389,48 @@ ULONG WINAPI NtUserGetProcessDpiAwarenessContext( HANDLE process )
     return context;
 }
 
-BOOL message_beep( UINT i )
+/***********************************************************************
+ *	     NtUserGetProcessDefaultLayout    (win32u.@)
+ */
+BOOL WINAPI NtUserGetProcessDefaultLayout( ULONG *layout )
+{
+    if (!layout)
+    {
+        RtlSetLastWin32Error( ERROR_NOACCESS );
+        return FALSE;
+    }
+    *layout = process_layout;
+    return TRUE;
+}
+
+/***********************************************************************
+ *	     NtUserSetProcessDefaultLayout    (win32u.@)
+ */
+BOOL WINAPI NtUserSetProcessDefaultLayout( ULONG layout )
+{
+    process_layout = layout;
+    return TRUE;
+}
+
+/***********************************************************************
+ *	     NtUserMessageBeep    (win32u.@)
+ */
+BOOL WINAPI NtUserMessageBeep( UINT type )
 {
     BOOL active = TRUE;
     NtUserSystemParametersInfo( SPI_GETBEEP, 0, &active, FALSE );
     if (active) user_driver->pBeep();
     return TRUE;
+}
+
+/***********************************************************************
+ *	     NtUserSetAdditionalForegroundBoostProcesses    (win32u.@)
+ */
+BOOL WINAPI NtUserSetAdditionalForegroundBoostProcesses( HWND hwnd, DWORD count, HANDLE *handles )
+{
+    FIXME( "%p %u %p stub!\n", hwnd, count, handles );
+    RtlSetLastWin32Error( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
 }
 
 static DWORD exiting_thread_id;
@@ -6940,7 +7454,9 @@ static void thread_detach(void)
 
     cleanup_imm_thread();
     NtClose( thread_info->server_queue );
+    if (thread_info->idle_event) NtClose( thread_info->idle_event );
     free( thread_info->session_data );
+    free( thread_info->mouse_tracking_info );
 
     exiting_thread_id = 0;
 }
@@ -6961,23 +7477,14 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
 {
     switch(code)
     {
-    case NtUserCallNoParam_DestroyCaret:
-        return destroy_caret();
-
     case NtUserCallNoParam_GetDesktopWindow:
         return HandleToUlong( get_desktop_window() );
 
     case NtUserCallNoParam_GetDialogBaseUnits:
         return get_dialog_base_units();
 
-    case NtUserCallNoParam_GetInputState:
-        return get_input_state();
-
     case NtUserCallNoParam_GetLastInputTime:
         return get_last_input_time();
-
-    case NtUserCallNoParam_GetProcessDefaultLayout:
-        return process_layout;
 
     case NtUserCallNoParam_GetProgmanWindow:
         return HandleToUlong( get_progman_window() );
@@ -6987,9 +7494,6 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
 
     case NtUserCallNoParam_GetTaskmanWindow:
         return HandleToUlong( get_taskman_window() );
-
-    case NtUserCallNoParam_ReleaseCapture:
-        return release_capture();
 
     case NtUserCallNoParam_DisplayModeChanged:
         display_mode_changed( FALSE );
@@ -7005,7 +7509,7 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
         return 0;
 
     default:
-        FIXME( "invalid code %u\n", (int)code );
+        FIXME( "invalid code %u\n", code );
         return 0;
     }
 }
@@ -7017,14 +7521,8 @@ ULONG_PTR WINAPI NtUserCallOneParam( ULONG_PTR arg, ULONG code )
 {
     switch(code)
     {
-    case NtUserCallOneParam_BeginDeferWindowPos:
-        return HandleToUlong( begin_defer_window_pos( arg ));
-
     case NtUserCallOneParam_CreateCursorIcon:
         return HandleToUlong( alloc_cursoricon_handle( arg ));
-
-    case NtUserCallOneParam_CreateMenu:
-        return HandleToUlong( create_menu( arg ) );
 
     case NtUserCallOneParam_EnableDC:
         return set_dce_flags( UlongToHandle(arg), DCHF_ENABLEDC );
@@ -7032,15 +7530,6 @@ ULONG_PTR WINAPI NtUserCallOneParam( ULONG_PTR arg, ULONG code )
     case NtUserCallOneParam_EnableThunkLock:
         thunk_lock_callback = arg;
         return 0;
-
-    case NtUserCallOneParam_EnumClipboardFormats:
-        return enum_clipboard_formats( arg );
-
-    case NtUserCallOneParam_GetClipCursor:
-        return get_clip_cursor( (RECT *)arg, get_thread_dpi(), MDT_DEFAULT );
-
-    case NtUserCallOneParam_GetCursorPos:
-        return get_cursor_pos( (POINT *)arg );
 
     case NtUserCallOneParam_GetIconParam:
         return get_icon_param( UlongToHandle(arg) );
@@ -7050,9 +7539,6 @@ ULONG_PTR WINAPI NtUserCallOneParam( ULONG_PTR arg, ULONG code )
 
     case NtUserCallOneParam_GetSysColor:
         return get_sys_color( arg );
-
-    case NtUserCallOneParam_RealizePalette:
-        return realize_palette( UlongToHandle(arg) );
 
     case NtUserCallOneParam_GetPrimaryMonitorRect:
         *(RECT *)arg = get_primary_monitor_rect( 0 );
@@ -7066,22 +7552,6 @@ ULONG_PTR WINAPI NtUserCallOneParam( ULONG_PTR arg, ULONG code )
 
     case NtUserCallOneParam_GetSystemMetrics:
         return get_system_metrics( arg );
-
-    case NtUserCallOneParam_MessageBeep:
-        return message_beep( arg );
-
-    case NtUserCallOneParam_PostQuitMessage:
-        return post_quit_message( arg );
-
-    case NtUserCallOneParam_ReplyMessage:
-        return reply_message_result( arg );
-
-    case NtUserCallOneParam_SetCaretBlinkTime:
-        return set_caret_blink_time( arg );
-
-    case NtUserCallOneParam_SetProcessDefaultLayout:
-        process_layout = arg;
-        return TRUE;
 
     case NtUserCallOneParam_SetKeyboardAutoRepeat:
         return set_keyboard_auto_repeat( arg );
@@ -7100,7 +7570,7 @@ ULONG_PTR WINAPI NtUserCallOneParam( ULONG_PTR arg, ULONG code )
         return get_entry( &entry_DESKPATTERN, 256, (WCHAR *)arg );
 
     default:
-        FIXME( "invalid code %u\n", (int)code );
+        FIXME( "invalid code %u\n", code );
         return 0;
     }
 }
@@ -7127,17 +7597,11 @@ ULONG_PTR WINAPI NtUserCallTwoParam( ULONG_PTR arg1, ULONG_PTR arg2, ULONG code 
     case NtUserCallTwoParam_MonitorFromRect:
         return HandleToUlong( monitor_from_rect( (const RECT *)arg1, arg2, get_thread_dpi() ));
 
-    case NtUserCallTwoParam_SetCaretPos:
-        return set_caret_pos( arg1, arg2 );
-
     case NtUserCallTwoParam_SetIconParam:
         return set_icon_param( UlongToHandle(arg1), UlongToHandle(arg2) );
 
     case NtUserCallTwoParam_SetIMECompositionRect:
         return set_ime_composition_rect( UlongToHandle(arg1), *(const RECT *)arg2 );
-
-    case NtUserCallTwoParam_UnhookWindowsHook:
-        return unhook_windows_hook( arg1, (HOOKPROC)arg2 );
 
     case NtUserCallTwoParam_AdjustWindowRect:
     {
@@ -7154,7 +7618,7 @@ ULONG_PTR WINAPI NtUserCallTwoParam( ULONG_PTR arg1, ULONG_PTR arg2, ULONG code 
         return (UINT_PTR)alloc_winproc( (WNDPROC)arg1, arg2 );
 
     default:
-        FIXME( "invalid code %u\n", (int)code );
+        FIXME( "invalid code %u\n", code );
         return 0;
     }
 }
@@ -7327,19 +7791,80 @@ NTSTATUS WINAPI NtUserDisplayConfigGetDeviceInfo( DISPLAYCONFIG_DEVICE_INFO_HEAD
     case DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME:
     {
         DISPLAYCONFIG_ADAPTER_NAME *adapter_name = (DISPLAYCONFIG_ADAPTER_NAME *)packet;
+        char buffer[MAX_PATH + 4 + sizeof(guid_devinterface_display_adapterA)];
+        struct source *source;
+        unsigned int i;
 
-        FIXME( "DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME stub.\n" );
+        TRACE( "DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME.\n" );
 
         if (packet->size < sizeof(*adapter_name))
             return STATUS_INVALID_PARAMETER;
 
-        return STATUS_NOT_SUPPORTED;
+        if (!lock_display_devices( FALSE )) return STATUS_UNSUCCESSFUL;
+
+        LIST_FOR_EACH_ENTRY(source, &sources, struct source, entry)
+        {
+            if (memcmp( &adapter_name->header.adapterId, &source->gpu->luid, sizeof(source->gpu->luid) )) continue;
+
+            snprintf( buffer, ARRAY_SIZE(buffer), "\\\\?\\%s\\%s", source->gpu->path, guid_devinterface_display_adapterA );
+            for (i = 4; buffer[i]; ++i)
+            {
+                if (buffer[i] == '\\') buffer[i] = '#';
+            }
+            asciiz_to_unicode( adapter_name->adapterDevicePath, buffer );
+            ret = STATUS_SUCCESS;
+            break;
+        }
+
+        unlock_display_devices();
+        return ret;
+    }
+    case DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO:
+    {
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO *color_info = (DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO *)packet;
+        struct monitor *monitor;
+
+        FIXME( "DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO semi-stub.\n" );
+
+        if (packet->size < sizeof(*color_info))
+            return STATUS_INVALID_PARAMETER;
+
+        if (!lock_display_devices( FALSE )) return STATUS_UNSUCCESSFUL;
+
+        LIST_FOR_EACH_ENTRY(monitor, &monitors, struct monitor, entry)
+        {
+            if (color_info->header.id != monitor->output_id) continue;
+            if (memcmp( &color_info->header.adapterId, &monitor->source->gpu->luid,
+                        sizeof(monitor->source->gpu->luid) ))
+                continue;
+
+            if (monitor->hdr_enabled)
+            {
+                color_info->advancedColorSupported = 1;
+                color_info->advancedColorEnabled = 1;
+                color_info->bitsPerColorChannel = 10;
+            }
+            else
+            {
+                color_info->advancedColorSupported = 0;
+                color_info->advancedColorEnabled = 0;
+                color_info->bitsPerColorChannel = 8;
+            }
+            color_info->wideColorEnforced = 0;
+            color_info->advancedColorForceDisabled = 0;
+            color_info->colorEncoding = DISPLAYCONFIG_COLOR_ENCODING_RGB;
+
+            ret = STATUS_SUCCESS;
+            break;
+        }
+
+        unlock_display_devices();
+        return ret;
     }
     case DISPLAYCONFIG_DEVICE_INFO_SET_TARGET_PERSISTENCE:
     case DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_BASE_TYPE:
     case DISPLAYCONFIG_DEVICE_INFO_GET_SUPPORT_VIRTUAL_RESOLUTION:
     case DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION:
-    case DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO:
     case DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE:
     case DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL:
     default:
@@ -7414,7 +7939,7 @@ NTSTATUS WINAPI NtGdiDdDDIEnumAdapters2( D3DKMT_ENUMADAPTERS2 *desc )
         /* give the GDI driver a chance to be notified about new adapter handle */
         if ((status = NtGdiDdDDIOpenAdapterFromLuid( &open_adapter_from_luid )))
         {
-            ERR( "Failed to open adapter %u from LUID, status %#x.\n", idx, (UINT)status );
+            ERR( "Failed to open adapter %u from LUID, status %#x.\n", idx, status );
             break;
         }
 
@@ -7466,6 +7991,65 @@ NTSTATUS WINAPI NtGdiDdDDIEnumAdapters( D3DKMT_ENUMADAPTERS *desc )
     return status;
 }
 
+/******************************************************************************
+ *           NtGdiDdDDIOpenAdapterFromDeviceName    (win32u.@)
+ */
+NTSTATUS WINAPI NtGdiDdDDIOpenAdapterFromDeviceName( D3DKMT_OPENADAPTERFROMDEVICENAME *desc )
+{
+    unsigned int status = STATUS_INVALID_PARAMETER;
+    D3DKMT_OPENADAPTERFROMLUID desc_luid;
+    unsigned int len, name_len = 0;
+    BOOL found = FALSE;
+    struct gpu *gpu;
+    char *name;
+
+    TRACE( "desc %p.\n", desc );
+
+    if (!desc || !desc->pDeviceName) return STATUS_INVALID_PARAMETER;
+
+    if (!(name = malloc( wcslen( desc->pDeviceName ) + 1 ))) return STATUS_NO_MEMORY;
+
+    for (len = 0; desc->pDeviceName[len]; ++len)
+    {
+        if (desc->pDeviceName[len] >> 8) goto done;
+        if ((name[len] = toupper( desc->pDeviceName[len] )) == '#')
+        {
+            name[len] = '\\';
+            name_len = len;
+        }
+    }
+    name[len] = 0;
+
+    if (!name_len || strncmp( name, "\\\\?\\", 4 )) goto done;
+    if (strcmp( name + name_len + 1, guid_display_device_arrivalA )) goto done;
+
+    name[name_len] = 0;
+    if (!lock_display_devices( FALSE ))
+    {
+        status = STATUS_UNSUCCESSFUL;
+        goto done;
+    }
+    LIST_FOR_EACH_ENTRY( gpu, &gpus, struct gpu, entry )
+    {
+        if (strcmp( name + 4, gpu->path )) continue;
+        found = TRUE;
+        desc_luid.AdapterLuid = gpu->luid;
+        break;
+    }
+    unlock_display_devices();
+
+    if (found && !(status = NtGdiDdDDIOpenAdapterFromLuid( &desc_luid )))
+    {
+        desc->AdapterLuid = desc_luid.AdapterLuid;
+        desc->hAdapter = desc_luid.hAdapter;
+    }
+
+done:
+    free( name );
+    TRACE( "%s -> %#x.\n", debugstr_w(desc->pDeviceName), status );
+    return status;
+}
+
 /* Find the Vulkan device UUID corresponding to a LUID */
 BOOL get_vulkan_uuid_from_luid( const LUID *luid, GUID *uuid )
 {
@@ -7481,6 +8065,27 @@ BOOL get_vulkan_uuid_from_luid( const LUID *luid, GUID *uuid )
             *uuid = gpu->vulkan_uuid;
             break;
         }
+    }
+
+    unlock_display_devices();
+    return found;
+}
+
+/* Find the Vulkan LUID corresponding to a device UUID */
+BOOL get_luid_from_vulkan_uuid( const GUID *uuid, LUID *luid, UINT32 *node_mask )
+{
+    BOOL found = FALSE;
+    struct gpu *gpu;
+
+    if (!lock_display_devices( FALSE )) return FALSE;
+
+    LIST_FOR_EACH_ENTRY( gpu, &gpus, struct gpu, entry )
+    {
+        if (!IsEqualGUID( uuid, &gpu->vulkan_uuid )) continue;
+        *luid = gpu->luid;
+        *node_mask = 1;
+        found = TRUE;
+        break;
     }
 
     unlock_display_devices();

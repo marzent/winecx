@@ -842,7 +842,7 @@ static LRESULT WINAPI desktop_wnd_proc( HWND hwnd, UINT message, WPARAM wp, LPAR
             BeginPaint( hwnd, &ps );
             if (!using_root)
             {
-                if (ps.fErase) PaintDesktop( ps.hdc );
+                PaintDesktop( ps.hdc );
                 draw_launchers( ps.hdc, ps.rcPaint );
             }
             EndPaint( hwnd, &ps );
@@ -1318,6 +1318,7 @@ void manage_desktop( WCHAR *arg )
     }
 
     desktopshellbrowserwindow_init();
+    shellwindows_init();
 
     /* Ideally we would set the window of an IShellView here, but we never
        actually create one, so the desktop window itself will have to do. */
@@ -1326,8 +1327,6 @@ void manage_desktop( WCHAR *arg )
     /* run the desktop message loop */
     if (hwnd)
     {
-        shellwindows_init();
-
         TRACE( "desktop message loop starting on hwnd %p\n", hwnd );
         while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
         TRACE( "desktop message loop exiting for hwnd %p\n", hwnd );

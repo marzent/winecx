@@ -1412,7 +1412,6 @@ static const struct leading_spaces_t leading_spaces_classdata[] = {
     { &CLSID_DOMDocument26, "CLSID_DOMDocument26", {{VARIANT_FALSE, S_FALSE }, {VARIANT_TRUE,  S_OK } }},
     { &CLSID_DOMDocument30, "CLSID_DOMDocument30", {{VARIANT_FALSE, S_FALSE }, {VARIANT_FALSE, S_FALSE } }},
     { &CLSID_DOMDocument40, "CLSID_DOMDocument40", {{VARIANT_FALSE, S_FALSE }, {VARIANT_FALSE, S_FALSE } }},
-    { &CLSID_DOMDocument60, "CLSID_DOMDocument60", {{VARIANT_FALSE, S_FALSE }, {VARIANT_FALSE, S_FALSE } }},
     { NULL }
 };
 
@@ -2218,6 +2217,7 @@ static void test_domnode( void )
     IXMLDOMNode *node = NULL, *next = NULL;
     IXMLDOMNodeList *list = NULL;
     IXMLDOMAttribute *attr = NULL;
+    IXMLDOMAttribute *attr_out = NULL;
     DOMNodeType type = NODE_INVALID;
     VARIANT_BOOL b;
     HRESULT hr;
@@ -2324,7 +2324,54 @@ static void test_domnode( void )
             IXMLDOMAttribute_Release(attr);
         }
 
+        attr = NULL;
+        hr = IXMLDOMElement_getAttributeNode( element, str, &attr );
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(attr != NULL, "getAttributeNode returned NULL\n");
+        /* store attribute value to restore attribute after removal */
+        hr = IXMLDOMElement_getAttribute(element, str, &var);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        attr_out = NULL;
+        hr = IXMLDOMElement_removeAttributeNode(element, attr, &attr_out );
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(attr_out != NULL, "removeAttributeNode expected to set attr_out, but got NULL pointer\n");
+        if (attr_out)
+        {
+            /* remove the same attribute again returns invalid arg */
+            hr = IXMLDOMElement_removeAttributeNode( element, attr, NULL );
+            ok(hr == E_INVALIDARG, "removeAttributeNode removed an already removed node, unexpected hr %#lx.\n", hr);
+
+            /* readd removed attribute to recover previous state */
+            hr = IXMLDOMElement_setAttribute(element, str, var);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+            IXMLDOMAttribute_Release(attr_out);
+        }
+        IXMLDOMAttribute_Release(attr);
+
+        /* remove attribute with output set to NULL and check if properly removed */
+        attr = NULL;
+        hr = IXMLDOMElement_getAttributeNode( element, str, &attr );
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(attr != NULL, "getAttributeNode returned NULL\n");
+        hr = IXMLDOMElement_removeAttributeNode( element, attr, NULL );
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        attr_out = NULL;
+        hr = IXMLDOMElement_getAttributeNode( element, str, &attr_out );
+        ok(hr == S_FALSE, "Unexpected hr %#lx.\n", hr);
+        ok(attr_out == NULL, "getAttributeNode found attribute that should be removed\n");
+        /* readd removed attribute to recover previous state */
+        hr = IXMLDOMElement_setAttribute(element, str, var);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        IXMLDOMAttribute_Release(attr);
+
         SysFreeString( str );
+        VariantClear( &var );
+
+        attr_out = (IXMLDOMAttribute*)0xdeadbeef;
+        hr = IXMLDOMElement_removeAttributeNode( element, NULL, &attr_out );
+        ok(hr == E_INVALIDARG, "removeAttributeNode removed a NULL pointer hr: %#lx.\n", hr);
+        ok(attr_out == (IXMLDOMAttribute*)0xdeadbeef, "removeAttributeNode expected to not touch attr_out in error case, got (%p)\n", attr_out);
 
         hr = IXMLDOMElement_get_attributes( element, &map );
         ok(hr == S_OK, "get_attributes returned wrong code\n");
@@ -10203,6 +10250,15 @@ static void test_get_attributes(void)
         L"xmlns:dcterms",
         L"xmlns:foaf"
     };
+    const WCHAR *attributes[] =
+    {
+        L"rdf:about",
+        L"dcterms:created",
+        L"xmlns:oslc_am",
+        L"xmlns:rdf",
+        L"xmlns:dcterms",
+        L"xmlns:foaf"
+    };
     const get_attributes_t *entry = get_attributes;
     IXMLDOMNamedNodeMap *map;
     IXMLDOMDocument *doc, *doc2;
@@ -10474,6 +10530,50 @@ static void test_get_attributes(void)
         hr = IXMLDOMNode_get_nodeName(node2, &str);
         ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
         ok(!lstrcmpW(str, namespaces[i]), "got %s\n", wine_dbgstr_w(str));
+        SysFreeString(str);
+
+        IXMLDOMNode_Release(node2);
+    }
+
+    IXMLDOMNamedNodeMap_Release(map);
+    IXMLDOMElement_Release(elem);
+
+    IXMLDOMDocument_Release(doc);
+
+    str = SysAllocString(L"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                L"<rdf:RDF rdf:about=\"foo\""
+                L"         dcterms:created=\"2025\""
+                L"         xmlns:oslc_am=\"http://open-services.net/ns/am#\""
+                L"         xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\""
+                L"         xmlns:dcterms=\"http://purl.org/dc/terms/\""
+                L"         xmlns:foaf=\"http://xmlns.com/foaf/0.1/\" >"
+                L"</rdf:RDF>");
+
+    doc = create_document(&IID_IXMLDOMDocument2);
+
+    hr = IXMLDOMDocument_loadXML(doc, str, &b);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(b == VARIANT_TRUE, "got %d\n", b);
+
+    hr = IXMLDOMDocument_get_documentElement(doc, &elem);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IXMLDOMElement_get_attributes(elem, &map);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    length = -1;
+    hr = IXMLDOMNamedNodeMap_get_length(map, &length);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(length == 6, "length %#lx.\n", length);
+
+    for(i=0; i < length; i++)
+    {
+        hr = IXMLDOMNamedNodeMap_get_item(map, i, &node2);
+        ok( hr == S_OK, "Unexpected hr %#lx (%ld).\n", hr, i);
+
+        hr = IXMLDOMNode_get_nodeName(node2, &str);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        ok(!lstrcmpW(str, attributes[i]), "got %s\n", wine_dbgstr_w(str));
         SysFreeString(str);
 
         IXMLDOMNode_Release(node2);

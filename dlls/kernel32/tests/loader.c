@@ -36,16 +36,6 @@
 
 #define ALIGN_SIZE(size, alignment) (((size) + ((ULONG_PTR)(alignment) - 1)) & ~(((ULONG_PTR)(alignment) - 1)))
 
-struct PROCESS_BASIC_INFORMATION_PRIVATE
-{
-    NTSTATUS  ExitStatus;
-    PPEB      PebBaseAddress;
-    DWORD_PTR AffinityMask;
-    DWORD_PTR BasePriority;
-    ULONG_PTR UniqueProcessId;
-    ULONG_PTR InheritedFromUniqueProcessId;
-};
-
 static LONG *child_failures;
 static WORD cb_count, cb_count_sys;
 static DWORD page_size;
@@ -88,6 +78,7 @@ static BOOL (WINAPI *pWow64DisableWow64FsRedirection)(void **);
 static BOOL (WINAPI *pWow64RevertWow64FsRedirection)(void *);
 static HMODULE (WINAPI *pLoadPackagedLibrary)(LPCWSTR lpwLibFileName, DWORD Reserved);
 static NTSTATUS  (WINAPI *pLdrRegisterDllNotification)(ULONG, PLDR_DLL_NOTIFICATION_FUNCTION, void *, void **);
+static NTSTATUS  (WINAPI *pLdrUnregisterDllNotification)(void *);
 
 static PVOID RVAToAddr(DWORD_PTR rva, HMODULE module)
 {
@@ -1641,7 +1632,7 @@ static void test_image_mapping(const char *dll_name, DWORD scn_page_access, BOOL
     addr1 = NULL;
     size = 0;
     status = pNtMapViewOfSection(hmap, GetCurrentProcess(), &addr1, 0, 0, &offset,
-                                 &size, 1 /* ViewShare */, 0, PAGE_READONLY);
+                                 &size, ViewShare, 0, PAGE_READONLY);
     ok(NT_SUCCESS(status), "NtMapViewOfSection error %lx\n", status);
     ok(addr1 != 0, "mapped address should be valid\n");
 
@@ -1659,7 +1650,7 @@ static void test_image_mapping(const char *dll_name, DWORD scn_page_access, BOOL
     addr2 = NULL;
     size = 0;
     status = pNtMapViewOfSection(hmap, GetCurrentProcess(), &addr2, 0, 0, &offset,
-                                 &size, 1 /* ViewShare */, 0, PAGE_READONLY);
+                                 &size, ViewShare, 0, PAGE_READONLY);
     ok(status == STATUS_IMAGE_NOT_AT_BASE, "expected STATUS_IMAGE_NOT_AT_BASE, got %lx\n", status);
     ok(addr2 != 0, "mapped address should be valid\n");
     ok(addr2 != addr1, "mapped addresses should be different\n");
@@ -2274,7 +2265,7 @@ static void test_import_resolution(void)
         WriteFile(hfile, &nt, sizeof(nt), &dummy, NULL);
         WriteFile(hfile, &section, sizeof(section), &dummy, NULL);
 
-        SetFilePointer( hfile, section.PointerToRawData, NULL, SEEK_SET );
+        SetFilePointer( hfile, section.PointerToRawData, NULL, FILE_BEGIN );
         WriteFile(hfile, &data, sizeof(data), &dummy, NULL);
 
         CloseHandle( hfile );
@@ -2379,7 +2370,7 @@ static void test_import_resolution(void)
             size = 0;
             offset.QuadPart = 0;
             status = pNtMapViewOfSection( mapping, GetCurrentProcess(), (void **)&mod, 0, 0, &offset,
-                                          &size, 1 /* ViewShare */, 0, PAGE_READONLY );
+                                          &size, ViewShare, 0, PAGE_READONLY );
             todo_wine_if (test == 5)
             ok( status == (test == 6 ? STATUS_IMAGE_NOT_AT_BASE : STATUS_SUCCESS),
                 "NtMapViewOfSection failed %lx\n", status );
@@ -2667,18 +2658,51 @@ static HANDLE gen_forward_chain_testdll( char testdll_path[MAX_PATH],
     return file;
 }
 
+struct ldr_notify_counter
+{
+    WCHAR path[MAX_PATH];
+
+    unsigned int load_count;
+    unsigned int unload_count;
+};
+
+static void CALLBACK ldr_notify_counter_callback(ULONG reason, LDR_DLL_NOTIFICATION_DATA *data, void *context)
+{
+    struct ldr_notify_counter *lnc = context;
+
+    switch (reason)
+    {
+    case LDR_DLL_NOTIFICATION_REASON_LOADED:
+        if (!wcsicmp( data->Loaded.BaseDllName->Buffer, lnc->path ))
+        {
+            lnc->load_count++;
+        }
+        break;
+
+    case LDR_DLL_NOTIFICATION_REASON_UNLOADED:
+        if (!wcsicmp( data->Unloaded.BaseDllName->Buffer, lnc->path ))
+        {
+            lnc->unload_count++;
+        }
+        break;
+    }
+}
+
 static void subtest_export_forwarder_dep_chain( size_t num_chained_export_modules,
                                                 size_t exporter_index,
-                                                BOOL test_static_import )
+                                                BOOL test_static_import,
+                                                ULONG first_module_load_flags )
 {
     size_t num_modules = num_chained_export_modules + !!test_static_import;
     size_t importer_index = test_static_import ? num_modules - 1 : 0;
     DWORD imp_thunk_base_rva, exp_func_base_rva;
     size_t ultimate_depender_index = 0; /* latest module depending on modules earlier in chain */
+    struct ldr_notify_counter lnc;
     char temp_paths[4][MAX_PATH];
     HANDLE temp_files[4];
     UINT_PTR exports[2];
     HMODULE modules[4];
+    void *cookie;
     BOOL res;
     size_t i;
 
@@ -2701,6 +2725,24 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
                                                    i == importer_index ? &imp_thunk_base_rva : NULL );
     }
 
+    if (first_module_load_flags & DONT_RESOLVE_DLL_REFERENCES)
+    {
+        NTSTATUS status;
+        WCHAR *basename;
+        int cres;
+
+        memset( &lnc, 0, sizeof(lnc) );
+
+        cres = MultiByteToWideChar( CP_ACP, 0, temp_paths[0], -1, lnc.path, ARRAY_SIZE(lnc.path) );
+        ok( cres >= 0, "MultiByteToWideChar returned %d (err %lu)\n", cres, GetLastError() );
+
+        basename = wcsrchr( lnc.path, L'\\' ) + 1;
+        memmove( lnc.path, basename, (char *)lnc.path + sizeof(lnc.path) - (char *)basename );
+
+        status = pLdrRegisterDllNotification( 0, ldr_notify_counter_callback, &lnc, &cookie );
+        ok( !status, "LdrRegisterDllNotification returned %#lx.\n", status );
+    }
+
     if (winetest_debug > 1)
         trace( "Load the entire test DLL chain\n" );
 
@@ -2711,7 +2753,7 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
         ok( !GetModuleHandleA( temp_paths[i] ), "%s already loaded\n",
             wine_dbgstr_a( temp_paths[i] ) );
 
-        modules[i] = LoadLibraryA( temp_paths[i] );
+        modules[i] = LoadLibraryExA( temp_paths[i], 0, i == 0 ? first_module_load_flags : 0 );
         ok( !!modules[i], "LoadLibraryA(temp_paths[%Iu] = %s) err=%lu\n",
             i, wine_dbgstr_a( temp_paths[i] ), GetLastError() );
 
@@ -2765,6 +2807,16 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
         ultimate_depender_index = max( ultimate_depender_index, exporter_index );
     }
 
+    if (first_module_load_flags & DONT_RESOLVE_DLL_REFERENCES)
+    {
+        LDR_DATA_TABLE_ENTRY *mod;
+        NTSTATUS status;
+
+        status = LdrFindEntryForAddress( modules[0], &mod );
+        ok( !status, "LdrFindEntryForAddress returned %#lx", status );
+        ok( !(mod->Flags & LDR_PROCESS_ATTACHED), "expected LDR_PROCESS_ATTACHED to be unset (Flags=%#lx)\n", mod->Flags );
+    }
+
     if (winetest_debug > 1)
         trace( "Unreference modules except the ultimate dependant DLL\n" );
 
@@ -2777,7 +2829,6 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
 
         /* FreeLibrary() should *not* unload the DLL immediately */
         module = GetModuleHandleA( temp_paths[i] );
-        todo_wine_if(i < ultimate_depender_index && i + 1 != importer_index)
         ok( module == modules[i], "modules[%Iu] expected %p, got %p (unloaded?) err=%lu\n",
             i, modules[i], module, GetLastError() );
     }
@@ -2789,7 +2840,6 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
     {
         HMODULE module = GetModuleHandleA( temp_paths[i] );
 
-        todo_wine_if(i < ultimate_depender_index && i + 1 != importer_index)
         ok( module == modules[i], "modules[%Iu] expected %p, got %p (unloaded?) err=%lu\n",
             i, modules[i], module, GetLastError() );
     }
@@ -2814,6 +2864,17 @@ static void subtest_export_forwarder_dep_chain( size_t num_chained_export_module
         ok( !GetModuleHandleA( temp_paths[i] ), "modules[%Iu] should not be kept loaded (3)\n", i );
     }
 
+    if (first_module_load_flags & DONT_RESOLVE_DLL_REFERENCES)
+    {
+        NTSTATUS status;
+
+        status = pLdrUnregisterDllNotification( cookie );
+        ok( !status, "LdrUnregisterDllNotification returned %#lx.\n", status );
+
+        ok( lnc.load_count == lnc.unload_count, "got %u/%u for load/unload count of 1st module\n", lnc.load_count, lnc.unload_count );
+        ok( !lnc.load_count || broken(lnc.load_count == 1) /* win7 */, "got %u for load count of first module\n", lnc.load_count );
+    }
+
     if (winetest_debug > 1)
         trace( "Close and delete temp files\n" );
 
@@ -2828,23 +2889,31 @@ static void test_export_forwarder_dep_chain(void)
 {
     winetest_push_context( "no import" );
     /* export forwarder does not introduce a dependency on its own */
-    subtest_export_forwarder_dep_chain( 2, 0, FALSE );
+    subtest_export_forwarder_dep_chain( 2, 0, FALSE, 0 );
     winetest_pop_context();
 
     winetest_push_context( "static import of export forwarder" );
-    subtest_export_forwarder_dep_chain( 2, 0, TRUE );
+    subtest_export_forwarder_dep_chain( 2, 0, TRUE, 0 );
     winetest_pop_context();
 
     winetest_push_context( "static import of chained export forwarder" );
-    subtest_export_forwarder_dep_chain( 3, 0, TRUE );
+    subtest_export_forwarder_dep_chain( 3, 0, TRUE, 0 );
     winetest_pop_context();
 
     winetest_push_context( "dynamic import of export forwarder" );
-    subtest_export_forwarder_dep_chain( 2, 1, FALSE );
+    subtest_export_forwarder_dep_chain( 2, 1, FALSE, 0 );
     winetest_pop_context();
 
     winetest_push_context( "dynamic import of chained export forwarder" );
-    subtest_export_forwarder_dep_chain( 3, 2, FALSE );
+    subtest_export_forwarder_dep_chain( 3, 2, FALSE, 0 );
+    winetest_pop_context();
+
+    winetest_push_context( "static import of dll already loaded with DONT_RESOLVE_DLL_REFERENCES" );
+    subtest_export_forwarder_dep_chain( 1, 0, TRUE, DONT_RESOLVE_DLL_REFERENCES );
+    winetest_pop_context();
+
+    winetest_push_context( "dynamic import of dll already loaded with DONT_RESOLVE_DLL_REFERENCES" );
+    subtest_export_forwarder_dep_chain( 2, 1, FALSE, DONT_RESOLVE_DLL_REFERENCES );
     winetest_pop_context();
 }
 
@@ -3190,7 +3259,7 @@ static BOOL WINAPI dll_entry_point(HINSTANCE hinst, DWORD reason, LPVOID param)
         addr = NULL;
         size = 0;
         ret = pNtMapViewOfSection(handle, process, &addr, 0, 0, &offset,
-                                  &size, 1 /* ViewShare */, 0, PAGE_READONLY);
+                                  &size, ViewShare, 0, PAGE_READONLY);
         ok(ret == STATUS_SUCCESS, "NtMapViewOfSection error %#lx\n", ret);
         ret = pNtUnmapViewOfSection(process, addr);
         ok(ret == STATUS_SUCCESS, "NtUnmapViewOfSection error %#lx\n", ret);
@@ -3330,16 +3399,15 @@ static void child_process(const char *dll_name, DWORD target_offset)
     DWORD ret, dummy, i, code, expected_code;
     HANDLE file, thread, process;
     HMODULE hmod;
-    struct PROCESS_BASIC_INFORMATION_PRIVATE pbi;
+    PROCESS_BASIC_INFORMATION pbi;
     DWORD_PTR affinity;
     void *cookie;
 
     trace("phase %d: writing %p at %#lx\n", test_dll_phase, dll_entry_point, target_offset);
 
-    if (pFlsAlloc)
+    if (pFlsAlloc && !NtCurrentTeb()->Peb->SparePointers[0] /* was FlsCallback */)
     {
-        fls_list_head = NtCurrentTeb()->Peb->FlsListHead.Flink ? &NtCurrentTeb()->Peb->FlsListHead
-                : NtCurrentTeb()->FlsSlots->fls_list_entry.Flink;
+        fls_list_head = NtCurrentTeb()->FlsSlots->fls_list_entry.Flink;
     }
 
     SetLastError(0xdeadbeef);
@@ -3637,7 +3705,7 @@ static void child_process(const char *dll_name, DWORD target_offset)
 static void test_ExitProcess(void)
 {
 #if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__)
-#include "pshpack1.h"
+#pragma pack(push,1)
 #ifdef __x86_64__
     static struct section_data
     {
@@ -3660,7 +3728,7 @@ static void test_ExitProcess(void)
         void *target;
     } section_data = { 0x58000040, 0xd61f0000, dll_entry_point };
 #endif
-#include "poppack.h"
+#pragma pack(pop)
     DWORD dummy, file_align;
     HANDLE file, thread, process, hmap, hmap_dup;
     char temp_path[MAX_PATH], dll_name[MAX_PATH], cmdline[MAX_PATH * 2];
@@ -3669,9 +3737,10 @@ static void test_ExitProcess(void)
     PROCESS_INFORMATION pi;
     STARTUPINFOA si = { sizeof(si) };
     CONTEXT ctx;
-    struct PROCESS_BASIC_INFORMATION_PRIVATE pbi;
+    PROCESS_BASIC_INFORMATION pbi;
     MEMORY_BASIC_INFORMATION mbi;
     DWORD_PTR affinity;
+    PROCESS_PRIORITY_CLASS ppc;
     void *addr;
     LARGE_INTEGER offset;
     SIZE_T size;
@@ -3959,7 +4028,7 @@ static void test_ExitProcess(void)
     addr = NULL;
     size = 0;
     ret = pNtMapViewOfSection(hmap, pi.hProcess, &addr, 0, 0, &offset,
-                              &size, 1 /* ViewShare */, 0, PAGE_READONLY);
+                              &size, ViewShare, 0, PAGE_READONLY);
     ok(!ret, "NtMapViewOfSection error %#lx\n", ret);
     ret = pNtUnmapViewOfSection(pi.hProcess, addr);
     ok(!ret, "NtUnmapViewOfSection error %#lx\n", ret);
@@ -4011,6 +4080,10 @@ static void test_ExitProcess(void)
     affinity = 1;
     ret = pNtSetInformationProcess(pi.hProcess, ProcessAffinityMask, &affinity, sizeof(affinity));
     ok(ret == STATUS_PROCESS_IS_TERMINATING, "expected STATUS_PROCESS_IS_TERMINATING, got %#lx\n", ret);
+    ppc.Foreground = FALSE;
+    ppc.PriorityClass = PROCESS_PRIOCLASS_BELOW_NORMAL;
+    ret = pNtSetInformationProcess(pi.hProcess, ProcessPriorityClass, &ppc, sizeof(ppc));
+    ok(ret == STATUS_SUCCESS, "expected STATUS_SUCCESS, got status %#lx\n", ret);
 
     SetLastError(0xdeadbeef);
     ctx.ContextFlags = CONTEXT_INTEGER;
@@ -4098,7 +4171,7 @@ if (0)
     addr = NULL;
     size = 0;
     ret = pNtMapViewOfSection(hmap, pi.hProcess, &addr, 0, 0, &offset,
-                              &size, 1 /* ViewShare */, 0, PAGE_READONLY);
+                              &size, ViewShare, 0, PAGE_READONLY);
     ok(ret == STATUS_PROCESS_IS_TERMINATING, "expected STATUS_PROCESS_IS_TERMINATING, got %#lx\n", ret);
 
     SetLastError(0xdeadbeef);
@@ -4302,7 +4375,7 @@ static void test_ResolveDelayLoadedAPI(void)
     ok(ret, "WriteFile error %ld\n", GetLastError());
 
     /* fill up to delay data */
-    SetFilePointer( hfile, nt_header.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress, NULL, SEEK_SET );
+    SetFilePointer( hfile, nt_header.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress, NULL, FILE_BEGIN );
 
     /* delay data */
     idd.Attributes.AllAttributes = 1;
@@ -4323,7 +4396,7 @@ static void test_ResolveDelayLoadedAPI(void)
     ok(ret, "WriteFile error %ld\n", GetLastError());
 
     /* fill up to extended delay data */
-    SetFilePointer( hfile, idd.DllNameRVA, NULL, SEEK_SET );
+    SetFilePointer( hfile, idd.DllNameRVA, NULL, FILE_BEGIN );
 
     /* extended delay data */
     SetLastError(0xdeadbeef);
@@ -4338,7 +4411,7 @@ static void test_ResolveDelayLoadedAPI(void)
     ret = WriteFile(hfile, test_func, sizeof(test_func), &dummy, NULL);
     ok(ret, "WriteFile error %ld\n", GetLastError());
 
-    SetFilePointer( hfile, idd.ImportAddressTableRVA, NULL, SEEK_SET );
+    SetFilePointer( hfile, idd.ImportAddressTableRVA, NULL, FILE_BEGIN );
 
     for (i = 0; i < ARRAY_SIZE(td); i++)
     {
@@ -4371,7 +4444,7 @@ static void test_ResolveDelayLoadedAPI(void)
     ok(ret, "WriteFile error %ld\n", GetLastError());
 
     /* fill up to eof */
-    SetFilePointer( hfile, section.VirtualAddress + section.Misc.VirtualSize, NULL, SEEK_SET );
+    SetFilePointer( hfile, section.VirtualAddress + section.Misc.VirtualSize, NULL, FILE_BEGIN );
     SetEndOfFile( hfile );
     CloseHandle(hfile);
 
@@ -4542,9 +4615,26 @@ static void test_wow64_redirection(void)
     char buffer[MAX_PATH];
     static const char *dlls[] = {"wlanapi.dll", "dxgi.dll", "dwrite.dll"};
     unsigned i;
+    HMODULE mod, mod_fixed, kernelbase;
+    IMAGE_NT_HEADERS *nt;
+    WORD machine;
 
     if (!is_wow64)
         return;
+
+    kernelbase = GetModuleHandleW(L"kernelbase.dll");
+    nt = RtlImageNtHeader(kernelbase);
+    machine = nt->FileHeader.Machine;
+
+    ok(!GetModuleHandleA("rasapi32.dll"), "rasapi32.dll is already loaded.\n");
+
+    mod = LoadLibraryExW(L"c:\\windows\\system32\\rasapi32.dll", 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    mod_fixed = (HMODULE)((ULONG_PTR)mod & ~(ULONG_PTR)3);
+    ok(!!mod_fixed, "got NULL.\n" );
+    nt = RtlImageNtHeader(mod_fixed);
+    ok(!!nt, "got NULL.\n");
+    ok(nt->FileHeader.Machine == machine, "got wrong machine.\n");
+    FreeLibrary(mod);
 
     /* Disable FS redirection, then test loading system libraries (pick ones that shouldn't
      * already be loaded in this process).
@@ -4557,6 +4647,34 @@ static void test_wow64_redirection(void)
         snprintf(buffer, ARRAY_SIZE(buffer), "%s\\%s", syswow_dir, dlls[i]);
         test_wow64_redirection_for_dll(buffer, TRUE);
     }
+
+    mod = LoadLibraryExW(L"c:\\windows\\system32\\kernelbase.dll", 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    ok(!!mod, "got NULL.\n" );
+    ok(mod == kernelbase, "got different modules.\n");
+    FreeLibrary(mod);
+
+    mod = LoadLibraryExW(L"c:\\windows\\system32\\kernelbase.dll", 0, LOAD_LIBRARY_AS_DATAFILE);
+    ok(!!mod, "got NULL.\n" );
+    ok(mod == kernelbase, "got different modules.\n");
+    FreeLibrary(mod);
+
+    ok(!GetModuleHandleA("rasapi32.dll"), "rasapi32.dll is already loaded.\n");
+    mod = LoadLibraryExW(L"c:\\windows\\system32\\rasapi32.dll", 0, LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    mod_fixed = (HMODULE)((ULONG_PTR)mod & ~(ULONG_PTR)3);
+    ok(!!mod_fixed, "got NULL.\n" );
+    nt = RtlImageNtHeader(mod_fixed);
+    ok(!!nt, "got NULL.\n");
+    ok(nt->FileHeader.Machine != machine, "got 32 bit dll.\n");
+    FreeLibrary(mod);
+
+    ok(!GetModuleHandleA("rasapi32.dll"), "rasapi32.dll is already loaded.\n");
+    mod = LoadLibraryExW(L"c:\\windows\\system32\\rasapi32.dll", 0, LOAD_LIBRARY_AS_DATAFILE);
+    mod_fixed = (HMODULE)((ULONG_PTR)mod & ~(ULONG_PTR)3);
+    ok(!!mod_fixed, "got NULL.\n" );
+    nt = RtlImageNtHeader(mod_fixed);
+    ok(!!nt, "got NULL.\n");
+    ok(nt->FileHeader.Machine != machine, "got 32 bit dll.\n");
+    FreeLibrary(mod);
 
     ok(pWow64RevertWow64FsRedirection(OldValue), "Re-enabling FS redirection failed\n");
     /* and results don't depend whether redirection is enabled or not */
@@ -4684,6 +4802,7 @@ START_TEST(loader)
     pRtlImageDirectoryEntryToData = (void *)GetProcAddress(ntdll, "RtlImageDirectoryEntryToData");
     pRtlImageNtHeader = (void *)GetProcAddress(ntdll, "RtlImageNtHeader");
     pLdrRegisterDllNotification = (void *)GetProcAddress(ntdll, "LdrRegisterDllNotification");
+    pLdrUnregisterDllNotification = (void *)GetProcAddress(ntdll, "LdrUnregisterDllNotification");
     pFlsAlloc = (void *)GetProcAddress(kernel32, "FlsAlloc");
     pFlsSetValue = (void *)GetProcAddress(kernel32, "FlsSetValue");
     pFlsGetValue = (void *)GetProcAddress(kernel32, "FlsGetValue");

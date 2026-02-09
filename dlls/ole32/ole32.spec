@@ -55,7 +55,7 @@
 @ stdcall CoInitializeSecurity(ptr long ptr ptr long long ptr long ptr) combase.CoInitializeSecurity
 @ stdcall CoInitializeWOW(long long) combase.CoInitializeWOW
 @ stdcall CoIsHandlerConnected(ptr) combase.CoIsHandlerConnected
-@ stdcall CoIsOle1Class (ptr)
+@ stdcall CoIsOle1Class(ptr) combase.CoIsOle1Class
 @ stdcall CoLoadLibrary(wstr long)
 @ stdcall CoLockObjectExternal(ptr long long) combase.CoLockObjectExternal
 @ stdcall CoMarshalHresult(ptr long) combase.CoMarshalHresult
@@ -87,7 +87,7 @@
 @ stdcall CoTaskMemAlloc(long) combase.CoTaskMemAlloc
 @ stdcall CoTaskMemFree(ptr) combase.CoTaskMemFree
 @ stdcall CoTaskMemRealloc(ptr long) combase.CoTaskMemRealloc
-@ stdcall CoTreatAsClass(ptr ptr)
+@ stdcall CoTreatAsClass(ptr ptr) combase.CoTreatAsClass
 @ stdcall CoUninitialize() combase.CoUninitialize
 @ stub CoUnloadingWOW
 @ stdcall CoUnmarshalHresult(ptr ptr) combase.CoUnmarshalHresult

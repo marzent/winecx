@@ -29,6 +29,7 @@
 #define WIN32_NO_STATUS
 #include "ntgdi_private.h"
 #include "ntuser_private.h"
+#include "wine/opengl_driver.h"
 #include "wine/server.h"
 #include "wine/debug.h"
 
@@ -547,6 +548,8 @@ W32KAPI struct window_surface *window_surface_create( UINT size, const struct wi
 
     pthread_mutex_init( &surface->mutex, NULL );
 
+    memset( window_surface_get_color( surface, info ), 0xff, info->bmiHeader.biSizeImage );
+
     TRACE( "created surface %p for hwnd %p rect %s\n", surface, hwnd, wine_dbgstr_rect( &surface->rect ) );
     return surface;
 }
@@ -769,7 +772,7 @@ static void shm_surface_destroy( struct window_surface *window_surface )
     struct shm_window_surface *surface = get_shm_surface( window_surface );
     OBJECT_ATTRIBUTES attr = { .Length = sizeof(OBJECT_ATTRIBUTES) };
     HANDLE parent_process;
-    NTSTATUS status;
+    unsigned int status;
     CLIENT_ID cid;
     HANDLE h2;
     DWORD pid;
@@ -1067,7 +1070,7 @@ static void update_visible_region( struct dce *dce )
                                         (flags & DCX_INTERSECTRGN) ? RGN_AND : RGN_DIFF );
 
     /* don't use a surface to paint the client area of OpenGL windows */
-    if (!(paint_flags & SET_WINPOS_PIXEL_FORMAT) || (flags & DCX_WINDOW))
+    if (!(paint_flags & SET_WINPOS_PIXEL_FORMAT && user_driver->dc_funcs.pPutImage) || (flags & DCX_WINDOW))
     {
         win = get_win_ptr( top_win );
         if (win && win != WND_DESKTOP && win != WND_OTHER_PROCESS)
@@ -1274,7 +1277,7 @@ static struct dce *get_window_dce( HWND hwnd )
  *
  * Free a class or window DCE.
  */
-void free_dce( struct dce *dce, HWND hwnd )
+void free_dce( struct dce *dce, HWND hwnd, struct list *drawables )
 {
     struct dce *dce_to_free = NULL;
 
@@ -1308,6 +1311,7 @@ void free_dce( struct dce *dce, HWND hwnd )
             {
                 WARN( "GetDC() without ReleaseDC() for window %p\n", hwnd );
                 dce->count = 0;
+                set_dc_pixel_format_internal( dce->hdc, 0, drawables );
                 set_dce_flags( dce->hdc, DCHF_DISABLEDC );
             }
         }
@@ -1321,6 +1325,18 @@ void free_dce( struct dce *dce, HWND hwnd )
         NtGdiDeleteObjectApp( dce_to_free->hdc );
         free( dce_to_free );
     }
+}
+
+BOOL is_cache_dc( HDC hdc )
+{
+    BOOL ret = FALSE;
+    struct dce *dce;
+
+    user_lock();
+    if ((dce = get_dc_dce( hdc ))) ret = !!(dce->flags & DCX_CACHE);
+    user_unlock();
+
+    return ret;
 }
 
 /***********************************************************************
@@ -1360,9 +1376,9 @@ void invalidate_dce( WND *win, const RECT *old_rect )
 
     if (!win->parent) return;
 
-    context = set_thread_dpi_awareness_context( get_window_dpi_awareness_context( win->obj.handle ));
+    context = set_thread_dpi_awareness_context( get_window_dpi_awareness_context( win->handle ) );
 
-    TRACE("%p parent %p, old_rect %s\n", win->obj.handle, win->parent, wine_dbgstr_rect(old_rect) );
+    TRACE( "%p parent %p, old_rect %s\n", win->handle, win->parent, wine_dbgstr_rect( old_rect ) );
 
     /* walk all DCEs and fixup non-empty entries */
 
@@ -1377,7 +1393,7 @@ void invalidate_dce( WND *win, const RECT *old_rect )
             continue;  /* child window positions don't bother us */
 
         /* if DCE window is a child of hwnd, it has to be invalidated */
-        if (dce->hwnd == win->obj.handle || is_child( win->obj.handle, dce->hwnd ))
+        if (dce->hwnd == win->handle || is_child( win->handle, dce->hwnd ))
         {
             make_dc_dirty( dce );
             continue;
@@ -1390,7 +1406,7 @@ void invalidate_dce( WND *win, const RECT *old_rect )
             struct window_rects rects;
 
             /* get the parent client-relative old/new window rects */
-            get_window_rects( win->obj.handle, COORDS_PARENT, &rects, get_thread_dpi() );
+            get_window_rects( win->handle, COORDS_PARENT, &rects, get_thread_dpi() );
             old_window_rect = old_rect ? *old_rect : rects.window;
             new_window_rect = rects.window;
 
@@ -1416,6 +1432,7 @@ void invalidate_dce( WND *win, const RECT *old_rect )
  */
 static INT release_dc( HWND hwnd, HDC hdc, BOOL end_paint )
 {
+    struct list drawables = LIST_INIT( drawables );
     struct dce *dce;
     BOOL ret = FALSE;
 
@@ -1430,11 +1447,14 @@ static INT release_dc( HWND hwnd, HDC hdc, BOOL end_paint )
         if (dce->flags & DCX_CACHE)
         {
             dce->count = 0;
+            set_dc_pixel_format_internal( hdc, 0, &drawables );
             set_dce_flags( dce->hdc, DCHF_DISABLEDC );
         }
         ret = TRUE;
     }
     user_unlock();
+
+    release_opengl_drawables( &drawables );
     return ret;
 }
 
@@ -1448,12 +1468,12 @@ HDC WINAPI NtUserGetDCEx( HWND hwnd, HRGN clip_rgn, DWORD flags )
     BOOL update_vis_rgn = TRUE;
     struct dce *dce;
     HWND parent;
-    LONG window_style = get_window_long( hwnd, GWL_STYLE );
+    DWORD window_style = get_window_long( hwnd, GWL_STYLE );
 
     if (!hwnd) hwnd = get_desktop_window();
     else hwnd = get_full_window_handle( hwnd );
 
-    TRACE( "hwnd %p, clip_rgn %p, flags %08x\n", hwnd, clip_rgn, (int)flags );
+    TRACE( "hwnd %p, clip_rgn %p, flags %08x\n", hwnd, clip_rgn, flags );
 
     if (!is_window(hwnd)) return 0;
 
@@ -1487,7 +1507,7 @@ HDC WINAPI NtUserGetDCEx( HWND hwnd, HRGN clip_rgn, DWORD flags )
 
     if( flags & DCX_PARENTCLIP )
     {
-        LONG parent_style = get_window_long( parent, GWL_STYLE );
+        DWORD parent_style = get_window_long( parent, GWL_STYLE );
         if( (window_style & WS_VISIBLE) && (parent_style & WS_VISIBLE) )
         {
             flags &= ~DCX_CLIPCHILDREN;
@@ -1579,7 +1599,7 @@ HDC WINAPI NtUserGetDCEx( HWND hwnd, HRGN clip_rgn, DWORD flags )
 
     if (update_vis_rgn) update_visible_region( dce );
 
-    TRACE( "(%p,%p,0x%x): returning %p%s\n", hwnd, clip_rgn, (int)flags, dce->hdc,
+    TRACE( "(%p,%p,0x%x): returning %p%s\n", hwnd, clip_rgn, flags, dce->hdc,
            update_vis_rgn ? " (updated)" : "" );
     return dce->hdc;
 }
@@ -1778,7 +1798,8 @@ static HRGN send_ncpaint( HWND hwnd, HWND *child, UINT *flags )
                 if (style & WS_VSCROLL)
                     set_standard_scroll_painted( hwnd, SB_VERT, FALSE );
 
-                send_message( hwnd, WM_NCPAINT, (WPARAM)whole_rgn, 0 );
+                /* CW Hack 20969, 23427 */
+                send_notify_message( hwnd, WM_NCPAINT, (WPARAM)whole_rgn, 0, FALSE );
             }
             if (whole_rgn > (HRGN)1) NtGdiDeleteObjectApp( whole_rgn );
         }
@@ -1815,7 +1836,11 @@ static BOOL send_erase( HWND hwnd, UINT flags, HRGN client_rgn,
             {
                 /* don't erase if the clip box is empty */
                 if (type != NULLREGION)
-                    need_erase = !send_message( hwnd, WM_ERASEBKGND, (WPARAM)hdc, 0 );
+                {
+                    /* CW Hack 23394, 23427 */
+                    need_erase = !send_message_timeout( hwnd, WM_ERASEBKGND, (WPARAM)hdc, 0, SMTO_ABORTIFHUNG, 1000, FALSE );
+                    if (need_erase && RtlGetLastWin32Error() == ERROR_TIMEOUT) ERR( "timeout.\n" );
+                }
             }
             if (!hdc_ret) release_dc( hwnd, hdc, TRUE );
         }
@@ -2009,7 +2034,7 @@ BOOL WINAPI NtUserRedrawWindow( HWND hwnd, const RECT *rect, HRGN hrgn, UINT fla
     }
 
     /* process pending expose events before painting */
-    if (flags & RDW_UPDATENOW) user_driver->pProcessEvents( QS_PAINT );
+    if (flags & RDW_UPDATENOW) check_for_events( QS_PAINT );
 
     if (rect && !hrgn)
     {
@@ -2060,6 +2085,20 @@ BOOL WINAPI NtUserValidateRect( HWND hwnd, const RECT *rect )
     }
 
     return NtUserRedrawWindow( hwnd, rect, 0, flags );
+}
+
+/***********************************************************************
+ *           NtUserValidateRgn (win32u.@)
+ */
+BOOL WINAPI NtUserValidateRgn( HWND hwnd, HRGN hrgn )
+{
+    if (!hwnd)
+    {
+        RtlSetLastWin32Error( ERROR_INVALID_WINDOW_HANDLE );
+        return FALSE;
+    }
+
+    return NtUserRedrawWindow( hwnd, NULL, hrgn, RDW_VALIDATE );
 }
 
 /***********************************************************************
@@ -2273,10 +2312,13 @@ INT WINAPI NtUserScrollWindowEx( HWND hwnd, INT dx, INT dy, const RECT *rect,
     rdw_flags = (flags & SW_ERASE) && (flags & SW_INVALIDATE) ?
         RDW_INVALIDATE | RDW_ERASE  : RDW_INVALIDATE;
 
-    if (!is_window_drawable( hwnd, TRUE )) return ERROR;
     hwnd = get_full_window_handle( hwnd );
 
-    get_client_rect( hwnd, &rc, get_thread_dpi() );
+    if (!is_window_drawable( hwnd, TRUE ))
+        SetRectEmpty( &rc );
+    else
+        get_client_rect( hwnd, &rc, get_thread_dpi() );
+
     if (clip_rect) intersect_rect( &cliprc, &rc, clip_rect );
     else cliprc = rc;
 
@@ -2390,7 +2432,7 @@ INT WINAPI NtUserScrollWindowEx( HWND hwnd, INT dx, INT dy, const RECT *rect,
         NtGdiDeleteObjectApp( winupd_rgn );
     }
 
-    if (move_caret) set_caret_pos( new_caret_pos.x, new_caret_pos.y );
+    if (move_caret) NtUserSetCaretPos( new_caret_pos.x, new_caret_pos.y );
     if (caret_hwnd) NtUserShowCaret( caret_hwnd );
     if (own_rgn && update_rgn) NtGdiDeleteObjectApp( update_rgn );
 

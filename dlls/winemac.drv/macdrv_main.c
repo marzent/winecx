@@ -43,27 +43,23 @@ WINE_DEFAULT_DEBUG_CHANNEL(macdrv);
 C_ASSERT(NUM_EVENT_TYPES <= sizeof(macdrv_event_mask) * 8);
 
 int topmost_float_inactive = TOPMOST_FLOAT_INACTIVE_NONFULLSCREEN;
-int capture_displays_for_fullscreen = 0;
-BOOL skip_single_buffer_flushes = FALSE;
+bool capture_displays_for_fullscreen = false;
 BOOL allow_vsync = TRUE;
 BOOL allow_set_gamma = TRUE;
 /* CrossOver Hack 10912: Mac Edit menu */
 int mac_edit_menu = MAC_EDIT_MENU_BY_KEY;
-int left_option_is_alt = 0;
-int right_option_is_alt = 0;
-int left_command_is_ctrl = 0;
-int right_command_is_ctrl = 0;
+bool left_option_is_alt = false;
+bool right_option_is_alt = false;
+bool left_command_is_ctrl = false;
+bool right_command_is_ctrl = false;
 BOOL allow_software_rendering = FALSE;
-int allow_immovable_windows = TRUE;
-int use_confinement_cursor_clipping = TRUE;
-int cursor_clipping_locks_windows = TRUE;
-int use_precise_scrolling = TRUE;
+bool allow_immovable_windows = true;
+bool use_confinement_cursor_clipping = true;
+bool cursor_clipping_locks_windows = true;
+bool use_precise_scrolling = true;
 int gl_surface_mode = GL_SURFACE_IN_FRONT_OPAQUE;
-int retina_enabled = FALSE;
-int enable_app_nap = FALSE;
-
-/* CrossOver Hack 14364 */
-BOOL force_backing_store = FALSE;
+bool retina_enabled = false;
+bool enable_app_nap = false;
 
 UINT64 app_icon_callback = 0;
 UINT64 app_quit_request_callback = 0;
@@ -142,12 +138,12 @@ HKEY open_hkcu_key(const char *name)
 
         sid = ((TOKEN_USER *)sid_data)->User.Sid;
         len = snprintf(buffer, sizeof(buffer), "\\Registry\\User\\S-%u-%u", sid->Revision,
-                      (unsigned int)MAKELONG(MAKEWORD(sid->IdentifierAuthority.Value[5],
-                                                      sid->IdentifierAuthority.Value[4]),
-                                             MAKEWORD(sid->IdentifierAuthority.Value[3],
-                                                      sid->IdentifierAuthority.Value[2])));
+                        MAKELONG(MAKEWORD(sid->IdentifierAuthority.Value[5],
+                                           sid->IdentifierAuthority.Value[4]),
+                                  MAKEWORD(sid->IdentifierAuthority.Value[3],
+                                            sid->IdentifierAuthority.Value[2])));
         for (i = 0; i < sid->SubAuthorityCount; i++)
-            len += snprintf(buffer + len, sizeof(buffer) - len, "-%u", (unsigned int)sid->SubAuthority[i]);
+            len += snprintf(buffer + len, sizeof(buffer) - len, "-%u", sid->SubAuthority[i]);
 
         ascii_to_unicode(bufferW, buffer, len);
         hkcu = reg_open_key(NULL, bufferW, len * sizeof(WCHAR));
@@ -330,9 +326,6 @@ static void setup_options(void)
     if (!get_config_key(hkey, appkey, "CaptureDisplaysForFullscreen", buffer, sizeof(buffer)))
         capture_displays_for_fullscreen = IS_OPTION_TRUE(buffer[0]);
 
-    if (!get_config_key(hkey, appkey, "SkipSingleBufferFlushes", buffer, sizeof(buffer)))
-        skip_single_buffer_flushes = IS_OPTION_TRUE(buffer[0]);
-
     if (!get_config_key(hkey, appkey, "AllowVerticalSync", buffer, sizeof(buffer)))
         allow_vsync = IS_OPTION_TRUE(buffer[0]);
 
@@ -402,10 +395,6 @@ static void setup_options(void)
         retina_enabled = IS_OPTION_TRUE(buffer[0]);
 
     retina_on = retina_enabled;
-
-    /* CrossOver Hack 14364 */
-    if (!get_config_key(hkey, appkey, "ForceOpenGLBackingStore", buffer, sizeof(buffer)))
-        force_backing_store = IS_OPTION_TRUE(buffer[0]);
 
     if (appkey) NtClose(appkey);
     if (hkey) NtClose(hkey);

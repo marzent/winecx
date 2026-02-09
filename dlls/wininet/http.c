@@ -3277,10 +3277,10 @@ static DWORD HTTPREQ_ReadFile(object_header_t *hdr, void *buf, DWORD size, DWORD
     if(allow_blocking || TryEnterCriticalSection(&req->read_section)) {
         if(allow_blocking)
             EnterCriticalSection(&req->read_section);
-        if(hdr->dwError == ERROR_SUCCESS)
-            hdr->dwError = INTERNET_HANDLE_IN_USE;
-        else if(hdr->dwError == INTERNET_HANDLE_IN_USE)
-            hdr->dwError = ERROR_INTERNET_INTERNAL_ERROR;
+        if(!req->state)
+            req->state = INTERNET_HANDLE_IN_USE;
+        else if(req->state == INTERNET_HANDLE_IN_USE)
+            req->state = ERROR_INTERNET_INTERNAL_ERROR;
 
         if(req->read_size) {
             read = min(size, req->read_size);
@@ -3312,10 +3312,10 @@ static DWORD HTTPREQ_ReadFile(object_header_t *hdr, void *buf, DWORD size, DWORD
             }
         }
 
-        if(hdr->dwError == INTERNET_HANDLE_IN_USE)
-            hdr->dwError = ERROR_SUCCESS;
+        if(req->state == INTERNET_HANDLE_IN_USE)
+            req->state = 0;
         else
-            error = hdr->dwError;
+            error = req->state;
 
         LeaveCriticalSection( &req->read_section );
     }else {
@@ -3373,10 +3373,10 @@ static DWORD HTTPREQ_QueryDataAvailable(object_header_t *hdr, DWORD *available, 
     if(allow_blocking || TryEnterCriticalSection(&req->read_section)) {
         if(allow_blocking)
             EnterCriticalSection(&req->read_section);
-        if(hdr->dwError == ERROR_SUCCESS)
-            hdr->dwError = INTERNET_HANDLE_IN_USE;
-        else if(hdr->dwError == INTERNET_HANDLE_IN_USE)
-            hdr->dwError = ERROR_INTERNET_INTERNAL_ERROR;
+        if(!req->state)
+            req->state = INTERNET_HANDLE_IN_USE;
+        else if(req->state == INTERNET_HANDLE_IN_USE)
+            req->state = ERROR_INTERNET_INTERNAL_ERROR;
 
         avail = req->read_size;
         if(req->cache_size > req->content_pos)
@@ -3391,10 +3391,10 @@ static DWORD HTTPREQ_QueryDataAvailable(object_header_t *hdr, DWORD *available, 
             res = refill_read_buffer(req, allow_blocking, &avail);
         }
 
-        if(hdr->dwError == INTERNET_HANDLE_IN_USE)
-            hdr->dwError = ERROR_SUCCESS;
+        if(req->state == INTERNET_HANDLE_IN_USE)
+            req->state = 0;
         else
-            error = hdr->dwError;
+            error = req->state;
 
         LeaveCriticalSection( &req->read_section );
     }else {
@@ -5218,12 +5218,14 @@ static DWORD HTTP_HttpSendRequestW(http_request_t *request, LPCWSTR lpszHeaders,
                 case HTTP_STATUS_MOVED:
                 case HTTP_STATUS_REDIRECT_KEEP_VERB:
                 case HTTP_STATUS_REDIRECT_METHOD:
+                case HTTP_STATUS_PERMANENT_REDIRECT:
                     new_url = get_redirect_url(request);
                     if(!new_url)
                         break;
 
                     if (wcscmp(request->verb, L"GET") && wcscmp(request->verb, L"HEAD") &&
-                        request->status_code != HTTP_STATUS_REDIRECT_KEEP_VERB)
+                        request->status_code != HTTP_STATUS_REDIRECT_KEEP_VERB &&
+                        request->status_code != HTTP_STATUS_PERMANENT_REDIRECT)
                     {
                         free(request->verb);
                         request->verb = wcsdup(L"GET");
@@ -5413,7 +5415,8 @@ static DWORD HTTP_HttpEndRequestW(http_request_t *request, DWORD dwFlags, DWORD_
         case HTTP_STATUS_REDIRECT:
         case HTTP_STATUS_MOVED:
         case HTTP_STATUS_REDIRECT_METHOD:
-        case HTTP_STATUS_REDIRECT_KEEP_VERB: {
+        case HTTP_STATUS_REDIRECT_KEEP_VERB:
+        case HTTP_STATUS_PERMANENT_REDIRECT: {
             WCHAR *new_url;
 
             new_url = get_redirect_url(request);
@@ -5421,7 +5424,8 @@ static DWORD HTTP_HttpEndRequestW(http_request_t *request, DWORD dwFlags, DWORD_
                 break;
 
             if (wcscmp(request->verb, L"GET") && wcscmp(request->verb, L"HEAD") &&
-                request->status_code != HTTP_STATUS_REDIRECT_KEEP_VERB)
+                request->status_code != HTTP_STATUS_REDIRECT_KEEP_VERB &&
+                request->status_code != HTTP_STATUS_PERMANENT_REDIRECT)
             {
                 free(request->verb);
                 request->verb = wcsdup(L"GET");

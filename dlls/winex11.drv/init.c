@@ -31,6 +31,7 @@
 #include "winbase.h"
 #include "winreg.h"
 #include "x11drv.h"
+#include "xcomposite.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(x11drv);
@@ -194,6 +195,13 @@ static HFONT X11DRV_SelectFont( PHYSDEV dev, HFONT hfont, UINT *aa_flags )
     return dev->funcs->pSelectFont( dev, hfont, aa_flags );
 }
 
+static BOOL get_surface_rect( HWND hwnd, RECT *rect, UINT dpi )
+{
+    if (!NtUserGetPresentRect( hwnd, rect, dpi ) && !NtUserGetClientRect( hwnd, rect, dpi )) return FALSE;
+    OffsetRect( rect, -rect->left, -rect->top );
+    return TRUE;
+}
+
 static BOOL needs_client_window_clipping( HWND hwnd )
 {
     RECT rect, client;
@@ -201,7 +209,8 @@ static BOOL needs_client_window_clipping( HWND hwnd )
     HRGN region;
     HDC hdc;
 
-    NtUserGetClientRect( hwnd, &client, NtUserGetDpiForWindow( hwnd ) );
+    if (NtUserGetPresentRect( hwnd, &client, 0 )) return FALSE;
+    if (!NtUserGetClientRect( hwnd, &client, NtUserGetDpiForWindow( hwnd ) )) return FALSE;
     OffsetRect( &client, -client.left, -client.top );
 
     if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_USESTYLE ))) return FALSE;
@@ -217,11 +226,11 @@ static BOOL needs_client_window_clipping( HWND hwnd )
     return ret > 0;
 }
 
-BOOL needs_offscreen_rendering( HWND hwnd, BOOL known_child )
+BOOL needs_offscreen_rendering( HWND hwnd )
 {
     if (NtUserGetDpiForWindow( hwnd ) != NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI )) return TRUE; /* needs DPI scaling */
     if (NtUserGetAncestor( hwnd, GA_PARENT ) != NtUserGetDesktopWindow()) return TRUE; /* child window, needs compositing */
-    if (NtUserGetWindowRelative( hwnd, GW_CHILD ) || known_child) return needs_client_window_clipping( hwnd ); /* window has children, needs compositing */
+    if (NtUserGetWindowRelative( hwnd, GW_CHILD )) return needs_client_window_clipping( hwnd ); /* window has children, needs compositing */
     return FALSE;
 }
 
@@ -253,6 +262,247 @@ HRGN get_dc_monitor_region( HWND hwnd, HDC hdc )
     if (NtGdiGetRandomRgn( hdc, region, SYSRGN | NTGDI_RGN_MONITOR_DPI ) > 0) return region;
     NtGdiDeleteObjectApp( region );
     return 0;
+}
+
+static const struct client_surface_funcs x11drv_client_surface_funcs;
+
+struct x11drv_client_surface
+{
+    struct client_surface client;
+    XWindowChanges changes;
+    Colormap colormap;
+    Window window;
+    RECT rect;
+
+    HDC hdc_src;
+    HDC hdc_dst;
+};
+
+static struct x11drv_client_surface *impl_from_client_surface( struct client_surface *client )
+{
+    return CONTAINING_RECORD( client, struct x11drv_client_surface, client );
+}
+
+static void x11drv_client_surface_destroy( struct client_surface *client )
+{
+    struct x11drv_client_surface *surface = impl_from_client_surface( client );
+    HWND hwnd = client->hwnd;
+
+    TRACE( "%s\n", debugstr_client_surface( client ) );
+
+    if (surface->colormap != default_colormap) XFreeColormap( gdi_display, surface->colormap );
+    if (surface->window) destroy_client_window( hwnd, surface->window );
+    if (surface->hdc_dst) NtGdiDeleteObjectApp( surface->hdc_dst );
+    if (surface->hdc_src) NtGdiDeleteObjectApp( surface->hdc_src );
+}
+
+static void x11drv_client_surface_detach( struct client_surface *client )
+{
+    struct x11drv_client_surface *surface = impl_from_client_surface( client );
+    Window client_window = surface->window;
+    struct x11drv_win_data *data;
+    HWND hwnd = client->hwnd;
+
+    TRACE( "%s\n", debugstr_client_surface( client ) );
+
+    if ((data = get_win_data( hwnd )))
+    {
+        detach_client_window( data, client_window );
+        release_win_data( data );
+    }
+}
+
+static void client_surface_update_geometry( HWND hwnd, struct x11drv_client_surface *surface )
+{
+    UINT dpi = NtUserGetDpiForWindow( hwnd ); /* use window DPI here, DPI scaling is handled through offscreen presentation */
+    HWND origin = hwnd, toplevel = NtUserGetAncestor( hwnd, GA_ROOT );
+    XWindowChanges changes = surface->changes;
+    struct x11drv_win_data *data;
+    int mask = 0;
+    RECT rect;
+
+    if (NtUserGetPresentRect( hwnd, &rect, dpi )) OffsetRect( &rect, -rect.left, -rect.top );
+    else if (!NtUserGetClientRect( hwnd, &rect, dpi )) return;
+    else NtUserMapWindowPoints( origin, toplevel, (POINT *)&rect, 2, dpi );
+
+    if ((data = get_win_data( toplevel )))
+    {
+        OffsetRect( &rect, data->rects.client.left - data->rects.visible.left,
+                    data->rects.client.top - data->rects.visible.top );
+        release_win_data( data );
+    }
+
+    changes.x = rect.left;
+    changes.y = rect.top;
+    changes.width  = min( max( 1, rect.right - rect.left ), 65535 );
+    changes.height = min( max( 1, rect.bottom - rect.top ), 65535 );
+    OffsetRect( &rect, -rect.left, -rect.top );
+    surface->rect = rect;
+
+    if (changes.x != surface->changes.x) mask |= CWX;
+    if (changes.y != surface->changes.y) mask |= CWY;
+    if (changes.width != surface->changes.width) mask |= CWWidth;
+    if (changes.height != surface->changes.height) mask |= CWHeight;
+    if (!mask) return;
+
+    surface->changes = changes;
+    TRACE( "client window %p/%lx, requesting position %d,%d size %d,%d mask %#x\n", hwnd,
+           surface->window, changes.x, changes.y, changes.width, changes.height, mask );
+    XConfigureWindow( gdi_display, surface->window, mask, &changes );
+}
+
+static void client_surface_update_offscreen( HWND hwnd, struct x11drv_client_surface *surface )
+{
+    BOOL offscreen = needs_offscreen_rendering( hwnd );
+    struct x11drv_win_data *data;
+
+    TRACE( "%s offscreen %u\n", debugstr_client_surface( &surface->client ), offscreen );
+
+    if (InterlockedExchange( &surface->client.offscreen, offscreen ) == offscreen)
+    {
+        if (!offscreen && (data = get_win_data( hwnd )))
+        {
+            attach_client_window( data, surface->window );
+            release_win_data( data );
+        }
+        return;
+    }
+
+    if (!offscreen)
+    {
+#ifdef SONAME_LIBXCOMPOSITE
+        if (usexcomposite) pXCompositeUnredirectWindow( gdi_display, surface->window, CompositeRedirectManual );
+#endif
+        if (surface->hdc_dst)
+        {
+            NtGdiDeleteObjectApp( surface->hdc_dst );
+            surface->hdc_dst = NULL;
+        }
+        if (surface->hdc_src)
+        {
+            NtGdiDeleteObjectApp( surface->hdc_src );
+            surface->hdc_src = NULL;
+        }
+    }
+    else
+    {
+        static const WCHAR displayW[] = {'D','I','S','P','L','A','Y', 0};
+        UNICODE_STRING device_str = RTL_CONSTANT_STRING(displayW);
+        surface->hdc_dst = NtGdiOpenDCW( &device_str, NULL, NULL, 0, TRUE, NULL, NULL, NULL );
+        surface->hdc_src = NtGdiOpenDCW( &device_str, NULL, NULL, 0, TRUE, NULL, NULL, NULL );
+        set_dc_drawable( surface->hdc_src, surface->window, &surface->rect, IncludeInferiors );
+#ifdef SONAME_LIBXCOMPOSITE
+        if (usexcomposite) pXCompositeRedirectWindow( gdi_display, surface->window, CompositeRedirectManual );
+#endif
+    }
+
+    if ((data = get_win_data( hwnd )))
+    {
+        if (offscreen) detach_client_window( data, surface->window );
+        else attach_client_window( data, surface->window );
+        release_win_data( data );
+    }
+}
+
+static void x11drv_client_surface_update( struct client_surface *client )
+{
+    struct x11drv_client_surface *surface = impl_from_client_surface( client );
+    HWND hwnd = client->hwnd;
+
+    TRACE( "%s\n", debugstr_client_surface( client ) );
+
+    client_surface_update_geometry( hwnd, surface );
+    client_surface_update_offscreen( hwnd, surface );
+}
+
+static void X11DRV_client_surface_present( struct client_surface *client, HDC hdc )
+{
+    struct x11drv_client_surface *surface = impl_from_client_surface( client );
+    HWND hwnd = client->hwnd, toplevel = NtUserGetAncestor( hwnd, GA_ROOT );
+    struct x11drv_win_data *data;
+    RECT rect_dst, rect;
+    Drawable window;
+    HRGN region;
+
+    TRACE( "%s\n", debugstr_client_surface( client ) );
+
+    client_surface_update_geometry( hwnd, surface );
+    client_surface_update_offscreen( hwnd, surface );
+
+    if (!hdc) return;
+    window = X11DRV_get_whole_window( toplevel );
+
+    if (NtUserGetPresentRect( toplevel, &rect_dst, -1 /* raw dpi */ ))
+    {
+        region = 0; /* window is exclusive fullscreen, ignore everything else */
+        if (toplevel != hwnd) return; /* toplevel is exclusive fullscreen, don't present */
+        OffsetRect( &rect_dst, -rect_dst.left, -rect_dst.top );
+    }
+    else
+    {
+        region = get_dc_monitor_region( hwnd, hdc ); /* otherwise use the window region for clipping rules */
+        if (!NtUserGetClientRect( hwnd, &rect_dst, NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) )) goto done;
+        NtUserMapWindowPoints( hwnd, toplevel, (POINT *)&rect_dst, 2, NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) );
+    }
+
+    if ((data = get_win_data( toplevel )))
+    {
+        OffsetRect( &rect_dst, data->rects.client.left - data->rects.visible.left,
+                    data->rects.client.top - data->rects.visible.top );
+        release_win_data( data );
+    }
+
+    if (get_dc_drawable( surface->hdc_dst, &rect ) != window || !EqualRect( &rect, &rect_dst ))
+        set_dc_drawable( surface->hdc_dst, window, &rect_dst, IncludeInferiors );
+    if (region) NtGdiExtSelectClipRgn( surface->hdc_dst, region, RGN_COPY );
+
+    NtGdiStretchBlt( surface->hdc_dst, 0, 0, rect_dst.right - rect_dst.left, rect_dst.bottom - rect_dst.top,
+                     surface->hdc_src, 0, 0, surface->rect.right, surface->rect.bottom, SRCCOPY, 0 );
+    XFlush( gdi_display );
+
+done:
+    if (region) NtGdiDeleteObjectApp( region );
+}
+
+static const struct client_surface_funcs x11drv_client_surface_funcs =
+{
+    .destroy = x11drv_client_surface_destroy,
+    .detach = x11drv_client_surface_detach,
+    .update = x11drv_client_surface_update,
+    .present = X11DRV_client_surface_present,
+};
+
+static int visual_class_alloc( int class )
+{
+    return class == PseudoColor || class == GrayScale || class == DirectColor ? AllocAll : AllocNone;
+}
+
+Window x11drv_client_surface_create( HWND hwnd, int format, struct client_surface **client )
+{
+    struct x11drv_client_surface *surface;
+    XVisualInfo visual = default_visual;
+    Colormap colormap;
+
+    if (format && !visual_from_pixel_format( format, &visual )) return None;
+
+    if (visual.visualid == default_visual.visualid) colormap = default_colormap;
+    else colormap = XCreateColormap( gdi_display, get_dummy_parent(), visual.visual, visual_class_alloc( visual.class ) );
+    if (!colormap) return None;
+
+    if (!(surface = client_surface_create( sizeof(*surface), &x11drv_client_surface_funcs, hwnd ))) goto failed;
+    surface->colormap = colormap;
+
+    if (!get_surface_rect( hwnd, &surface->rect, NtUserGetDpiForWindow( hwnd ) )) goto failed;
+    if (!(surface->window = create_client_window( hwnd, surface->rect, &visual, colormap ))) goto failed;
+
+    TRACE( "Created %s for client window %lx\n", debugstr_client_surface( &surface->client ), surface->window );
+    *client = &surface->client;
+    return surface->window;
+
+failed:
+    if (surface) client_surface_release( &surface->client );
+    else if (colormap != default_colormap) XFreeColormap( gdi_display, colormap );
+    return None;
 }
 
 /**********************************************************************
@@ -371,14 +621,6 @@ static INT X11DRV_ExtEscape( PHYSDEV dev, INT escape, INT in_count, LPCVOID in_d
     return 0;
 }
 
-/**********************************************************************
- *           X11DRV_wine_get_wgl_driver
- */
-static struct opengl_funcs *X11DRV_wine_get_wgl_driver( UINT version )
-{
-    return get_glx_driver( version );
-}
-
 
 static const struct user_driver_funcs x11drv_funcs =
 {
@@ -393,7 +635,6 @@ static const struct user_driver_funcs x11drv_funcs =
     .dc_funcs.pFillPath = X11DRV_FillPath,
     .dc_funcs.pGetDeviceCaps = X11DRV_GetDeviceCaps,
     .dc_funcs.pGetDeviceGammaRamp = X11DRV_GetDeviceGammaRamp,
-    .dc_funcs.pGetICMProfile = X11DRV_GetICMProfile,
     .dc_funcs.pGetImage = X11DRV_GetImage,
     .dc_funcs.pGetNearestColor = X11DRV_GetNearestColor,
     .dc_funcs.pGetSystemPaletteEntries = X11DRV_GetSystemPaletteEntries,
@@ -454,10 +695,10 @@ static const struct user_driver_funcs x11drv_funcs =
     .pScrollDC = X11DRV_ScrollDC,
     .pSetCapture = X11DRV_SetCapture,
     .pSetDesktopWindow = X11DRV_SetDesktopWindow,
-    .pSetFocus = X11DRV_SetFocus,
+    .pActivateWindow = X11DRV_ActivateWindow,
     .pSetLayeredWindowAttributes = X11DRV_SetLayeredWindowAttributes,
     .pSetParent = X11DRV_SetParent,
-    .pSetWindowIcon = X11DRV_SetWindowIcon,
+    .pSetWindowIcons = X11DRV_SetWindowIcons,
     .pSetWindowRgn = X11DRV_SetWindowRgn,
     .pSetWindowStyle = X11DRV_SetWindowStyle,
     .pSetWindowText = X11DRV_SetWindowText,
@@ -474,8 +715,9 @@ static const struct user_driver_funcs x11drv_funcs =
     .pMoveWindowBits = X11DRV_MoveWindowBits,
     .pWindowPosChanged = X11DRV_WindowPosChanged,
     .pSystemParametersInfo = X11DRV_SystemParametersInfo,
+    .pWintabProc = X11DRV_WintabProc,
     .pVulkanInit = X11DRV_VulkanInit,
-    .pwine_get_wgl_driver = X11DRV_wine_get_wgl_driver,
+    .pOpenGLInit = X11DRV_OpenGLInit,
     .pThreadDetach = X11DRV_ThreadDetach,
 };
 

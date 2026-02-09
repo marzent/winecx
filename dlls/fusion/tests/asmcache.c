@@ -42,7 +42,7 @@ typedef struct
     WORD Streams;
 } METADATAHDR;
 
-#include <pshpack1.h>
+#pragma pack(push,1)
 
 typedef struct
 {
@@ -192,7 +192,7 @@ typedef struct
     BYTE Data[168];
 } RESOURCE;
 
-#include <poppack.h>
+#pragma pack(pop)
 
 static struct _tagASSEMBLY
 {
@@ -769,13 +769,18 @@ static BOOL init_functionpointers(void)
         return FALSE;
     }
 
-    hr = pLoadLibraryShim(L"fusion.dll", NULL, NULL, &hfusion);
+    hr = pLoadLibraryShim(L"fusion.dll", L"v4.0.30319", NULL, &hfusion);
     if (FAILED(hr))
     {
-        win_skip("fusion.dll not available\n");
-        FreeLibrary(hmscoree);
-        return FALSE;
+        hr = pLoadLibraryShim(L"fusion.dll", NULL, NULL, &hfusion);
+        if (FAILED(hr))
+        {
+            win_skip("fusion.dll not available %08lx\n", hr);
+            FreeLibrary(hmscoree);
+            return FALSE;
+        }
     }
+    else trace("using .NET version 4\n");
 
     pCreateAssemblyCache = (void *)GetProcAddress(hfusion, "CreateAssemblyCache");
     pGetCachePath = (void *)GetProcAddress(hfusion, "GetCachePath");

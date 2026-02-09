@@ -11,7 +11,7 @@
 
 #include <corecrt.h>
 
-#include <pshpack8.h>
+#pragma pack(push,8)
 
 #ifdef __cplusplus
 extern "C" {
@@ -287,6 +287,9 @@ static const union {
 _ACRTIMP short __cdecl _dtest(double*);
 _ACRTIMP short __cdecl _ldtest(long double*);
 _ACRTIMP short __cdecl _fdtest(float*);
+_ACRTIMP int   __cdecl _dsign(double);
+_ACRTIMP int   __cdecl _ldsign(long double);
+_ACRTIMP int   __cdecl _fdsign(float);
 
 #ifdef __cplusplus
 
@@ -294,17 +297,19 @@ extern "C++" {
 inline int fpclassify(float x) throw() { return _fdtest(&x); }
 inline int fpclassify(double x) throw() { return _dtest(&x); }
 inline int fpclassify(long double x) throw() { return _ldtest(&x); }
+inline bool signbit(float x) throw() { return _fdsign(x) != 0; }
+inline bool signbit(double x) throw() { return _dsign(x) != 0; }
+inline bool signbit(long double x) throw() { return _ldsign(x) != 0; }
 template <class T> inline bool isfinite(T x) throw() { return fpclassify(x) <= 0; }
 template <class T> inline bool isinf(T x) throw() { return fpclassify(x) == FP_INFINITE; }
 template <class T> inline bool isnan(T x) throw() { return fpclassify(x) == FP_NAN; }
+template <class T> inline bool isnormal(T x) throw() { return fpclassify(x) == FP_NORMAL; }
 } /* extern "C++" */
 
 #elif _MSVCR_VER >= 120
 
 _ACRTIMP short __cdecl _dclass(double);
 _ACRTIMP short __cdecl _fdclass(float);
-_ACRTIMP int   __cdecl _dsign(double);
-_ACRTIMP int   __cdecl _fdsign(float);
 
 #define fpclassify(x) (sizeof(x) == sizeof(float) ? _fdclass(x) : _dclass(x))
 #define signbit(x)    (sizeof(x) == sizeof(float) ? _fdsign(x) : _dsign(x))
@@ -312,6 +317,13 @@ _ACRTIMP int   __cdecl _fdsign(float);
 #define isnan(x)      (fpclassify(x) == FP_NAN)
 #define isnormal(x)   (fpclassify(x) == FP_NORMAL)
 #define isfinite(x)   (fpclassify(x) <= 0)
+
+ _ACRTIMP int __cdecl _dpcomp(double, double);
+ _ACRTIMP int __cdecl _fdpcomp(float, float);
+
+#define _FP_LT  1
+#define _FP_EQ  2
+#define _FP_GT  4
 
 #else
 
@@ -366,13 +378,6 @@ static inline int __signbit(double x)
 
 #ifdef _UCRT
 
- _ACRTIMP int __cdecl _dpcomp(double, double);
- _ACRTIMP int __cdecl _fdpcomp(float, float);
-
-#define _FP_LT  1
-#define _FP_EQ  2
-#define _FP_GT  4
-
 #if defined(__GNUC__) || defined(__clang__)
 # define isgreater(x, y)      __builtin_isgreater(x, y)
 # define isgreaterequal(x, y) __builtin_isgreaterequal(x, y)
@@ -396,7 +401,7 @@ static inline int __signbit(double x)
 }
 #endif
 
-#include <poppack.h>
+#pragma pack(pop)
 
 #if !defined(__STRICT_ANSI__) || defined(_POSIX_C_SOURCE) || defined(_POSIX_SOURCE) || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(_USE_MATH_DEFINES)
 #ifndef _MATH_DEFINES_DEFINED

@@ -59,6 +59,7 @@ struct connection
     ConnectModeEnum           mode;
     CursorLocationEnum        location;
     IUnknown                 *session;
+    IDBInitialize            *dso;
     struct connection_point   cp_connev;
 };
 
@@ -107,6 +108,11 @@ static ULONG WINAPI connection_Release( _Connection *iface )
                 IUnknown_Release( connection->cp_connev.sinks[i] );
         }
         if (connection->session) IUnknown_Release( connection->session );
+        if (connection->dso)
+        {
+            IDBInitialize_Uninitialize( connection->dso );
+            IDBInitialize_Release( connection->dso );
+        }
         free( connection->cp_connev.sinks );
         free( connection->provider );
         free( connection->datasource );
@@ -122,7 +128,10 @@ static HRESULT WINAPI connection_QueryInterface( _Connection *iface, REFIID riid
 
     *obj = NULL;
 
-    if (IsEqualGUID( riid, &IID__Connection ) || IsEqualGUID( riid, &IID_IDispatch ) ||
+    if (IsEqualGUID( riid, &IID__Connection ) ||
+        IsEqualGUID( riid, &IID_Connection15) ||
+        IsEqualGUID( riid, &IID__ADO) ||
+        IsEqualGUID( riid, &IID_IDispatch ) ||
         IsEqualGUID( riid, &IID_IUnknown ))
     {
         *obj = iface;
@@ -269,8 +278,10 @@ static HRESULT WINAPI connection_put_ConnectionTimeout( _Connection *iface, LONG
 
 static HRESULT WINAPI connection_get_Version( _Connection *iface, BSTR *str )
 {
-    FIXME( "%p, %p\n", iface, str );
-    return E_NOTIMPL;
+    struct connection *connection = impl_from_Connection( iface );
+    TRACE( "%p, %p\n", connection, str );
+    *str = SysAllocString( L"2.8" );
+    return S_OK;
 }
 
 static HRESULT WINAPI connection_Close( _Connection *iface )
@@ -285,6 +296,12 @@ static HRESULT WINAPI connection_Close( _Connection *iface )
     {
         IUnknown_Release( connection->session );
         connection->session = NULL;
+    }
+    if (connection->dso)
+    {
+        IDBInitialize_Uninitialize( connection->dso );
+        IDBInitialize_Release( connection->dso );
+        connection->dso = NULL;
     }
 
     connection->state = adStateClosed;
@@ -369,7 +386,6 @@ static HRESULT WINAPI connection_Open( _Connection *iface, BSTR connect_str, BST
 {
     struct connection *connection = impl_from_Connection( iface );
     IDBProperties *props;
-    IDBInitialize *dbinit = NULL;
     IDataInitialize *datainit;
     IDBCreateSession *session = NULL;
     HRESULT hr;
@@ -382,15 +398,15 @@ static HRESULT WINAPI connection_Open( _Connection *iface, BSTR connect_str, BST
     if ((hr = CoCreateInstance( &CLSID_MSDAINITIALIZE, NULL, CLSCTX_INPROC_SERVER, &IID_IDataInitialize,
                                 (void **)&datainit )) != S_OK) return hr;
     if ((hr = IDataInitialize_GetDataSource( datainit, NULL, CLSCTX_INPROC_SERVER, connect_str, &IID_IDBInitialize,
-                                             (IUnknown **)&dbinit )) != S_OK) goto done;
-    if ((hr = IDBInitialize_QueryInterface( dbinit, &IID_IDBProperties, (void **)&props )) != S_OK) goto done;
+                                             (IUnknown **)&connection->dso )) != S_OK) goto done;
+    if ((hr = IDBInitialize_QueryInterface( connection->dso, &IID_IDBProperties, (void **)&props )) != S_OK) goto done;
 
     /* TODO - Update username/password if required. */
     if ((userid && *userid) || (password && *password))
         FIXME("Username/password parameters currently not supported\n");
 
-    if ((hr = IDBInitialize_Initialize( dbinit )) != S_OK) goto done;
-    if ((hr = IDBInitialize_QueryInterface( dbinit, &IID_IDBCreateSession, (void **)&session )) != S_OK) goto done;
+    if ((hr = IDBInitialize_Initialize( connection->dso )) != S_OK) goto done;
+    if ((hr = IDBInitialize_QueryInterface( connection->dso, &IID_IDBCreateSession, (void **)&session )) != S_OK) goto done;
     if ((hr = IDBCreateSession_CreateSession( session, NULL, &IID_IUnknown, &connection->session )) == S_OK)
     {
         connection->state = adStateOpen;
@@ -398,16 +414,20 @@ static HRESULT WINAPI connection_Open( _Connection *iface, BSTR connect_str, BST
     IDBCreateSession_Release( session );
 
 done:
-    if (hr != S_OK && connection->session)
+    if (hr != S_OK)
     {
-        IUnknown_Release( connection->session );
+        if(connection->session)
+            IUnknown_Release( connection->session );
         connection->session = NULL;
+
+        if (connection->dso)
+        {
+            IDBInitialize_Uninitialize( connection->dso );
+            IDBInitialize_Release( connection->dso );
+        }
+        connection->dso = NULL;
     }
-    if (dbinit)
-    {
-        IDBInitialize_Uninitialize( dbinit );
-        IDBInitialize_Release( dbinit );
-    }
+
     IDataInitialize_Release( datainit );
 
     TRACE("ret 0x%08lx\n", hr);
@@ -534,9 +554,100 @@ static HRESULT WINAPI connection_get_State( _Connection *iface, LONG *state )
 static HRESULT WINAPI connection_OpenSchema( _Connection *iface, SchemaEnum schema, VARIANT restrictions,
                                              VARIANT schema_id, _Recordset **record_set )
 {
-    FIXME( "%p, %d, %s, %s, %p\n", iface, schema, debugstr_variant(&restrictions),
+    struct connection *connection = impl_from_Connection( iface );
+    ADORecordsetConstruction *construct;
+    IDBSchemaRowset *schema_rowset;
+    _Recordset *recordset;
+    VARIANT *restr, conn;
+    ULONG restr_count;
+    IUnknown *rowset;
+    const GUID *guid;
+    HRESULT hr;
+
+    TRACE( "%p, %d, %s, %s, %p\n", iface, schema, debugstr_variant(&restrictions),
            debugstr_variant(&schema_id), record_set );
-    return E_NOTIMPL;
+
+    if (connection->state == adStateClosed) return MAKE_ADO_HRESULT( adErrObjectClosed );
+    if (V_VT(&schema_id) != VT_ERROR || V_ERROR(&schema_id) != DISP_E_PARAMNOTFOUND)
+    {
+        FIXME( "schema_id = %s\n", debugstr_variant(&schema_id) );
+        return E_NOTIMPL;
+    }
+
+    if (V_VT(&restrictions) == (VT_VARIANT | VT_ARRAY))
+    {
+        SAFEARRAY *arr = V_ARRAY(&restrictions);
+        LONG ubound, lbound;
+
+        if (SafeArrayGetDim( arr ) != 1) return MAKE_ADO_HRESULT( adErrInvalidArgument );
+        if (FAILED((hr = SafeArrayGetUBound( arr, 1, &ubound )))) return hr;
+        if (FAILED((hr = SafeArrayGetLBound( arr, 1, &lbound )))) return hr;
+        if (FAILED((hr = SafeArrayAccessData( arr, (void **)&restr )))) return hr;
+        restr_count = ubound - lbound + 1;
+    }
+    else if (V_VT(&restrictions) != VT_ERROR || V_ERROR(&restrictions) != DISP_E_PARAMNOTFOUND)
+    {
+        FIXME( "restrictions = %s\n", debugstr_variant(&restrictions) );
+        return E_NOTIMPL;
+    }
+    else
+    {
+        restr_count = 0;
+        restr = NULL;
+    }
+
+    hr = IUnknown_QueryInterface( connection->session, &IID_IDBSchemaRowset, (void**)&schema_rowset );
+    if (FAILED(hr))
+    {
+        if (restr) SafeArrayUnaccessData( V_ARRAY(&restrictions) );
+        return MAKE_ADO_HRESULT( adErrFeatureNotAvailable );
+    }
+
+    switch(schema)
+    {
+    case adSchemaTables:
+        if (restr_count > CRESTRICTIONS_DBSCHEMA_TABLES)
+            hr = MAKE_ADO_HRESULT( adErrFeatureNotAvailable );
+        guid = &DBSCHEMA_TABLES;
+        break;
+    default:
+        FIXME( "unsupported schema: %d\n", schema );
+        hr = E_NOTIMPL;
+        break;
+    }
+
+    if (SUCCEEDED(hr))
+    {
+        hr = IDBSchemaRowset_GetRowset( schema_rowset, NULL, guid,
+                    restr_count, restr, &IID_IRowset, 0, NULL, &rowset );
+    }
+    if (restr) SafeArrayUnaccessData( V_ARRAY(&restrictions) );
+    IDBSchemaRowset_Release( schema_rowset );
+    if (FAILED(hr)) return hr;
+
+    hr = Recordset_create( (void **)&recordset );
+    if (FAILED(hr))
+    {
+        IUnknown_Release( rowset );
+        return hr;
+    }
+
+    V_VT(&conn) = VT_DISPATCH;
+    V_DISPATCH(&conn) = (IDispatch *)iface;
+    hr = _Recordset_put_ActiveConnection( recordset, conn );
+
+    if (SUCCEEDED(hr))
+        hr = _Recordset_QueryInterface( recordset, &IID_ADORecordsetConstruction, (void**)&construct );
+    if (SUCCEEDED(hr))
+    {
+        hr = ADORecordsetConstruction_put_Rowset( construct, rowset );
+        ADORecordsetConstruction_Release( construct );
+    }
+    IUnknown_Release( rowset );
+    if (FAILED(hr)) return hr;
+
+    *record_set = recordset;
+    return S_OK;
 }
 
 static HRESULT WINAPI connection_Cancel( _Connection *iface )
@@ -823,8 +934,13 @@ static ULONG WINAPI adoconstruct_Release(ADOConnectionConstruction15 *iface)
 static HRESULT WINAPI adoconstruct_get_DSO(ADOConnectionConstruction15 *iface, IUnknown **dso)
 {
     struct connection *connection = impl_from_ADOConnectionConstruction15( iface );
-    FIXME("%p, %p\n", connection, dso);
-    return E_NOTIMPL;
+    TRACE("%p, %p\n", connection, dso);
+
+    *dso = NULL;
+    if (connection->dso)
+        IDBInitialize_QueryInterface( connection->dso, &IID_IUnknown, (void**)dso );
+
+    return S_OK;
 }
 
 static HRESULT WINAPI adoconstruct_get_Session(ADOConnectionConstruction15 *iface, IUnknown **session)
@@ -877,6 +993,7 @@ HRESULT Connection_create( void **obj )
     connection->mode = adModeUnknown;
     connection->location = adUseServer;
     connection->session = NULL;
+    connection->dso = NULL;
 
     connection->cp_connev.conn = connection;
     connection->cp_connev.riid = &DIID_ConnectionEvents;

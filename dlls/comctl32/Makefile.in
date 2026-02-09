@@ -1,13 +1,11 @@
-EXTRADEFS = -D_COMCTL32_
+EXTRADEFS = -D_COMCTL32_ -D__WINE_COMCTL32_VERSION=5
 MODULE    = comctl32.dll
 IMPORTLIB = comctl32
-IMPORTS   = uuid user32 gdi32 advapi32 imm32 kernelbase
-DELAYIMPORTS = winmm uxtheme
+IMPORTS   = uuid user32 gdi32 advapi32 imm32 kernelbase oleaut32
+DELAYIMPORTS = oleacc winmm
 
 SOURCES = \
 	animate.c \
-	button.c \
-	combo.c \
 	comboex.c \
 	comctl32.rc \
 	commctrl.c \
@@ -15,7 +13,6 @@ SOURCES = \
 	dpa.c \
 	draglist.c \
 	dsa.c \
-	edit.c \
 	flatsb.c \
 	header.c \
 	hotkey.c \
@@ -31,7 +28,6 @@ SOURCES = \
 	idc_movebutton.svg \
 	imagelist.c \
 	ipaddress.c \
-	listbox.c \
 	listview.c \
 	monthcal.c \
 	nativefont.c \
@@ -40,14 +36,12 @@ SOURCES = \
 	propsheet.c \
 	rebar.c \
 	smoothscroll.c \
-	static.c \
 	status.c \
 	string.c \
-	syslink.c \
 	tab.c \
-	taskdialog.c \
 	toolbar.c \
 	tooltips.c \
 	trackbar.c \
 	treeview.c \
-	updown.c
+	updown.c \
+	version.rc

@@ -595,6 +595,9 @@ static const char test2_cdata_xml[] =
 static const char test3_cdata_xml[] =
 "<?xml version=\"1.0\" ?><a><![CDATA[Some text data]]></a>";
 
+static const char test_pi_xml[] =
+"<?xml version=\"1.0\" ?><a><?t some text ?></a>";
+
 static struct call_entry content_handler_test1[] = {
     { CH_PUTDOCUMENTLOCATOR, 0, 0, S_OK },
     { CH_STARTDOCUMENT, 0, 0, S_OK },
@@ -790,38 +793,6 @@ static struct call_entry content_handler_test_attributes_alt_no_ns[] = {
     { CH_ENDTEST }
 };
 
-static struct attribute_entry ch_attributes_alt_6[] = {
-    { "prefix_test", "arg1", "test:arg1", "arg1" },
-    { "", "arg2", "arg2", "arg2" },
-    { "prefix_test", "ar3", "test:ar3", "arg3" },
-    { "http://www.w3.org/2000/xmlns/", "", "xmlns:test", "prefix_test" },
-    { "http://www.w3.org/2000/xmlns/", "", "xmlns", "prefix" },
-    { NULL }
-};
-
-static struct attribute_entry ch_attributes2_6[] = {
-    { "http://www.w3.org/2000/xmlns/", "", "xmlns:p", "test" },
-    { NULL }
-};
-
-static struct call_entry content_handler_test_attributes_alternate_6[] = {
-    { CH_PUTDOCUMENTLOCATOR, 1, 0, S_OK },
-    { CH_STARTDOCUMENT, 1, 22, S_OK },
-    { CH_STARTPREFIXMAPPING, 2, 95, S_OK, "test", "prefix_test" },
-    { CH_STARTPREFIXMAPPING, 2, 95, S_OK, "", "prefix" },
-    { CH_STARTELEMENT, 2, 95, S_OK, "prefix", "document", "document", ch_attributes_alt_6 },
-    { CH_CHARACTERS, 3, 1, S_OK, "\n" },
-    { CH_STARTPREFIXMAPPING, 3, 24, S_OK, "p", "test" },
-    { CH_STARTELEMENT, 3, 24, S_OK, "prefix", "node1", "node1", ch_attributes2_6 },
-    { CH_ENDELEMENT, 3, 24, S_OK, "prefix", "node1", "node1" },
-    { CH_ENDPREFIXMAPPING, 3, 24, S_OK, "p" },
-    { CH_ENDELEMENT, 3, 35, S_OK, "prefix", "document", "document" },
-    { CH_ENDPREFIXMAPPING, 3, 35, S_OK, "test" },
-    { CH_ENDPREFIXMAPPING, 3, 35, S_OK, "" },
-    { CH_ENDDOCUMENT, 4, 0, S_OK },
-    { CH_ENDTEST }
-};
-
 /* 'namespaces' is on, 'namespace-prefixes' if off */
 static struct attribute_entry ch_attributes_no_prefix[] = {
     { "prefix_test", "arg1", "test:arg1", "arg1" },
@@ -957,6 +928,28 @@ static struct call_entry cdata_test3[] = {
     { LH_ENDCDATA, 1, 35, S_OK },
     { CH_ENDELEMENT, 1, 54, S_OK, "", "a", "a" },
     { CH_ENDDOCUMENT, 0, 0, S_OK },
+    { CH_ENDTEST }
+};
+
+static struct call_entry pi_test[] =
+{
+    { CH_PUTDOCUMENTLOCATOR, 0, 0, S_OK },
+    { CH_STARTDOCUMENT, 0, 0, S_OK },
+    { CH_STARTELEMENT, 1, 26, S_OK, "", "a", "a" },
+    { CH_PROCESSINGINSTRUCTION, 1, 30, S_OK, "t", "some text " },
+    { CH_ENDELEMENT, 1, 44, S_OK, "", "a", "a" },
+    { CH_ENDDOCUMENT, 0, 0, S_OK },
+    { CH_ENDTEST }
+};
+
+static struct call_entry pi_test_v4[] =
+{
+    { CH_PUTDOCUMENTLOCATOR, 1, 0, S_OK },
+    { CH_STARTDOCUMENT, 1, 22, S_OK },
+    { CH_STARTELEMENT, 1, 25, S_OK, "", "a", "a" },
+    { CH_PROCESSINGINSTRUCTION, 1, 41, S_OK, "t", "some text " },
+    { CH_ENDELEMENT, 1, 45, S_OK, "", "a", "a" },
+    { CH_ENDDOCUMENT, 1, 45, S_OK },
     { CH_ENDTEST }
 };
 
@@ -1202,16 +1195,24 @@ static HRESULT WINAPI contentHandler_startElement(
         ISAXAttributes *saxattr)
 {
     struct call_entry call;
-    IMXAttributes *mxattr;
     HRESULT hr;
     int len;
 
     ok(uri != NULL, "uri == NULL\n");
     ok(localname != NULL, "localname == NULL\n");
     ok(qname != NULL, "qname == NULL\n");
+    ok(!!saxattr, "Unexpected pointer.\n");
 
-    hr = ISAXAttributes_QueryInterface(saxattr, &IID_IMXAttributes, (void**)&mxattr);
-    ok(hr == E_NOINTERFACE, "Unexpected hr %#lx.\n", hr);
+    check_interface(saxattr, &IID_IMXAttributes, FALSE);
+    check_interface(saxattr, &IID_IVBSAXAttributes, FALSE);
+    check_interface(saxattr, &IID_IVBSAXLocator, FALSE);
+    check_interface(saxattr, &IID_IDispatch, FALSE);
+    check_interface(saxattr, &IID_IDispatchEx, FALSE);
+    check_interface(saxattr, &IID_ISAXAttributes, TRUE);
+    check_interface(saxattr, &IID_ISAXXMLReader, FALSE);
+    check_interface(saxattr, &IID_IVBSAXXMLReader, FALSE);
+    todo_wine
+    check_interface(saxattr, &IID_ISAXLocator, FALSE);
 
     init_call_entry(locator, &call);
     call.id = CH_STARTELEMENT;
@@ -1222,6 +1223,9 @@ static HRESULT WINAPI contentHandler_startElement(
     if(!test_attr_ptr)
         test_attr_ptr = saxattr;
     ok(test_attr_ptr == saxattr, "Multiple ISAXAttributes instances are used (%p %p)\n", test_attr_ptr, saxattr);
+
+    hr = ISAXAttributes_getValueFromQName(saxattr, NULL, 0, NULL, NULL);
+    ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
 
     /* store actual attributes */
     len = 0;
@@ -2114,7 +2118,6 @@ static struct msxmlsupported_data_t reader_support_data[] =
     { &CLSID_SAXXMLReader,   "SAXReader"   },
     { &CLSID_SAXXMLReader30, "SAXReader30" },
     { &CLSID_SAXXMLReader40, "SAXReader40" },
-    { &CLSID_SAXXMLReader60, "SAXReader60" },
     { NULL }
 };
 
@@ -2174,16 +2177,20 @@ static void test_saxreader(void)
         ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
         g_reader = reader;
 
+        check_interface(reader, &IID_IDispatch, TRUE);
+        check_interface(reader, &IID_IDispatchEx, TRUE);
+        check_interface(reader, &IID_ISAXXMLReader, TRUE);
+        check_interface(reader, &IID_IVBSAXXMLReader, TRUE);
+        check_interface(reader, &IID_ISAXLocator, FALSE);
+        check_interface(reader, &IID_IVBSAXLocator, FALSE);
+
         if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             msxml_version = 4;
-        else if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
-            msxml_version = 6;
         else
             msxml_version = 0;
 
         /* crashes on old versions */
-        if (!IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) &&
-            !IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (!IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             hr = ISAXXMLReader_getContentHandler(reader, NULL);
             ok(hr == E_POINTER, "Unexpected hr %#lx.\n", hr);
@@ -2216,8 +2223,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_BSTR;
         V_BSTR(&var) = SysAllocString(szSimpleXML);
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_test1_alternate;
         else
             test_seq = content_handler_test1;
@@ -2271,8 +2277,6 @@ static void test_saxreader(void)
 
         if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_test_attributes_alternate_4;
-        else if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
-            test_seq = content_handler_test_attributes_alternate_6;
         else
             test_seq = content_handler_test_attributes;
 
@@ -2280,8 +2284,7 @@ static void test_saxreader(void)
         hr = ISAXXMLReader_parse(reader, var);
         ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, "content test attributes", FALSE);
         else
             ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, "content test attributes", TRUE);
@@ -2302,8 +2305,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_BSTR;
         V_BSTR(&var) = SysAllocString(carriage_ret_test);
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_test2_alternate;
         else
             test_seq = content_handler_test2;
@@ -2337,8 +2339,7 @@ static void test_saxreader(void)
             IVBSAXXMLReader_Release(vb_reader);
         }
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_test1_alternate;
         else
             test_seq = content_handler_test1;
@@ -2348,8 +2349,7 @@ static void test_saxreader(void)
         ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, "content test 1: from file url", FALSE);
 
         /* error handler */
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_testerror_alternate;
         else
             test_seq = content_handler_testerror;
@@ -2359,8 +2359,7 @@ static void test_saxreader(void)
         ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, "content test error", FALSE);
 
         /* callback ret values */
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             test_seq = content_handler_test_callback_rets_alt;
             set_expected_seq(test_seq);
@@ -2391,8 +2390,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)doc;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = content_handler_test2_alternate;
         else
             test_seq = content_handler_test2;
@@ -2404,8 +2402,7 @@ static void test_saxreader(void)
         IXMLDOMDocument_Release(doc);
 
         /* xml:space test */
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             test_seq = xmlspaceattr_test_alternate;
         }
@@ -2418,8 +2415,7 @@ static void test_saxreader(void)
         hr = ISAXXMLReader_parse(reader, var);
         ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, "xml:space handling", TRUE);
         }
@@ -2434,8 +2430,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             test_seq = content_handler_test_attributes_alt_no_ns;
         }
@@ -2458,8 +2453,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             test_seq = content_handler_test_attributes_alt_no_prefix;
         }
@@ -2480,8 +2474,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
         {
             test_seq = attribute_norm_alt;
         }
@@ -2514,8 +2507,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = cdata_test_alt;
         else
             test_seq = cdata_test;
@@ -2533,8 +2525,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = cdata_test2_alt;
         else
             test_seq = cdata_test2;
@@ -2552,8 +2543,7 @@ static void test_saxreader(void)
         V_VT(&var) = VT_UNKNOWN;
         V_UNKNOWN(&var) = (IUnknown*)stream;
 
-        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader60) ||
-            IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
             test_seq = cdata_test3_alt;
         else
             test_seq = cdata_test3;
@@ -2565,6 +2555,22 @@ static void test_saxreader(void)
         ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, seqname, TRUE);
 
         IStream_Release(stream);
+
+        /* PI */
+        V_VT(&var) = VT_UNKNOWN;
+        V_UNKNOWN(&var) = (IUnknown *)create_test_stream(test_pi_xml, -1);
+
+        if (IsEqualGUID(table->clsid, &CLSID_SAXXMLReader40))
+            test_seq = pi_test_v4;
+        else
+            test_seq = pi_test;
+
+        set_expected_seq(test_seq);
+        hr = ISAXXMLReader_parse(reader, var);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        sprintf(seqname, "%s: pi test", table->name);
+        ok_sequence(sequences, CONTENT_HANDLER_INDEX, test_seq, seqname, TRUE);
+        VariantClear(&var);
 
         ISAXXMLReader_Release(reader);
         table++;
@@ -2765,6 +2771,26 @@ static void test_saxreader_properties(void)
     ok(V_VT(&v) == VT_BSTR, "got %d\n", V_VT(&v));
     ok(V_BSTR(&v) == NULL, "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
 
+    V_VT(&v) = VT_EMPTY;
+    V_BSTR(&v) = (void*)0xdeadbeef;
+    hr = ISAXXMLReader_getProperty(reader, _bstr_("xmldecl-encoding"), &v);
+    todo_wine
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    todo_wine
+    ok(V_VT(&v) == VT_BSTR, "got %d\n", V_VT(&v));
+    todo_wine
+    ok(!V_BSTR(&v), "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
+
+    V_VT(&v) = VT_EMPTY;
+    V_BSTR(&v) = (void*)0xdeadbeef;
+    hr = ISAXXMLReader_getProperty(reader, _bstr_("charset"), &v);
+    todo_wine
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    todo_wine
+    ok(V_VT(&v) == VT_BSTR, "got %d\n", V_VT(&v));
+    todo_wine
+    ok(!V_BSTR(&v), "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
+
     /* stream with declaration */
     V_VT(&v) = VT_BSTR;
     V_BSTR(&v) = _bstr_("<?xml version=\"1.0\"?><element></element>");
@@ -2786,6 +2812,34 @@ static void test_saxreader_properties(void)
     ok(!lstrcmpW(V_BSTR(&v), L"1.0"), "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
     VariantClear(&v);
 
+    /* Encoding specified */
+    V_VT(&v) = VT_BSTR;
+    V_BSTR(&v) = _bstr_("<?xml version=\"1.0\" encoding=\"uTf-16\"?><element></element>");
+    hr = ISAXXMLReader_parse(reader, v);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    V_VT(&v) = VT_EMPTY;
+    V_BSTR(&v) = (void*)0xdeadbeef;
+    hr = ISAXXMLReader_getProperty(reader, _bstr_("xmldecl-encoding"), &v);
+    todo_wine
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    if (hr == S_OK)
+    {
+        ok(V_VT(&v) == VT_BSTR, "got %d\n", V_VT(&v));
+        ok(!wcscmp(V_BSTR(&v), L"uTf-16"), "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
+        VariantClear(&v);
+    }
+
+    V_VT(&v) = VT_EMPTY;
+    V_BSTR(&v) = (void*)0xdeadbeef;
+    hr = ISAXXMLReader_getProperty(reader, _bstr_("charset"), &v);
+    todo_wine
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    todo_wine
+    ok(V_VT(&v) == VT_BSTR, "got %d\n", V_VT(&v));
+    todo_wine
+    ok(!V_BSTR(&v), "got %s\n", wine_dbgstr_w(V_BSTR(&v)));
+
     ISAXXMLReader_Release(reader);
     free_bstrs();
 }
@@ -2801,7 +2855,6 @@ static const struct feature_ns_entry_t feature_ns_entry_data[] = {
     { &CLSID_SAXXMLReader,   "CLSID_SAXXMLReader",   VARIANT_TRUE, VARIANT_FALSE },
     { &CLSID_SAXXMLReader30, "CLSID_SAXXMLReader30", VARIANT_TRUE, VARIANT_FALSE },
     { &CLSID_SAXXMLReader40, "CLSID_SAXXMLReader40", VARIANT_TRUE, VARIANT_TRUE },
-    { &CLSID_SAXXMLReader60, "CLSID_SAXXMLReader60", VARIANT_TRUE, VARIANT_TRUE },
     { 0 }
 };
 
@@ -2830,8 +2883,7 @@ static void test_saxreader_features(void)
             continue;
         }
 
-        if (IsEqualGUID(entry->guid, &CLSID_SAXXMLReader40) ||
-                IsEqualGUID(entry->guid, &CLSID_SAXXMLReader60))
+        if (IsEqualGUID(entry->guid, &CLSID_SAXXMLReader40))
         {
             value = VARIANT_TRUE;
             hr = ISAXXMLReader_getFeature(reader, _bstr_("exhaustive-errors"), &value);
@@ -2917,7 +2969,6 @@ static const struct enc_test_entry_t encoding_test_data[] = {
     { &CLSID_SAXXMLReader,   "CLSID_SAXXMLReader",   UTF8BOMTest, 0xc00ce56f, TRUE },
     { &CLSID_SAXXMLReader30, "CLSID_SAXXMLReader30", UTF8BOMTest, 0xc00ce56f, TRUE },
     { &CLSID_SAXXMLReader40, "CLSID_SAXXMLReader40", UTF8BOMTest, S_OK, FALSE },
-    { &CLSID_SAXXMLReader60, "CLSID_SAXXMLReader60", UTF8BOMTest, S_OK, FALSE },
     { 0 }
 };
 
@@ -3020,7 +3071,6 @@ static struct msxmlsupported_data_t mxwriter_support_data[] =
     { &CLSID_MXXMLWriter,   "MXXMLWriter"   },
     { &CLSID_MXXMLWriter30, "MXXMLWriter30" },
     { &CLSID_MXXMLWriter40, "MXXMLWriter40" },
-    { &CLSID_MXXMLWriter60, "MXXMLWriter60" },
     { NULL }
 };
 
@@ -3029,7 +3079,6 @@ static struct msxmlsupported_data_t mxattributes_support_data[] =
     { &CLSID_SAXAttributes,   "SAXAttributes"   },
     { &CLSID_SAXAttributes30, "SAXAttributes30" },
     { &CLSID_SAXAttributes40, "SAXAttributes40" },
-    { &CLSID_SAXAttributes60, "SAXAttributes60" },
     { NULL }
 };
 
@@ -3049,7 +3098,6 @@ static const struct mxwriter_props_t mxwriter_default_props[] =
     { &CLSID_MXXMLWriter,   VARIANT_TRUE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, "UTF-16" },
     { &CLSID_MXXMLWriter30, VARIANT_TRUE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, "UTF-16" },
     { &CLSID_MXXMLWriter40, VARIANT_TRUE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, "UTF-16" },
-    { &CLSID_MXXMLWriter60, VARIANT_TRUE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, VARIANT_FALSE, "UTF-16" },
     { NULL }
 };
 
@@ -3560,109 +3608,82 @@ static const char startelement_xml[] = "<uri:local a:attr1=\"a1\" attr2=\"a2\" a
 static const char startendelement_xml[] = "<uri:local a:attr1=\"a1\" attr2=\"a2\" attr3=\"&lt;&amp;&quot;&gt;\'\"/>";
 static const char startendelement_noescape_xml[] = "<uri:local a:attr1=\"a1\" attr2=\"a2\" attr3=\"<&\">\'\"/>";
 
-static const struct writer_startendelement_t writer_startendelement[] = {
-    /* 0 */
+static const struct writer_startendelement_t writer_startendelement[] =
+{
     { &CLSID_MXXMLWriter,   StartElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, StartElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, StartElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, StartElement, NULL, NULL, NULL, "<>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
-    /* 5 */
     { &CLSID_MXXMLWriter30, StartElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, StartElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", NULL, NULL, "<>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, NULL, "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, StartElement, NULL, "local", NULL, NULL, E_INVALIDARG },
-    /* 10 */
     { &CLSID_MXXMLWriter40, StartElement, NULL, "local", NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, StartElement, NULL, "local", NULL, "<>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, StartElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, StartElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
-    /* 15 */
-    { &CLSID_MXXMLWriter60, StartElement, NULL, NULL, "qname", "<qname>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, "uri", "local", "qname", "<qname>", S_OK },
     { &CLSID_MXXMLWriter30, StartElement, "uri", "local", "qname", "<qname>", S_OK },
     { &CLSID_MXXMLWriter40, StartElement, "uri", "local", "qname", "<qname>", S_OK },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", "local", "qname", "<qname>", S_OK },
-    /* 20 */
+
     { &CLSID_MXXMLWriter,   StartElement, "uri", "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, StartElement, "uri", "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, StartElement, "uri", "local", NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", "local", NULL, "<>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, "uri", "local", "uri:local", "<uri:local>", S_OK },
-    /* 25 */
     { &CLSID_MXXMLWriter30, StartElement, "uri", "local", "uri:local", "<uri:local>", S_OK },
     { &CLSID_MXXMLWriter40, StartElement, "uri", "local", "uri:local", "<uri:local>", S_OK },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", "local", "uri:local", "<uri:local>", S_OK },
+
     { &CLSID_MXXMLWriter,   StartElement, "uri", "local", "uri:local2", "<uri:local2>", S_OK },
     { &CLSID_MXXMLWriter30, StartElement, "uri", "local", "uri:local2", "<uri:local2>", S_OK },
-    /* 30 */
     { &CLSID_MXXMLWriter40, StartElement, "uri", "local", "uri:local2", "<uri:local2>", S_OK },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", "local", "uri:local2", "<uri:local2>", S_OK },
+
     /* endElement tests */
     { &CLSID_MXXMLWriter,   EndElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, EndElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, EndElement, NULL, NULL, NULL, NULL, E_INVALIDARG },
-    /* 35 */
-    { &CLSID_MXXMLWriter60, EndElement, NULL, NULL, NULL, "</>", S_OK },
     { &CLSID_MXXMLWriter,   EndElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, EndElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, EndElement, "uri", NULL, NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, EndElement, "uri", NULL, NULL, "</>", S_OK },
-    /* 40 */
     { &CLSID_MXXMLWriter,   EndElement, NULL, "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, EndElement, NULL, "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, EndElement, NULL, "local", NULL, NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, EndElement, NULL, "local", NULL, "</>", S_OK },
     { &CLSID_MXXMLWriter,   EndElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
-    /* 45 */
     { &CLSID_MXXMLWriter30, EndElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, EndElement, NULL, NULL, "qname", NULL, E_INVALIDARG },
-    { &CLSID_MXXMLWriter60, EndElement, NULL, NULL, "qname", "</qname>", S_OK },
     { &CLSID_MXXMLWriter,   EndElement, "uri", "local", "qname", "</qname>", S_OK },
     { &CLSID_MXXMLWriter30, EndElement, "uri", "local", "qname", "</qname>", S_OK },
-    /* 50 */
     { &CLSID_MXXMLWriter40, EndElement, "uri", "local", "qname", "</qname>", S_OK },
-    { &CLSID_MXXMLWriter60, EndElement, "uri", "local", "qname", "</qname>", S_OK },
     { &CLSID_MXXMLWriter,   EndElement, "uri", "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter30, EndElement, "uri", "local", NULL, NULL, E_INVALIDARG },
     { &CLSID_MXXMLWriter40, EndElement, "uri", "local", NULL, NULL, E_INVALIDARG },
-    /* 55 */
-    { &CLSID_MXXMLWriter60, EndElement, "uri", "local", NULL, "</>", S_OK },
     { &CLSID_MXXMLWriter,   EndElement, "uri", "local", "uri:local", "</uri:local>", S_OK },
     { &CLSID_MXXMLWriter30, EndElement, "uri", "local", "uri:local", "</uri:local>", S_OK },
     { &CLSID_MXXMLWriter40, EndElement, "uri", "local", "uri:local", "</uri:local>", S_OK },
-    { &CLSID_MXXMLWriter60, EndElement, "uri", "local", "uri:local", "</uri:local>", S_OK },
-    /* 60 */
     { &CLSID_MXXMLWriter,   EndElement, "uri", "local", "uri:local2", "</uri:local2>", S_OK },
     { &CLSID_MXXMLWriter30, EndElement, "uri", "local", "uri:local2", "</uri:local2>", S_OK },
     { &CLSID_MXXMLWriter40, EndElement, "uri", "local", "uri:local2", "</uri:local2>", S_OK },
-    { &CLSID_MXXMLWriter60, EndElement, "uri", "local", "uri:local2", "</uri:local2>", S_OK },
 
     /* with attributes */
     { &CLSID_MXXMLWriter,   StartElement, "uri", "local", "uri:local", startelement_xml, S_OK, &saxattributes },
-    /* 65 */
     { &CLSID_MXXMLWriter30, StartElement, "uri", "local", "uri:local", startelement_xml, S_OK, &saxattributes },
     { &CLSID_MXXMLWriter40, StartElement, "uri", "local", "uri:local", startelement_xml, S_OK, &saxattributes },
-    { &CLSID_MXXMLWriter60, StartElement, "uri", "local", "uri:local", startelement_xml, S_OK, &saxattributes },
     /* empty elements */
     { &CLSID_MXXMLWriter,   StartEndElement, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
     { &CLSID_MXXMLWriter30, StartEndElement, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
-    /* 70 */
     { &CLSID_MXXMLWriter40, StartEndElement, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
-    { &CLSID_MXXMLWriter60, StartEndElement, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
     { &CLSID_MXXMLWriter,   StartEndElement, "", "", "", "</>", S_OK },
     { &CLSID_MXXMLWriter30, StartEndElement, "", "", "", "</>", S_OK },
     { &CLSID_MXXMLWriter40, StartEndElement, "", "", "", "</>", S_OK },
-    /* 75 */
-    { &CLSID_MXXMLWriter60, StartEndElement, "", "", "", "</>", S_OK },
 
     /* with disabled output escaping */
     { &CLSID_MXXMLWriter,   StartEndElement | DisableEscaping, "uri", "local", "uri:local", startendelement_noescape_xml, S_OK, &saxattributes },
     { &CLSID_MXXMLWriter30, StartEndElement | DisableEscaping, "uri", "local", "uri:local", startendelement_noescape_xml, S_OK, &saxattributes },
     { &CLSID_MXXMLWriter40, StartEndElement | DisableEscaping, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
-    { &CLSID_MXXMLWriter60, StartEndElement | DisableEscaping, "uri", "local", "uri:local", startendelement_xml, S_OK, &saxattributes },
 
     { NULL }
 };
@@ -3775,13 +3796,10 @@ static const struct writer_startendelement2_t writer_startendelement2[] = {
     { &CLSID_MXXMLWriter,   "a", -1, "b", -1, "<a/>", S_OK },
     { &CLSID_MXXMLWriter30, "a", -1, "b", -1, "<a/>", S_OK },
     { &CLSID_MXXMLWriter40, "a", -1, "b", -1, "<a/>", S_OK },
-    /* -1 length is not allowed for version 6 */
-    { &CLSID_MXXMLWriter60, "a", -1, "b", -1, "<a/>", E_INVALIDARG },
 
     { &CLSID_MXXMLWriter,   "a", 1, "b", 1, "<a/>", S_OK },
     { &CLSID_MXXMLWriter30, "a", 1, "b", 1, "<a/>", S_OK },
     { &CLSID_MXXMLWriter40, "a", 1, "b", 1, "<a/>", S_OK },
-    { &CLSID_MXXMLWriter60, "a", 1, "b", 1, "<a/>", S_OK },
     { NULL }
 };
 
@@ -4060,7 +4078,6 @@ static const struct writer_characters_t writer_characters[] = {
     { &CLSID_MXXMLWriter,   "< > & \" \'", "&lt; &gt; &amp; \" \'" },
     { &CLSID_MXXMLWriter30, "< > & \" \'", "&lt; &gt; &amp; \" \'" },
     { &CLSID_MXXMLWriter40, "< > & \" \'", "&lt; &gt; &amp; \" \'" },
-    { &CLSID_MXXMLWriter60, "< > & \" \'", "&lt; &gt; &amp; \" \'" },
     { NULL }
 };
 
@@ -4473,199 +4490,6 @@ static void test_mxwriter_stream(void)
     free_bstrs();
 }
 
-static void test_mxwriter_domdoc(void)
-{
-    ISAXContentHandler *content;
-    IXMLDOMDocument *domdoc;
-    IMXWriter *writer;
-    HRESULT hr;
-    VARIANT dest;
-    IXMLDOMElement *root = NULL;
-    IXMLDOMNodeList *node_list = NULL;
-    IXMLDOMNode *node = NULL;
-    LONG list_length = 0;
-    BSTR str;
-
-    /* Create writer and attach DOMDocument output */
-    hr = CoCreateInstance(&CLSID_MXXMLWriter60, NULL, CLSCTX_INPROC_SERVER, &IID_IMXWriter, (void**)&writer);
-    ok(hr == S_OK, "Failed to create a writer, hr %#lx.\n", hr);
-
-    hr = IMXWriter_QueryInterface(writer, &IID_ISAXContentHandler, (void**)&content);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = CoCreateInstance(&CLSID_DOMDocument60, NULL, CLSCTX_INPROC_SERVER, &IID_IXMLDOMDocument, (void **)&domdoc);
-    ok(hr == S_OK, "Failed to create a document, hr %#lx.\n", hr);
-
-    V_VT(&dest) = VT_DISPATCH;
-    V_DISPATCH(&dest) = (IDispatch *)domdoc;
-
-    hr = IMXWriter_put_output(writer, dest);
-    todo_wine
-    ok(hr == S_OK, "Failed to set writer output, hr %#lx.\n", hr);
-    if (FAILED(hr))
-    {
-        IXMLDOMDocument_Release(domdoc);
-        IMXWriter_Release(writer);
-        return;
-    }
-
-    /* Add root element to document. */
-    hr = IXMLDOMDocument_createElement(domdoc, _bstr_("TestElement"), &root);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    hr = IXMLDOMDocument_appendChild(domdoc, (IXMLDOMNode *)root, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    IXMLDOMElement_Release(root);
-
-    hr = IXMLDOMDocument_get_documentElement(domdoc, &root);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(root != NULL, "Unexpected document root.\n");
-    IXMLDOMElement_Release(root);
-
-    /* startDocument clears root element and disables methods. */
-    hr = ISAXContentHandler_startDocument(content);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMDocument_get_documentElement(domdoc, &root);
-    todo_wine
-    ok(hr == S_FALSE, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMDocument_createElement(domdoc, _bstr_("TestElement"), &root);
-    todo_wine
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
-
-    /* startElement allows document root node to be accessed. */
-    hr = ISAXContentHandler_startElement(content, L"", 0, L"", 0, L"BankAccount", 11, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMDocument_get_documentElement(domdoc, &root);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(root != NULL, "Unexpected document root.\n");
-
-    hr = IXMLDOMElement_get_nodeName(root, &str);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    todo_wine
-    ok(!lstrcmpW(L"BankAccount", str), "Unexpected name %s.\n", wine_dbgstr_w(str));
-    SysFreeString(str);
-
-    /* startElement immediately updates previous node. */
-    hr = ISAXContentHandler_startElement(content, L"", 0, L"", 0, L"Number", 6, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMElement_get_childNodes(root, &node_list);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNodeList_get_length(node_list, &list_length);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    todo_wine
-    ok(list_length == 1, "list length %ld, expected 1\n", list_length);
-
-    hr = IXMLDOMNodeList_get_item(node_list, 0, &node);
-    todo_wine
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNode_get_nodeName(node, &str);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(L"Number", str), "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    /* characters not immediately visible. */
-    hr = ISAXContentHandler_characters(content, L"12345", 5);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNode_get_text(node, &str);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(L"", str), "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    /* characters visible after endElement. */
-    hr = ISAXContentHandler_endElement(content, L"", 0, L"", 0, L"Number", 6);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNode_get_text(node, &str);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(L"12345", str), "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    IXMLDOMNode_Release(node);
-
-    /* second startElement updates the existing node list. */
-
-    hr = ISAXContentHandler_startElement(content, L"", 0, L"", 0, L"Name", 4, NULL);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = ISAXContentHandler_characters(content, L"Captain Ahab", 12);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = ISAXContentHandler_endElement(content, L"", 0, L"", 0, L"Name", 4);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = ISAXContentHandler_endElement(content, L"", 0, L"", 0, L"BankAccount", 11);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNodeList_get_length(node_list, &list_length);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(2 == list_length, "list length %ld, expected 2\n", list_length);
-}
-    hr = IXMLDOMNodeList_get_item(node_list, 1, &node);
-    todo_wine
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMNode_get_nodeName(node, &str);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(L"Name", str), "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    hr = IXMLDOMNode_get_text(node, &str);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(L"Captain Ahab", str), "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    IXMLDOMNode_Release(node);
-    IXMLDOMNodeList_Release(node_list);
-    IXMLDOMElement_Release(root);
-
-    /* endDocument makes document modifiable again. */
-
-    hr = ISAXContentHandler_endDocument(content);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-
-    hr = IXMLDOMDocument_createElement(domdoc, _bstr_("TestElement"), &root);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    IXMLDOMElement_Release(root);
-
-    /* finally check doc output */
-    hr = IXMLDOMDocument_get_xml(domdoc, &str);
-todo_wine {
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-    ok(!lstrcmpW(
-            L"<BankAccount>"
-            "<Number>12345</Number>"
-            "<Name>Captain Ahab</Name>"
-            "</BankAccount>\r\n",
-            str),
-        "got %s\n", wine_dbgstr_w(str));
-}
-    SysFreeString(str);
-
-    IXMLDOMDocument_Release(domdoc);
-    ISAXContentHandler_Release(content);
-    IMXWriter_Release(writer);
-
-    free_bstrs();
-}
-
 static const char *encoding_names[] = {
     "iso-8859-1",
     "iso-8859-2",
@@ -4939,14 +4763,6 @@ static void test_saxreader_dispex(void)
 
     IVBSAXXMLReader_Release(vbreader);
     ISAXXMLReader_Release(reader);
-
-    if (is_clsid_supported(&CLSID_SAXXMLReader60, reader_support_data))
-    {
-        hr = CoCreateInstance(&CLSID_SAXXMLReader60, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown, (void**)&unk);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        test_obj_dispex(unk);
-        IUnknown_Release(unk);
-    }
 }
 
 static void test_mxwriter_dispex(void)
@@ -4967,14 +4783,6 @@ static void test_mxwriter_dispex(void)
     IUnknown_Release(unk);
     IDispatchEx_Release(dispex);
     IMXWriter_Release(writer);
-
-    if (is_clsid_supported(&CLSID_MXXMLWriter60, mxwriter_support_data))
-    {
-        hr = CoCreateInstance(&CLSID_MXXMLWriter60, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown, (void**)&unk);
-        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-        test_obj_dispex(unk);
-        IUnknown_Release(unk);
-    }
 }
 
 static void test_mxwriter_comment(void)
@@ -5489,22 +5297,18 @@ static const addattribute_test_t addattribute_data[] = {
     { &CLSID_SAXAttributes,   NULL, NULL, "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes30, NULL, NULL, "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes40, NULL, NULL, "ns:qname", NULL, "value", E_INVALIDARG },
-    { &CLSID_SAXAttributes60, NULL, NULL, "ns:qname", NULL, "value", S_OK },
 
     { &CLSID_SAXAttributes,   NULL, "qname", "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes30, NULL, "qname", "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes40, NULL, "qname", "ns:qname", NULL, "value", E_INVALIDARG },
-    { &CLSID_SAXAttributes60, NULL, "qname", "ns:qname", NULL, "value", S_OK },
 
     { &CLSID_SAXAttributes,   "uri", "qname", "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes30, "uri", "qname", "ns:qname", NULL, "value", E_INVALIDARG },
     { &CLSID_SAXAttributes40, "uri", "qname", "ns:qname", NULL, "value", E_INVALIDARG },
-    { &CLSID_SAXAttributes60, "uri", "qname", "ns:qname", NULL, "value", S_OK },
 
     { &CLSID_SAXAttributes,   "uri", "qname", "ns:qname", "type", "value", S_OK },
     { &CLSID_SAXAttributes30, "uri", "qname", "ns:qname", "type", "value", S_OK },
     { &CLSID_SAXAttributes40, "uri", "qname", "ns:qname", "type", "value", S_OK },
-    { &CLSID_SAXAttributes60, "uri", "qname", "ns:qname", "type", "value", S_OK },
 
     { NULL }
 };
@@ -5536,7 +5340,7 @@ static void test_mxattr_addAttribute(void)
         hr = IMXAttributes_QueryInterface(mxattr, &IID_ISAXAttributes, (void**)&saxattr);
         ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
-        /* SAXAttributes40 and SAXAttributes60 both crash on this test */
+        /* SAXAttributes40 crash on this test */
         if (IsEqualGUID(table->clsid, &CLSID_SAXAttributes) ||
             IsEqualGUID(table->clsid, &CLSID_SAXAttributes30))
         {
@@ -5579,7 +5383,7 @@ static void test_mxattr_addAttribute(void)
 
         if (hr == S_OK)
         {
-            /* SAXAttributes40 and SAXAttributes60 both crash on this test */
+            /* SAXAttributes40 crash on this test */
             if (IsEqualGUID(table->clsid, &CLSID_SAXAttributes) ||
                 IsEqualGUID(table->clsid, &CLSID_SAXAttributes30))
             {
@@ -5658,8 +5462,7 @@ static void test_mxattr_addAttribute(void)
             ok(hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
             ok(index == -1, "%d: got wrong index %d\n", i, index);
 
-            if (IsEqualGUID(table->clsid, &CLSID_SAXAttributes40) ||
-                IsEqualGUID(table->clsid, &CLSID_SAXAttributes60))
+            if (IsEqualGUID(table->clsid, &CLSID_SAXAttributes40))
             {
                 hr = ISAXAttributes_getValueFromQName(saxattr, NULL, 0, NULL, NULL);
                 ok(hr == E_POINTER /* win8 */ || hr == E_INVALIDARG, "Unexpected hr %#lx.\n", hr);
@@ -5843,20 +5646,23 @@ static void test_mxattr_dispex(void)
 
 static void test_mxattr_qi(void)
 {
+    static const GUID *classes[] = { &CLSID_SAXAttributes, &CLSID_SAXAttributes30 };
     IMXAttributes *mxattr;
     HRESULT hr;
 
-    hr = CoCreateInstance(&CLSID_SAXAttributes, NULL, CLSCTX_INPROC_SERVER,
-            &IID_IMXAttributes, (void **)&mxattr);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    for (int i = 0; i < ARRAYSIZE(classes); ++i)
+    {
+        hr = CoCreateInstance(classes[i], NULL, CLSCTX_INPROC_SERVER, &IID_IMXAttributes, (void **)&mxattr);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
-    check_interface(mxattr, &IID_IMXAttributes, TRUE);
-    check_interface(mxattr, &IID_ISAXAttributes, TRUE);
-    check_interface(mxattr, &IID_IVBSAXAttributes, TRUE);
-    check_interface(mxattr, &IID_IDispatch, TRUE);
-    check_interface(mxattr, &IID_IDispatchEx, TRUE);
+        check_interface(mxattr, &IID_IMXAttributes, TRUE);
+        check_interface(mxattr, &IID_ISAXAttributes, TRUE);
+        check_interface(mxattr, &IID_IVBSAXAttributes, TRUE);
+        check_interface(mxattr, &IID_IDispatch, TRUE);
+        check_interface(mxattr, &IID_IDispatchEx, TRUE);
 
-    IMXAttributes_Release(mxattr);
+        IMXAttributes_Release(mxattr);
+    }
 }
 
 static struct msxmlsupported_data_t saxattr_support_data[] =
@@ -5864,7 +5670,6 @@ static struct msxmlsupported_data_t saxattr_support_data[] =
     { &CLSID_SAXAttributes,   "SAXAttributes"   },
     { &CLSID_SAXAttributes30, "SAXAttributes30" },
     { &CLSID_SAXAttributes40, "SAXAttributes40" },
-    { &CLSID_SAXAttributes60, "SAXAttributes60" },
     { NULL }
 };
 
@@ -6052,7 +5857,6 @@ START_TEST(saxreader)
         test_mxwriter_properties();
         test_mxwriter_flush();
         test_mxwriter_stream();
-        test_mxwriter_domdoc();
         test_mxwriter_encoding();
         test_mxwriter_dispex();
         test_mxwriter_indent();

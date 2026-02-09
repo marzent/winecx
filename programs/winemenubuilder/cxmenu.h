@@ -30,7 +30,7 @@ char* wchars_to_utf8_chars(LPCWSTR string);
 /* The backend functions */
 int cx_process_menu(LPCWSTR linkW, BOOL is_desktop, DWORD root_csidl,
                     LPCWSTR pathW, LPCWSTR argsW,
-                    LPCWSTR icon_name, LPCWSTR description, IShellLinkW *sl);
+                    LPCWSTR icon_name, LPCWSTR description);
 
 /* Functions used by the winemenubuilder extensions */
 BOOL Process_Link( LPCWSTR linkname, BOOL bWait );

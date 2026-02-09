@@ -410,12 +410,25 @@ struct d2d_layer
 
 HRESULT d2d_layer_create(ID2D1Factory *factory, const D2D1_SIZE_F *size, struct d2d_layer **layer);
 
+enum d2d_mesh_state
+{
+    D2D_MESH_STATE_INITIAL = 0,
+    D2D_MESH_STATE_OPEN,
+    D2D_MESH_STATE_CLOSED,
+};
+
 struct d2d_mesh
 {
     ID2D1Mesh ID2D1Mesh_iface;
+    ID2D1TessellationSink ID2D1TessellationSink_iface;
     LONG refcount;
 
     ID2D1Factory *factory;
+    enum d2d_mesh_state state;
+
+    D2D1_TRIANGLE *triangles;
+    size_t count;
+    size_t size;
 };
 
 HRESULT d2d_mesh_create(ID2D1Factory *factory, struct d2d_mesh **mesh);
@@ -567,6 +580,7 @@ struct d2d_geometry
             size_t figure_count;
 
             enum d2d_geometry_state state;
+            HRESULT code;
             D2D1_FILL_MODE fill_mode;
             UINT32 segment_count;
 
@@ -607,12 +621,33 @@ HRESULT d2d_geometry_group_init(struct d2d_geometry *geometry, ID2D1Factory *fac
         D2D1_FILL_MODE fill_mode, ID2D1Geometry **src_geometries, unsigned int geometry_count);
 struct d2d_geometry *unsafe_impl_from_ID2D1Geometry(ID2D1Geometry *iface);
 
+struct d2d_geometry_realization
+{
+    ID2D1GeometryRealization ID2D1GeometryRealization_iface;
+    LONG refcount;
+
+    ID2D1Factory *factory;
+    ID2D1Geometry *geometry;
+    bool filled;
+
+    ID2D1StrokeStyle *stroke_style;
+    float stroke_width;
+};
+
+HRESULT d2d_geometry_realization_init(struct d2d_geometry_realization *realization,
+        ID2D1Factory *factory, ID2D1Geometry *geometry);
+struct d2d_geometry_realization *unsafe_impl_from_ID2D1GeometryRealization(ID2D1GeometryRealization *iface);
+
 struct d2d_device
 {
     ID2D1Device6 ID2D1Device6_iface;
     LONG refcount;
     ID2D1Factory1 *factory;
     IDXGIDevice *dxgi_device;
+    bool allow_get_dxgi_device;
+
+    ID3D10Blob *precompiled_shape_vs[D2D_SHAPE_TYPE_COUNT];
+    ID3D10Blob *precompiled_shape_ps;
 
     struct d2d_indexed_objects shaders;
 };
@@ -706,13 +741,16 @@ static inline struct d2d_factory *unsafe_impl_from_ID2D1Factory(ID2D1Factory *if
 }
 
 void d2d_effects_init_builtins(struct d2d_factory *factory);
+HRESULT d2d_factory_create_device(ID2D1Factory1 *factory, IDXGIDevice *dxgi_device,
+        bool allow_get_dxgi_device, REFIID iid, void **device);
 struct d2d_effect_registration * d2d_factory_get_registered_effect(ID2D1Factory *factory,
         const GUID *effect_id);
 void d2d_factory_register_effect(struct d2d_factory *factory,
         struct d2d_effect_registration *effect);
 HRESULT d2d_effect_property_get_uint32_value(const struct d2d_effect_properties *properties,
         const struct d2d_effect_property *prop, UINT32 *value);
-void d2d_device_init(struct d2d_device *device, struct d2d_factory *factory, IDXGIDevice *dxgi_device);
+HRESULT d2d_device_init(struct d2d_device *device, ID2D1Factory1 *factory, IDXGIDevice *dxgi_device,
+        bool allow_get_dxgi_device);
 
 struct d2d_transform
 {
@@ -1000,6 +1038,13 @@ static inline const char *debug_d2d_point_2l(const D2D1_POINT_2L *point)
     return wine_dbg_sprintf("{%ld, %ld}", point->x, point->y);
 }
 
+static inline const char *debug_d2d_point_2u(const D2D1_POINT_2U *point)
+{
+    if (!point)
+        return "(null)";
+    return wine_dbg_sprintf("{%u, %u}", point->x, point->y);
+}
+
 static inline const char *debug_d2d_rect_f(const D2D1_RECT_F *rect)
 {
     if (!rect)
@@ -1012,6 +1057,13 @@ static inline const char *debug_d2d_rect_l(const D2D1_RECT_L *rect)
     if (!rect)
         return "(null)";
     return wine_dbg_sprintf("(%ld, %ld)-(%ld, %ld)", rect->left, rect->top, rect->right, rect->bottom);
+}
+
+static inline const char *debug_d2d_rect_u(const D2D1_RECT_U *rect)
+{
+    if (!rect)
+        return "(null)";
+    return wine_dbg_sprintf("(%u, %u)-(%u, %u)", rect->left, rect->top, rect->right, rect->bottom);
 }
 
 static inline const char *debug_d2d_rounded_rect(const D2D1_ROUNDED_RECT *rounded_rect)

@@ -122,7 +122,7 @@ BLUE_INI TEXTFILE
 "InfoText = 0 0 0\r\n"
 "InfoBk = 255 255 255\r\n"
 "ButtonAlternateFace = 255 255 255\r\n"
-"HotTracking = 224 224 224\r\n"
+"HotTracking = 48 150 250\r\n"
 "GradientActiveCaption = 50 150 250\r\n"
 "GradientInactiveCaption = 128 128 128\r\n"
 "MenuHilight = 48 150 250\r\n"
@@ -4616,8 +4616,5 @@ BLUE_WINDOW_SMALL_FRAME_RIGHT_BMP BITMAP "blue_window_small_frame_right.bmp"
 #define WINE_FILEDESCRIPTION_STR "Light Theme"
 #define WINE_FILENAME_STR "light.msstyles"
 #define WINE_FILEVERSION 1,0,0,1
-#define WINE_FILEVERSION_STR "1.0.0.1"
-#define WINE_PRODUCTVERSION 1,0,0,1
-#define WINE_PRODUCTVERSION_STR "1.0.0.1"
 
 #include "wine/wine_common_ver.rc"

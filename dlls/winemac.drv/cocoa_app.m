@@ -18,12 +18,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#import <Carbon/Carbon.h>
-
 #import "cocoa_app.h"
 #import "cocoa_cursorclipping.h"
 #import "cocoa_event.h"
 #import "cocoa_window.h"
+#import "cocoa_icon_utils.h"
 
 #pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 
@@ -55,16 +54,7 @@ static NSString* const WineExternalQuitNotificationSourcePIDKey = @"SourcePID";
 static NSString* const WineExternalQuitNotificationWineConfigDirKey = @"WineConfigDir";
 static NSString* const WineExternalQuitNotificationWinePrefixKey = @"WinePrefix";
 
-int macdrv_err_on;
-
-
-#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
-@interface NSWindow (WineAutoTabbingExtensions)
-
-    + (void) setAllowsAutomaticWindowTabbing:(BOOL)allows;
-
-@end
-#endif
+bool macdrv_err_on;
 
 
 #if !defined(MAC_OS_VERSION_14_0) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_14_0
@@ -160,8 +150,7 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
             [[NSUserDefaults standardUserDefaults] registerDefaults:defaults];
 
-            if ([NSWindow respondsToSelector:@selector(setAllowsAutomaticWindowTabbing:)])
-                [NSWindow setAllowsAutomaticWindowTabbing:NO];
+            [NSWindow setAllowsAutomaticWindowTabbing:NO];
         }
     }
 
@@ -205,15 +194,6 @@ static NSString* WineLocalizedString(unsigned int stringID)
             latentDisplayModes = [[NSMutableDictionary alloc] init];
 
             windowsBeingDragged = [[NSMutableSet alloc] init];
-
-            // On macOS 10.12+, use notifications to more reliably detect when windows are being dragged.
-            if ([NSProcessInfo instancesRespondToSelector:@selector(isOperatingSystemAtLeastVersion:)])
-            {
-                NSOperatingSystemVersion requiredVersion = { 10, 12, 0 };
-                useDragNotifications = [[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:requiredVersion];
-            }
-            else
-                useDragNotifications = NO;
 
             if (!requests || !requestsManipQueue || !eventQueues || !eventQueuesLock ||
                 !keyWindows || !originalDisplayModes || !latentDisplayModes)
@@ -350,13 +330,11 @@ static NSString* WineLocalizedString(unsigned int stringID)
             if (activateIfTransformed)
                 [self tryToActivateIgnoringOtherApps:YES];
 
-#if defined(MAC_OS_X_VERSION_10_9) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9
-            if (!enable_app_nap && [NSProcessInfo instancesRespondToSelector:@selector(beginActivityWithOptions:reason:)])
+            if (!enable_app_nap)
             {
                 [[[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep
                                                                 reason:@"Running Windows program"] retain]; // intentional leak
             }
-#endif
 
             mainMenu = [[[NSMenu alloc] init] autorelease];
 
@@ -442,7 +420,7 @@ static NSString* WineLocalizedString(unsigned int stringID)
         }
     }
 
-    - (BOOL) waitUntilQueryDone:(int*)done timeout:(NSDate*)timeout processEvents:(BOOL)processEvents
+    - (BOOL) waitUntilQueryDone:(bool*)done timeout:(NSDate*)timeout processEvents:(BOOL)processEvents
     {
         PerformRequest(NULL);
 
@@ -716,7 +694,8 @@ static NSString* WineLocalizedString(unsigned int stringID)
         NSUInteger nextFloatingIndex = 0;
         __block NSInteger maxLevel = NSIntegerMin;
         __block NSInteger maxNonfloatingLevel = NSNormalWindowLevel;
-        __block NSInteger minFloatingLevel = NSFloatingWindowLevel;
+        /* Windows with WS_EX_TOPMOST should have a window level higher than the macOS dock */
+        __block NSInteger minFloatingLevel = kCGDockWindowLevel + 1;
         __block WineWindow* prev = nil;
         WineWindow* window;
 
@@ -1194,7 +1173,9 @@ static NSString* WineLocalizedString(unsigned int stringID)
     {
         NSImage* nsimage = nil;
 
-        if ([images count])
+        nsimage = [WineIconUtils maskedAppIconFromCGImages:images];  /* CW Hack 25964 */
+
+        if (!nsimage && [images count])
         {
             NSSize bestSize = NSZeroSize;
             id image;
@@ -1960,17 +1941,6 @@ static NSString* WineLocalizedString(unsigned int stringID)
                     [window postKeyEvent:anEvent];
             }
         }
-        else if (!useDragNotifications && type == NSEventTypeAppKitDefined)
-        {
-            WineWindow *window = (WineWindow *)[anEvent window];
-            short subtype = [anEvent subtype];
-
-            // These subtypes are not documented but they appear to mean
-            // "a window is being dragged" and "a window is no longer being
-            // dragged", respectively.
-            if ((subtype == 20 || subtype == 21) && [window isKindOfClass:[WineWindow class]])
-                [self handleWindowDrag:window begin:(subtype == 20)];
-        }
 
         return ret;
     }
@@ -2040,25 +2010,23 @@ static NSString* WineLocalizedString(unsigned int stringID)
             [windowsBeingDragged removeObject:window];
         }];
 
-        if (useDragNotifications) {
-            [nc addObserverForName:NSWindowWillStartDraggingNotification
-                            object:nil
-                             queue:[NSOperationQueue mainQueue]
-                        usingBlock:^(NSNotification *note){
-                NSWindow* window = [note object];
-                if ([window isKindOfClass:[WineWindow class]])
-                    [self handleWindowDrag:(WineWindow *)window begin:YES];
-            }];
+        [nc addObserverForName:NSWindowWillStartDraggingNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note){
+            NSWindow* window = [note object];
+            if ([window isKindOfClass:[WineWindow class]])
+                [self handleWindowDrag:(WineWindow *)window begin:YES];
+        }];
 
-            [nc addObserverForName:NSWindowDidEndDraggingNotification
-                            object:nil
-                             queue:[NSOperationQueue mainQueue]
-                        usingBlock:^(NSNotification *note){
-                NSWindow* window = [note object];
-                if ([window isKindOfClass:[WineWindow class]])
-                    [self handleWindowDrag:(WineWindow *)window begin:NO];
-            }];
-        }
+        [nc addObserverForName:NSWindowDidEndDraggingNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note){
+            NSWindow* window = [note object];
+            if ([window isKindOfClass:[WineWindow class]])
+                [self handleWindowDrag:(WineWindow *)window begin:NO];
+        }];
 
         [nc addObserver:self
                selector:@selector(keyboardSelectionDidChange)
@@ -2445,7 +2413,7 @@ static NSString* WineLocalizedString(unsigned int stringID)
         [bestOption deminiaturize:self];
     }
 
-    - (void) setRetinaMode:(int)mode
+    - (void) setRetinaMode:(BOOL)mode
     {
         retina_on = mode;
 
@@ -2723,7 +2691,7 @@ void macdrv_window_rejected_focus(const macdrv_event *event)
  *
  * Returns the keyboard layout uchr data, keyboard type and input source.
  */
-void macdrv_get_input_source_info(CFDataRef* uchr, CGEventSourceKeyboardType* keyboard_type, int* is_iso, TISInputSourceRef* input_source)
+void macdrv_get_input_source_info(CFDataRef* uchr, CGEventSourceKeyboardType* keyboard_type, bool* is_iso, TISInputSourceRef* input_source)
 {
     OnMainThread(^{
         TISInputSourceRef inputSourceLayout;
@@ -2759,13 +2727,12 @@ void macdrv_beep(void)
 /***********************************************************************
  *              macdrv_set_display_mode
  */
-int macdrv_set_display_mode(const struct macdrv_display* display,
-                            CGDisplayModeRef display_mode)
+int macdrv_set_display_mode(CGDirectDisplayID displayID, CGDisplayModeRef display_mode)
 {
     __block int ret;
 
     OnMainThread(^{
-        ret = [[WineApplicationController sharedController] setMode:display_mode forDisplay:display->displayID];
+        ret = [[WineApplicationController sharedController] setMode:display_mode forDisplay:displayID];
     });
 
     return ret;
@@ -2948,9 +2915,9 @@ void macdrv_quit_reply(int reply)
 /***********************************************************************
  *              macdrv_using_input_method
  */
-int macdrv_using_input_method(void)
+bool macdrv_using_input_method(void)
 {
-    __block BOOL ret;
+    __block bool ret;
 
     OnMainThread(^{
         ret = [[WineApplicationController sharedController] inputSourceIsInputMethod];
@@ -3022,9 +2989,9 @@ CFArrayRef macdrv_create_input_source_list(void)
     return ret;
 }
 
-int macdrv_select_input_source(TISInputSourceRef input_source)
+bool macdrv_select_input_source(TISInputSourceRef input_source)
 {
-    __block int ret = FALSE;
+    __block bool ret = false;
 
     OnMainThread(^{
         ret = (TISSelectInputSource(input_source) == noErr);
@@ -3033,16 +3000,16 @@ int macdrv_select_input_source(TISInputSourceRef input_source)
     return ret;
 }
 
-void macdrv_set_cocoa_retina_mode(int new_mode)
+void macdrv_set_cocoa_retina_mode(bool new_mode)
 {
     OnMainThread(^{
         [[WineApplicationController sharedController] setRetinaMode:new_mode];
     });
 }
 
-int macdrv_is_any_wine_window_visible(void)
+bool macdrv_is_any_wine_window_visible(void)
 {
-    __block int ret = FALSE;
+    __block bool ret = false;
 
     OnMainThread(^{
         ret = [[WineApplicationController sharedController] isAnyWineWindowVisible];

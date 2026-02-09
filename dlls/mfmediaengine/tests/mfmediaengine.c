@@ -33,6 +33,9 @@
 #include "initguid.h"
 #include "mmdeviceapi.h"
 #include "audiosessiontypes.h"
+#include "audioclient.h"
+#include "audiopolicy.h"
+#include "wincodec.h"
 
 #include "wine/test.h"
 
@@ -752,10 +755,110 @@ static void test_playback_rate(void)
     IMFMediaEngineNotify_Release(&notify->IMFMediaEngineNotify_iface);
 }
 
+static void parse_guid(WCHAR *id, GUID *guid)
+{
+    WCHAR *str;
+
+    str = wcsstr(id, L"%b");
+    str += 2;
+    IIDFromString(str, guid);
+}
+
+static void test_audio_session(BOOL session_count_todo)
+{
+    unsigned int process_session_count = 0;
+    IAudioSessionEnumerator *ase;
+    IAudioSessionManager2 *asm2;
+    IAudioSessionControl2 *asc2;
+    IAudioSessionControl *asc;
+    IMMDeviceEnumerator *mme;
+    IChannelAudioVolume *cav;
+    ISimpleAudioVolume *sav;
+    UINT32 channel_count;
+    int i, j, count;
+    IMMDevice *dev;
+    WCHAR *name;
+    HRESULT hr;
+    GUID guid;
+    DWORD pid;
+    float vol;
+
+    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER, &IID_IMMDeviceEnumerator, (void**)&mme);
+    if (FAILED(hr))
+    {
+        skip("mmdevapi not available: %#lx.\n", hr);
+        return;
+    }
+
+    hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(mme, eRender, eMultimedia, &dev);
+    ok(hr == S_OK || hr == E_NOTFOUND, "Unexpected hr %#lx.\n", hr);
+    if (hr != S_OK || !dev)
+    {
+        if (hr == E_NOTFOUND)
+            skip("No sound card available.\n");
+        else
+            skip("GetDefaultAudioEndpoint returned %#lx.\n", hr);
+        goto cleanup;
+    }
+    hr = IMMDevice_Activate(dev, &IID_IAudioSessionManager2, CLSCTX_INPROC_SERVER,
+            NULL, (void**)&asm2);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IAudioSessionManager2_GetSessionEnumerator(asm2, &ase);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IAudioSessionEnumerator_GetCount(ase, &count);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    for (i = 0; i < count; i++)
+    {
+        hr = IAudioSessionEnumerator_GetSession(ase, i, &asc);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IAudioSessionControl_QueryInterface(asc, &IID_IAudioSessionControl2, (void **)&asc2);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        hr = IAudioSessionControl2_GetProcessId(asc2, &pid);
+        if (pid != GetCurrentProcessId())
+            continue;
+        process_session_count++;
+        hr = IAudioSessionControl2_GetSessionIdentifier(asc2, &name);
+        ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        parse_guid(name, &guid);
+        ok(!IsEqualGUID(&guid, &GUID_NULL), "unexpected session GUID %s.\n", wine_dbgstr_guid(&guid));
+        CoTaskMemFree(name);
+        hr = IAudioSessionControl2_QueryInterface(asc2, &IID_ISimpleAudioVolume, (void **)&sav);
+        todo_wine ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            hr = ISimpleAudioVolume_GetMasterVolume(sav, &vol);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            ok(vol == 1.0f, "Unexpected volume %.8e.\n", vol);
+            ISimpleAudioVolume_Release(sav);
+            hr = IAudioSessionControl2_QueryInterface(asc2, &IID_IChannelAudioVolume, (void **)&cav);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            hr = IChannelAudioVolume_GetChannelCount(cav, &channel_count);
+            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+            for (j = 0; j < channel_count; j++)
+            {
+                hr = IChannelAudioVolume_GetChannelVolume(cav, j, &vol);
+                ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+                ok(vol == 1.0f, "Unexpected channel %u volume %.8e.\n", j, vol);
+            }
+            IChannelAudioVolume_Release(cav);
+        }
+        IAudioSessionControl2_Release(asc2);
+        IAudioSessionControl_Release(asc);
+    }
+    todo_wine_if(session_count_todo) ok(process_session_count == 1, "Unexpected session count %u.\n", process_session_count);
+
+    IAudioSessionEnumerator_Release(ase);
+    IAudioSessionManager2_Release(asm2);
+    IMMDevice_Release(dev);
+cleanup:
+    IMMDeviceEnumerator_Release(mme);
+}
+
 static void test_mute(void)
 {
     struct media_engine_notify *notify;
     IMFMediaEngine *media_engine;
+    double volume;
     HRESULT hr;
     BOOL ret;
 
@@ -773,6 +876,26 @@ static void test_mute(void)
 
     ret = IMFMediaEngine_GetMuted(media_engine);
     ok(ret, "Unexpected state.\n");
+
+    hr = IMFMediaEngine_SetMuted(media_engine, FALSE);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    ret = IMFMediaEngine_GetMuted(media_engine);
+    ok(!ret, "Unexpected state.\n");
+
+    hr = IMFMediaEngine_SetVolume(media_engine, 0.0);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    volume = IMFMediaEngine_GetVolume(media_engine);
+    ok(volume == 0.0, "Unexpected volume %.16e.\n", volume);
+
+    ret = IMFMediaEngine_GetMuted(media_engine);
+    ok(!ret, "Unexpected state.\n");
+
+    hr = IMFMediaEngine_SetMuted(media_engine, TRUE);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    test_audio_session(TRUE);
 
     hr = IMFMediaEngine_Shutdown(media_engine);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
@@ -1272,9 +1395,11 @@ static void test_TransferVideoFrame(void)
     ID3D11Texture2D *texture = NULL, *rb_texture;
     D3D11_MAPPED_SUBRESOURCE map_desc;
     IMFMediaEngineEx *media_engine = NULL;
+    IWICImagingFactory *factory = NULL;
     IMFDXGIDeviceManager *manager;
     ID3D11DeviceContext *context;
     D3D11_TEXTURE2D_DESC desc;
+    IWICBitmap *bitmap = NULL;
     IMFByteStream *stream;
     ID3D11Device *device;
     RECT dst_rect;
@@ -1304,6 +1429,9 @@ static void test_TransferVideoFrame(void)
 
     IMFDXGIDeviceManager_Release(manager);
 
+    hr = IMFMediaEngineEx_SetVolume(media_engine, 0.5);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
     if (!(notify->media_engine = media_engine))
         goto done;
 
@@ -1315,6 +1443,13 @@ static void test_TransferVideoFrame(void)
     desc.BindFlags = D3D11_BIND_RENDER_TARGET;
     desc.SampleDesc.Count = 1;
     hr = ID3D11Device_CreateTexture2D(device, &desc, NULL, &texture);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IWICImagingFactory, (void **)&factory);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWICImagingFactory_CreateBitmap(factory, desc.Width, desc.Height, &GUID_WICPixelFormat32bppBGR,
+            WICBitmapCacheOnLoad, &bitmap);
     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
 
     url = SysAllocString(L"i420-64x64.avi");
@@ -1370,8 +1505,17 @@ static void test_TransferVideoFrame(void)
     ok(res == 0, "Unexpected %lu%% diff\n", res);
     ID3D11DeviceContext_Unmap(context, (ID3D11Resource *)rb_texture, 0);
 
+    hr = IMFMediaEngineEx_SetVolume(media_engine, 0.5);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    test_audio_session(FALSE);
+
     ID3D11DeviceContext_Release(context);
     ID3D11Texture2D_Release(rb_texture);
+
+    hr = IMFMediaEngineEx_TransferVideoFrame(notify->media_engine, (IUnknown *)bitmap, NULL, &dst_rect, NULL);
+    /* not supported if a DXGI device manager was provided */
+    ok(hr == E_NOINTERFACE, "Unexpected hr %#lx.\n", hr);
 
 done:
     if (media_engine)
@@ -1380,10 +1524,106 @@ done:
         IMFMediaEngineEx_Release(media_engine);
     }
 
+    if (bitmap)
+        IWICBitmap_Release(bitmap);
+    if (factory)
+        IWICImagingFactory_Release(factory);
     if (texture)
         ID3D11Texture2D_Release(texture);
     if (device)
         ID3D11Device_Release(device);
+
+    IMFMediaEngineNotify_Release(&notify->IMFMediaEngineNotify_iface);
+}
+
+static void test_TransferVideoFrame_wic(void)
+{
+    struct test_transfer_notify *notify;
+    UINT lock_buffer_size, lock_buffer_stride;
+    IMFMediaEngineEx *media_engine = NULL;
+    IWICImagingFactory *factory = NULL;
+    IWICBitmap *bitmap = NULL;
+    IMFByteStream *stream;
+    IWICBitmapLock *lock;
+    WICRect wicrc = {0};
+    BYTE *lock_buffer;
+    RECT dst_rect;
+    LONGLONG pts;
+    HRESULT hr;
+    DWORD res;
+    BSTR url;
+
+    stream = load_resource(L"i420-64x64.avi", L"video/avi");
+
+    notify = create_transfer_notify();
+
+    create_media_engine(&notify->IMFMediaEngineNotify_iface, NULL, DXGI_FORMAT_B8G8R8X8_UNORM,
+            &IID_IMFMediaEngineEx, (void **)&media_engine);
+
+    if (!(notify->media_engine = media_engine))
+        goto done;
+
+    wicrc.Width = 64;
+    wicrc.Height = 64;
+
+    hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IWICImagingFactory, (void **)&factory);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWICImagingFactory_CreateBitmap(factory, wicrc.Width, wicrc.Height, &GUID_WICPixelFormat32bppBGR,
+            WICBitmapCacheOnLoad, &bitmap);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    url = SysAllocString(L"i420-64x64.avi");
+    hr = IMFMediaEngineEx_SetSourceFromByteStream(media_engine, stream, url);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    SysFreeString(url);
+    IMFByteStream_Release(stream);
+
+    res = WaitForSingleObject(notify->frame_ready_event, 5000);
+    ok(!res, "Unexpected res %#lx.\n", res);
+
+    if (FAILED(notify->error))
+    {
+        win_skip("Media engine reported error %#lx, skipping tests.\n", notify->error);
+        goto done;
+    }
+
+    /* FIXME: Wine first video frame is often full of garbage, wait for another update */
+    res = WaitForSingleObject(notify->ready_event, 500);
+    /* It's also missing the MF_MEDIA_ENGINE_EVENT_TIMEUPDATE notifications */
+    todo_wine
+    ok(!res, "Unexpected res %#lx.\n", res);
+
+    SetRect(&dst_rect, 0, 0, wicrc.Width, wicrc.Height);
+    IMFMediaEngineEx_OnVideoStreamTick(notify->media_engine, &pts);
+    hr = IMFMediaEngineEx_TransferVideoFrame(notify->media_engine, (IUnknown *)bitmap, NULL, &dst_rect, NULL);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+
+    hr = IWICBitmap_Lock(bitmap, &wicrc, WICBitmapLockRead, &lock);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWICBitmapLock_GetStride(lock, &lock_buffer_stride);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    hr = IWICBitmapLock_GetDataPointer(lock, &lock_buffer_size, &lock_buffer);
+    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(!!lock_buffer, "got null lock_buffer\n");
+    ok(lock_buffer_size == 16384, "got lock_buffer_size %u\n", lock_buffer_size);
+    ok(lock_buffer_stride == wicrc.Width * 4, "got lock_buffer_stride %u\n", lock_buffer_stride);
+    res = check_rgb32_data(L"rgb32frame.bmp", lock_buffer, lock_buffer_stride * wicrc.Height, &dst_rect);
+    ok(res == 0, "Unexpected %lu%% diff\n", res);
+
+    IWICBitmapLock_Release(lock);
+
+done:
+    if (media_engine)
+    {
+        IMFMediaEngineEx_Shutdown(media_engine);
+        IMFMediaEngineEx_Release(media_engine);
+    }
+
+    if (bitmap)
+        IWICBitmap_Release(bitmap);
+    if (factory)
+        IWICImagingFactory_Release(factory);
 
     IMFMediaEngineNotify_Release(&notify->IMFMediaEngineNotify_iface);
 }
@@ -2637,6 +2877,7 @@ static void test_SetCurrentTime(void)
     ok(hr == MF_E_SHUTDOWN, "Unexpected hr %#lx.\n", hr);
 
     refcount = IMFMediaEngineEx_Release(media_engine);
+    flaky_wine
     ok(!refcount, "Got unexpected refcount %lu.\n", refcount);
 
     /* Unseekable bytestreams */
@@ -2712,6 +2953,7 @@ START_TEST(mfmediaengine)
     test_SetSourceFromByteStream();
     test_audio_configuration();
     test_TransferVideoFrame();
+    test_TransferVideoFrame_wic();
     test_effect();
     test_GetDuration();
     test_GetSeekable();

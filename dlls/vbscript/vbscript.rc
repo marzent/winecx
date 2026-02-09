@@ -50,7 +50,7 @@ STRINGTABLE
     VBSE_NAMED_ARGS_NOT_SUPPORTED      "Object doesn't support named arguments"
     VBSE_LOCALE_SETTING_NOT_SUPPORTED  "Object doesn't support current locale setting"
     VBSE_NAMED_PARAM_NOT_FOUND         "Named argument not found"
-    VBSE_PARAMETER_NOT_OPTIONAL        "Named argument not found"
+    VBSE_PARAMETER_NOT_OPTIONAL        "Argument not optional"
     VBSE_FUNC_ARITY_MISMATCH           "Wrong number of arguments or invalid property assignment"
     VBSE_NOT_ENUM                      "Object not a collection"
     VBSE_INVALID_DLL_FUNCTION_NAME     "Specified DLL function not found"
@@ -71,8 +71,5 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 #define WINE_FILEDESCRIPTION_STR "Wine VBScript"
 #define WINE_FILENAME_STR "vbscript.dll"
 #define WINE_FILEVERSION 5,8,7601,16978
-#define WINE_FILEVERSION_STR "5.8.7601.16978"
-#define WINE_PRODUCTVERSION 5,8,0,16978
-#define WINE_PRODUCTVERSION_STR "5.8.7601.16978"
 
 #include "wine/wine_common_ver.rc"

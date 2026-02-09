@@ -194,6 +194,7 @@ struct threadpool_object
             struct list     wait_entry;
             ULONGLONG       timeout;
             HANDLE          handle;
+            HANDLE          duped_handle;
             DWORD           flags;
             RTL_WAITORTIMERCALLBACKFUNC rtl_callback;
         } wait;
@@ -1296,7 +1297,10 @@ static void CALLBACK waitqueue_thread_proc( void *param )
                 assert( num_handles < MAXIMUM_WAITQUEUE_OBJECTS );
                 InterlockedIncrement( &wait->refcount );
                 objects[num_handles] = wait;
-                handles[num_handles] = wait->u.wait.handle;
+                /* NtWaitForMultipleObjects() fails if any invalid handles are passed, and one invalid handle
+                 * should not affect other waiting items. The calling app is allowed to close waitable timer
+                 * handles immediately after submission, so we need a duplicate for those in particular. */
+                handles[num_handles] = wait->u.wait.duped_handle ? wait->u.wait.duped_handle : wait->u.wait.handle;
                 update_serials[num_handles] = wait->update_serial;
                 num_handles++;
             }
@@ -1309,7 +1313,7 @@ static void CALLBACK waitqueue_thread_proc( void *param )
             assert( num_handles == 0 );
             RtlLeaveCriticalSection( &waitqueue.cs );
             timeout.QuadPart = (ULONGLONG)THREADPOOL_WORKER_TIMEOUT * -10000;
-            status = NtWaitForMultipleObjects( 1, &bucket->update_event, TRUE, bucket->alertable, &timeout );
+            status = NtWaitForMultipleObjects( 1, &bucket->update_event, WaitAny, bucket->alertable, &timeout );
             RtlEnterCriticalSection( &waitqueue.cs );
 
             if (status == STATUS_TIMEOUT && !bucket->objcount)
@@ -1319,7 +1323,7 @@ static void CALLBACK waitqueue_thread_proc( void *param )
         {
             handles[num_handles] = bucket->update_event;
             RtlLeaveCriticalSection( &waitqueue.cs );
-            status = NtWaitForMultipleObjects( num_handles + 1, handles, TRUE, bucket->alertable, &timeout );
+            status = NtWaitForMultipleObjects( num_handles + 1, handles, WaitAny, bucket->alertable, &timeout );
             RtlEnterCriticalSection( &waitqueue.cs );
 
             if (status >= STATUS_WAIT_0 && status < STATUS_WAIT_0 + num_handles)
@@ -1436,7 +1440,8 @@ static NTSTATUS tp_waitqueue_lock( struct threadpool_object *wait )
     wait->u.wait.bucket         = NULL;
     wait->u.wait.wait_pending   = FALSE;
     wait->u.wait.timeout        = 0;
-    wait->u.wait.handle         = INVALID_HANDLE_VALUE;
+    wait->u.wait.handle         = NULL;
+    wait->u.wait.duped_handle   = NULL;
 
     RtlEnterCriticalSection( &waitqueue.cs );
 
@@ -2117,6 +2122,15 @@ static void tp_object_prepare_shutdown( struct threadpool_object *object )
         tp_ioqueue_unlock( object );
 }
 
+static void tp_wait_close_duped_handle( struct threadpool_object *wait )
+{
+    if (wait->u.wait.duped_handle)
+    {
+        NtClose( wait->u.wait.duped_handle );
+        wait->u.wait.duped_handle = NULL;
+    }
+}
+
 /***********************************************************************
  *           tp_object_release    (internal)
  *
@@ -2149,6 +2163,9 @@ static BOOL tp_object_release( struct threadpool_object *object )
 
         tp_group_release( group );
     }
+
+    if (object->type == TP_OBJECT_TYPE_WAIT)
+        tp_wait_close_duped_handle( object );
 
     tp_threadpool_unlock( object->pool );
 
@@ -3067,6 +3084,12 @@ VOID WINAPI TpSetWait( TP_WAIT *wait, HANDLE handle, LARGE_INTEGER *timeout )
     assert( this->u.wait.bucket );
 
     same_handle = this->u.wait.handle == handle;
+    tp_wait_close_duped_handle( this );
+    if (handle && NtDuplicateObject( NtCurrentProcess(), handle, NtCurrentProcess(),
+        &this->u.wait.duped_handle, 0, 0, DUPLICATE_SAME_ACCESS ) != STATUS_SUCCESS)
+    {
+        WARN( "Failed to duplicate handle.\n" );
+    }
     this->u.wait.handle = handle;
 
     if (handle || this->u.wait.wait_pending)

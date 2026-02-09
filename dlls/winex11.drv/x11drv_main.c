@@ -68,6 +68,7 @@ Window root_window;
 BOOL usexvidmode = TRUE;
 BOOL usexrandr = TRUE;
 BOOL usexcomposite = TRUE;
+BOOL use_egl = TRUE;
 BOOL use_take_focus = TRUE;
 BOOL use_primary_selection = FALSE;
 BOOL use_system_cursors = TRUE;
@@ -101,7 +102,7 @@ static pthread_mutex_t error_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Atom X11DRV_Atoms[NB_XATOMS - FIRST_XATOM];
 
-static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
+const char * const X11DRV_atom_names[NB_XATOMS - FIRST_XATOM] =
 {
     "CLIPBOARD",
     "COMPOUND_TEXT",
@@ -119,6 +120,8 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "RAW_CAP_HEIGHT",
     "WM_PROTOCOLS",
     "WM_DELETE_WINDOW",
+    "WM_HINTS",
+    "WM_NORMAL_HINTS",
     "WM_STATE",
     "WM_TAKE_FOCUS",
     "DndProtocol",
@@ -126,6 +129,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "_ICC_PROFILE",
     "_KDE_NET_WM_STATE_SKIP_SWITCHER",
     "_MOTIF_WM_HINTS",
+    "_NET_ACTIVE_WINDOW",
     "_NET_STARTUP_INFO_BEGIN",
     "_NET_STARTUP_INFO",
     "_NET_SUPPORTED",
@@ -347,12 +351,12 @@ HKEY open_hkcu_key( const char *name )
 
         sid = ((TOKEN_USER *)sid_data)->User.Sid;
         len = sprintf( buffer, "\\Registry\\User\\S-%u-%u", sid->Revision,
-                       (int)MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
-                                                sid->IdentifierAuthority.Value[4] ),
-                                      MAKEWORD( sid->IdentifierAuthority.Value[3],
-                                                sid->IdentifierAuthority.Value[2] )));
+                       MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
+                                           sid->IdentifierAuthority.Value[4] ),
+                                 MAKEWORD( sid->IdentifierAuthority.Value[3],
+                                           sid->IdentifierAuthority.Value[2] )));
         for (i = 0; i < sid->SubAuthorityCount; i++)
-            len += sprintf( buffer + len, "-%u", (int)sid->SubAuthority[i] );
+            len += sprintf( buffer + len, "-%u", sid->SubAuthority[i] );
 
         ascii_to_unicode( bufferW, buffer, len );
         hkcu = reg_open_key( NULL, bufferW, len * sizeof(WCHAR) );
@@ -451,6 +455,9 @@ static void setup_options(void)
 
     if (!get_config_key( hkey, appkey, "Managed", buffer, sizeof(buffer) ))
         managed_mode = IS_OPTION_TRUE( buffer[0] );
+
+    if (!get_config_key( hkey, appkey, "UseEGL", buffer, sizeof(buffer) ))
+        use_egl = IS_OPTION_TRUE( buffer[0] );
 
     if (!get_config_key( hkey, appkey, "UseXVidMode", buffer, sizeof(buffer) ))
         usexvidmode = IS_OPTION_TRUE( buffer[0] );
@@ -650,7 +657,7 @@ static NTSTATUS x11drv_init( void *arg )
     init_visuals( display, DefaultScreen( display ));
     screen_bpp = pixmap_formats[default_visual.depth]->bits_per_pixel;
 
-    XInternAtoms( display, (char **)atom_names, NB_XATOMS - FIRST_XATOM, False, X11DRV_Atoms );
+    XInternAtoms( display, (char **)X11DRV_atom_names, NB_XATOMS - FIRST_XATOM, False, X11DRV_Atoms );
 
     init_win_context();
 
@@ -673,6 +680,7 @@ static NTSTATUS x11drv_init( void *arg )
     X11DRV_InitKeyboard( gdi_display );
     if (use_xim) use_xim = xim_init( input_style );
 
+    init_icm_profile();
     init_user_driver();
     return STATUS_SUCCESS;
 }
@@ -758,6 +766,7 @@ struct x11drv_thread_data *x11drv_init_thread_data(void)
     if (use_xim) xim_thread_attach( data );
     x11drv_xinput2_init( data );
     net_supported_init( data );
+    net_active_window_init( data );
 
     return data;
 }
@@ -802,43 +811,13 @@ BOOL X11DRV_SystemParametersInfo( UINT action, UINT int_param, void *ptr_param, 
 const unixlib_entry_t __wine_unix_call_funcs[] =
 {
     x11drv_init,
-    x11drv_tablet_attach_queue,
-    x11drv_tablet_get_packet,
-    x11drv_tablet_info,
-    x11drv_tablet_load_info,
 };
 
-
-C_ASSERT( ARRAYSIZE(__wine_unix_call_funcs) == unix_funcs_count );
-
-
 #ifdef _WIN64
-
-static NTSTATUS x11drv_wow64_tablet_info( void *arg )
-{
-    struct
-    {
-        UINT category;
-        UINT index;
-        ULONG output;
-    } *params32 = arg;
-    struct tablet_info_params params;
-
-    params.category = params32->category;
-    params.index = params32->index;
-    params.output = UlongToPtr( params32->output );
-    return x11drv_tablet_info( &params );
-}
 
 const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
 {
     x11drv_init,
-    x11drv_tablet_attach_queue,
-    x11drv_tablet_get_packet,
-    x11drv_wow64_tablet_info,
-    x11drv_tablet_load_info,
 };
-
-C_ASSERT( ARRAYSIZE(__wine_unix_call_wow64_funcs) == unix_funcs_count );
 
 #endif /* _WIN64 */

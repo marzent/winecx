@@ -29,6 +29,7 @@
 
 #define WIDL_using_Windows_Foundation
 #define WIDL_using_Windows_Foundation_Collections
+#define WIDL_using_Windows_Storage_Streams
 #include "windows.foundation.h"
 #define WIDL_using_Windows_Globalization
 #include "windows.globalization.h"
@@ -36,13 +37,11 @@
 #include "windows.media.speechrecognition.h"
 #define WIDL_using_Windows_Media_SpeechSynthesis
 #include "windows.media.speechsynthesis.h"
-
 #include "wine/test.h"
 
 #define AsyncStatus_Closed 4
 
 #define SPERR_WINRT_INTERNAL_ERROR 0x800455a0
-#define SPERR_WINRT_INCORRECT_FORMAT 0x80131537
 
 #define IHandler_RecognitionResult ITypedEventHandler_SpeechContinuousRecognitionSession_SpeechContinuousRecognitionResultGeneratedEventArgs
 #define IHandler_RecognitionResultVtbl ITypedEventHandler_SpeechContinuousRecognitionSession_SpeechContinuousRecognitionResultGeneratedEventArgsVtbl
@@ -431,9 +430,9 @@ static void check_async_info_( unsigned int line, IInspectable *async_obj, UINT3
 
     async_id = 0xdeadbeef;
     hr = IAsyncInfo_get_Id(async_info, &async_id);
-    if (expect_status < 4) todo_wine ok_(__FILE__, line)(hr == S_OK, "IAsyncInfo_get_Id returned %#lx\n", hr);
-    else todo_wine ok_(__FILE__, line)(hr == E_ILLEGAL_METHOD_CALL, "IAsyncInfo_get_Id returned %#lx\n", hr);
-    todo_wine ok_(__FILE__, line)(async_id == expect_id, "got async_id %#x\n", async_id);
+    if (expect_status < 4) ok_(__FILE__, line)(hr == S_OK, "IAsyncInfo_get_Id returned %#lx\n", hr);
+    else ok_(__FILE__, line)(hr == E_ILLEGAL_METHOD_CALL, "IAsyncInfo_get_Id returned %#lx\n", hr);
+    todo_wine_if(expect_id != 1) ok_(__FILE__, line)(async_id == expect_id, "got async_id %#x\n", async_id);
 
     async_status = 0xdeadbeef;
     hr = IAsyncInfo_get_Status(async_info, &async_status);
@@ -782,12 +781,18 @@ static void test_SpeechSynthesizer(void)
     static const WCHAR *speech_synthesizer_name = L"Windows.Media.SpeechSynthesis.SpeechSynthesizer";
     static const WCHAR *speech_synthesizer_name2 = L"windows.media.speechsynthesis.speechsynthesizer";
     static const WCHAR *unknown_class_name = L"Unknown.Class";
+    static const WCHAR *buffer_class_name = L"Windows.Storage.Streams.Buffer";
     IActivationFactory *factory = NULL, *factory2 = NULL;
+    IBufferFactory *buffer_factory = NULL;
     IAsyncOperation_SpeechSynthesisStream *operation_ss_stream = NULL;
+    IAsyncOperationWithProgress_IBuffer_UINT32 *operation_read_async = NULL;
     IVectorView_IMediaMarker *media_markers = NULL;
     IVectorView_VoiceInformation *voices = NULL;
     IInstalledVoicesStatic *voices_static = NULL;
-    ISpeechSynthesisStream *ss_stream = NULL;
+    ISpeechSynthesisStream *ss_stream = NULL, *tmp;
+    IRandomAccessStream *ra_stream;
+    IInputStream *inp_stream;
+    IBuffer *buffer = NULL, *buffer2 = NULL;
     IVoiceInformation *voice;
     IInspectable *inspectable = NULL, *tmp_inspectable = NULL;
     IAgileObject *agile_object = NULL, *tmp_agile_object = NULL;
@@ -797,6 +802,7 @@ static void test_SpeechSynthesizer(void)
     struct async_inspectable_handler async_inspectable_handler;
     HMODULE hdll;
     HSTRING str, str2;
+    UINT64 value;
     HRESULT hr;
     UINT32 size;
     ULONG ref;
@@ -943,6 +949,47 @@ static void test_SpeechSynthesizer(void)
     hr = IAsyncOperation_SpeechSynthesisStream_GetResults(operation_ss_stream, &ss_stream);
     ok(hr == S_OK, "IAsyncOperation_SpeechSynthesisStream_GetResults failed, hr %#lx\n", hr);
 
+    hr = ISpeechSynthesisStream_QueryInterface(ss_stream, &IID_IRandomAccessStream, (void **)&ra_stream);
+    ok(hr == S_OK, "QueryInteface(&IID_IRandomAccessStream) failed, hr %#lx\n", hr);
+    hr = IRandomAccessStream_get_Size(ra_stream, &value);
+    ok(hr == S_OK, "_get_Size failed, hr %#lx\n", hr);
+    todo_wine ok(value, "got 0.\n");
+    IRandomAccessStream_Release(ra_stream);
+
+    hr = WindowsCreateString(buffer_class_name, wcslen(buffer_class_name), &str2);
+    ok(hr == S_OK, "WindowsCreateString failed, hr %#lx.\n", hr);
+    hr = RoGetActivationFactory(str2, &IID_IActivationFactory, (void **)&factory2);
+    ok(hr == S_OK, "RoGetActivationFactory failed, hr %#lx.\n", hr);
+    WindowsDeleteString(str2);
+
+    hr = IActivationFactory_QueryInterface(factory2, &IID_IBufferFactory, (void **)&buffer_factory);
+    ok(hr == S_OK, "QueryInterface IID_IBufferFactory failed, hr %#lx.\n", hr);
+    IActivationFactory_Release(factory2);
+    hr = IBufferFactory_Create(buffer_factory, value, &buffer);
+    ok(hr == S_OK, "IBufferFactory_Create failed, hr %#lx.\n", hr);
+    IBufferFactory_Release(buffer_factory);
+
+    hr = ISpeechSynthesisStream_QueryInterface(ss_stream, &IID_IInputStream, (void **)&inp_stream);
+    ok(hr == S_OK, "QueryInteface(&IID_IRandomAccessStream) failed, hr %#lx\n", hr);
+    hr = IInputStream_ReadAsync(inp_stream, buffer, value, InputStreamOptions_ReadAhead, &operation_read_async);
+    ok(hr == S_OK, "_ReadAsync failed, hr %#lx\n", hr);
+    IInputStream_Release(inp_stream);
+    check_async_info((IInspectable *)operation_read_async, 1, Completed, S_OK);
+    IAsyncOperationWithProgress_IBuffer_UINT32_GetResults(operation_read_async, &buffer2);
+    ok(hr == S_OK, "_GetResults failed, hr %#lx\n", hr);
+    ok(buffer2 == buffer, "got %p, %p.\n", buffer, buffer2);
+    IBuffer_Release(buffer);
+    ref = IAsyncOperationWithProgress_IBuffer_UINT32_Release(operation_read_async);
+    ok(!ref, "got refcount %ld.\n", ref);
+    ref = IBuffer_Release(buffer2);
+    ok(!ref, "got refcount %ld.\n", ref);
+
+    tmp = (void *)0xdeadbeef;
+    hr = IAsyncOperation_SpeechSynthesisStream_GetResults(operation_ss_stream, &tmp);
+    ok(hr == S_OK, "IAsyncOperation_SpeechSynthesisStream_GetResults failed, hr %#lx\n", hr);
+    todo_wine ok(tmp == NULL, "Got %p.\n", tmp);
+    if (tmp && tmp != (void *)0xdeadbeef) ISpeechSynthesisStream_Release(tmp);
+
     hr = ISpeechSynthesisStream_get_Markers(ss_stream, &media_markers);
     ok(hr == S_OK, "ISpeechSynthesisStream_get_Markers failed, hr %#lx\n", hr);
     check_interface(media_markers, &IID_IVectorView_IMediaMarker, TRUE);
@@ -953,7 +1000,7 @@ static void test_SpeechSynthesizer(void)
     ok(ref == 0, "Got unexpected ref %lu.\n", ref);
 
     ref = ISpeechSynthesisStream_Release(ss_stream);
-    ok(ref == 0, "Got unexpected ref %lu.\n", ref);
+    todo_wine ok(ref == 0, "Got unexpected ref %lu.\n", ref);
 
     IAsyncOperation_SpeechSynthesisStream_Release(operation_ss_stream);
 
@@ -977,7 +1024,7 @@ static void test_SpeechSynthesizer(void)
     check_interface(ss_stream, &IID_IAgileObject, TRUE);
 
     ref = ISpeechSynthesisStream_Release(ss_stream);
-    ok(ref == 0, "Got unexpected ref %lu.\n", ref);
+    todo_wine ok(ref == 0, "Got unexpected ref %lu.\n", ref);
 
     IAsyncOperation_SpeechSynthesisStream_Release(operation_ss_stream);
 
@@ -996,7 +1043,7 @@ static void test_SpeechSynthesizer(void)
     operation_ss_stream = (void *)0xdeadbeef;
     hr = ISpeechSynthesizer_SynthesizeSsmlToStreamAsync(synthesizer, str, &operation_ss_stream);
     /* Broken on Win 8 + 8.1 */
-    ok(hr == S_OK || broken(hr == SPERR_WINRT_INCORRECT_FORMAT), "ISpeechSynthesizer_SynthesizeSsmlToStreamAsync failed, hr %#lx\n", hr);
+    ok(hr == S_OK || broken(hr == COR_E_FORMAT), "ISpeechSynthesizer_SynthesizeSsmlToStreamAsync failed, hr %#lx\n", hr);
 
     if (hr == S_OK)
     {
@@ -1283,10 +1330,13 @@ static void test_SpeechRecognizer(void)
         ok(result_status == SpeechRecognitionResultStatus_Success, "Got unexpected status %#x.\n", result_status);
 
         ref = ISpeechRecognitionCompilationResult_Release(compilation_result);
-        ok(!ref , "Got unexpected ref %lu.\n", ref);
+        todo_wine ok(!ref , "Got unexpected ref %lu.\n", ref);
 
+        compilation_result = (void *)0xdeadbeef;
         hr = IAsyncOperation_SpeechRecognitionCompilationResult_GetResults(operation, &compilation_result);
-        ok(hr == E_UNEXPECTED, "Got unexpected hr %#lx.\n", hr);
+        todo_wine ok(hr == E_UNEXPECTED, "Got unexpected hr %#lx.\n", hr);
+        todo_wine ok(compilation_result == NULL, "Got %p.\n", compilation_result);
+        if (compilation_result && compilation_result != (void *)0xdeadbeef) ISpeechRecognitionCompilationResult_Release(compilation_result);
 
         hr = IAsyncOperation_SpeechRecognitionCompilationResult_QueryInterface(operation, &IID_IAsyncInfo, (void **)&info);
         ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);

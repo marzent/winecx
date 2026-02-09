@@ -751,7 +751,7 @@ void wined3d_device_create_default_samplers(struct wined3d_device *device, struc
     desc.max_lod =  1000.0f;
     desc.mip_base_level = 0;
     desc.max_anisotropy = 1;
-    desc.compare = FALSE;
+    desc.reduction_mode = WINED3D_FILTER_REDUCTION_WEIGHTED_AVERAGE;
     desc.comparison_func = WINED3D_CMP_NEVER;
     desc.srgb_decode = TRUE;
 
@@ -806,7 +806,7 @@ static bool wined3d_null_image_vk_init(struct wined3d_image_vk *image, struct wi
 
     if (!wined3d_context_vk_create_image(context_vk, type,
             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_FORMAT_R8G8B8A8_UNORM,
-            1, 1, 1, sample_count, 1, layer_count, flags, image))
+            1, 1, 1, sample_count, 1, layer_count, flags, NULL, image))
     {
         return false;
     }
@@ -1243,6 +1243,7 @@ static const struct wined3d_allocator_ops wined3d_allocator_gl_ops =
 static const struct
 {
     GLbitfield flags;
+    GLenum binding;
 }
 gl_memory_types[] =
 {
@@ -1255,15 +1256,26 @@ gl_memory_types[] =
     {GL_CLIENT_STORAGE_BIT | GL_MAP_READ_BIT},
     {GL_CLIENT_STORAGE_BIT | GL_MAP_WRITE_BIT},
     {GL_CLIENT_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT},
+
+    {0, GL_UNIFORM_BUFFER},
+    {GL_MAP_READ_BIT, GL_UNIFORM_BUFFER},
+    {GL_MAP_WRITE_BIT, GL_UNIFORM_BUFFER},
+    {GL_MAP_READ_BIT | GL_MAP_WRITE_BIT, GL_UNIFORM_BUFFER},
+
+    {GL_CLIENT_STORAGE_BIT, GL_UNIFORM_BUFFER},
+    {GL_CLIENT_STORAGE_BIT | GL_MAP_READ_BIT, GL_UNIFORM_BUFFER},
+    {GL_CLIENT_STORAGE_BIT | GL_MAP_WRITE_BIT, GL_UNIFORM_BUFFER},
+    {GL_CLIENT_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT, GL_UNIFORM_BUFFER},
 };
 
-static unsigned int wined3d_device_gl_find_memory_type(GLbitfield flags)
+static unsigned int wined3d_device_gl_find_memory_type(GLbitfield flags, GLenum binding)
 {
     unsigned int i;
 
     for (i = 0; i < ARRAY_SIZE(gl_memory_types); ++i)
     {
-        if (gl_memory_types[i].flags == flags)
+        if (gl_memory_types[i].flags == flags
+                && (binding != GL_UNIFORM_BUFFER || gl_memory_types[i].binding == binding))
             return i;
     }
 
@@ -1274,6 +1286,11 @@ static unsigned int wined3d_device_gl_find_memory_type(GLbitfield flags)
 GLbitfield wined3d_device_gl_get_memory_type_flags(unsigned int memory_type_idx)
 {
     return gl_memory_types[memory_type_idx].flags;
+}
+
+GLenum wined3d_device_gl_get_memory_type_binding(unsigned int memory_type_idx)
+{
+    return gl_memory_types[memory_type_idx].binding ? gl_memory_types[memory_type_idx].binding : GL_ARRAY_BUFFER;
 }
 
 static struct wined3d_allocator_block *wined3d_device_gl_allocate_memory(struct wined3d_device_gl *device_gl,
@@ -1336,7 +1353,7 @@ bool wined3d_device_gl_create_bo(struct wined3d_device_gl *device_gl, struct win
         GLsizeiptr size, GLenum binding, GLenum usage, bool coherent, GLbitfield flags, struct wined3d_bo_gl *bo)
 {
     const struct wined3d_gl_info *gl_info = &wined3d_adapter_gl(device_gl->d.adapter)->gl_info;
-    unsigned int memory_type_idx = wined3d_device_gl_find_memory_type(flags);
+    unsigned int memory_type_idx = wined3d_device_gl_find_memory_type(flags, binding);
     struct wined3d_allocator_block *memory = NULL;
     GLsizeiptr buffer_offset = 0;
     GLuint id = 0;
@@ -2651,8 +2668,11 @@ void CDECL wined3d_device_context_draw_indexed(struct wined3d_device_context *co
             context, base_vertex_index, start_index, index_count, start_instance, instance_count);
 
     wined3d_device_context_lock(context);
-    wined3d_device_context_emit_draw(context, state->primitive_type, state->patch_vertex_count,
-            base_vertex_index, start_index, index_count, start_instance, instance_count, true);
+    if (state->index_buffer)
+    {
+        wined3d_device_context_emit_draw(context, state->primitive_type, state->patch_vertex_count,
+                base_vertex_index, start_index, index_count, start_instance, instance_count, true);
+    }
     wined3d_device_context_unlock(context);
 }
 
@@ -4403,6 +4423,12 @@ void CDECL wined3d_device_context_update_sub_resource(struct wined3d_device_cont
         WARN("Invalid box %s specified.\n", debug_box(box));
         return;
     }
+    else if ((resource->format->attrs & WINED3D_FORMAT_ATTR_PLANAR)
+            && ((box->left & 1) || (box->right & 1) || (box->top & 1) || (box->bottom & 1)))
+    {
+        WARN("Invalid box %s for planar resource.\n", debug_box(box));
+        return;
+    }
 
     wined3d_device_context_lock(context);
     wined3d_device_context_emit_update_sub_resource(context, resource,
@@ -4567,6 +4593,7 @@ HRESULT CDECL wined3d_device_context_map(struct wined3d_device_context *context,
         struct wined3d_resource *resource, unsigned int sub_resource_idx,
         struct wined3d_map_desc *map_desc, const struct wined3d_box *box, unsigned int flags)
 {
+    const struct wined3d_format *format = resource->format;
     struct wined3d_sub_resource_desc desc;
     struct wined3d_box b;
     HRESULT hr;
@@ -4616,6 +4643,12 @@ HRESULT CDECL wined3d_device_context_map(struct wined3d_device_context *context,
 
     wined3d_device_context_lock(context);
     hr = wined3d_device_context_emit_map(context, resource, sub_resource_idx, map_desc, box, flags);
+    if (format->attrs & WINED3D_FORMAT_ATTR_PLANAR)
+    {
+        unsigned int height = box->bottom - box->top;
+        map_desc->slice_pitch = map_desc->row_pitch * height
+                + (map_desc->row_pitch * 2 / format->uv_width * height / format->uv_height);
+    }
     wined3d_device_context_unlock(context);
     return hr;
 }
@@ -5622,4 +5655,31 @@ LRESULT device_process_message(struct wined3d_device *device, HWND window, BOOL 
         return CallWindowProcW(proc, window, message, wparam, lparam);
     else
         return CallWindowProcA(proc, window, message, wparam, lparam);
+}
+
+unsigned int CDECL wined3d_device_get_video_decode_profile_count(struct wined3d_device *device)
+{
+    GUID profiles[WINED3D_DECODER_MAX_PROFILE_COUNT];
+    unsigned int count;
+
+    TRACE("device %p.\n", device);
+
+    device->adapter->decoder_ops->get_profiles(device->adapter, &count, profiles);
+    return count;
+}
+
+HRESULT CDECL wined3d_device_get_video_decode_profile(struct wined3d_device *device, unsigned int idx, GUID *profile)
+{
+    GUID profiles[WINED3D_DECODER_MAX_PROFILE_COUNT];
+    unsigned int count;
+
+    TRACE("device %p, idx %u.\n", device, idx);
+
+    device->adapter->decoder_ops->get_profiles(device->adapter, &count, profiles);
+
+    if (idx >= count)
+        return E_INVALIDARG;
+
+    *profile = profiles[idx];
+    return S_OK;
 }

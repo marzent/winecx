@@ -31,8 +31,16 @@ extern "C" {
 #endif
 #endif
 
+#ifndef WINSHLWAPI
+#ifndef _SHLWAPI_
+#define WINSHLWAPI DECLSPEC_IMPORT
+#else
+#define WINSHLWAPI
+#endif
+#endif
+
 #ifndef _WIN64
-#include <pshpack1.h>
+#pragma pack(push,1)
 #endif
 
 DECLARE_HANDLE(HDROP);
@@ -687,12 +695,13 @@ WINSHELLAPI UINT        WINAPI ExtractIconExW(LPCWSTR,INT,HICON*,HICON*,UINT);
 WINSHELLAPI HINSTANCE   WINAPI FindExecutableA(LPCSTR,LPCSTR,LPSTR);
 WINSHELLAPI HINSTANCE   WINAPI FindExecutableW(LPCWSTR,LPCWSTR,LPWSTR);
 #define                        FindExecutable WINELIB_NAME_AW(FindExecutable)
+WINSHELLAPI BOOL        WINAPI InitNetworkAddressControl(void);
 WINSHELLAPI BOOL        WINAPI ShellAboutA(HWND,LPCSTR,LPCSTR,HICON);
 WINSHELLAPI BOOL        WINAPI ShellAboutW(HWND,LPCWSTR,LPCWSTR,HICON);
 #define                        ShellAbout WINELIB_NAME_AW(ShellAbout)
-WINSHELLAPI int         WINAPIV ShellMessageBoxA(HINSTANCE,HWND,LPCSTR,LPCSTR,UINT,...);
-WINSHELLAPI int         WINAPIV ShellMessageBoxW(HINSTANCE,HWND,LPCWSTR,LPCWSTR,UINT,...);
-#define                         ShellMessageBox WINELIB_NAME_AW(ShellMessageBox)
+WINSHLWAPI  int        WINAPIV ShellMessageBoxA(HINSTANCE,HWND,LPCSTR,LPCSTR,UINT,...);
+WINSHLWAPI  int        WINAPIV ShellMessageBoxW(HINSTANCE,HWND,LPCWSTR,LPCWSTR,UINT,...);
+#define                        ShellMessageBox WINELIB_NAME_AW(ShellMessageBox)
 WINSHELLAPI DWORD       WINAPI DoEnvironmentSubstA(LPSTR, UINT);
 WINSHELLAPI DWORD       WINAPI DoEnvironmentSubstW(LPWSTR, UINT);
 #define                        DoEnvironmentSubst WINELIB_NAME_AW(DoEnvironmentSubst)
@@ -706,7 +715,7 @@ WINSHELLAPI HRESULT     WINAPI SHGetPropertyStoreForWindow(HWND,REFIID,void **);
 #endif /* defined(__cplusplus) */
 
 #ifndef _WIN64
-#include <poppack.h>
+#pragma pack(pop)
 #endif
 
 #endif /* __WINE_SHELLAPI_H */

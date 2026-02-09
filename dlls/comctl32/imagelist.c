@@ -71,6 +71,7 @@ struct _IMAGELIST
     INT         nOvlIdx[MAX_OVERLAYIMAGE]; /* 38: overlay images index */
 
     /* not yet found out */
+    DWORD   magic;
     HBRUSH  hbrBlend25;
     HBRUSH  hbrBlend50;
     INT     cInitial;
@@ -84,7 +85,7 @@ struct _IMAGELIST
 #define IMAGELIST_MAGIC 0x53414D58
 
 /* Header used by ImageList_Read() and ImageList_Write() */
-#include "pshpack2.h"
+#pragma pack(push,2)
 typedef struct _ILHEAD
 {
     USHORT	usMagic;
@@ -98,7 +99,7 @@ typedef struct _ILHEAD
     WORD	flags;
     SHORT	ovls[4];
 } ILHEAD;
-#include "poppack.h"
+#pragma pack(pop)
 
 /* internal image list data used for Drag & Drop operations */
 typedef struct
@@ -2970,6 +2971,7 @@ failed:
     return result;
 }
 
+#if __WINE_COMCTL32_VERSION == 6
 /*************************************************************************
  * ImageList_WriteEx [COMCTL32.@]
  */
@@ -2978,6 +2980,7 @@ HRESULT WINAPI ImageList_WriteEx(HIMAGELIST himl, DWORD flags, IStream *pstm)
     FIXME("%p %#lx %p: semi-stub\n", himl, flags, pstm);
     return ImageList_Write(himl, pstm) ? S_OK : E_FAIL;
 }
+#endif /* __WINE_COMCTL32_VERSION == 6 */
 
 /*************************************************************************
  * ImageList_Write [COMCTL32.@]
@@ -3123,6 +3126,7 @@ ImageList_SetColorTable(HIMAGELIST himl, UINT uStartIndex, UINT cEntries, const 
     return SetDIBColorTable(himl->hdcImage, uStartIndex, cEntries, prgb);
 }
 
+#if __WINE_COMCTL32_VERSION == 6
 /*************************************************************************
  * ImageList_CoCreateInstance [COMCTL32.@]
  *
@@ -3148,6 +3152,7 @@ ImageList_CoCreateInstance (REFCLSID rclsid, const IUnknown *punkOuter, REFIID r
 
     return ImageListImpl_CreateInstance(punkOuter, riid, ppv);
 }
+#endif /* __WINE_COMCTL32_VERSION == 6 */
 
 
 /*************************************************************************
@@ -3210,6 +3215,7 @@ static ULONG WINAPI ImageListImpl_Release(IImageList2 *iface)
         if (This->hbrBlend50) DeleteObject (This->hbrBlend50);
 
         This->IImageList2_iface.lpVtbl = NULL;
+        This->magic = 0;
         Free(This->item_flags);
         Free(This);
     }
@@ -3793,7 +3799,7 @@ static BOOL is_valid(HIMAGELIST himl)
     BOOL valid;
     __TRY
     {
-        valid = himl && himl->IImageList2_iface.lpVtbl == &ImageListImpl_Vtbl;
+        valid = himl && himl->magic == IMAGELIST_MAGIC;
     }
     __EXCEPT_PAGE_FAULT
     {
@@ -3840,6 +3846,7 @@ static HRESULT ImageListImpl_CreateInstance(const IUnknown *pUnkOuter, REFIID ii
     if (!This) return E_OUTOFMEMORY;
 
     This->IImageList2_iface.lpVtbl = &ImageListImpl_Vtbl;
+    This->magic = IMAGELIST_MAGIC;
     This->ref = 1;
 
     ret = IImageList2_QueryInterface(&This->IImageList2_iface, iid, ppv);

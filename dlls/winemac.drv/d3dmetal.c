@@ -84,13 +84,13 @@ struct d3dmetal_macdrv_win_data
     unsigned int        ulw_layered : 1;        /* has UpdateLayeredWindow() been called for window? */
     unsigned int        per_pixel_alpha : 1;    /* is window using per-pixel alpha? */
     unsigned int        minimized : 1;          /* is window minimized? */
-    unsigned int        swap_interval : 1;      /* GL swap interval for window */
     void *              padding[2];             /* used to be struct window_surface* surface/unminimized_surface */
 };
 
 C_ASSERT(sizeof(struct d3dmetal_macdrv_win_data) == 120);
 
 void OnMainThread(dispatch_block_t block);
+static void cf_client_surface_release(CFAllocatorRef allocator, const void *client_surface);
 
 static void my_macdrv_init_display_devices(BOOL p1)
 {
@@ -101,18 +101,39 @@ static struct d3dmetal_macdrv_win_data *my_get_win_data(HWND hwnd)
 {
     struct macdrv_win_data *data;
     struct d3dmetal_macdrv_win_data *d3dm_data;
+    struct macdrv_client_surface *client_surface;
     TRACE("get_win_data %p\n", hwnd);
 
+    /* Creating a client surface on each call to get_win_data() means it's no longer idempotent,
+     * but D3DMetal/DXMT both call it only when creating a new DXGI swapchain.
+     * They do:
+     * get_win_data() -> create_metal_device() -> create_metal_view() -> get_metal_layer() -> release_win_data()
+     */
+    client_surface = macdrv_client_surface_create(hwnd);
+
+    /* get_win_data() needs to happen after client_surface creation to avoid deadlocks */
     data = get_win_data(hwnd);
     if (!data)
+    {
+        client_surface_release((struct client_surface *)client_surface);
         return NULL;
+    }
+
+    macdrv_set_view_d3dmetal_client_surface(client_surface->cocoa_view, &client_surface->client);
+
+    if (!data->d3dmetal_client_surfaces)
+    {
+        static const CFArrayCallBacks callbacks = { .release = cf_client_surface_release };
+        data->d3dmetal_client_surfaces = CFArrayCreateMutable(NULL, 0, &callbacks);
+    }
+    CFArrayAppendValue(data->d3dmetal_client_surfaces, client_surface);
 
     d3dm_data = calloc(1, sizeof(*d3dm_data));
 
     d3dm_data->hwnd = data->hwnd;
     d3dm_data->cocoa_window = data->cocoa_window;
-    d3dm_data->cocoa_view = data->cocoa_view;
-    d3dm_data->client_cocoa_view = data->client_cocoa_view;
+    /* cocoa_view is no longer present in macdrv_win_data. D3DMetal doesn't use it. */
+    d3dm_data->client_cocoa_view = client_surface->cocoa_view;
     d3dm_data->window_rect = data->rects.window;
     d3dm_data->whole_rect = data->rects.visible;
     d3dm_data->client_rect = data->rects.client;
@@ -125,7 +146,7 @@ static struct d3dmetal_macdrv_win_data *my_get_win_data(HWND hwnd)
     d3dm_data->ulw_layered = data->ulw_layered;
     d3dm_data->per_pixel_alpha = data->per_pixel_alpha;
     d3dm_data->minimized = data->minimized;
-    d3dm_data->swap_interval = data->swap_interval;
+    /* swap_interval is no longer present in macdrv_win_data. Assume D3DMetal doesn't use it. */
     /* surface/unminimized_surface are no longer present in macdrv_win_data. Assume D3DMetal doesn't use it. */
     d3dm_data->padding[0] = data;
 
@@ -400,5 +421,17 @@ DECLSPEC_EXPORT struct macdrv_functions_t macdrv_functions =
     &my_GetSystemMetrics,
     &my_SetWindowLongPtrW,
 };
+
+void macdrv_client_surface_presented(const macdrv_event *event)
+{
+    TRACE("client_surface %p\n", event->client_surface_presented.client_surface);
+
+    client_surface_present(event->client_surface_presented.client_surface);
+}
+
+static void cf_client_surface_release(CFAllocatorRef allocator, const void *client_surface)
+{
+    client_surface_release((struct client_surface *)client_surface);
+}
 
 #endif

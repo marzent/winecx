@@ -83,7 +83,6 @@ ComputeShader           {return KW_COMPUTESHADER;       }
 compile                 {return KW_COMPILE;             }
 CompileShader           {return KW_COMPILESHADER;       }
 const                   {return KW_CONST;               }
-ConstructGSWithSO       {return KW_CONSTRUCTGSWITHSO;   }
 continue                {return KW_CONTINUE;            }
 DepthStencilState       {return KW_DEPTHSTENCILSTATE;   }
 DepthStencilView        {return KW_DEPTHSTENCILVIEW;    }
@@ -104,6 +103,10 @@ if                      {return KW_IF;                  }
 in                      {return KW_IN;                  }
 inline                  {return KW_INLINE;              }
 inout                   {return KW_INOUT;               }
+InputPatch              {return KW_INPUTPATCH;          }
+LineStream              {return KW_LINESTREAM;          }
+line                    {return KW_LINE;                }
+lineadj                 {return KW_LINEADJ;             }
 linear                  {return KW_LINEAR;              }
 matrix                  {return KW_MATRIX;              }
 namespace               {return KW_NAMESPACE;           }
@@ -111,10 +114,13 @@ nointerpolation         {return KW_NOINTERPOLATION;     }
 noperspective           {return KW_NOPERSPECTIVE;       }
 NULL                    {return KW_NULL;                }
 out                     {return KW_OUT;                 }
+OutputPatch             {return KW_OUTPUTPATCH;         }
 packoffset              {return KW_PACKOFFSET;          }
 pass                    {return KW_PASS;                }
 PixelShader             {return KW_PIXELSHADER;         }
+PointStream             {return KW_POINTSTREAM;         }
 pixelshader             {return KW_PIXELSHADER;         }
+point                   {return KW_POINT;               }
 RasterizerOrderedBuffer           {return KW_RASTERIZERORDEREDBUFFER;            }
 RasterizerOrderedStructuredBuffer {return KW_RASTERIZERORDEREDSTRUCTUREDBUFFER;  }
 RasterizerOrderedTexture1D        {return KW_RASTERIZERORDEREDTEXTURE1D;         }
@@ -151,6 +157,7 @@ static                  {return KW_STATIC;              }
 string                  {return KW_STRING;              }
 String                  {return KW_STRING;              }
 struct                  {return KW_STRUCT;              }
+StructuredBuffer        {return KW_STRUCTUREDBUFFER;    }
 switch                  {return KW_SWITCH;              }
 tbuffer                 {return KW_TBUFFER;             }
 (?i:technique)          {return KW_TECHNIQUE;           }
@@ -170,6 +177,9 @@ texture3D               {return KW_TEXTURE3D;           }
 TextureCube             {return KW_TEXTURECUBE;         }
 textureCUBE             {return KW_TEXTURECUBE;         }
 TextureCubeArray        {return KW_TEXTURECUBEARRAY;    }
+TriangleStream          {return KW_TRIANGLESTREAM;      }
+triangle                {return KW_TRIANGLE;            }
+triangleadj             {return KW_TRIANGLEADJ;         }
 true                    {return KW_TRUE;                }
 typedef                 {return KW_TYPEDEF;             }
 unsigned                {return KW_UNSIGNED;            }
@@ -335,7 +345,7 @@ while                   {return KW_WHILE;               }
 <pp>{ANY}               {}
 
 {ANY}                   {
-                            return yytext[0];
+                            return (unsigned char)yytext[0];
                         }
 
 %%

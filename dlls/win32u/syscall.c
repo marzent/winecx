@@ -36,26 +36,57 @@
 
 ULONG_PTR zero_bits = 0;
 
+static void stub_syscall( const char *name )
+{
+    CONTEXT context = { .ContextFlags = CONTEXT_FULL };
+    EXCEPTION_RECORD rec =
+    {
+        .ExceptionCode = EXCEPTION_WINE_STUB,
+        .ExceptionFlags = EXCEPTION_NONCONTINUABLE,
+        .NumberParameters = 2,
+        .ExceptionInformation[0] = (ULONG_PTR)"win32u",
+        .ExceptionInformation[1] = (ULONG_PTR)name,
+    };
+    NtGetContextThread( GetCurrentThread(), &context );
+#ifdef __i386__
+    rec.ExceptionAddress = (void *)context.Eip;
+#elif defined __x86_64__
+    rec.ExceptionAddress = (void *)context.Rip;
+#elif defined __arm__ || defined __aarch64__
+    rec.ExceptionAddress = (void *)context.Pc;
+#endif
+    NtRaiseException( &rec, &context, TRUE );
+}
+
+#define SYSCALL_STUB(name) static void name(void) { stub_syscall( #name ); }
+ALL_SYSCALL_STUBS
+
 static ULONG_PTR syscalls[] =
 {
 #define SYSCALL_ENTRY(id,name,args) (ULONG_PTR)name,
-#ifdef _WIN64
-    ALL_SYSCALLS64
-#else
-    ALL_SYSCALLS32
-#endif
+    ALL_SYSCALLS
 #undef SYSCALL_ENTRY
 };
 
 static BYTE arguments[ARRAY_SIZE(syscalls)] =
 {
 #define SYSCALL_ENTRY(id,name,args) args,
-#ifdef _WIN64
-    ALL_SYSCALLS64
-#else
-    ALL_SYSCALLS32
-#endif
+    ALL_SYSCALLS
 #undef SYSCALL_ENTRY
+};
+
+static const char *syscall_names[] =
+{
+#define SYSCALL_ENTRY(id,name,args) #name,
+    ALL_SYSCALLS
+#undef SYSCALL_ENTRY
+};
+
+static const char *usercall_names[NtUserCallCount] =
+{
+#define USER32_CALLBACK_ENTRY(name) "NtUser" #name,
+    ALL_USER32_CALLBACKS
+#undef USER32_CALLBACK_ENTRY
 };
 
 static NTSTATUS init( void *args )
@@ -70,6 +101,7 @@ static NTSTATUS init( void *args )
     }
 #endif
     KeAddSystemServiceTable( syscalls, NULL, ARRAY_SIZE(syscalls), arguments, 1 );
+    ntdll_add_syscall_debug_info( 1, syscall_names, usercall_names );
     return STATUS_SUCCESS;
 }
 

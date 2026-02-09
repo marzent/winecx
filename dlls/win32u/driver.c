@@ -319,11 +319,6 @@ static DWORD nulldrv_GetGlyphOutline( PHYSDEV dev, UINT ch, UINT format, LPGLYPH
     return GDI_ERROR;
 }
 
-static BOOL nulldrv_GetICMProfile( PHYSDEV dev, BOOL allow_default, LPDWORD size, LPWSTR filename )
-{
-    return FALSE;
-}
-
 static DWORD nulldrv_GetImage( PHYSDEV dev, BITMAPINFO *info, struct gdi_image_bits *bits,
                                struct bitblt_coords *src )
 {
@@ -562,7 +557,6 @@ const struct gdi_dc_funcs null_driver =
     nulldrv_GetFontUnicodeRanges,       /* pGetFontUnicodeRanges */
     nulldrv_GetGlyphIndices,            /* pGetGlyphIndices */
     nulldrv_GetGlyphOutline,            /* pGetGlyphOutline */
-    nulldrv_GetICMProfile,              /* pGetICMProfile */
     nulldrv_GetImage,                   /* pGetImage */
     nulldrv_GetKerningPairs,            /* pGetKerningPairs */
     nulldrv_GetNearestColor,            /* pGetNearestColor */
@@ -824,7 +818,7 @@ static void nulldrv_SetDesktopWindow( HWND hwnd )
 {
 }
 
-static void nulldrv_SetFocus( HWND hwnd )
+static void nulldrv_ActivateWindow( HWND hwnd, HWND previous )
 {
 }
 
@@ -840,7 +834,7 @@ static void nulldrv_SetWindowRgn( HWND hwnd, HRGN hrgn, BOOL redraw )
 {
 }
 
-static void nulldrv_SetWindowIcon( HWND hwnd, UINT type, HICON icon )
+static void nulldrv_SetWindowIcons( HWND hwnd, HICON icon, const ICONINFO *ii, HICON icon_small, const ICONINFO *ii_small )
 {
 }
 
@@ -862,7 +856,7 @@ static LRESULT nulldrv_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, cons
     return -1;
 }
 
-static void nulldrv_UpdateLayeredWindow( HWND hwnd, UINT flags )
+static void nulldrv_UpdateLayeredWindow( HWND hwnd, BYTE alpha, UINT flags )
 {
 }
 
@@ -881,7 +875,7 @@ static BOOL nulldrv_GetWindowStyleMasks( HWND hwnd, UINT style, UINT ex_style, U
     return FALSE;
 }
 
-static BOOL nulldrv_GetWindowStateUpdates( HWND hwnd, UINT *state_cmd, UINT *config_cmd, RECT *rect )
+static BOOL nulldrv_GetWindowStateUpdates( HWND hwnd, UINT *state_cmd, UINT *swp_flags, RECT *rect, HWND *foreground )
 {
     return FALSE;
 }
@@ -896,7 +890,7 @@ static void nulldrv_MoveWindowBits( HWND hwnd, const struct window_rects *old_re
 {
 }
 
-static void nulldrv_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags, BOOL fullscreen,
+static void nulldrv_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
                                       const struct window_rects *new_rects, struct window_surface *surface )
 {
 }
@@ -906,14 +900,19 @@ static BOOL nulldrv_SystemParametersInfo( UINT action, UINT int_param, void *ptr
     return FALSE;
 }
 
+static LRESULT nulldrv_WintabProc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, void *buffer )
+{
+    return 0;
+}
+
 static UINT nulldrv_VulkanInit( UINT version, void *vulkan_handle, const struct vulkan_driver_funcs **driver_funcs )
 {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static struct opengl_funcs *nulldrv_wine_get_wgl_driver( UINT version )
+static UINT nulldrv_OpenGLInit( UINT version, const struct opengl_funcs *opengl_funcs, const struct opengl_driver_funcs **driver_funcs )
 {
-    return (void *)-1;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 static void nulldrv_ThreadDetach( void )
@@ -1021,7 +1020,7 @@ static void load_display_driver(void)
     USEROBJECTFLAGS flags;
     HWINSTA winstation;
 
-    if (!load_desktop_driver( get_desktop_window() ) || user_driver == &lazy_load_driver)
+    if (is_service_process() || !load_desktop_driver( get_desktop_window() ) || user_driver == &lazy_load_driver)
     {
         winstation = NtUserGetProcessWindowStation();
         if (!NtUserGetObjectInformation( winstation, UOI_FLAGS, &flags, sizeof(flags), NULL )
@@ -1231,14 +1230,24 @@ static void loaderdrv_SetWindowRgn( HWND hwnd, HRGN hrgn, BOOL redraw )
     load_driver()->pSetWindowRgn( hwnd, hrgn, redraw );
 }
 
-static void loaderdrv_UpdateLayeredWindow( HWND hwnd, UINT flags )
+static void loaderdrv_UpdateLayeredWindow( HWND hwnd, BYTE alpha, UINT flags )
 {
-    load_driver()->pUpdateLayeredWindow( hwnd, flags );
+    load_driver()->pUpdateLayeredWindow( hwnd, alpha, flags );
+}
+
+static LRESULT loaderdrv_WintabProc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, void *buffer )
+{
+    return load_driver()->pWintabProc( hwnd, msg, wparam, lparam, buffer );
 }
 
 static UINT loaderdrv_VulkanInit( UINT version, void *vulkan_handle, const struct vulkan_driver_funcs **driver_funcs )
 {
     return load_driver()->pVulkanInit( version, vulkan_handle, driver_funcs );
+}
+
+static UINT loaderdrv_OpenGLInit( UINT version, const struct opengl_funcs *opengl_funcs, const struct opengl_driver_funcs **driver_funcs )
+{
+    return load_driver()->pOpenGLInit( version, opengl_funcs, driver_funcs );
 }
 
 static NTSTATUS loaderdrv_SetCurrentProcessExplicitAppUserModelID( LPCWSTR aumid )
@@ -1300,11 +1309,11 @@ static const struct user_driver_funcs lazy_load_driver =
     nulldrv_ScrollDC,
     nulldrv_SetCapture,
     loaderdrv_SetDesktopWindow,
-    nulldrv_SetFocus,
+    nulldrv_ActivateWindow,
     loaderdrv_SetLayeredWindowAttributes,
     nulldrv_SetParent,
     loaderdrv_SetWindowRgn,
-    nulldrv_SetWindowIcon,
+    nulldrv_SetWindowIcons,
     nulldrv_SetWindowStyle,
     nulldrv_SetWindowText,
     nulldrv_ShowWindow,
@@ -1319,10 +1328,12 @@ static const struct user_driver_funcs lazy_load_driver =
     nulldrv_WindowPosChanged,
     /* system parameters */
     nulldrv_SystemParametersInfo,
+    /* wintab support */
+    loaderdrv_WintabProc,
     /* vulkan support */
     loaderdrv_VulkanInit,
     /* opengl support */
-    nulldrv_wine_get_wgl_driver,
+    loaderdrv_OpenGLInit,
     /* thread management */
     nulldrv_ThreadDetach,
     /* application user model ID support */
@@ -1401,11 +1412,11 @@ void __wine_set_user_driver( const struct user_driver_funcs *funcs, UINT version
     SET_USER_FUNC(ScrollDC);
     SET_USER_FUNC(SetCapture);
     SET_USER_FUNC(SetDesktopWindow);
-    SET_USER_FUNC(SetFocus);
+    SET_USER_FUNC(ActivateWindow);
     SET_USER_FUNC(SetLayeredWindowAttributes);
     SET_USER_FUNC(SetParent);
     SET_USER_FUNC(SetWindowRgn);
-    SET_USER_FUNC(SetWindowIcon);
+    SET_USER_FUNC(SetWindowIcons);
     SET_USER_FUNC(SetWindowStyle);
     SET_USER_FUNC(SetWindowText);
     SET_USER_FUNC(ShowWindow);
@@ -1419,8 +1430,9 @@ void __wine_set_user_driver( const struct user_driver_funcs *funcs, UINT version
     SET_USER_FUNC(MoveWindowBits);
     SET_USER_FUNC(WindowPosChanged);
     SET_USER_FUNC(SystemParametersInfo);
+    SET_USER_FUNC(WintabProc);
     SET_USER_FUNC(VulkanInit);
-    SET_USER_FUNC(wine_get_wgl_driver);
+    SET_USER_FUNC(OpenGLInit);
     SET_USER_FUNC(ThreadDetach);
     SET_USER_FUNC(SetCurrentProcessExplicitAppUserModelID);
     SET_USER_FUNC(GetCurrentProcessExplicitAppUserModelID);
@@ -1453,4 +1465,33 @@ INT WINAPI NtGdiExtEscape( HDC hdc, WCHAR *driver, int driver_id, INT escape, IN
     ret = physdev->funcs->pExtEscape( physdev, escape, input_size, input, output_size, output );
     release_dc_ptr( dc );
     return ret;
+}
+
+static void nulldrv_surface_destroy( struct client_surface *client )
+{
+}
+
+static void nulldrv_surface_detach( struct client_surface *client )
+{
+}
+
+static void nulldrv_surface_update( struct client_surface *client )
+{
+}
+
+static void nulldrv_surface_present( struct client_surface *client, HDC hdc )
+{
+}
+
+static const struct client_surface_funcs nulldrv_surface_funcs =
+{
+    .destroy = nulldrv_surface_destroy,
+    .detach = nulldrv_surface_detach,
+    .update = nulldrv_surface_update,
+    .present = nulldrv_surface_present,
+};
+
+struct client_surface *nulldrv_client_surface_create( HWND hwnd )
+{
+    return client_surface_create( sizeof(struct client_surface), &nulldrv_surface_funcs, hwnd );
 }

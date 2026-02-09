@@ -1240,6 +1240,64 @@ done:
 }
 
 /******************************************************************************
+ *              CoTreatAsClass        (combase.@)
+ */
+HRESULT WINAPI CoTreatAsClass(REFCLSID clsidOld, REFCLSID clsidNew)
+{
+    WCHAR clsidW[CHARS_IN_GUID];
+    HKEY hkey = NULL;
+    HRESULT hr;
+    LONG size;
+    CLSID id;
+
+    if (!clsidOld || !clsidNew)
+        return E_INVALIDARG;
+
+    if (FAILED(hr = open_key_for_clsid(clsidOld, NULL, KEY_READ | KEY_WRITE, &hkey)))
+        return hr;
+
+    if (IsEqualGUID( clsidOld, clsidNew ))
+    {
+       size = sizeof(clsidW);
+       if (!RegQueryValueW(hkey, L"AutoTreatAs", clsidW, &size) && CLSIDFromString(clsidW, &id) == S_OK)
+       {
+           if (RegSetValueW(hkey, L"TreatAs", REG_SZ, clsidW, sizeof(clsidW)))
+           {
+               hr = REGDB_E_WRITEREGDB;
+               goto done;
+           }
+       }
+       else
+       {
+           if (RegDeleteKeyW(hkey, L"TreatAs"))
+               hr = REGDB_E_WRITEREGDB;
+           goto done;
+       }
+    }
+    else
+    {
+        if (IsEqualGUID(clsidNew, &CLSID_NULL))
+        {
+           RegDeleteKeyW(hkey, L"TreatAs");
+        }
+        else
+        {
+            StringFromGUID2(clsidNew, clsidW, ARRAY_SIZE(clsidW));
+            if (RegSetValueW(hkey, L"TreatAs", REG_SZ, clsidW, sizeof(clsidW)) != ERROR_SUCCESS)
+            {
+                WARN("RegSetValue failed\n");
+                hr = REGDB_E_WRITEREGDB;
+                goto done;
+            }
+        }
+    }
+
+done:
+    if (hkey) RegCloseKey(hkey);
+    return hr;
+}
+
+/******************************************************************************
  *               ProgIDFromCLSID        (combase.@)
  */
 HRESULT WINAPI DECLSPEC_HOTPATCH ProgIDFromCLSID(REFCLSID clsid, LPOLESTR *progid)
@@ -2744,10 +2802,7 @@ void WINAPI DECLSPEC_HOTPATCH CoFreeUnusedLibrariesEx(DWORD unload_delay, DWORD 
         return;
     }
 
-    /* CODEWEAVERS HACK for Office 2003: Don't call
-     * apartment_freeunusedlibraries as it appears to do something the app
-     * doesn't expect and free a module that is in-use */
-    if (0) apartment_freeunusedlibraries(apt, unload_delay);
+    apartment_freeunusedlibraries(apt, unload_delay);
 }
 
 /*
@@ -3360,6 +3415,15 @@ HRESULT WINAPI CoRegisterSurrogateEx(REFGUID guid, void *reserved)
     FIXME("%s, %p stub\n", debugstr_guid(guid), reserved);
 
     return E_NOTIMPL;
+}
+
+/***********************************************************************
+ *           CoIsOle1Class  (combase.@)
+ */
+BOOL WINAPI CoIsOle1Class(REFCLSID clsid)
+{
+    FIXME("%s\n", debugstr_guid(clsid));
+    return FALSE;
 }
 
 /***********************************************************************

@@ -31,9 +31,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(hook);
 
-#define WH_WINEVENT (WH_MAXHOOK+1)
-
-static const char * const hook_names[WH_WINEVENT - WH_MINHOOK + 1] =
+static const char * const hook_names[NB_HOOKS] =
 {
     "WH_MSGFILTER",
     "WH_JOURNALRECORD",
@@ -139,7 +137,7 @@ HHOOK WINAPI NtUserSetWindowsHookEx( HINSTANCE inst, UNICODE_STRING *module, DWO
     }
     SERVER_END_REQ;
 
-    TRACE( "%s %p %x -> %p\n", debugstr_hook_id(id), proc, (int)tid, handle );
+    TRACE( "%s %p %x -> %p\n", debugstr_hook_id(id), proc, tid, handle );
     return handle;
 }
 
@@ -161,8 +159,10 @@ BOOL WINAPI NtUserUnhookWindowsHookEx( HHOOK handle )
     return !status;
 }
 
-/* see UnhookWindowsHook */
-BOOL unhook_windows_hook( INT id, HOOKPROC proc )
+/***********************************************************************
+ *	     NtUserUnhookWindowsHook   (win32u.@)
+ */
+BOOL WINAPI NtUserUnhookWindowsHook( INT id, HOOKPROC proc )
 {
     NTSTATUS status;
 
@@ -207,7 +207,6 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
                           size_t message_size, BOOL ansi )
 {
     DWORD_PTR ret = 0;
-    LRESULT lres = 0;
 
     if (info->tid)
     {
@@ -216,18 +215,18 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
         h_extra.lparam = info->lparam;
 
         TRACE( "calling hook in thread %04x %s code %x wp %lx lp %lx\n",
-               (int)info->tid, hook_names[info->id-WH_MINHOOK],
+               info->tid, hook_names[info->id-WH_MINHOOK],
                info->code, (long)info->wparam, info->lparam );
 
         switch(info->id)
         {
         case WH_KEYBOARD_LL:
-            lres = send_internal_message_timeout( info->pid, info->tid, WM_WINE_KEYBOARD_LL_HOOK,
+            send_internal_message_timeout( info->pid, info->tid, WM_WINE_KEYBOARD_LL_HOOK,
                                            info->wparam, (LPARAM)&h_extra, SMTO_ABORTIFHUNG,
                                            get_ll_hook_timeout(), &ret );
             break;
         case WH_MOUSE_LL:
-            lres = send_internal_message_timeout( info->pid, info->tid, WM_WINE_MOUSE_LL_HOOK,
+            send_internal_message_timeout( info->pid, info->tid, WM_WINE_MOUSE_LL_HOOK,
                                            info->wparam, (LPARAM)&h_extra, SMTO_ABORTIFHUNG,
                                            get_ll_hook_timeout(), &ret );
             break;
@@ -235,13 +234,6 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
             ERR("Unknown hook id %d\n", info->id);
             assert(0);
             break;
-        }
-
-        /* CrossOver HACK 19354 */
-        if (!lres && RtlGetLastWin32Error() == ERROR_TIMEOUT)
-        {
-            TRACE("Hook %p timed out; removing it.\n", info->handle);
-            NtUserUnhookWindowsHookEx( info->handle );
         }
     }
     else if (info->proc)
@@ -252,8 +244,9 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
         HHOOK prev = thread_info->hook;
         BOOL prev_unicode = thread_info->hook_unicode;
         struct win_hook_params *params = info;
+        void *ret_ptr, *extra_buffer = NULL;
+        SIZE_T extra_buffer_size = 0;
         size_t reply_size;
-        void *ret_ptr;
         ULONG ret_len;
 
         size = FIELD_OFFSET( struct win_hook_params, module[module ? lstrlenW( module ) + 1 : 1] );
@@ -303,21 +296,21 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
                     CBT_CREATEWNDW *cbtc = (CBT_CREATEWNDW *)params->lparam;
                     LPARAM lp = (LPARAM)cbtc->lpcs;
                     pack_user_message( (char *)params + message_offset, message_size,
-                                       WM_CREATE, 0, lp, FALSE );
+                                       WM_CREATE, 0, lp, FALSE, &extra_buffer );
                 }
                 break;
             case WH_CALLWNDPROC:
                 {
                     CWPSTRUCT *cwp = (CWPSTRUCT *)((char *)params + lparam_offset);
                     pack_user_message( (char *)params + message_offset, message_size,
-                                       cwp->message, cwp->wParam, cwp->lParam, ansi );
+                                       cwp->message, cwp->wParam, cwp->lParam, ansi, &extra_buffer );
                 }
                 break;
             case WH_CALLWNDPROCRET:
                 {
                     CWPRETSTRUCT *cwpret = (CWPRETSTRUCT *)((char *)params + lparam_offset);
                     pack_user_message( (char *)params + message_offset, message_size,
-                                       cwpret->message, cwpret->wParam, cwpret->lParam, ansi );
+                                       cwpret->message, cwpret->wParam, cwpret->lParam, ansi, &extra_buffer );
                 }
                 break;
             }
@@ -331,6 +324,8 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
         {
             WARN("Too many hooks called recursively, skipping call.\n");
             if (params != info) free( params );
+            if (extra_buffer)
+                NtFreeVirtualMemory( GetCurrentProcess(), &extra_buffer, &extra_buffer_size, MEM_RELEASE );
             return 0;
         }
 
@@ -354,6 +349,8 @@ static LRESULT call_hook( struct win_hook_params *info, const WCHAR *module, siz
         thread_info->hook_call_depth--;
 
         if (params != info) free( params );
+        if (extra_buffer)
+            NtFreeVirtualMemory( GetCurrentProcess(), &extra_buffer, &extra_buffer_size, MEM_RELEASE );
     }
 
     return ret;
@@ -563,7 +560,7 @@ void WINAPI NtUserNotifyWinEvent( DWORD event, HWND hwnd, LONG object_id, LONG c
     ULONG ret_len;
     BOOL ret;
 
-    TRACE( "%04x, %p, %d, %d\n", (int)event, hwnd, (int)object_id, (int)child_id );
+    TRACE( "%04x, %p, %d, %d\n", event, hwnd, object_id, child_id );
 
     user_check_not_lock();
 
@@ -607,7 +604,7 @@ void WINAPI NtUserNotifyWinEvent( DWORD event, HWND hwnd, LONG object_id, LONG c
     do
     {
         TRACE( "calling WH_WINEVENT hook %p event %x hwnd %p %x %x module %s\n",
-               info.proc, (int)event, hwnd, (int)object_id, (int)child_id, debugstr_w(info.module) );
+               info.proc, event, hwnd, object_id, child_id, debugstr_w(info.module) );
 
         info.time = NtGetTickCount();
         KeUserModeCallback( NtUserCallWinEventHook, &info,

@@ -64,6 +64,7 @@ static BOOL find_exe_file( const WCHAR *name, WCHAR *buffer, DWORD buflen )
         HANDLE handle = CreateFileW( buffer, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_DELETE,
                                      NULL, OPEN_EXISTING, 0, 0 );
         if ((ret = (handle != INVALID_HANDLE_VALUE))) CloseHandle( handle );
+        else SetLastError( ERROR_FILE_NOT_FOUND );
     }
     RtlReleasePath( load_path );
     return ret;
@@ -114,15 +115,12 @@ static WCHAR *get_file_name( WCHAR *cmdline, WCHAR *buffer, DWORD buflen )
             ret = cmdline;
             break;
         }
+        if (GetLastError() != ERROR_FILE_NOT_FOUND) break;
         if (!first_space) first_space = pos;
         if (!(*pos++ = *p++)) break;
     }
 
-    if (!ret)
-    {
-        SetLastError( ERROR_FILE_NOT_FOUND );
-    }
-    else if (first_space)  /* build a new command-line with quotes */
+    if (ret && first_space)  /* build a new command-line with quotes */
     {
         if (!(ret = HeapAlloc( GetProcessHeap(), 0, (lstrlenW(cmdline) + 3) * sizeof(WCHAR) )))
             goto done;
@@ -516,7 +514,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
     WCHAR name[MAX_PATH];
     WCHAR *p, *tidy_cmdline = cmd_line;
     RTL_USER_PROCESS_PARAMETERS *params = NULL;
-    RTL_USER_PROCESS_INFORMATION rtl_info;
+    RTL_USER_PROCESS_INFORMATION rtl_info = { 0 };
     HANDLE parent = 0, debug = 0;
     ULONG nt_flags = 0;
     USHORT machine = 0;
@@ -548,12 +546,25 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
     }
 
     /* CW Hack 24938 */
-    if (cmd_line && wcsstr(cmd_line, L"\\EpicGamesLauncher.exe"))
+    if (cmd_line && wcsstr(cmd_line, L"EpicGamesLauncher.exe"))
     {
         FIXME("HACK: moving EpicGamesLauncher.exe to the default winstation\n");
         epic_launcher_hack = TRUE;
         orig_lpDesktop = startup_info->lpDesktop;
         startup_info->lpDesktop = winsta0_defaultW;
+    }
+
+    /* CW Hack 24920, 24557 */
+    {
+        char sgi[64];
+
+        if (cmd_line && !wcsncmp( cmd_line, L"powershell", 10 )
+            && GetEnvironmentVariableA( "SteamGameId", sgi, sizeof(sgi) ) < sizeof(sgi) && !strcmp( sgi, "2767030" ))
+        {
+            FIXME("HACK: not starting powershell.exe.\n");
+            SetLastError( ERROR_FILE_NOT_FOUND );
+            return FALSE;
+        }
     }
 
     /* Warn if unsupported features are used */
@@ -621,6 +632,17 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
                             TRACE( "PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE %p reference %p\n",
                                    console, console->reference );
                             params->ConsoleHandle = console->reference;
+                            if (!(flags & DETACHED_PROCESS))
+                            {
+                                params->ConsoleFlags |= 2;
+                                /* don't inherit standard handles bound to parent console (but inherit the others) */
+                                if (!(startup_info->dwFlags & STARTF_USESTDHANDLES))
+                                {
+                                    if (is_console_handle(params->hStdInput))  params->hStdInput = NULL;
+                                    if (is_console_handle(params->hStdOutput)) params->hStdOutput = NULL;
+                                    if (is_console_handle(params->hStdError))  params->hStdError = NULL;
+                                }
+                            }
                             break;
                         }
                     case PROC_THREAD_ATTRIBUTE_JOB_LIST:
@@ -837,13 +859,13 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetHandleInformation( HANDLE handle, DWORD *flags 
  */
 DWORD WINAPI DECLSPEC_HOTPATCH GetPriorityClass( HANDLE process )
 {
-    PROCESS_BASIC_INFORMATION pbi;
+    PROCESS_PRIORITY_CLASS priority;
 
-    if (!set_ntstatus( NtQueryInformationProcess( process, ProcessBasicInformation,
-                                                  &pbi, sizeof(pbi), NULL )))
+    if (!set_ntstatus( NtQueryInformationProcess( process, ProcessPriorityClass,
+                                                  &priority, sizeof(priority), NULL )))
         return 0;
 
-    switch (pbi.BasePriority)
+    switch (priority.PriorityClass)
     {
     case PROCESS_PRIOCLASS_IDLE: return IDLE_PRIORITY_CLASS;
     case PROCESS_PRIOCLASS_BELOW_NORMAL: return BELOW_NORMAL_PRIORITY_CLASS;
@@ -916,9 +938,7 @@ BOOL WINAPI /* DECLSPEC_HOTPATCH */ GetProcessMitigationPolicy( HANDLE process, 
  */
 BOOL WINAPI DECLSPEC_HOTPATCH GetProcessPriorityBoost( HANDLE process, PBOOL disable )
 {
-    FIXME( "(%p,%p): semi-stub\n", process, disable );
-    *disable = FALSE;  /* report that no boost is present */
-    return TRUE;
+    return set_ntstatus( NtQueryInformationProcess( process, ProcessPriorityBoost, disable, sizeof(*disable), NULL ));
 }
 
 
@@ -1132,12 +1152,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH OpenProcess( DWORD access, BOOL inherit, DWORD i
 
     if (GetVersion() & 0x80000000) access = PROCESS_ALL_ACCESS;
 
-    attr.Length = sizeof(OBJECT_ATTRIBUTES);
-    attr.RootDirectory = 0;
-    attr.Attributes = inherit ? OBJ_INHERIT : 0;
-    attr.ObjectName = NULL;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, NULL, inherit ? OBJ_INHERIT : 0, 0, NULL );
 
     cid.UniqueProcess = ULongToHandle(id);
     cid.UniqueThread  = 0;
@@ -1290,8 +1305,7 @@ BOOL WINAPI /* DECLSPEC_HOTPATCH */ SetProcessMitigationPolicy( PROCESS_MITIGATI
  */
 BOOL WINAPI /* DECLSPEC_HOTPATCH */ SetProcessPriorityBoost( HANDLE process, BOOL disable )
 {
-    FIXME( "(%p,%d): stub\n", process, disable );
-    return TRUE;
+    return set_ntstatus( NtSetInformationProcess( process, ProcessPriorityBoost, &disable, sizeof(disable) ));
 }
 
 
@@ -1894,6 +1908,9 @@ static inline DWORD validate_proc_thread_attribute( DWORD_PTR attr, SIZE_T size 
         break;
     case PROC_THREAD_ATTRIBUTE_MACHINE_TYPE:
         if (size != sizeof(USHORT)) return ERROR_BAD_LENGTH;
+        break;
+    case PROC_THREAD_ATTRIBUTE_GROUP_AFFINITY:
+        if (size != sizeof(GROUP_AFFINITY)) return ERROR_BAD_LENGTH;
         break;
     default:
         FIXME( "Unhandled attribute %Iu\n", attr & PROC_THREAD_ATTRIBUTE_NUMBER );

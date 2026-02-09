@@ -23,7 +23,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <limits.h>
 
 #define COBJMACROS
 #include "winerror.h"

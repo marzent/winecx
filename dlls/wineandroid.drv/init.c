@@ -256,7 +256,7 @@ static BOOL ANDROID_DeleteDC( PHYSDEV dev )
  */
 LONG ANDROID_ChangeDisplaySettings( LPDEVMODEW displays, LPCWSTR primary_name, HWND hwnd, DWORD flags, LPVOID lpvoid )
 {
-    FIXME( "(%p,%s,%p,0x%08x,%p)\n", displays, debugstr_w(primary_name), hwnd, (int)flags, lpvoid );
+    FIXME( "(%p,%s,%p,0x%08x,%p)\n", displays, debugstr_w(primary_name), hwnd, flags, lpvoid );
     return DISP_CHANGE_SUCCESSFUL;
 }
 
@@ -283,7 +283,7 @@ UINT ANDROID_UpdateDisplayDevices( const struct gdi_device_manager *device_manag
     UINT dpi = NtUserGetSystemDpiForProcess( NULL );
     DEVMODEW current = mode;
 
-    device_manager->add_gpu( "Wine GPU", &pci_id, NULL, param );
+    device_manager->add_gpu( NULL, &pci_id, NULL, param );
     device_manager->add_source( "Default", source_flags, dpi, param );
     device_manager->add_monitor( &gdi_monitor, param );
 
@@ -291,15 +291,6 @@ UINT ANDROID_UpdateDisplayDevices( const struct gdi_device_manager *device_manag
     device_manager->add_modes( &current, 1, &mode, param );
 
     return STATUS_SUCCESS;
-}
-
-
-/**********************************************************************
- *           ANDROID_wine_get_wgl_driver
- */
-static struct opengl_funcs *ANDROID_wine_get_wgl_driver( UINT version )
-{
-    return get_wgl_driver( version );
 }
 
 
@@ -328,7 +319,7 @@ static const struct user_driver_funcs android_drv_funcs =
     .pWindowPosChanging = ANDROID_WindowPosChanging,
     .pCreateWindowSurface = ANDROID_CreateWindowSurface,
     .pWindowPosChanged = ANDROID_WindowPosChanged,
-    .pwine_get_wgl_driver = ANDROID_wine_get_wgl_driver,
+    .pOpenGLInit = ANDROID_OpenGLInit,
 };
 
 

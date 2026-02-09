@@ -37,6 +37,8 @@
 #include "windows.system.profile.h"
 #define WIDL_using_Windows_System_UserProfile
 #include "windows.system.userprofile.h"
+#define WIDL_using_Windows_UI_ViewManagement
+#include "windows.ui.viewmanagement.h"
 
 #include "wine/test.h"
 
@@ -164,6 +166,7 @@ static void test_AnalyticsVersionInfo(void)
     WindowsDeleteString( str );
     WindowsDeleteString( expect_str );
 
+    size = sizeof(revision);
     if (RegGetValueW( HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion", L"UBR",
                       RRF_RT_REG_DWORD, NULL, &revision, &size ))
         revision = 0;
@@ -230,6 +233,37 @@ static void test_AdvertisingManager(void)
     ok( ref == 1, "got ref %ld.\n", ref );
 }
 
+static void test_ApplicationView(void)
+{
+    static const WCHAR *class_name = RuntimeClass_Windows_UI_ViewManagement_ApplicationView;
+    IActivationFactory *factory;
+    HSTRING str;
+    HRESULT hr;
+    LONG ref;
+
+    hr = WindowsCreateString( class_name, wcslen( class_name ), &str );
+    ok( hr == S_OK, "got hr %#lx.\n", hr );
+
+    hr = RoGetActivationFactory( str, &IID_IActivationFactory, (void **)&factory );
+    WindowsDeleteString( str );
+    ok( hr == S_OK || broken( hr == REGDB_E_CLASSNOTREG ), "got hr %#lx.\n", hr );
+    if (FAILED( hr ))
+    {
+        win_skip( "%s runtimeclass not registered, skipping tests.\n", wine_dbgstr_w( class_name ) );
+        return;
+    }
+
+    check_interface( factory, &IID_IUnknown, TRUE );
+    check_interface( factory, &IID_IInspectable, TRUE );
+    check_interface( factory, &IID_IAgileObject, TRUE );
+    check_interface( factory, &IID_IActivationFactory, TRUE );
+    check_interface( factory, &IID_IApplicationViewStatics, TRUE );
+    check_interface( factory, &IID_IApplicationViewStatics2, TRUE );
+
+    ref = IActivationFactory_Release( factory );
+    ok( ref == 1, "got ref %ld.\n", ref );
+}
+
 START_TEST(twinapi)
 {
     HRESULT hr;
@@ -240,6 +274,7 @@ START_TEST(twinapi)
     test_EasClientDeviceInformation();
     test_AnalyticsVersionInfo();
     test_AdvertisingManager();
+    test_ApplicationView();
 
     RoUninitialize();
 }

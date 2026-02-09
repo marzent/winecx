@@ -212,6 +212,7 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
         if (existing)
         {
             TRACE("found matching certificate, not adding\n");
+            CertFreeCertificateContext(existing);
             SetLastError(CRYPT_E_EXISTS);
             return FALSE;
         }
@@ -231,7 +232,9 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
         {
             Context_CopyProperties(existing, cert);
             if (ret_context)
-                *ret_context = CertDuplicateCertificateContext(existing);
+                *ret_context = existing;
+            else
+                CertFreeCertificateContext(existing);
             return TRUE;
         }
         break;
@@ -239,6 +242,7 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
         if (existing && CompareFileTime(&existing->pCertInfo->NotBefore, &cert->pCertInfo->NotBefore) >= 0)
         {
             TRACE("existing certificate is newer, not adding\n");
+            CertFreeCertificateContext(existing);
             SetLastError(CRYPT_E_EXISTS);
             return FALSE;
         }
@@ -249,6 +253,7 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
             if (CompareFileTime(&existing->pCertInfo->NotBefore, &cert->pCertInfo->NotBefore) >= 0)
             {
                 TRACE("existing certificate is newer, not adding\n");
+                CertFreeCertificateContext(existing);
                 SetLastError(CRYPT_E_EXISTS);
                 return FALSE;
             }
@@ -267,7 +272,10 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
     ret = store->vtbl->certs.addContext(store, context_from_ptr(cert), existing ? context_from_ptr(existing) : NULL,
      (ret_context || inherit_props) ? &new_context : NULL, use_link);
     if(!ret)
+    {
+        CertFreeCertificateContext(existing);
         return FALSE;
+    }
 
     if(inherit_props)
         Context_CopyProperties(context_ptr(new_context), existing);
@@ -276,6 +284,9 @@ static BOOL add_cert_to_store(WINECRYPT_CERTSTORE *store, const CERT_CONTEXT *ce
         *ret_context = context_ptr(new_context);
     else if(new_context)
         Context_Release(new_context);
+
+    if (existing)
+        CertFreeCertificateContext(existing);
 
     TRACE("returning %d\n", ret);
     return ret;
@@ -868,7 +879,7 @@ BOOL WINAPI CertSetCertificateContextProperty(PCCERT_CONTEXT pCertContext,
 static BOOL CRYPT_AcquirePrivateKeyFromProvInfo(PCCERT_CONTEXT pCert, DWORD dwFlags,
  PCRYPT_KEY_PROV_INFO info, HCRYPTPROV *phCryptProv, DWORD *pdwKeySpec)
 {
-    DWORD size = 0;
+    DWORD size = 0, flags = (dwFlags & CRYPT_ACQUIRE_SILENT_FLAG) ? CRYPT_SILENT : 0;
     BOOL allocated = FALSE, ret = TRUE;
 
     if (!info)
@@ -895,8 +906,12 @@ static BOOL CRYPT_AcquirePrivateKeyFromProvInfo(PCCERT_CONTEXT pCert, DWORD dwFl
     }
     if (ret)
     {
-        ret = CryptAcquireContextW(phCryptProv, info->pwszContainerName,
-         info->pwszProvName, info->dwProvType, (dwFlags & CRYPT_ACQUIRE_SILENT_FLAG) ? CRYPT_SILENT : 0);
+        ret = CryptAcquireContextW(phCryptProv, info->pwszContainerName, info->pwszProvName, info->dwProvType, flags);
+        if (!ret)
+        {
+            flags |= CRYPT_MACHINE_KEYSET;
+            ret = CryptAcquireContextW(phCryptProv, info->pwszContainerName, info->pwszProvName, info->dwProvType, flags);
+        }
         if (ret)
         {
             DWORD i;

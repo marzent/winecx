@@ -34,7 +34,6 @@
 
 
 /* clipboard.c */
-extern UINT enum_clipboard_formats( UINT format );
 extern void release_clipboard_owner( HWND hwnd );
 
 /* cursoricon.c */
@@ -80,7 +79,6 @@ extern LRESULT call_hooks( INT id, INT code, WPARAM wparam, LPARAM lparam,
 extern LRESULT call_message_hooks( INT id, INT code, WPARAM wparam, LPARAM lparam,
                                    size_t lparam_size, size_t message_size, BOOL ansi );
 extern BOOL is_hooked( INT id );
-extern BOOL unhook_windows_hook( INT id, HOOKPROC proc );
 
 /* imm.c */
 extern void cleanup_imm_thread(void);
@@ -93,31 +91,24 @@ extern void unregister_imm_window( HWND hwnd );
 /* input.c */
 extern BOOL grab_pointer;
 extern BOOL grab_fullscreen;
-extern BOOL destroy_caret(void);
 extern HWND get_active_window(void);
 extern HWND get_capture(void);
-extern BOOL get_cursor_pos( POINT *pt );
 extern HWND get_focus(void);
 extern DWORD get_input_state(void);
 extern DWORD get_last_input_time(void);
 extern BOOL get_async_keyboard_state( BYTE state[256] );
-extern BOOL release_capture(void);
 extern BOOL set_capture_window( HWND hwnd, UINT gui_flags, HWND *prev_ret );
-extern BOOL set_caret_blink_time( unsigned int time );
-extern BOOL set_caret_pos( int x, int y );
-extern BOOL set_foreground_window( HWND hwnd, BOOL mouse );
+extern BOOL set_foreground_window( HWND hwnd, BOOL mouse, BOOL force );
 extern BOOL set_active_window( HWND hwnd, HWND *prev, BOOL mouse, BOOL focus, DWORD new_active_thread_id );
 extern BOOL set_ime_composition_rect( HWND hwnd, RECT rect );
 extern void toggle_caret( HWND hwnd );
 extern void update_mouse_tracking_info( HWND hwnd );
-extern BOOL get_clip_cursor( RECT *rect, UINT dpi, MONITOR_DPI_TYPE type );
+extern void update_current_mouse_window( HWND hwnd, INT hittest, POINT pos );
 extern BOOL process_wine_clipcursor( HWND hwnd, UINT flags, BOOL reset );
 extern BOOL clip_fullscreen_window( HWND hwnd, BOOL reset );
 extern USHORT map_scan_to_kbd_vkey( USHORT scan, HKL layout );
 
 /* menu.c */
-extern HMENU create_menu( BOOL is_popup );
-extern BOOL draw_menu_bar( HWND hwnd );
 extern UINT draw_nc_menu_bar( HDC hdc, RECT *rect, HWND hwnd );
 extern void end_menu( HWND hwnd );
 extern HMENU get_menu( HWND hwnd );
@@ -134,9 +125,6 @@ extern void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch );
 extern void track_mouse_menu_bar( HWND hwnd, INT ht, int x, int y );
 
 /* message.c */
-extern BOOL kill_system_timer( HWND hwnd, UINT_PTR id );
-extern BOOL reply_message_result( LRESULT result );
-extern BOOL post_quit_message( int exit_code );
 extern NTSTATUS send_hardware_message( HWND hwnd, UINT flags, const INPUT *input, LPARAM lparam );
 extern LRESULT send_internal_message_timeout( DWORD dest_pid, DWORD dest_tid, UINT msg, WPARAM wparam,
                                               LPARAM lparam, UINT flags, UINT timeout,
@@ -148,7 +136,7 @@ extern LRESULT send_message_timeout( HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
 extern size_t user_message_size( HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
                                  BOOL other_process, BOOL ansi, size_t *reply_size );
 extern void pack_user_message( void *buffer, size_t size, UINT message,
-                               WPARAM wparam, LPARAM lparam, BOOL ansi );
+                               WPARAM wparam, LPARAM lparam, BOOL ansi, void **extra_buffer );
 
 /* rawinput.c */
 extern BOOL process_rawinput_message( MSG *msg, UINT hw_id, const struct hardware_msg_data *msg_data );
@@ -183,13 +171,12 @@ extern UINT get_thread_dpi(void);
 extern UINT set_thread_dpi_awareness_context( UINT context );
 extern UINT get_thread_dpi_awareness_context(void);
 extern RECT get_virtual_screen_rect( UINT dpi, MONITOR_DPI_TYPE type );
+extern const char *gpu_device_name( UINT16 vendor, UINT16 device, const char *name );
 extern BOOL is_exiting_thread( DWORD tid );
-extern BOOL is_window_rect_full_screen( const RECT *rect, UINT dpi );
 extern POINT map_dpi_point( POINT pt, UINT dpi_from, UINT dpi_to );
 extern RECT map_dpi_rect( RECT rect, UINT dpi_from, UINT dpi_to );
 extern HRGN map_dpi_region( HRGN region, UINT dpi_from, UINT dpi_to );
 extern struct window_rects map_dpi_window_rects( struct window_rects rects, UINT dpi_from, UINT dpi_to );
-extern BOOL message_beep( UINT i );
 extern RECT map_rect_raw_to_virt( RECT rect, UINT dpi_to );
 extern RECT map_rect_virt_to_raw( RECT rect, UINT dpi_from );
 extern struct window_rects map_window_rects_virt_to_raw( struct window_rects rects, UINT dpi_from );
@@ -206,6 +193,8 @@ extern void user_lock(void);
 extern void user_unlock(void);
 extern void user_check_not_lock(void);
 
+/* d3dkmtc. */
+
 struct vulkan_gpu
 {
     struct list entry;
@@ -218,6 +207,18 @@ struct vulkan_gpu
 extern BOOL get_vulkan_gpus( struct list *gpus );
 extern void free_vulkan_gpu( struct vulkan_gpu *gpu );
 extern BOOL get_vulkan_uuid_from_luid( const LUID *luid, GUID *uuid );
+extern BOOL get_luid_from_vulkan_uuid( const GUID *uuid, LUID *luid, UINT32 *node_mask );
+
+extern int d3dkmt_object_get_fd( D3DKMT_HANDLE local );
+extern NTSTATUS d3dkmt_destroy_mutex( D3DKMT_HANDLE local );
+
+extern D3DKMT_HANDLE d3dkmt_create_resource( int fd, D3DKMT_HANDLE *global );
+extern D3DKMT_HANDLE d3dkmt_open_resource( D3DKMT_HANDLE global, HANDLE shared, D3DKMT_HANDLE *mutex_local, D3DKMT_HANDLE *sync_local );
+extern NTSTATUS d3dkmt_destroy_resource( D3DKMT_HANDLE local );
+
+extern D3DKMT_HANDLE d3dkmt_create_sync( int fd, D3DKMT_HANDLE *global );
+extern D3DKMT_HANDLE d3dkmt_open_sync( D3DKMT_HANDLE global, HANDLE shared );
+extern NTSTATUS d3dkmt_destroy_sync( D3DKMT_HANDLE local );
 
 /* winstation.c */
 
@@ -228,26 +229,38 @@ struct object_lock
 };
 #define OBJECT_LOCK_INIT {0}
 
+#if defined(__i386__) || defined(__x86_64__)
+/* this prevents compilers from incorrectly reordering non-volatile reads (e.g., memcpy) from shared memory */
+#define __SHARED_READ_FENCE do { __asm__ __volatile__( "" ::: "memory" ); } while (0)
+#else
+#define __SHARED_READ_FENCE __atomic_thread_fence( __ATOMIC_ACQUIRE )
+#endif
+
+extern const shared_object_t *find_shared_session_object( object_id_t id, mem_size_t offset );
+extern void shared_object_acquire_seqlock( const shared_object_t *object, UINT64 *seq );
+extern BOOL shared_object_release_seqlock( const shared_object_t *object, UINT64 seq );
+
 /* Get shared session object's data pointer, must be called in a loop while STATUS_PENDING
  * is returned, lock must be initialized with OBJECT_LOCK_INIT.
  *
  * The data read from the objects may be transient and no logic should be executed based
  * on it, within the loop, or after, unless the function has returned STATUS_SUCCESS.
  */
+extern const session_shm_t *shared_session;
 extern NTSTATUS get_shared_desktop( struct object_lock *lock, const desktop_shm_t **desktop_shm );
 extern NTSTATUS get_shared_queue( struct object_lock *lock, const queue_shm_t **queue_shm );
 extern NTSTATUS get_shared_input( UINT tid, struct object_lock *lock, const input_shm_t **input_shm );
 
 extern BOOL is_virtual_desktop(void);
+extern BOOL is_service_process(void);
 
 /* window.c */
 struct tagWND;
-extern HDWP begin_defer_window_pos( INT count );
 extern BOOL client_to_screen( HWND hwnd, POINT *pt );
 extern void destroy_thread_windows(void);
 extern LRESULT destroy_window( HWND hwnd );
-extern BOOL enable_window( HWND hwnd, BOOL enable );
 extern BOOL get_client_rect( HWND hwnd, RECT *rect, UINT dpi );
+extern BOOL get_present_rect( HWND hwnd, RECT *rect, UINT dpi );
 extern HWND get_desktop_window(void);
 extern UINT get_dpi_for_window( HWND hwnd );
 extern HWND get_full_window_handle( HWND hwnd );
@@ -255,7 +268,6 @@ extern HWND get_parent( HWND hwnd );
 extern HWND get_hwnd_message_parent(void);
 extern UINT get_window_dpi_awareness_context( HWND hwnd );
 extern MINMAXINFO get_min_max_info( HWND hwnd );
-extern DWORD get_window_context_help_id( HWND hwnd );
 extern HWND get_window_relative( HWND hwnd, UINT rel );
 extern DWORD get_window_thread( HWND hwnd, DWORD *process );
 extern HWND is_current_process_window( HWND hwnd );
@@ -267,6 +279,8 @@ extern BOOL is_window_enabled( HWND hwnd );
 extern BOOL is_window_unicode( HWND hwnd );
 extern BOOL is_window_visible( HWND hwnd );
 extern BOOL is_zoomed( HWND hwnd );
+extern BOOL set_window_pixel_format( HWND hwnd, int format, BOOL internal );
+extern int get_window_pixel_format( HWND hwnd );
 extern DWORD get_window_long( HWND hwnd, INT offset );
 extern ULONG_PTR get_window_long_ptr( HWND hwnd, INT offset, BOOL ansi );
 extern BOOL get_window_rect( HWND hwnd, RECT *rect, UINT dpi );
@@ -283,15 +297,15 @@ extern BOOL screen_to_client( HWND hwnd, POINT *pt );
 extern LONG_PTR set_window_long( HWND hwnd, INT offset, UINT size, LONG_PTR newval,
                                  BOOL ansi );
 extern BOOL set_window_pos( WINDOWPOS *winpos, int parent_x, int parent_y );
-extern ULONG set_window_style( HWND hwnd, ULONG set_bits, ULONG clear_bits );
-extern BOOL show_owned_popups( HWND owner, BOOL show );
+extern UINT set_window_style_bits( HWND hwnd, UINT set_bits, UINT clear_bits );
 extern void update_window_state( HWND hwnd );
-extern HWND window_from_point( HWND hwnd, POINT pt, INT *hittest );
+extern HWND window_from_point( HWND hwnd, POINT pt, INT *hittest, BOOL send_nchittest );
 extern HWND get_shell_window(void);
 extern HWND get_progman_window(void);
-extern HWND set_progman_window( HWND hwnd );
 extern HWND get_taskman_window(void);
-extern HWND set_taskman_window( HWND hwnd );
+extern BOOL is_client_surface_window( struct client_surface *surface, HWND hwnd );
+extern HICON get_window_icon_info( HWND hwnd, UINT type, HICON icon, ICONINFO *ret );
+extern void init_startup_info(void);
 
 /* to release pointers retrieved by win_get_ptr */
 static inline void release_win_ptr( struct tagWND *ptr )
@@ -299,6 +313,8 @@ static inline void release_win_ptr( struct tagWND *ptr )
     user_unlock();
 }
 
+extern SYSTEM_BASIC_INFORMATION system_info;
+extern void shared_session_init(void);
 extern void gdi_init(void);
 extern void winstation_init(void);
 extern void sysparams_init(void);
@@ -323,7 +339,9 @@ extern void reg_delete_value( HKEY hkey, const WCHAR *name );
 
 extern HKEY hkcu_key;
 
+/* driver.c */
 extern const struct user_driver_funcs *user_driver;
+extern struct client_surface *nulldrv_client_surface_create( HWND hwnd );
 
 extern ULONG_PTR zero_bits;
 

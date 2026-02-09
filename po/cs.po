@@ -41,11 +41,11 @@ msgstr ""
 msgid "Permissions for %1"
 msgstr "Přístup odepřen.\n"
 
-#: dlls/appwiz.cpl/appwiz.rc:59
+#: dlls/appwiz.cpl/appwiz.rc:60
 msgid "Install/Uninstall"
 msgstr "Instalovat/Odinstalovat"
 
-#: dlls/appwiz.cpl/appwiz.rc:62
+#: dlls/appwiz.cpl/appwiz.rc:63
 msgid ""
 "To install a new program from a floppy disk, CD-ROM drive, or your hard "
 "drive, click Install."
@@ -53,11 +53,11 @@ msgstr ""
 "Pro instalaci nového programu z diskety, CD mechaniky nebo pevného disku "
 "klikněte na Instalovat."
 
-#: dlls/appwiz.cpl/appwiz.rc:63
+#: dlls/appwiz.cpl/appwiz.rc:64
 msgid "&Install..."
 msgstr "&Instalovat..."
 
-#: dlls/appwiz.cpl/appwiz.rc:66
+#: dlls/appwiz.cpl/appwiz.rc:67
 msgid ""
 "The following software can be automatically removed. To remove a program or "
 "to modify its installed components, select it from the list and click Modify/"
@@ -67,27 +67,27 @@ msgstr ""
 "programu nebo pro změnu jeho nainstalovaných komponent ho vyberte v seznamu "
 "a klikněte na Změnit/Odebrat."
 
-#: dlls/appwiz.cpl/appwiz.rc:68
+#: dlls/appwiz.cpl/appwiz.rc:69
 msgid "&Support Information"
 msgstr "I&nformace o podpoře"
 
-#: dlls/appwiz.cpl/appwiz.rc:69 programs/regedit/regedit.rc:136
+#: dlls/appwiz.cpl/appwiz.rc:70 programs/regedit/regedit.rc:136
 #: programs/regedit/regedit.rc:237
 msgid "&Modify..."
 msgstr "Změnit..."
 
-#: dlls/appwiz.cpl/appwiz.rc:70 dlls/appwiz.cpl/appwiz.rc:45
+#: dlls/appwiz.cpl/appwiz.rc:71 dlls/appwiz.cpl/appwiz.rc:45
 #: dlls/cryptui/cryptui.rc:351 dlls/msacm32/msacm32.rc:40
 #: programs/winecfg/winecfg.rc:205 programs/winecfg/winecfg.rc:242
 #: programs/wordpad/wordpad.rc:256
 msgid "&Remove"
 msgstr "Odeb&rat"
 
-#: dlls/appwiz.cpl/appwiz.rc:76
+#: dlls/appwiz.cpl/appwiz.rc:77
 msgid "Support Information"
 msgstr "Informace o podpoře"
 
-#: dlls/appwiz.cpl/appwiz.rc:79 dlls/avifil32/avifil32.rc:54
+#: dlls/appwiz.cpl/appwiz.rc:80 dlls/avifil32/avifil32.rc:54
 #: dlls/comctl32/comctl32.rc:71 dlls/comctl32/comctl32.rc:55
 #: dlls/comdlg32/comdlg32.rc:233 dlls/comdlg32/comdlg32.rc:263
 #: dlls/comdlg32/comdlg32.rc:307 dlls/comdlg32/comdlg32.rc:390
@@ -102,11 +102,11 @@ msgstr "Informace o podpoře"
 #: dlls/serialui/serialui.rc:41 dlls/setupapi/setupapi.rc:59
 #: dlls/shell32/shell32.rc:278 dlls/shell32/shell32.rc:302
 #: dlls/shell32/shell32.rc:324 dlls/shell32/shell32.rc:343
-#: dlls/shlwapi/shlwapi.rc:44 dlls/twain_32/twain.rc:32
+#: dlls/shlwapi/shlwapi.rc:44 dlls/twaindsm/twain.rc:32
 #: dlls/user32/user32.rc:94 dlls/user32/user32.rc:109 dlls/user32/user32.rc:73
 #: dlls/wininet/wininet.rc:62 dlls/wininet/wininet.rc:82
 #: dlls/winspool.drv/winspool.rc:42 programs/net/net.rc:48
-#: programs/notepad/notepad.rc:124 programs/oleview/oleview.rc:161
+#: programs/notepad/notepad.rc:125 programs/oleview/oleview.rc:161
 #: programs/oleview/oleview.rc:174 programs/progman/progman.rc:106
 #: programs/progman/progman.rc:124 programs/progman/progman.rc:142
 #: programs/progman/progman.rc:158 programs/progman/progman.rc:180
@@ -124,55 +124,55 @@ msgstr "Informace o podpoře"
 msgid "OK"
 msgstr "OK"
 
-#: dlls/appwiz.cpl/appwiz.rc:80
+#: dlls/appwiz.cpl/appwiz.rc:81
 msgid "The following information can be used to get technical support for %s:"
 msgstr "Následující informace mohou být využity k získání podpory pro %s:"
 
-#: dlls/appwiz.cpl/appwiz.rc:81
+#: dlls/appwiz.cpl/appwiz.rc:82
 msgid "Publisher:"
 msgstr "Vydavatel:"
 
-#: dlls/appwiz.cpl/appwiz.rc:82 programs/winefile/winefile.rc:165
+#: dlls/appwiz.cpl/appwiz.rc:83 programs/winefile/winefile.rc:165
 msgid "Version:"
 msgstr "Verze:"
 
-#: dlls/appwiz.cpl/appwiz.rc:83
+#: dlls/appwiz.cpl/appwiz.rc:84
 msgid "Contact:"
 msgstr "Kontakt:"
 
-#: dlls/appwiz.cpl/appwiz.rc:84
+#: dlls/appwiz.cpl/appwiz.rc:85
 msgid "Support Information:"
 msgstr "Informace o podpoře:"
 
-#: dlls/appwiz.cpl/appwiz.rc:85
+#: dlls/appwiz.cpl/appwiz.rc:86
 msgid "Support Telephone:"
 msgstr "Telefon podpory:"
 
-#: dlls/appwiz.cpl/appwiz.rc:86
+#: dlls/appwiz.cpl/appwiz.rc:87
 msgid "Readme:"
 msgstr "Čtimne:"
 
-#: dlls/appwiz.cpl/appwiz.rc:87
+#: dlls/appwiz.cpl/appwiz.rc:88
 msgid "Product Updates:"
 msgstr "Aktualizace produktu:"
 
-#: dlls/appwiz.cpl/appwiz.rc:88
+#: dlls/appwiz.cpl/appwiz.rc:89
 msgid "Comments:"
 msgstr "Komentáře:"
 
-#: dlls/appwiz.cpl/appwiz.rc:101
+#: dlls/appwiz.cpl/appwiz.rc:102
 msgid "Wine Gecko Installer"
 msgstr "Instalátor Wine Gecko"
 
-#: dlls/appwiz.cpl/appwiz.rc:104
+#: dlls/appwiz.cpl/appwiz.rc:105
 msgid ""
 "Wine could not find a Gecko package which is needed for applications "
 "embedding HTML to work correctly. Wine can automatically download and "
 "install it for you.\n"
 "\n"
 "Note: it is recommended to use your distribution's packages instead. See <a "
-"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://gitlab."
-"winehq.org/wine/wine/-/wikis/Gecko</a> for details."
+"href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Gecko\">https://"
+"gitlab.winehq.org/wine/wine/-/wikis/Gecko</a> for details."
 msgstr ""
 "Wine se nepodařilo najít balíček Gecko potřebný pro správnou funkčnost "
 "aplikací využívajících HTML. Wine ho pro Vás může automaticky stáhnout a "
@@ -182,11 +182,11 @@ msgstr ""
 "více detailů čtěte <a href=\"https://gitlab.winehq.org/wine/wine/-/wikis/"
 "Gecko\">https://gitlab.winehq.org/wine/wine/-/wikis/Gecko</a>."
 
-#: dlls/appwiz.cpl/appwiz.rc:110 dlls/appwiz.cpl/appwiz.rc:125
+#: dlls/appwiz.cpl/appwiz.rc:111 dlls/appwiz.cpl/appwiz.rc:126
 msgid "&Install"
 msgstr "&Instalovat"
 
-#: dlls/appwiz.cpl/appwiz.rc:111 dlls/appwiz.cpl/appwiz.rc:126
+#: dlls/appwiz.cpl/appwiz.rc:112 dlls/appwiz.cpl/appwiz.rc:127
 #: dlls/avifil32/avifil32.rc:55 dlls/browseui/browseui.rc:45
 #: dlls/comctl32/comctl32.rc:72 dlls/comctl32/comctl32.rc:87
 #: dlls/comctl32/comctl32.rc:56 dlls/comdlg32/comdlg32.rc:172
@@ -203,15 +203,15 @@ msgstr "&Instalovat"
 #: dlls/inetcpl.cpl/inetcpl.rc:81 dlls/localui/localui.rc:45
 #: dlls/localui/localui.rc:58 dlls/mpr/mpr.rc:50 dlls/msacm32/msacm32.rc:54
 #: dlls/mshtml/mshtml.rc:48 dlls/mshtml/mshtml.rc:58 dlls/msvfw32/msvfw32.rc:37
-#: dlls/oledlg/oledlg.rc:63 dlls/oledlg/oledlg.rc:95
+#: dlls/oledlg/oledlg.rc:63 dlls/oledlg/oledlg.rc:95 dlls/sane.ds/sane.rc:70
 #: dlls/serialui/serialui.rc:42 dlls/setupapi/setupapi.rc:42
 #: dlls/setupapi/setupapi.rc:60 dlls/shell32/shell32.rc:279
 #: dlls/shell32/shell32.rc:303 dlls/shell32/shell32.rc:314
 #: dlls/shell32/shell32.rc:344 dlls/shlwapi/shlwapi.rc:45
-#: dlls/twain_32/twain.rc:33 dlls/user32/user32.rc:95 dlls/user32/user32.rc:110
+#: dlls/twaindsm/twain.rc:33 dlls/user32/user32.rc:95 dlls/user32/user32.rc:110
 #: dlls/user32/user32.rc:74 dlls/wininet/wininet.rc:63
 #: dlls/wininet/wininet.rc:83 dlls/winspool.drv/winspool.rc:43
-#: programs/notepad/notepad.rc:125 programs/notepad/notepad.rc:138
+#: programs/notepad/notepad.rc:126 programs/notepad/notepad.rc:139
 #: programs/oleview/oleview.rc:162 programs/oleview/oleview.rc:175
 #: programs/progman/progman.rc:107 programs/progman/progman.rc:125
 #: programs/progman/progman.rc:143 programs/progman/progman.rc:159
@@ -229,11 +229,11 @@ msgstr "&Instalovat"
 msgid "Cancel"
 msgstr "Storno"
 
-#: dlls/appwiz.cpl/appwiz.rc:116
+#: dlls/appwiz.cpl/appwiz.rc:117
 msgid "Wine Mono Installer"
 msgstr "Instalátor Wine Mono"
 
-#: dlls/appwiz.cpl/appwiz.rc:119
+#: dlls/appwiz.cpl/appwiz.rc:120
 msgid ""
 "Wine could not find a wine-mono package which is needed for .NET "
 "applications to work correctly. Wine can automatically download and install "
@@ -243,8 +243,9 @@ msgid ""
 "href=\"https://gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono\">https://"
 "gitlab.winehq.org/wine/wine/-/wikis/Wine-Mono</a> for details."
 msgstr ""
-"Wine se nepodařilo najít balíček wine-mono potřebný pro správnou funkčnost ."
-"NET aplikací. Wine ho pro Vás může automaticky stáhnout a nainstalovat.\n"
+"Wine se nepodařilo najít balíček wine-mono potřebný pro správnou "
+"funkčnost .NET aplikací. Wine ho pro Vás může automaticky stáhnout a "
+"nainstalovat.\n"
 "\n"
 "Poznámka: Je doporučeno využít namísto toho balíček Vaší distribuce. Pro "
 "více detailů čtěte <a href=\"https://gitlab.winehq.org/wine/wine/-/wikis/"
@@ -279,7 +280,7 @@ msgstr ""
 msgid "Not specified"
 msgstr "Neurčeno"
 
-#: dlls/appwiz.cpl/appwiz.rc:38 dlls/oledb32/version.rc:38
+#: dlls/appwiz.cpl/appwiz.rc:38 dlls/oledb32/version.rc:35
 #: dlls/shell32/shell32.rc:141 dlls/shell32/shell32.rc:243
 #: programs/regedit/regedit.rc:150 programs/winefile/winefile.rc:106
 msgid "Name"
@@ -303,7 +304,7 @@ msgstr "Programy (*.exe)"
 
 #: dlls/appwiz.cpl/appwiz.rc:43 dlls/avifil32/avifil32.rc:33
 #: dlls/cryptui/cryptui.rc:83 dlls/shell32/shell32.rc:199
-#: programs/notepad/notepad.rc:81 programs/oleview/oleview.rc:103
+#: programs/notepad/notepad.rc:82 programs/oleview/oleview.rc:103
 #: programs/progman/progman.rc:82 programs/regedit/regedit.rc:230
 #: programs/winedbg/winedbg.rc:43 programs/winhlp32/winhlp32.rc:90
 msgid "All files (*.*)"
@@ -332,6 +333,12 @@ msgstr ""
 #: dlls/appwiz.cpl/appwiz.rc:47
 msgid "Please wait until the current uninstall/modify process is complete."
 msgstr ""
+
+#: dlls/appwiz.cpl/appwiz.rc:55
+#, fuzzy
+#| msgid "Downloading..."
+msgid "Download failed."
+msgstr "Probíhá stahování..."
 
 #: dlls/avifil32/avifil32.rc:42
 msgid "Compress options"
@@ -385,6 +392,21 @@ msgstr "Výchozí obsluha formátu AVI ve Wine"
 msgid "uncompressed"
 msgstr "nekomprimované"
 
+#: dlls/bluetoothapis/bluetoothapis.rc:31
+#, fuzzy
+#| msgid "&Confirm password:"
+msgid "Confirm pairing"
+msgstr "Potvrzení hesla:"
+
+#: dlls/bluetoothapis/bluetoothapis.rc:32
+msgid "Pair with '%1!s!' using the following PIN/passkey value: %2!lu!?"
+msgstr ""
+
+#: dlls/bluetoothapis/bluetoothapis.rc:33
+msgid ""
+"Pair with unnamed device %1!s! using the following PIN/passkey value: %2!lu!?"
+msgstr ""
+
 #: dlls/browseui/browseui.rc:28
 msgid "Canceling..."
 msgstr "Probíhá zrušování..."
@@ -434,7 +456,7 @@ msgstr "Průvodce"
 msgid "< &Back"
 msgstr "< &Zpět"
 
-#: dlls/comctl32/comctl32.rc:85 dlls/oledb32/version.rc:61
+#: dlls/comctl32/comctl32.rc:85 dlls/oledb32/version.rc:58
 msgid "&Next >"
 msgstr "&Další >"
 
@@ -466,7 +488,7 @@ msgstr "&Výchozí"
 #: dlls/comdlg32/comdlg32.rc:531 dlls/ieframe/ieframe.rc:58
 #: dlls/msacm32/msacm32.rc:52 dlls/oledlg/oledlg.rc:96
 #: dlls/shell32/shell32.rc:125 programs/clock/clock.rc:44
-#: programs/notepad/notepad.rc:65 programs/notepad/notepad.rc:126
+#: programs/notepad/notepad.rc:65 programs/notepad/notepad.rc:127
 #: programs/oleview/oleview.rc:72 programs/progman/progman.rc:55
 #: programs/progman/progman.rc:108 programs/progman/progman.rc:126
 #: programs/progman/progman.rc:144 programs/progman/progman.rc:160
@@ -540,7 +562,7 @@ msgstr "Podrobnosti"
 
 #: dlls/comctl32/comctl32.rc:31 dlls/cryptui/cryptui.rc:235
 #: programs/regedit/regedit.rc:291 programs/taskmgr/taskmgr.rc:434
-#: programs/winedbg/winedbg.rc:59 programs/winedbg/winedbg.rc:71
+#: programs/winedbg/winedbg.rc:62 programs/winedbg/winedbg.rc:77
 #: programs/wordpad/wordpad.rc:180
 msgid "Close"
 msgstr "Zavřít"
@@ -591,7 +613,7 @@ msgstr "Uložit jako"
 
 #: dlls/comdlg32/comdlg32.rc:202 dlls/comdlg32/comdlg32.rc:211
 #: dlls/comdlg32/comdlg32.rc:358 dlls/comdlg32/comdlg32.rc:55
-#: dlls/hhctrl.ocx/hhctrl.rc:49 programs/wordpad/wordpad.rc:173
+#: dlls/hhctrl.ocx/hhctrl.rc:51 programs/wordpad/wordpad.rc:173
 msgid "Print"
 msgstr "Tisk"
 
@@ -701,7 +723,7 @@ msgid "Font St&yle:"
 msgstr "St&yl písma:"
 
 #: dlls/comdlg32/comdlg32.rc:260 dlls/comdlg32/comdlg32.rc:439
-#: programs/winecfg/winecfg.rc:300
+#: programs/winecfg/winecfg.rc:302
 msgid "&Size:"
 msgstr "Veliko&st:"
 
@@ -717,7 +739,7 @@ msgstr "Přeš&krtnutí"
 msgid "&Underline"
 msgstr "&Podtržení"
 
-#: dlls/comdlg32/comdlg32.rc:270 programs/winecfg/winecfg.rc:298
+#: dlls/comdlg32/comdlg32.rc:270 programs/winecfg/winecfg.rc:300
 msgid "&Color:"
 msgstr "&Barva:"
 
@@ -730,6 +752,7 @@ msgid "Scr&ipt:"
 msgstr "Skr&ipt:"
 
 #: dlls/comdlg32/comdlg32.rc:283 dlls/comdlg32/comdlg32.rc:288
+#: dlls/compstui/compstui.rc:33 dlls/sane.ds/sane.rc:42
 msgid "Color"
 msgstr "Barva"
 
@@ -895,7 +918,7 @@ msgstr "Počet &kopií:"
 msgid "C&ollate"
 msgstr "K&ompletovat"
 
-#: dlls/comdlg32/comdlg32.rc:414 programs/winecfg/winecfg.rc:306
+#: dlls/comdlg32/comdlg32.rc:414 programs/winecfg/winecfg.rc:308
 msgid "Si&ze:"
 msgstr "Veli&kost:"
 
@@ -927,7 +950,7 @@ msgstr "&Na výšku"
 msgid "L&eft:"
 msgstr "L&evý:"
 
-#: dlls/comdlg32/comdlg32.rc:449 programs/notepad/notepad.rc:119
+#: dlls/comdlg32/comdlg32.rc:449 programs/notepad/notepad.rc:120
 msgid "&Right:"
 msgstr "P&ravý:"
 
@@ -935,7 +958,7 @@ msgstr "P&ravý:"
 msgid "T&op:"
 msgstr "H&orní:"
 
-#: dlls/comdlg32/comdlg32.rc:453 programs/notepad/notepad.rc:121
+#: dlls/comdlg32/comdlg32.rc:453 programs/notepad/notepad.rc:122
 msgid "&Bottom:"
 msgstr "&Dolní:"
 
@@ -1085,7 +1108,8 @@ msgstr "nachová"
 msgid "Teal"
 msgstr "sivá"
 
-#: dlls/comdlg32/comdlg32.rc:129 programs/wordpad/wordpad.rc:132
+#: dlls/comdlg32/comdlg32.rc:129 dlls/sane.ds/sane.rc:41
+#: programs/wordpad/wordpad.rc:132
 msgid "Gray"
 msgstr "šedá"
 
@@ -1348,7 +1372,7 @@ msgstr "mm"
 msgid "Properties"
 msgstr "&Vlastnosti"
 
-#: dlls/compstui/compstui.rc:30 dlls/hhctrl.ocx/hhctrl.rc:50
+#: dlls/compstui/compstui.rc:30 dlls/hhctrl.ocx/hhctrl.rc:52
 #: programs/conhost/conhost.rc:51 programs/wordpad/wordpad.rc:166
 msgid "Options"
 msgstr "Volby"
@@ -1359,12 +1383,49 @@ msgstr "Volby"
 msgid "Default"
 msgstr "Výchozí nastavení"
 
+#: dlls/compstui/compstui.rc:35
+#, fuzzy
+#| msgid "&Copy Background"
+msgid "&Copy count"
+msgstr "&Kopírovat pozadí"
+
+#: dlls/compstui/compstui.rc:36
+#, fuzzy
+#| msgid "Print to File"
+msgid "Print on Both Sides"
+msgstr "Vytisknout do souboru"
+
+#: dlls/compstui/compstui.rc:32
+#, fuzzy
+#| msgid "C&olor:"
+msgid "C&olor"
+msgstr "B&arva:"
+
+#: dlls/compstui/compstui.rc:34
+msgid "Bla&ck && White"
+msgstr ""
+
+#: dlls/compstui/compstui.rc:37
+#, fuzzy
+#| msgctxt "hotkey"
+#| msgid "None"
+msgid "&None"
+msgstr "Žádné"
+
+#: dlls/compstui/compstui.rc:38 dlls/compstui/compstui.rc:41
+msgid "Flip on Shor&t Edge"
+msgstr ""
+
+#: dlls/compstui/compstui.rc:39 dlls/compstui/compstui.rc:40
+msgid "Flip on Long E&dge"
+msgstr ""
+
 #: dlls/credui/credui.rc:45
 msgid "&User name:"
 msgstr "&Uživatelské jméno:"
 
 #: dlls/credui/credui.rc:48 dlls/cryptui/cryptui.rc:402
-#: dlls/oledb32/version.rc:81
+#: dlls/oledb32/version.rc:78
 msgid "&Password:"
 msgstr "&Heslo:"
 
@@ -2392,7 +2453,7 @@ msgid "&File name:"
 msgstr "&Název souboru:"
 
 #: dlls/cryptui/cryptui.rc:301 dlls/cryptui/cryptui.rc:323
-#: dlls/cryptui/cryptui.rc:437 programs/winecfg/winecfg.rc:319
+#: dlls/cryptui/cryptui.rc:437 programs/winecfg/winecfg.rc:321
 msgid "B&rowse..."
 msgstr "P&rocházet..."
 
@@ -2674,7 +2735,7 @@ msgstr "Tento certifikát je v pořádku."
 msgid "Field"
 msgstr "Pole"
 
-#: dlls/cryptui/cryptui.rc:48 dlls/oledb32/version.rc:39
+#: dlls/cryptui/cryptui.rc:48 dlls/oledb32/version.rc:36
 msgid "Value"
 msgstr "Hodnota"
 
@@ -3257,7 +3318,7 @@ msgstr ""
 msgid "OEM/DOS"
 msgstr "OEM/DOS"
 
-#: dlls/gdi32/gdi32.rc:45 dlls/oledb32/version.rc:100
+#: dlls/gdi32/gdi32.rc:45 dlls/oledb32/version.rc:97
 #: dlls/wldap32/wldap32.rc:112
 msgid "Other"
 msgstr "Jiné"
@@ -3302,60 +3363,60 @@ msgstr "Probíhá připojování k fotoaparátu"
 msgid "Connecting to camera... Please Wait"
 msgstr "Probíhá připojování k fotoaparátu... čekejte prosím"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:59
+#: dlls/hhctrl.ocx/hhctrl.rc:61
 msgid "S&ync"
 msgstr "S&ynchronizovat"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:60 dlls/hhctrl.ocx/hhctrl.rc:73
+#: dlls/hhctrl.ocx/hhctrl.rc:62 dlls/hhctrl.ocx/hhctrl.rc:75
 #: dlls/shdoclc/shdoclc.rc:41 programs/winhlp32/winhlp32.rc:89
 msgid "&Back"
 msgstr "&Zpět"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:61 dlls/hhctrl.ocx/hhctrl.rc:74
+#: dlls/hhctrl.ocx/hhctrl.rc:63 dlls/hhctrl.ocx/hhctrl.rc:76
 msgid "&Forward"
 msgstr "&Vpřed"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:62
+#: dlls/hhctrl.ocx/hhctrl.rc:64
 msgctxt "table of contents"
 msgid "&Home"
 msgstr "&Domů"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:63
+#: dlls/hhctrl.ocx/hhctrl.rc:65
 msgid "&Stop"
 msgstr "Za&stavit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:64 dlls/hhctrl.ocx/hhctrl.rc:81
-#: dlls/oledb32/version.rc:73 dlls/shdoclc/shdoclc.rc:59
+#: dlls/hhctrl.ocx/hhctrl.rc:66 dlls/hhctrl.ocx/hhctrl.rc:83
+#: dlls/oledb32/version.rc:70 dlls/shdoclc/shdoclc.rc:59
 msgid "&Refresh"
 msgstr "&Obnovit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:65 dlls/hhctrl.ocx/hhctrl.rc:80
+#: dlls/hhctrl.ocx/hhctrl.rc:67 dlls/hhctrl.ocx/hhctrl.rc:82
 #: programs/winhlp32/winhlp32.rc:34
 msgid "&Print..."
 msgstr "&Tisknout..."
 
-#: dlls/hhctrl.ocx/hhctrl.rc:76 dlls/hhctrl.ocx/hhctrl.rc:90
+#: dlls/hhctrl.ocx/hhctrl.rc:78 dlls/hhctrl.ocx/hhctrl.rc:92
 #: dlls/shdoclc/shdoclc.rc:49 dlls/shdoclc/shdoclc.rc:98
 #: dlls/shdoclc/shdoclc.rc:120 dlls/user32/user32.rc:65
 msgid "Select &All"
 msgstr "Vybrat vše"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:78 dlls/shdoclc/shdoclc.rc:54
+#: dlls/hhctrl.ocx/hhctrl.rc:80 dlls/shdoclc/shdoclc.rc:54
 msgid "&View Source"
 msgstr "&Zobrazit zdroj"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:83
+#: dlls/hhctrl.ocx/hhctrl.rc:85
 msgid "Proper&ties"
 msgstr "&Vlastnosti"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:87 dlls/shdoclc/shdoclc.rc:79
+#: dlls/hhctrl.ocx/hhctrl.rc:89 dlls/shdoclc/shdoclc.rc:79
 #: dlls/shdoclc/shdoclc.rc:93 dlls/shdoclc/shdoclc.rc:117
 #: dlls/shdoclc/shdoclc.rc:159 dlls/shdoclc/shdoclc.rc:183
 #: dlls/user32/user32.rc:60 programs/wordpad/wordpad.rc:112
 msgid "Cu&t"
 msgstr "Vyjmout"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:88 dlls/shdoclc/shdoclc.rc:80
+#: dlls/hhctrl.ocx/hhctrl.rc:90 dlls/shdoclc/shdoclc.rc:80
 #: dlls/shdoclc/shdoclc.rc:94 dlls/shdoclc/shdoclc.rc:118
 #: dlls/shdoclc/shdoclc.rc:133 dlls/shdoclc/shdoclc.rc:160
 #: dlls/shdoclc/shdoclc.rc:184 dlls/shell32/shell32.rc:98
@@ -3364,12 +3425,12 @@ msgstr "Vyjmout"
 msgid "&Copy"
 msgstr "&Kopírovat"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:89 dlls/shdoclc/shdoclc.rc:119
+#: dlls/hhctrl.ocx/hhctrl.rc:91 dlls/shdoclc/shdoclc.rc:119
 #: dlls/shell32/shell32.rc:64
 msgid "Paste"
 msgstr "V&ložit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:91 dlls/shdoclc/shdoclc.rc:121
+#: dlls/hhctrl.ocx/hhctrl.rc:93 dlls/shdoclc/shdoclc.rc:121
 #: dlls/shell32/shell32.rc:166
 msgid "&Print"
 msgstr "&Tisk"
@@ -3382,7 +3443,7 @@ msgstr "&Obsah"
 msgid "I&ndex"
 msgstr "&Rejstřík"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:33 programs/notepad/notepad.rc:55
+#: dlls/hhctrl.ocx/hhctrl.rc:33
 msgid "&Search"
 msgstr "Hledat"
 
@@ -3398,38 +3459,44 @@ msgstr "Skrý&t záložky"
 msgid "Show &Tabs"
 msgstr "Zobrazi&t záložky"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:42
+#: dlls/hhctrl.ocx/hhctrl.rc:39
+#, fuzzy
+#| msgid "Select Source"
+msgid "Select Topic"
+msgstr "Vyberte zdroj"
+
+#: dlls/hhctrl.ocx/hhctrl.rc:44
 msgid "Show"
 msgstr "Rozbalit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:43 dlls/winemac.drv/winemac.rc:34
+#: dlls/hhctrl.ocx/hhctrl.rc:45 dlls/winemac.drv/winemac.rc:34
 msgid "Hide"
 msgstr "Skrýt"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:44 dlls/ieframe/ieframe.rc:68
+#: dlls/hhctrl.ocx/hhctrl.rc:46 dlls/ieframe/ieframe.rc:68
 #: dlls/shdoclc/shdoclc.rc:167 dlls/shdoclc/shdoclc.rc:191
 msgid "Stop"
 msgstr "Zastavit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:45 dlls/ieframe/ieframe.rc:69
+#: dlls/hhctrl.ocx/hhctrl.rc:47 dlls/ieframe/ieframe.rc:69
 #: dlls/shell32/shell32.rc:62
 msgid "Refresh"
 msgstr "Obnovit"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:46 dlls/ieframe/ieframe.rc:66
+#: dlls/hhctrl.ocx/hhctrl.rc:48 dlls/ieframe/ieframe.rc:66
 msgid "Back"
 msgstr "Zpět"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:47
+#: dlls/hhctrl.ocx/hhctrl.rc:49
 msgctxt "table of contents"
 msgid "Home"
 msgstr "Domů"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:48
+#: dlls/hhctrl.ocx/hhctrl.rc:50
 msgid "Sync"
 msgstr "Synchronizovat"
 
-#: dlls/hhctrl.ocx/hhctrl.rc:51 dlls/ieframe/ieframe.rc:67
+#: dlls/hhctrl.ocx/hhctrl.rc:53 dlls/ieframe/ieframe.rc:67
 msgid "Forward"
 msgstr "Vpřed"
 
@@ -3460,8 +3527,7 @@ msgstr "&Okno"
 msgid "&Open..."
 msgstr "&Otevřít..."
 
-#: dlls/ieframe/ieframe.rc:36 programs/notepad/notepad.rc:33
-#: programs/wordpad/wordpad.rc:34
+#: dlls/ieframe/ieframe.rc:36 programs/wordpad/wordpad.rc:34
 msgid "Save &as..."
 msgstr "Uložit j&ako..."
 
@@ -3788,15 +3854,15 @@ msgstr "Zakázáno"
 msgid "DInput"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:62
+#: dlls/joy.cpl/joy.rc:62 dlls/joy.cpl/joy.rc:111
 msgid "Axes"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:63
+#: dlls/joy.cpl/joy.rc:63 dlls/joy.cpl/joy.rc:112
 msgid "POVs"
 msgstr ""
 
-#: dlls/joy.cpl/joy.rc:64
+#: dlls/joy.cpl/joy.rc:64 dlls/joy.cpl/joy.rc:113
 msgid "Buttons"
 msgstr "Tlačítka"
 
@@ -3807,8 +3873,12 @@ msgid "Force Feedback Effect"
 msgstr "Otestovat silovou zpětnou vazbu"
 
 #: dlls/joy.cpl/joy.rc:67
+#, fuzzy
+#| msgid ""
+#| "Press any button in the controller to activate the chosen effect. The "
+#| "effect direction can be changed with the controller axis."
 msgid ""
-"Press any button in the controller to activate the chosen effect. The effect "
+"Hold any button in the controller to play the chosen effect. The effect "
 "direction can be changed with the controller axis."
 msgstr ""
 "Pro aktivaci zvoleného efektu stiskněte libvolné tlačítko na ovladači. Směr "
@@ -3867,8 +3937,12 @@ msgid ""
 msgstr ""
 
 #: dlls/joy.cpl/joy.rc:98 dlls/joy.cpl/joy.rc:99 dlls/joy.cpl/joy.rc:100
-#: dlls/joy.cpl/joy.rc:101
+#: dlls/joy.cpl/joy.rc:101 dlls/joy.cpl/joy.rc:115
 msgid "Rumble"
+msgstr ""
+
+#: dlls/joy.cpl/joy.rc:106
+msgid "Windows.Gaming.Input"
 msgstr ""
 
 #: dlls/joy.cpl/joy.rc:31
@@ -3913,7 +3987,7 @@ msgstr ""
 msgid "Object doesn't support this action"
 msgstr "Objekt nepodporuje tuto akci"
 
-#: dlls/jscript/jscript.rc:36
+#: dlls/jscript/jscript.rc:36 dlls/vbscript/vbscript.rc:54
 msgid "Argument not optional"
 msgstr "Argument je povinný"
 
@@ -3985,21 +4059,21 @@ msgstr "Podmíněná kompilace je vypnutá"
 msgid "Expected '@'"
 msgstr "Očekáváno „@“"
 
-#: dlls/jscript/jscript.rc:90
+#: dlls/jscript/jscript.rc:97
 msgid "Microsoft JScript compilation error"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:91
+#: dlls/jscript/jscript.rc:98
 msgid "Microsoft JScript runtime error"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:92 dlls/vbscript/vbscript.rc:64
+#: dlls/jscript/jscript.rc:99 dlls/vbscript/vbscript.rc:64
 #, fuzzy
 #| msgid "Unknown error"
 msgid "Unknown runtime error"
 msgstr "Neznámá chyba"
 
-#: dlls/jscript/jscript.rc:56
+#: dlls/jscript/jscript.rc:57
 msgid "Number expected"
 msgstr "Očekáváno číslo"
 
@@ -4008,158 +4082,194 @@ msgid "Function expected"
 msgstr "Očekávána funkce"
 
 #: dlls/jscript/jscript.rc:55
+#, fuzzy
+#| msgid "'%s' is not a valid port name"
+msgid "'[object]' is not a string object"
+msgstr "„%s“ není platný název portu"
+
+#: dlls/jscript/jscript.rc:56
 msgid "'[object]' is not a date object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:57
+#: dlls/jscript/jscript.rc:58
 msgid "Object expected"
 msgstr "Očekáván objekt"
 
-#: dlls/jscript/jscript.rc:58
+#: dlls/jscript/jscript.rc:59
 msgid "Illegal assignment"
 msgstr "Nepovolené přiřazení"
 
-#: dlls/jscript/jscript.rc:59
+#: dlls/jscript/jscript.rc:60
 msgid "'|' is undefined"
 msgstr "„|“ není definováno"
 
-#: dlls/jscript/jscript.rc:60
+#: dlls/jscript/jscript.rc:61
 msgid "Boolean object expected"
 msgstr "Očekáván boolean objekt"
 
-#: dlls/jscript/jscript.rc:61
+#: dlls/jscript/jscript.rc:62
 msgid "Cannot delete '|'"
 msgstr "„|“ nelze smazat"
 
-#: dlls/jscript/jscript.rc:62
+#: dlls/jscript/jscript.rc:63
 msgid "VBArray object expected"
 msgstr "Očekáván objekt typu VBArray"
 
-#: dlls/jscript/jscript.rc:63
+#: dlls/jscript/jscript.rc:64
 msgid "JScript object expected"
 msgstr "Očekáván objekt JScript"
 
-#: dlls/jscript/jscript.rc:64
+#: dlls/jscript/jscript.rc:65
 #, fuzzy
 #| msgid "Array object expected"
 msgid "Enumerator object expected"
 msgstr "Očekáván objekt typu pole"
 
-#: dlls/jscript/jscript.rc:65
+#: dlls/jscript/jscript.rc:66
 #, fuzzy
 #| msgid "Boolean object expected"
 msgid "Regular Expression object expected"
 msgstr "Očekáván boolean objekt"
 
-#: dlls/jscript/jscript.rc:66
+#: dlls/jscript/jscript.rc:67
 msgid "Syntax error in regular expression"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:67
+#: dlls/jscript/jscript.rc:68
 #, fuzzy
 #| msgid "Expected identifier"
 msgid "Unexpected quantifier"
 msgstr "Očekáván identifikátor"
 
-#: dlls/jscript/jscript.rc:68
+#: dlls/jscript/jscript.rc:69
 msgid "Exception thrown and not caught"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:70
+#: dlls/jscript/jscript.rc:71
 msgid "URI to be encoded contains invalid characters"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:69
+#: dlls/jscript/jscript.rc:70
 msgid "URI to be decoded is incorrect"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:71
+#: dlls/jscript/jscript.rc:72
 msgid "Number of fraction digits is out of range"
 msgstr "Počet desetinných čísel je mimo rozsah"
 
-#: dlls/jscript/jscript.rc:72
+#: dlls/jscript/jscript.rc:73
 msgid "Precision is out of range"
 msgstr "Přesnost je mimo rozsah"
 
-#: dlls/jscript/jscript.rc:73
-msgid "Array length must be a finite positive integer"
-msgstr "Rozměr pole musí být konečné kladné celé číslo"
-
 #: dlls/jscript/jscript.rc:74
-msgid "Array object expected"
+#, fuzzy
+#| msgid "Array object expected"
+msgid "Array or arguments object expected"
 msgstr "Očekáván objekt typu pole"
 
 #: dlls/jscript/jscript.rc:75
+msgid "Array length must be a finite positive integer"
+msgstr "Rozměr pole musí být konečné kladné celé číslo"
+
+#: dlls/jscript/jscript.rc:76
+msgid "Array object expected"
+msgstr "Očekáván objekt typu pole"
+
+#: dlls/jscript/jscript.rc:77
 msgid ""
 "'writable' attribute on the property descriptor cannot be set to 'true' on "
 "this object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:76
+#: dlls/jscript/jscript.rc:78
 msgid "Cyclic __proto__ value"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:77
+#: dlls/jscript/jscript.rc:79
 msgid "Cannot create property for a non-extensible object"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:78
+#: dlls/jscript/jscript.rc:80
 msgid "Cannot define property '|': object is not extensible"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:79
+#: dlls/jscript/jscript.rc:81
 msgid "Cannot redefine non-configurable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:80
+#: dlls/jscript/jscript.rc:82
 msgid "Cannot modify non-writable property '|'"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:81
+#: dlls/jscript/jscript.rc:84
+msgid "Typed array constructor argument is invalid"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:83
+#, fuzzy
+#| msgid "'%s' is not a valid port name"
+msgid "'this' is not a typed array object"
+msgstr "„%s“ není platný název portu"
+
+#: dlls/jscript/jscript.rc:85
+msgid "Invalid offset/length when creating typed array"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:86
+msgid "Invalid begin/end value in typed array subarray method"
+msgstr ""
+
+#: dlls/jscript/jscript.rc:87
+#, fuzzy
+#| msgid "Invalid module type for %1.\n"
+msgid "Invalid source in typed array set"
+msgstr "Neplatný typ modulu pro %1.\n"
+
+#: dlls/jscript/jscript.rc:88
 #, fuzzy
 #| msgid "'%s' is not a valid port name"
 msgid "'this' is not a DataView object"
 msgstr "„%s“ není platný název portu"
 
-#: dlls/jscript/jscript.rc:82
+#: dlls/jscript/jscript.rc:89
 msgid "Required argument offset or value in DataView method is not specified"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:83
+#: dlls/jscript/jscript.rc:90
 msgid "DataView operation access beyond specified buffer length"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:84
+#: dlls/jscript/jscript.rc:91
 msgid "DataView constructor argument offset is invalid"
 msgstr ""
 
-#: dlls/jscript/jscript.rc:85
+#: dlls/jscript/jscript.rc:92
 #, fuzzy
 #| msgid "'%s' is not a valid port name"
 msgid "'this' is not a | object"
 msgstr "„%s“ není platný název portu"
 
-#: dlls/jscript/jscript.rc:86
+#: dlls/jscript/jscript.rc:93
 #, fuzzy
 #| msgid "'%s' is not a valid port name"
 msgid "'key' is not an object"
 msgstr "„%s“ není platný název portu"
 
-#: dlls/jscript/jscript.rc:87
+#: dlls/jscript/jscript.rc:94
 #, fuzzy
 #| msgid "Array object expected"
 msgid "ArrayBuffer object expected"
 msgstr "Očekáván objekt typu pole"
 
-#: dlls/jscript/jscript.rc:88
+#: dlls/jscript/jscript.rc:95
 msgid "Property cannot have both accessors and a value"
 msgstr ""
 
-#: include/wine/wine_common_ver.rc:138
+#: include/wine/wine_common_ver.rc:123
 msgid "Wine kernel DLL"
 msgstr ""
 
-#: include/wine/wine_common_ver.rc:143 dlls/winemac.drv/winemac.rc:32
+#: include/wine/wine_common_ver.rc:128 dlls/winemac.drv/winemac.rc:32
 #: programs/wineboot/wineboot.rc:42 programs/winecfg/winecfg.rc:143
 msgid "Wine"
 msgstr "Wine"
@@ -8138,7 +8248,7 @@ msgstr ""
 #: dlls/mferror/mferror.mc:389
 #, fuzzy
 #| msgid "Operation canceled by user.\n"
-msgid "Operation was cancelled.\n"
+msgid "Operation was canceled.\n"
 msgstr "Operace přerušena uživatelem.\n"
 
 #: dlls/mferror/mferror.mc:396
@@ -8429,7 +8539,7 @@ msgstr "Celá síť"
 msgid "Sound Selection"
 msgstr "Výběr zvuku"
 
-#: dlls/msacm32/msacm32.rc:39 programs/winedbg/winedbg.rc:72
+#: dlls/msacm32/msacm32.rc:39 programs/winedbg/winedbg.rc:78
 msgid "&Save As..."
 msgstr "&Uložit jako..."
 
@@ -9425,14 +9535,14 @@ msgstr ""
 #, fuzzy
 #| msgid "&enable"
 msgctxt "object state"
-msgid "sizeable"
+msgid "sizable"
 msgstr "P&ovolit"
 
 #: dlls/oleacc/oleacc.rc:116
 #, fuzzy
 #| msgid "&enable"
 msgctxt "object state"
-msgid "moveable"
+msgid "movable"
 msgstr "P&ovolit"
 
 #: dlls/oleacc/oleacc.rc:117
@@ -9529,201 +9639,201 @@ msgstr "Zapnuto"
 msgid "Off"
 msgstr "Vypnuto"
 
-#: dlls/oledb32/version.rc:56
+#: dlls/oledb32/version.rc:53
 #, fuzzy
 #| msgid "video"
 msgid "Provider"
 msgstr "video"
 
-#: dlls/oledb32/version.rc:59
+#: dlls/oledb32/version.rc:56
 #, fuzzy
 #| msgid "Select the format you want to use:"
 msgid "Select the data you want to connect to:"
 msgstr "Zvolte formát, který chcete použít:"
 
-#: dlls/oledb32/version.rc:66
+#: dlls/oledb32/version.rc:63
 #, fuzzy
 #| msgid "LAN Connection"
 msgid "Connection"
 msgstr "Připojení lokální sítě"
 
-#: dlls/oledb32/version.rc:69
+#: dlls/oledb32/version.rc:66
 #, fuzzy
 #| msgid "Select the format you want to use:"
 msgid "Specify the following to connect to ODBC data:"
 msgstr "Zvolte formát, který chcete použít:"
 
-#: dlls/oledb32/version.rc:70
+#: dlls/oledb32/version.rc:67
 msgid "1. Specify the source of data:"
 msgstr ""
 
-#: dlls/oledb32/version.rc:71
+#: dlls/oledb32/version.rc:68
 #, fuzzy
 #| msgid "Please enter your name"
 msgid "Use &data source name"
 msgstr "Zadej prosím své jméno"
 
-#: dlls/oledb32/version.rc:74
+#: dlls/oledb32/version.rc:71
 #, fuzzy
 #| msgid "Reset Connections"
 msgid "Use c&onnection string"
 msgstr "Resetovat připojení"
 
-#: dlls/oledb32/version.rc:75
+#: dlls/oledb32/version.rc:72
 #, fuzzy
 #| msgid "LAN Connection"
 msgid "&Connection string:"
 msgstr "Připojení lokální sítě"
 
-#: dlls/oledb32/version.rc:77
+#: dlls/oledb32/version.rc:74
 #, fuzzy
 #| msgid "A&dd..."
 msgid "B&uild..."
 msgstr "Přid&at..."
 
-#: dlls/oledb32/version.rc:78
+#: dlls/oledb32/version.rc:75
 msgid "2. Enter information to log on to the server"
 msgstr ""
 
-#: dlls/oledb32/version.rc:79
+#: dlls/oledb32/version.rc:76
 #, fuzzy
 #| msgid "&User name:"
 msgid "User &name:"
 msgstr "&Uživatelské jméno:"
 
-#: dlls/oledb32/version.rc:83
+#: dlls/oledb32/version.rc:80
 #, fuzzy
 #| msgid "&Blank page"
 msgid "&Blank password"
 msgstr "&Prázdná stránka"
 
-#: dlls/oledb32/version.rc:84
+#: dlls/oledb32/version.rc:81
 #, fuzzy
 #| msgid "Wrong password.\n"
 msgid "Allow &saving password"
 msgstr "Chybné heslo.\n"
 
-#: dlls/oledb32/version.rc:85
+#: dlls/oledb32/version.rc:82
 msgid "3. Enter the &initial catalog to use:"
 msgstr ""
 
-#: dlls/oledb32/version.rc:87
+#: dlls/oledb32/version.rc:84
 #, fuzzy
 #| msgid "Reset Connections"
 msgid "&Test Connection"
 msgstr "Resetovat připojení"
 
-#: dlls/oledb32/version.rc:92
+#: dlls/oledb32/version.rc:89
 msgid "Advanced"
 msgstr "Pokročilý"
 
-#: dlls/oledb32/version.rc:95
+#: dlls/oledb32/version.rc:92
 #, fuzzy
 #| msgid "Network share"
 msgid "Network settings"
 msgstr "Síťový disk"
 
-#: dlls/oledb32/version.rc:96
+#: dlls/oledb32/version.rc:93
 msgid "&Impersonation level:"
 msgstr ""
 
-#: dlls/oledb32/version.rc:98
+#: dlls/oledb32/version.rc:95
 msgid "P&rotection level:"
 msgstr ""
 
-#: dlls/oledb32/version.rc:101
+#: dlls/oledb32/version.rc:98
 #, fuzzy
 #| msgid "Connected"
 msgid "Connect:"
 msgstr "Připojeno"
 
-#: dlls/oledb32/version.rc:103
+#: dlls/oledb32/version.rc:100
 #, fuzzy
 #| msgid "&Seconds"
 msgid "seconds."
 msgstr "&Vteřin"
 
-#: dlls/oledb32/version.rc:104
+#: dlls/oledb32/version.rc:101
 #, fuzzy
 #| msgid "Success"
 msgid "A&ccess:"
 msgstr "Úspěch"
 
-#: dlls/oledb32/version.rc:110
+#: dlls/oledb32/version.rc:107
 #, fuzzy
 #| msgid "&All"
 msgid "All"
 msgstr "Vš&e"
 
-#: dlls/oledb32/version.rc:114
+#: dlls/oledb32/version.rc:111
 msgid ""
 "These are the initialization properties for this type of data. To edit a "
 "value, select a property, then choose Edit Value below."
 msgstr ""
 
-#: dlls/oledb32/version.rc:115
+#: dlls/oledb32/version.rc:112
 #, fuzzy
 #| msgid "&Edit..."
 msgid "&Edit Value..."
 msgstr "&Upravit..."
 
-#: dlls/oledb32/version.rc:49
+#: dlls/oledb32/version.rc:46
 #, fuzzy
 #| msgid "Properties"
 msgid "Data Link Error"
 msgstr "&Vlastnosti"
 
-#: dlls/oledb32/version.rc:50
+#: dlls/oledb32/version.rc:47
 #, fuzzy
 #| msgid "Please select a file."
 msgid "Please select a provider."
 msgstr "Vyberte prosím soubor."
 
-#: dlls/oledb32/version.rc:51
+#: dlls/oledb32/version.rc:48
 msgid ""
 "Provider is no longer available. Ensure that the provider is installed "
 "properly."
 msgstr ""
 
-#: dlls/oledb32/version.rc:36
+#: dlls/oledb32/version.rc:33
 #, fuzzy
 #| msgid "Properties"
 msgid "Data Link Properties"
 msgstr "&Vlastnosti"
 
-#: dlls/oledb32/version.rc:37
+#: dlls/oledb32/version.rc:34
 msgid "OLE DB Provider(s)"
 msgstr ""
 
-#: dlls/oledb32/version.rc:41
+#: dlls/oledb32/version.rc:38
 #, fuzzy
 #| msgid "Ready"
 msgid "Read"
 msgstr "Připraveno"
 
-#: dlls/oledb32/version.rc:42
+#: dlls/oledb32/version.rc:39
 #, fuzzy
 #| msgid "Readme:"
 msgid "ReadWrite"
 msgstr "Čtimne:"
 
-#: dlls/oledb32/version.rc:43
+#: dlls/oledb32/version.rc:40
 msgid "Share Deny None"
 msgstr ""
 
-#: dlls/oledb32/version.rc:44
+#: dlls/oledb32/version.rc:41
 msgid "Share Deny Read"
 msgstr ""
 
-#: dlls/oledb32/version.rc:45
+#: dlls/oledb32/version.rc:42
 msgid "Share Deny Write"
 msgstr ""
 
-#: dlls/oledb32/version.rc:46
+#: dlls/oledb32/version.rc:43
 msgid "Share Exclusive"
 msgstr ""
 
-#: dlls/oledb32/version.rc:47
+#: dlls/oledb32/version.rc:44
 #, fuzzy
 #| msgid "I/O Writes"
 msgid "Write"
@@ -9905,11 +10015,37 @@ msgstr "Neznámý zdroj"
 msgid "the program which created it"
 msgstr "aplikace, ve které bylo vytvořeno"
 
-#: dlls/sane.ds/sane.rc:41
+#: dlls/sane.ds/sane.rc:55 dlls/sane.ds/sane.rc:45
 msgid "Scanning"
 msgstr "Skenování"
 
-#: dlls/sane.ds/sane.rc:44
+#: dlls/sane.ds/sane.rc:58
+msgid "Manufacturer:"
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:60
+#, fuzzy
+#| msgid "Product Updates:"
+msgid "Product family:"
+msgstr "Aktualizace produktu:"
+
+#: dlls/sane.ds/sane.rc:62
+#, fuzzy
+#| msgid "Product Updates:"
+msgid "Product name:"
+msgstr "Aktualizace produktu:"
+
+#: dlls/sane.ds/sane.rc:64
+#, fuzzy
+#| msgid "Screen resolution"
+msgid "Resolution:"
+msgstr "Rozlišení obrazovky"
+
+#: dlls/sane.ds/sane.rc:66 programs/wordpad/wordpad.rc:181
+msgid "Page"
+msgstr "Strana"
+
+#: dlls/sane.ds/sane.rc:68
 msgid "SCANNING... Please Wait"
 msgstr "Probíhá skenování... čekejte prosím"
 
@@ -9937,6 +10073,35 @@ msgstr ""
 #: dlls/sane.ds/sane.rc:36
 msgctxt "unit: microseconds"
 msgid "us"
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:43
+msgid "LineArt"
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:44 dlls/setupapi/setupapi.rc:32
+#: programs/ipconfig/ipconfig.rc:34
+msgid "Unknown"
+msgstr "Neznámé"
+
+#: dlls/sane.ds/sane.rc:46
+msgid ""
+"The Automatic Document Feeder (ADF) is empty. Please insert the sheets to be "
+"scanned."
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:47
+msgid ""
+"The scanner reports a paper jam. Check for additional information on device "
+"display."
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:48
+msgid "The scanner cover is open. Please close the scanner."
+msgstr ""
+
+#: dlls/sane.ds/sane.rc:49
+msgid "The scanner is busy. Try again later."
 msgstr ""
 
 #: dlls/serialui/serialui.rc:28
@@ -9990,10 +10155,6 @@ msgstr "Zkopírovat soubory výrobce z:"
 #: dlls/setupapi/setupapi.rc:31
 msgid "The file '%1' on %2 is needed"
 msgstr "Je zapotřebí souboru „%1“ z %2"
-
-#: dlls/setupapi/setupapi.rc:32 programs/ipconfig/ipconfig.rc:34
-msgid "Unknown"
-msgstr "Neznámé"
 
 #: dlls/setupapi/setupapi.rc:33
 msgid "Copy files from:"
@@ -10529,7 +10690,8 @@ msgctxt "display name"
 msgid "Desktop"
 msgstr "Plocha"
 
-#: dlls/shell32/shell32.rc:152 programs/regedit/regedit.rc:243
+#: dlls/shell32/shell32.rc:152 dlls/urlmon/urlmon.rc:56
+#: programs/regedit/regedit.rc:243
 msgid "My Computer"
 msgstr "Tento počítač"
 
@@ -10891,7 +11053,7 @@ msgctxt "time unit: seconds"
 msgid " sec"
 msgstr " vteř"
 
-#: dlls/twain_32/twain.rc:29
+#: dlls/twaindsm/twain.rc:29
 msgid "Select Source"
 msgstr "Vyberte zdroj"
 
@@ -13342,6 +13504,55 @@ msgstr "Nainstalovat (%d)"
 msgid "Install"
 msgstr "Nainstalovat"
 
+#: dlls/urlmon/urlmon.rc:58
+#, fuzzy
+#| msgid "Local Port"
+msgid "Local intranet"
+msgstr "Místní port"
+
+#: dlls/urlmon/urlmon.rc:60
+#, fuzzy
+#| msgid "Trusted Publishers"
+msgid "Trusted sites"
+msgstr "Důvěryhodní vydavatelé"
+
+#: dlls/urlmon/urlmon.rc:62
+#, fuzzy
+#| msgid "Ethernet"
+msgid "Internet"
+msgstr "Ethernet"
+
+#: dlls/urlmon/urlmon.rc:64
+msgid "Restricted sites"
+msgstr ""
+
+#: dlls/urlmon/urlmon.rc:57
+#, fuzzy
+#| msgid "My Computer"
+msgid "Your computer"
+msgstr "Tento počítač"
+
+#: dlls/urlmon/urlmon.rc:59
+msgid ""
+"This zone contains all Web sites that are on your organization's intranet."
+msgstr ""
+
+#: dlls/urlmon/urlmon.rc:61
+msgid ""
+"This zone contains Web sites that you trust not to damage your computer or "
+"data."
+msgstr ""
+
+#: dlls/urlmon/urlmon.rc:63
+msgid "This zone contains all Web sites you haven't placed in other zones."
+msgstr ""
+
+#: dlls/urlmon/urlmon.rc:65
+msgid ""
+"This zone contains Web sites that could potentially damage your computer or "
+"data."
+msgstr ""
+
 #: dlls/user32/user32.rc:30 dlls/user32/user32.rc:43
 #: programs/taskmgr/taskmgr.rc:138
 msgctxt "window"
@@ -13509,7 +13720,7 @@ msgstr "Objekt nepodporuje tuto akci"
 msgid "Object doesn't support current locale setting"
 msgstr "Objekt nepodporuje tuto akci"
 
-#: dlls/vbscript/vbscript.rc:53 dlls/vbscript/vbscript.rc:54
+#: dlls/vbscript/vbscript.rc:53
 #, fuzzy
 #| msgid "Element not found.\n"
 msgid "Named argument not found"
@@ -14653,8 +14864,8 @@ msgstr "Ana&logové"
 msgid "Digi&tal"
 msgstr "Digi&tální"
 
-#: programs/clock/clock.rc:35 programs/notepad/notepad.rc:53
-#: programs/winecfg/winecfg.rc:313 programs/winefile/winefile.rc:63
+#: programs/clock/clock.rc:35 programs/notepad/notepad.rc:59
+#: programs/winecfg/winecfg.rc:315 programs/winefile/winefile.rc:63
 #: programs/wordpad/wordpad.rc:84
 msgid "&Font..."
 msgstr "&Písmo..."
@@ -15447,6 +15658,18 @@ msgstr "Konec souboru.\n"
 msgid "End of file"
 msgstr "Konec souboru.\n"
 
+#: programs/cmd/cmd.rc:410
+#, fuzzy
+#| msgid "%1!d! file(s) copied\n"
+msgid "%t%1!u! file(s) copied\n"
+msgstr "%1!d! souborů zkopírováno\n"
+
+#: programs/cmd/cmd.rc:411 programs/xcopy/xcopy.rc:83
+#, fuzzy
+#| msgid "The file cannot be accessed.\n"
+msgid "File cannot be copied onto itself.\n"
+msgstr "K souboru není možné přistupovat.\n"
+
 #: programs/conhost/conhost.rc:54
 msgid "Cursor size"
 msgstr "Velikost kurzoru"
@@ -16089,6 +16312,12 @@ msgstr "&Otevřít...\tCtrl+O"
 msgid "&Save\tCtrl+S"
 msgstr "&Uložit\tCtrl+S"
 
+#: programs/notepad/notepad.rc:33
+#, fuzzy
+#| msgid "Save As..."
+msgid "Save &As..."
+msgstr "Uložit jako..."
+
 #: programs/notepad/notepad.rc:35 programs/regedit/regedit.rc:39
 #: programs/wordpad/wordpad.rc:36
 msgid "&Print...\tCtrl+P"
@@ -16118,41 +16347,52 @@ msgstr "&Kopírovat\tCtrl+C"
 msgid "&Paste\tCtrl+V"
 msgstr "&Vložit\tCtrl+V"
 
-#: programs/notepad/notepad.rc:47 programs/progman/progman.rc:37
-#: programs/regedit/regedit.rc:57 programs/regedit/regedit.rc:111
-#: programs/regedit/regedit.rc:139 programs/winefile/winefile.rc:32
-msgid "&Delete\tDel"
+#: programs/notepad/notepad.rc:47
+#, fuzzy
+#| msgid "&Delete\tDel"
+msgid "De&lete\tDel"
 msgstr "&Smazat\tDel"
 
-#: programs/notepad/notepad.rc:49
-msgid "Select &all\tCtrl+A"
-msgstr "Vybrat vš&e\tCtrl+A"
-
-#: programs/notepad/notepad.rc:50
-msgid "&Time/Date\tF5"
-msgstr "Č&as/Datum\tF5"
-
-#: programs/notepad/notepad.rc:52
-msgid "&Wrap long lines"
-msgstr "Zalo&mit dlouhé řádky"
-
-#: programs/notepad/notepad.rc:56
-msgid "&Search...\tCtrl+F"
+#: programs/notepad/notepad.rc:49 programs/regedit/regedit.rc:62
+#: programs/regedit/regedit.rc:109 programs/wordpad/wordpad.rc:53
+msgid "&Find...\tCtrl+F"
 msgstr "&Najít...\tCtrl+F"
 
-#: programs/notepad/notepad.rc:57
-msgid "&Search next\tF3"
-msgstr "&Najít další\tF3"
+#: programs/notepad/notepad.rc:50
+#, fuzzy
+#| msgid "Find &next\tF3"
+msgid "Find &Next\tF3"
+msgstr "Najít &další\tF3"
 
-#: programs/notepad/notepad.rc:58 programs/wordpad/wordpad.rc:55
+#: programs/notepad/notepad.rc:51 programs/wordpad/wordpad.rc:55
 msgid "&Replace...\tCtrl+H"
 msgstr "Nah&radit...\tCtrl+H"
 
-#: programs/notepad/notepad.rc:59
+#: programs/notepad/notepad.rc:52
 #, fuzzy
 #| msgid "&New...\tCtrl+N"
 msgid "&Go To...\tCtrl+G"
 msgstr "&Nový...\tCtrl+N"
+
+#: programs/notepad/notepad.rc:54
+#, fuzzy
+#| msgid "Select &all\tCtrl+A"
+msgid "Select &All\tCtrl+A"
+msgstr "Vybrat vš&e\tCtrl+A"
+
+#: programs/notepad/notepad.rc:55
+#, fuzzy
+#| msgid "&Time/Date\tF5"
+msgid "Time/&Date\tF5"
+msgstr "Č&as/Datum\tF5"
+
+#: programs/notepad/notepad.rc:57 programs/wordpad/wordpad.rc:82
+msgid "F&ormat"
+msgstr "F&ormát"
+
+#: programs/notepad/notepad.rc:58
+msgid "&Word Wrap"
+msgstr ""
 
 #: programs/notepad/notepad.rc:63 programs/oleview/oleview.rc:68
 #: programs/oleview/oleview.rc:90 programs/winefile/winefile.rc:67
@@ -16165,136 +16405,136 @@ msgstr "&Stavový řádek"
 msgid "&Contents\tF1"
 msgstr "&Obsah\tF1"
 
-#: programs/notepad/notepad.rc:67
+#: programs/notepad/notepad.rc:68
 msgid "&About Notepad"
 msgstr "O &aplikaci Poznámkový blok"
 
-#: programs/notepad/notepad.rc:107
+#: programs/notepad/notepad.rc:108
 msgid "Page Setup"
 msgstr "Nastavení stránky"
 
-#: programs/notepad/notepad.rc:109
+#: programs/notepad/notepad.rc:110
 msgid "&Header:"
 msgstr "Zá&hlaví:"
 
-#: programs/notepad/notepad.rc:111
+#: programs/notepad/notepad.rc:112
 msgid "&Footer:"
 msgstr "&Zápatí:"
 
-#: programs/notepad/notepad.rc:114
+#: programs/notepad/notepad.rc:115
 msgid "Margins (millimeters)"
 msgstr "Okraje (v milimetrech)"
 
-#: programs/notepad/notepad.rc:115
+#: programs/notepad/notepad.rc:116
 msgid "&Left:"
 msgstr "&Levý:"
 
-#: programs/notepad/notepad.rc:117
+#: programs/notepad/notepad.rc:118
 msgid "&Top:"
 msgstr "&Horní:"
 
-#: programs/notepad/notepad.rc:132
+#: programs/notepad/notepad.rc:133
 msgid "Go To Line"
 msgstr ""
 
-#: programs/notepad/notepad.rc:134
+#: programs/notepad/notepad.rc:135
 #, fuzzy
 #| msgid "CRL Number"
 msgid "&Line Number:"
 msgstr "číslo CLR"
 
-#: programs/notepad/notepad.rc:137
+#: programs/notepad/notepad.rc:138
 msgid "Go To"
 msgstr ""
 
-#: programs/notepad/notepad.rc:145
+#: programs/notepad/notepad.rc:146
 msgid "Encoding:"
 msgstr "Kódování:"
 
-#: programs/notepad/notepad.rc:151 programs/wordpad/wordpad.rc:289
+#: programs/notepad/notepad.rc:152 programs/wordpad/wordpad.rc:289
 msgctxt "accelerator Select All"
 msgid "A"
 msgstr "A"
 
-#: programs/notepad/notepad.rc:152 programs/wordpad/wordpad.rc:291
+#: programs/notepad/notepad.rc:153 programs/wordpad/wordpad.rc:291
 msgctxt "accelerator Copy"
 msgid "C"
 msgstr "C"
 
-#: programs/notepad/notepad.rc:153 programs/regedit/regedit.rc:377
+#: programs/notepad/notepad.rc:154 programs/regedit/regedit.rc:377
 #: programs/wordpad/wordpad.rc:287
 msgctxt "accelerator Find"
 msgid "F"
 msgstr "F"
 
-#: programs/notepad/notepad.rc:154 programs/wordpad/wordpad.rc:288
+#: programs/notepad/notepad.rc:155 programs/wordpad/wordpad.rc:288
 msgctxt "accelerator Replace"
 msgid "H"
 msgstr "H"
 
-#: programs/notepad/notepad.rc:155 programs/wordpad/wordpad.rc:297
+#: programs/notepad/notepad.rc:156 programs/wordpad/wordpad.rc:297
 msgctxt "accelerator New"
 msgid "N"
 msgstr "N"
 
-#: programs/notepad/notepad.rc:156 programs/wordpad/wordpad.rc:298
+#: programs/notepad/notepad.rc:157 programs/wordpad/wordpad.rc:298
 msgctxt "accelerator Open"
 msgid "O"
 msgstr "O"
 
-#: programs/notepad/notepad.rc:157 programs/regedit/regedit.rc:378
+#: programs/notepad/notepad.rc:158 programs/regedit/regedit.rc:378
 #: programs/wordpad/wordpad.rc:300
 msgctxt "accelerator Print"
 msgid "P"
 msgstr "P"
 
-#: programs/notepad/notepad.rc:158 programs/wordpad/wordpad.rc:299
+#: programs/notepad/notepad.rc:159 programs/wordpad/wordpad.rc:299
 msgctxt "accelerator Save"
 msgid "S"
 msgstr "S"
 
-#: programs/notepad/notepad.rc:159
+#: programs/notepad/notepad.rc:160
 msgctxt "accelerator Paste"
 msgid "V"
 msgstr "V"
 
-#: programs/notepad/notepad.rc:160 programs/wordpad/wordpad.rc:290
+#: programs/notepad/notepad.rc:161 programs/wordpad/wordpad.rc:290
 msgctxt "accelerator Cut"
 msgid "X"
 msgstr "X"
 
-#: programs/notepad/notepad.rc:161 programs/wordpad/wordpad.rc:292
+#: programs/notepad/notepad.rc:162 programs/wordpad/wordpad.rc:292
 msgctxt "accelerator Undo"
 msgid "Z"
 msgstr "Z"
 
-#: programs/notepad/notepad.rc:162
+#: programs/notepad/notepad.rc:163
 msgctxt "accelerator GoTo"
 msgid "G"
 msgstr ""
 
-#: programs/notepad/notepad.rc:74
+#: programs/notepad/notepad.rc:75
 msgid "Page &p"
 msgstr "Strana &p"
 
-#: programs/notepad/notepad.rc:76
+#: programs/notepad/notepad.rc:77
 msgid "Notepad"
 msgstr "Poznámkový blok"
 
-#: programs/notepad/notepad.rc:77 programs/progman/progman.rc:64
+#: programs/notepad/notepad.rc:78 programs/progman/progman.rc:64
 #: programs/winhlp32/winhlp32.rc:82
 msgid "ERROR"
 msgstr "CHYBA"
 
-#: programs/notepad/notepad.rc:79
+#: programs/notepad/notepad.rc:80
 msgid "Untitled"
 msgstr "Bez názvu"
 
-#: programs/notepad/notepad.rc:82 programs/winedbg/winedbg.rc:42
+#: programs/notepad/notepad.rc:83 programs/winedbg/winedbg.rc:42
 msgid "Text files (*.txt)"
 msgstr "Textové soubory (*.txt)"
 
-#: programs/notepad/notepad.rc:85
+#: programs/notepad/notepad.rc:86
 msgid ""
 "File '%s' does not exist.\n"
 "\n"
@@ -16304,7 +16544,7 @@ msgstr ""
 "\n"
 "Chcete ho vytvořit?"
 
-#: programs/notepad/notepad.rc:87
+#: programs/notepad/notepad.rc:88
 msgid ""
 "File '%s' has been modified.\n"
 "\n"
@@ -16314,23 +16554,23 @@ msgstr ""
 "\n"
 "Chcete uložit změny?"
 
-#: programs/notepad/notepad.rc:88
+#: programs/notepad/notepad.rc:89
 msgid "'%s' could not be found."
 msgstr "„%s“ nebyl nalezen."
 
-#: programs/notepad/notepad.rc:92
+#: programs/notepad/notepad.rc:93
 msgid "Unicode (UTF-16)"
 msgstr "Unicode (UTF-16)"
 
-#: programs/notepad/notepad.rc:93
+#: programs/notepad/notepad.rc:94
 msgid "Unicode (UTF-16 big-endian)"
 msgstr "Unicode (UTF-16 big-endian)"
 
-#: programs/notepad/notepad.rc:94
+#: programs/notepad/notepad.rc:95
 msgid "Unicode (UTF-8)"
 msgstr "Unicode (UTF-8)"
 
-#: programs/notepad/notepad.rc:101
+#: programs/notepad/notepad.rc:102
 msgid ""
 "%1\n"
 "This file contains Unicode characters which will be lost if\n"
@@ -16348,7 +16588,7 @@ msgstr ""
 "rozbalovacího seznamu.\n"
 "Pokračovat?"
 
-#: programs/notepad/notepad.rc:90
+#: programs/notepad/notepad.rc:91
 msgid "Ln %ld, Col %ld"
 msgstr ""
 
@@ -16701,6 +16941,12 @@ msgstr "&Přesunout...\tF7"
 msgid "&Copy...\tF8"
 msgstr "&Kopírovat...\tF8"
 
+#: programs/progman/progman.rc:37 programs/regedit/regedit.rc:57
+#: programs/regedit/regedit.rc:111 programs/regedit/regedit.rc:139
+#: programs/winefile/winefile.rc:32
+msgid "&Delete\tDel"
+msgstr "&Smazat\tDel"
+
 #: programs/progman/progman.rc:38
 msgid "&Properties\tAlt+Enter"
 msgstr "V&lastnosti\tAlt+Enter"
@@ -16923,7 +17169,7 @@ msgstr "Operace byla úspěšně dokončena\n"
 #: programs/reg/reg.rc:131
 #, fuzzy
 #| msgid "The registry operation was cancelled\n"
-msgid "reg: The registry operation was cancelled\n"
+msgid "reg: The registry operation was canceled\n"
 msgstr "Operace registru byla přerušena\n"
 
 #: programs/reg/reg.rc:174
@@ -17341,11 +17587,6 @@ msgstr "Pře&jmenovat\tF2"
 #: programs/regedit/regedit.rc:60 programs/regedit/regedit.rc:116
 msgid "&Copy Key Name"
 msgstr "&Kopírovat název klíče"
-
-#: programs/regedit/regedit.rc:62 programs/regedit/regedit.rc:109
-#: programs/wordpad/wordpad.rc:53
-msgid "&Find...\tCtrl+F"
-msgstr "&Najít...\tCtrl+F"
 
 #: programs/regedit/regedit.rc:63
 msgid "Find Ne&xt\tF3"
@@ -18088,7 +18329,7 @@ msgid ""
 "Sent termination signal to process with PID %1!u!, child of PID %2!u!.\n"
 msgstr ""
 
-#: include/wine/wine_common_ver.rc:138
+#: include/wine/wine_common_ver.rc:123
 #, fuzzy
 #| msgid "Wine &license"
 msgid "Wine tasklist"
@@ -18929,6 +19170,40 @@ msgstr "Běžící"
 msgid "Task"
 msgstr "Úloha"
 
+#: programs/timeout/timeout.rc:28
+msgid "Usage: timeout /T <timeout> [</NOBREAK>]\n"
+msgstr ""
+
+#: programs/timeout/timeout.rc:29
+#, fuzzy
+#| msgid "Invalid command line.\n"
+msgid "TIMEOUT: Bad command line\n"
+msgstr "Neplatné zadání příkazu.\n"
+
+#: programs/timeout/timeout.rc:30
+msgid "waiting since %d sec. "
+msgstr ""
+
+#: programs/timeout/timeout.rc:31
+msgid "press CTRL+C..."
+msgstr ""
+
+#: programs/timeout/timeout.rc:32
+#, fuzzy
+#| msgid "Press any key to continue... "
+msgid "press a key to continue..."
+msgstr "Pro pokračování stiskněte libovolnou klávesu... "
+
+#: programs/timeout/timeout.rc:33
+msgid "ERROR: not possible to redirect input\n"
+msgstr ""
+
+#: programs/timeout/timeout.rc:34
+msgid ""
+"ERROR: Timeout value out of range or invalid number. Valid range is -1 to "
+"99999.\n"
+msgstr ""
+
 #: programs/uninstaller/uninstaller.rc:29
 msgid "Wine Application Uninstaller"
 msgstr "Odinstalátor pro aplikace Wine"
@@ -19222,76 +19497,82 @@ msgid "Driver diagnostics"
 msgstr "Diagnostika ovladače"
 
 #: programs/winecfg/winecfg.rc:271
-msgid "Defaults"
-msgstr "Výchozí nastavení"
-
-#: programs/winecfg/winecfg.rc:272
-msgid "Output device:"
-msgstr "Výstupní zařízení:"
-
-#: programs/winecfg/winecfg.rc:273
-msgid "Voice output device:"
-msgstr "Zařízení hlasového výstupu:"
-
-#: programs/winecfg/winecfg.rc:274
-msgid "Input device:"
-msgstr "Vstupní zařízení:"
-
-#: programs/winecfg/winecfg.rc:275
-msgid "Voice input device:"
-msgstr "Zařízení hlasového vstupu:"
-
-#: programs/winecfg/winecfg.rc:280
 msgid "&Test Sound"
 msgstr "O&testovat zvuk"
 
-#: programs/winecfg/winecfg.rc:281 programs/winecfg/winecfg.rc:89
+#: programs/winecfg/winecfg.rc:272
+msgid "Defaults"
+msgstr "Výchozí nastavení"
+
+#: programs/winecfg/winecfg.rc:273
+msgid "Output device:"
+msgstr "Výstupní zařízení:"
+
+#: programs/winecfg/winecfg.rc:274
+msgid "Voice output device:"
+msgstr "Zařízení hlasového výstupu:"
+
+#: programs/winecfg/winecfg.rc:275
+msgid "Input device:"
+msgstr "Vstupní zařízení:"
+
+#: programs/winecfg/winecfg.rc:276
+msgid "Voice input device:"
+msgstr "Zařízení hlasového vstupu:"
+
+#: programs/winecfg/winecfg.rc:277
+#, fuzzy
+#| msgid "Output device:"
+msgid "MIDI output device:"
+msgstr "Výstupní zařízení:"
+
+#: programs/winecfg/winecfg.rc:283 programs/winecfg/winecfg.rc:89
 msgid "Speaker configuration"
 msgstr "Nastavení reproduktorů"
 
-#: programs/winecfg/winecfg.rc:284
+#: programs/winecfg/winecfg.rc:286
 msgid "Speakers:"
 msgstr "Reproduktory:"
 
-#: programs/winecfg/winecfg.rc:292
+#: programs/winecfg/winecfg.rc:294
 msgid "Appearance"
 msgstr "Vzhled"
 
-#: programs/winecfg/winecfg.rc:293
+#: programs/winecfg/winecfg.rc:295
 msgid "&Theme:"
 msgstr "&Téma:"
 
-#: programs/winecfg/winecfg.rc:295
+#: programs/winecfg/winecfg.rc:297
 #, fuzzy
 #| msgid "&Theme:"
 msgid "&WinRT theme:"
 msgstr "&Téma:"
 
-#: programs/winecfg/winecfg.rc:297
+#: programs/winecfg/winecfg.rc:299
 msgid "&Install theme..."
 msgstr "&Instalovat téma..."
 
-#: programs/winecfg/winecfg.rc:302
+#: programs/winecfg/winecfg.rc:304
 msgid "It&em:"
 msgstr "Po&ložka:"
 
-#: programs/winecfg/winecfg.rc:304
+#: programs/winecfg/winecfg.rc:306
 msgid "C&olor:"
 msgstr "B&arva:"
 
-#: programs/winecfg/winecfg.rc:310
+#: programs/winecfg/winecfg.rc:312
 msgid "MIME types"
 msgstr ""
 
-#: programs/winecfg/winecfg.rc:311
+#: programs/winecfg/winecfg.rc:313
 msgid "Manage file and protocol &associations"
 msgstr ""
 
-#: programs/winecfg/winecfg.rc:314
+#: programs/winecfg/winecfg.rc:316
 msgid "Folders"
 msgstr "Adresáře"
 
-#: programs/winecfg/winecfg.rc:317
+#: programs/winecfg/winecfg.rc:319
 msgid "&Link to:"
 msgstr "&Odkaz do:"
 
@@ -19650,11 +19931,11 @@ msgstr ""
 "wineconsole: spuštění programu %s se nezdařilo.\n"
 "Příkaz je neplatný.\n"
 
-#: programs/winedbg/winedbg.rc:50 programs/winedbg/winedbg.rc:38
+#: programs/winedbg/winedbg.rc:51 programs/winedbg/winedbg.rc:38
 msgid "Program Error"
 msgstr "Chyba v programu"
 
-#: programs/winedbg/winedbg.rc:55
+#: programs/winedbg/winedbg.rc:56
 msgid ""
 "The program %s has encountered a serious problem and needs to close. We are "
 "sorry for the inconvenience."
@@ -19662,49 +19943,37 @@ msgstr ""
 "Aplikace %s zaznamenala závažný problém a je třeba ji uzavřít. Omlouváme se "
 "za způsobené obtíže."
 
-#: programs/winedbg/winedbg.rc:57
-#, fuzzy
-#| msgid ""
-#| "This can be caused by a problem in the program or a deficiency in Wine. "
-#| "You may want to check <a href=\"http://www.codeweavers.com/compatibility/"
-#| "\">http://www.codeweavers.com/compatibility/</a> for tips about running "
-#| "this application."
+#: programs/winedbg/winedbg.rc:60
 msgid ""
 "This can be caused by a problem in the program or a deficiency in Wine. You "
-"may want to check <a href=\"https://www.codeweavers.com/compatibility/"
-"\">https://www.codeweavers.com/compatibility/</a> for tips about running "
-"this application."
+"may want to check the <a href=\"https://appdb.winehq.org\">Application "
+"Database</a> for tips about running this application."
 msgstr ""
 "Toto může být způsobeno problémem v programu či nedostatkem ve Wine. "
 "Podívejte se prosím do <a href=\"https://appdb.winehq.org\">databáze "
 "aplikací</a>, kde mohou být popsány tipy pro provozování konkrétního "
 "programu."
 
-#: programs/winedbg/winedbg.rc:60
+#: programs/winedbg/winedbg.rc:63
 msgid "Show &Details"
 msgstr "Zobrazit podrobnosti"
 
-#: programs/winedbg/winedbg.rc:65
+#: programs/winedbg/winedbg.rc:68
 msgid "Program Error Details"
 msgstr "Podrobnosti chyby programu"
 
-#: programs/winedbg/winedbg.rc:69
-#, fuzzy
-#| msgid ""
-#| "If this problem is not present under Windows and has not been reported "
-#| "yet, you can save the detailed information to a file using the \"Save As"
-#| "\" button, then <a href=\"http://www.codeweavers.com/support/tickets/"
-#| "enter/\">file a bug report</a> and attach that file to the report."
+#: programs/winedbg/winedbg.rc:75
 msgid ""
 "If this problem is not present under Windows and has not been reported yet, "
 "you can save the detailed information to a file using the \"Save As\" "
-"button, then <a href=\"https://www.codeweavers.com/support/tickets/enter/"
-"\">file a bug report</a> and attach that file to the report."
+"button, then <a href=\"https://gitlab.winehq.org/wine/wine/-/wikis/"
+"Bugs\">file a bug report</a> and attach that file to the report."
 msgstr ""
 "Pokud se tento problém v Microsoft Windows neprojevuje a nebyl doposud "
 "nahlášen, je možné uložit podrobné informace do souboru kliknutím na "
-"tlačítko „Uložit jako“ a následně <a href=\"https://wiki.winehq.org/Bugs"
-"\">vyplnit hlášení o chybě</a> a tento soubor k němu připojit."
+"tlačítko „Uložit jako“ a následně <a href=\"https://gitlab.winehq.org/wine/"
+"wine/-/wikis/Bugs\">vyplnit hlášení o chybě</a> a tento soubor k němu "
+"připojit."
 
 #: programs/winedbg/winedbg.rc:40
 msgid ""
@@ -20125,6 +20394,10 @@ msgstr "Chyba: Neplatná syntaxe pro PATH\n"
 msgid "Supply a command\n"
 msgstr "Špatný příkaz.\n"
 
+#: programs/wmic/wmic.rc:33
+msgid "Example usage: wmic ALIAS get PROPERTY[,PROPERTY2,...]\n"
+msgstr ""
+
 #: programs/wordpad/wordpad.rc:31
 msgid "&New...\tCtrl+N"
 msgstr "&Nový...\tCtrl+N"
@@ -20192,10 +20465,6 @@ msgstr "&Vložit"
 #: programs/wordpad/wordpad.rc:80
 msgid "&Date and time..."
 msgstr "&Datum a čas..."
-
-#: programs/wordpad/wordpad.rc:82
-msgid "F&ormat"
-msgstr "F&ormát"
 
 #: programs/wordpad/wordpad.rc:85
 msgid "&Lists"
@@ -20429,10 +20698,6 @@ msgstr "Přiblížit"
 #: programs/wordpad/wordpad.rc:179
 msgid "Zoom out"
 msgstr "Oddálit"
-
-#: programs/wordpad/wordpad.rc:181
-msgid "Page"
-msgstr "Strana"
 
 #: programs/wordpad/wordpad.rc:182
 msgid "Pages"

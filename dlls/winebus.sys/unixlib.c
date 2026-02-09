@@ -439,13 +439,21 @@ static NTSTATUS wow64_sdl_bus_init(void *args)
 {
     struct
     {
+        BOOL disable_sdl;
+        BOOL disable_hidraw;
+        BOOL disable_input;
+        BOOL disable_udevd;
         BOOL split_controllers;
         BOOL map_controllers;
         UINT mappings_count;
         PTR32 mappings;
     } const *params32 = args;
-    struct sdl_bus_options params =
+    struct bus_options params =
     {
+        params32->disable_sdl,
+        params32->disable_hidraw,
+        params32->disable_input,
+        params32->disable_udevd,
         params32->split_controllers,
         params32->map_controllers,
         params32->mappings_count,

@@ -77,6 +77,12 @@ SUCCESS 0
 FAILURE 1
 FAILURE 1
 FAILURE 1
+FAILURE 1
+SUCCESS 0
+a@space@
+b@space@
+SUCCESS 0
+a@space@
 --- success/failure for MOVE command
 FAILURE 1
 SUCCESS 0
@@ -94,6 +100,7 @@ FAILURE 1
 SUCCESS 0
 FAILURE 1
 FAILURE 1
+SUCCESS 0
 --- success/failure for change drive command
 SUCCESS 666
 FAILURE 1
@@ -141,6 +148,8 @@ ERRORLEVEL 666
 FAILURE 1
 FAILURE 1
 FAILURE 1
+FAILURE 1
+SUCCESS 0
 FAILURE 1
 FAILURE 1
 SUCCESS 0
@@ -224,10 +233,10 @@ FAILURE 2
 FAILURE 1
 --- success/failure for MORE command
 SUCCESS 0
-SUCCESS 0
 foo@space@
 
 SUCCESS 0
---- success/failure for PAUSE command
+@todo_wine@SUCCESS 0
+@todo_wine@--- success/failure for PAUSE command
 FAILURE 1
 ---

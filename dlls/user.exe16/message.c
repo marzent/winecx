@@ -34,6 +34,8 @@
 WINE_DEFAULT_DEBUG_CHANNEL(msg);
 WINE_DECLARE_DEBUG_CHANNEL(message);
 
+#define MAX_ATOM_LEN 255
+
 DWORD USER16_AlertableWait = 0;
 
 struct wow_handlers32 wow_handlers32;
@@ -99,7 +101,7 @@ static LRESULT call_window_proc_callback( HWND hwnd, UINT msg, WPARAM wp, LPARAM
  * Support for window procedure thunks
  */
 
-#include "pshpack1.h"
+#pragma pack(push,1)
 typedef struct
 {
     WORD        popl_eax;        /* popl  %eax (return address) */
@@ -109,7 +111,7 @@ typedef struct
     BYTE        ljmp;            /* ljmp relay*/
     FARPROC16   relay;           /* __wine_call_wndproc */
 } WINPROC_THUNK;
-#include "poppack.h"
+#pragma pack(pop)
 
 #define WINPROC_HANDLE (~0u >> 16)
 #define MAX_WINPROCS32 4096
@@ -320,7 +322,7 @@ static LRESULT call_dialog_proc_Ato16( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
 
 #define MAX_THUNKS 32
 
-#include <pshpack1.h>
+#pragma pack(push,1)
 static struct word_break_thunk
 {
     BYTE                popl_eax;       /* popl  %eax (return address) */
@@ -330,7 +332,7 @@ static struct word_break_thunk
     BYTE                jmp;            /* ljmp call_word_break_proc16 */
     DWORD               callback;
 } *word_break_thunks;
-#include <poppack.h>
+#pragma pack(pop)
 
 /**********************************************************************
  *           call_word_break_proc16
@@ -881,9 +883,9 @@ LRESULT WINPROC_CallProc16To32A( winproc_callback_t callback, HWND16 hwnd, UINT1
             UINT_PTR lo = LOWORD(lParam);
             UINT_PTR hi = HIWORD(lParam);
             int flag = 0;
-            char buf[2];
+            char buf[MAX_ATOM_LEN + 1];
 
-            if (GlobalGetAtomNameA(hi, buf, 2) > 0) flag |= 1;
+            if (GlobalGetAtomNameA(hi, buf, sizeof(buf)) > 0) flag |= 1;
             if (GlobalSize16(hi) != 0) flag |= 2;
             switch (flag)
             {
@@ -1262,9 +1264,14 @@ LRESULT WINPROC_CallProc32ATo16( winproc_callback16_t callback, HWND hwnd, UINT 
         {
             UINT_PTR lo, hi;
             int flag = 0;
-            char buf[2];
+            char buf[MAX_ATOM_LEN + 1];
 
-            UnpackDDElParam( msg, lParam, &lo, &hi );
+            if (!UnpackDDElParam( msg, lParam, &lo, &hi ))
+            {
+                /* Probably this is a response to WM_DDE_INITIATE */
+                lo = LOWORD( lParam );
+                hi = HIWORD( lParam );
+            }
 
             if (GlobalGetAtomNameA((ATOM)hi, buf, sizeof(buf)) > 0) flag |= 1;
             if (GlobalSize((HANDLE)hi) != 0) flag |= 2;

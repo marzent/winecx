@@ -22,9 +22,11 @@
 #include "winbase.h"
 #include "winerror.h"
 #include "winstring.h"
+#include "winternl.h"
 
 #include "initguid.h"
 #include "roapi.h"
+#include "roerrorapi.h"
 
 #include "wine/test.h"
 
@@ -211,6 +213,28 @@ static DWORD WINAPI mta_init_implicit_thread(void *dummy)
     return 0;
 }
 
+enum oletlsflags
+{
+    OLETLS_UUIDINITIALIZED = 0x2,
+    OLETLS_DISABLE_OLE1DDE = 0x40,
+    OLETLS_APARTMENTTHREADED = 0x80,
+    OLETLS_MULTITHREADED = 0x100,
+};
+
+struct oletlsdata
+{
+    void *threadbase;
+    void *smallocator;
+    DWORD id;
+    DWORD flags;
+};
+
+static DWORD get_oletlsflags(void)
+{
+    struct oletlsdata *data = NtCurrentTeb()->ReservedForOle;
+    return data ? data->flags : 0;
+}
+
 static void test_implicit_mta(void)
 {
     static const struct
@@ -246,7 +270,14 @@ static void test_implicit_mta(void)
     {
         winetest_push_context("test %u", i);
         if (tests[i].ro_init)
+        {
+            DWORD flags = tests[i].mta ? OLETLS_MULTITHREADED : OLETLS_APARTMENTTHREADED;
+
             hr = RoInitialize(tests[i].mta ? RO_INIT_MULTITHREADED : RO_INIT_SINGLETHREADED);
+
+            flags |= OLETLS_DISABLE_OLE1DDE;
+            ok((get_oletlsflags() & flags) == flags, "get_oletlsflags() = %lx\n", get_oletlsflags());
+        }
         else
             hr = CoInitializeEx(NULL, tests[i].mta ? COINIT_MULTITHREADED : COINIT_APARTMENTTHREADED);
         ok(hr == S_OK, "got %#lx.\n", hr);
@@ -373,6 +404,19 @@ static HRESULT WINAPI unk_no_marshal_QueryInterface(IUnknown *iface, REFIID riid
     return E_NOINTERFACE;
 }
 
+static HRESULT WINAPI unk_agile_QueryInterface(IUnknown *iface, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown)
+        || IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = iface;
+        IUnknown_AddRef(iface);
+        return S_OK;
+    }
+
+    return E_NOINTERFACE;
+}
+
 static ULONG WINAPI unk_AddRef(IUnknown *iface)
 {
     struct unk_impl *impl = impl_from_IUnknown(iface);
@@ -399,6 +443,13 @@ static const IUnknownVtbl unk_no_marshal_vtbl =
     unk_Release
 };
 
+static const IUnknownVtbl unk_agile_vtbl =
+{
+    unk_agile_QueryInterface,
+    unk_AddRef,
+    unk_Release
+};
+
 struct test_RoGetAgileReference_thread_param
 {
     enum AgileReferenceOptions option;
@@ -406,6 +457,7 @@ struct test_RoGetAgileReference_thread_param
     RO_INIT_TYPE to_type;
     IAgileReference *agile_reference;
     IUnknown *unk_obj;
+    BOOLEAN obj_is_agile;
 };
 
 static DWORD CALLBACK test_RoGetAgileReference_thread_proc(void *arg)
@@ -422,7 +474,12 @@ static DWORD CALLBACK test_RoGetAgileReference_thread_proc(void *arg)
     hr = IAgileReference_Resolve(param->agile_reference, &IID_IUnknown, (void **)&unknown);
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
     ok(!!unknown, "Expected pointer not NULL.\n");
-    if (param->from_type == RO_INIT_MULTITHREADED && param->to_type == RO_INIT_MULTITHREADED)
+    if (param->obj_is_agile)
+    {
+        ok(unknown == param->unk_obj, "Expected the same object.\n");
+        EXPECT_REF(param->unk_obj, 4);
+    }
+    else if (param->from_type == RO_INIT_MULTITHREADED && param->to_type == RO_INIT_MULTITHREADED)
     {
         ok(unknown == param->unk_obj, "Expected the same object.\n");
         todo_wine_if(param->option == AGILEREFERENCE_DEFAULT)
@@ -447,6 +504,7 @@ static void test_RoGetAgileReference(void)
     struct test_RoGetAgileReference_thread_param param;
     struct unk_impl unk_no_marshal_obj = {{&unk_no_marshal_vtbl}, 1};
     struct unk_impl unk_obj = {{&unk_vtbl}, 1};
+    struct unk_impl unk_agile_obj = {{&unk_agile_vtbl}, 1};
     enum AgileReferenceOptions option;
     IAgileReference *agile_reference;
     RO_INIT_TYPE from_type, to_type;
@@ -520,6 +578,7 @@ static void test_RoGetAgileReference(void)
                 param.to_type = to_type;
                 param.agile_reference = agile_reference;
                 param.unk_obj = &unk_obj.IUnknown_iface;
+                param.obj_is_agile = FALSE;
                 thread = CreateThread(NULL, 0, test_RoGetAgileReference_thread_proc, &param, 0, NULL);
                 flush_events();
                 ret = WaitForSingleObject(thread, 100);
@@ -531,10 +590,53 @@ static void test_RoGetAgileReference(void)
             IAgileReference_Release(agile_reference);
             EXPECT_REF(&unk_obj, 1);
 
+            hr = RoGetAgileReference(option, &IID_IUnknown, &unk_agile_obj.IUnknown_iface, &agile_reference);
+            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+            ok(!!agile_reference, "Got unexpected agile_reference.\n");
+            EXPECT_REF(&unk_agile_obj, 2);
+
+            unknown = NULL;
+            hr = IAgileReference_Resolve(agile_reference, &IID_IUnknown, (void **)&unknown);
+            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+            ok(!!unknown, "Expected pointer not NULL.\n");
+            ok(unknown == &unk_agile_obj.IUnknown_iface, "Expected the same object.\n");
+            EXPECT_REF(&unk_agile_obj, 3);
+
+            for (to_type = RO_INIT_SINGLETHREADED; to_type <= RO_INIT_MULTITHREADED; to_type++)
+            {
+                param.option = option;
+                param.from_type = from_type;
+                param.to_type = to_type;
+                param.agile_reference = agile_reference;
+                param.unk_obj = &unk_agile_obj.IUnknown_iface;
+                param.obj_is_agile = TRUE;
+                thread = CreateThread(NULL, 0, test_RoGetAgileReference_thread_proc, &param, 0, NULL);
+                flush_events();
+                ret = WaitForSingleObject(thread, 100);
+                ok(!ret, "WaitForSingleObject failed, error %ld.\n", GetLastError());
+            }
+
+            IUnknown_Release(unknown);
+            IAgileReference_Release(agile_reference);
+            EXPECT_REF(&unk_obj, 1);
+
             RoUninitialize();
             winetest_pop_context();
         }
     }
+}
+
+static void test_RoGetErrorReportingFlags(void)
+{
+    UINT32 flags;
+    HRESULT hr;
+
+    hr = RoGetErrorReportingFlags(NULL);
+    ok(hr == E_POINTER, "Got unexpected hr %#lx.\n", hr);
+
+    hr = RoGetErrorReportingFlags(&flags);
+    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(flags == RO_ERROR_REPORTING_USESETERRORINFO, "Got unexpected flag %#x.\n", flags);
 }
 
 START_TEST(roapi)
@@ -546,6 +648,7 @@ START_TEST(roapi)
     test_implicit_mta();
     test_ActivationFactories();
     test_RoGetAgileReference();
+    test_RoGetErrorReportingFlags();
 
     SetLastError(0xdeadbeef);
     ret = DeleteFileW(L"wine.combase.test.dll");

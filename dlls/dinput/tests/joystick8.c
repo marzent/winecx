@@ -45,7 +45,7 @@
 #define WIDL_using_Windows_Devices_Haptics
 #define WIDL_using_Windows_Gaming_Input
 #include "windows.gaming.input.h"
-#undef Size
+#include "gameinput.h"
 
 #include "initguid.h"
 
@@ -107,9 +107,7 @@ static void run_in_desktop_( const char *file, int line, char **argv,
     ok_(file, line)( ret, "CreateProcessA failed, error %lu\n", GetLastError() );
     if (!ret) return;
 
-    wait_child_process( info.hProcess );
-    CloseHandle( info.hThread );
-    CloseHandle( info.hProcess );
+    wait_child_process( &info );
 
     if (input)
     {
@@ -5174,7 +5172,6 @@ static void test_windows_gaming_input(void)
     ok( hr == S_OK, "get_Gamepads returned %#lx\n", hr );
     hr = IVectorView_Gamepad_get_Size( gamepads_view, &size );
     ok( hr == S_OK, "get_Size returned %#lx\n", hr );
-    todo_wine /* but Wine currently intentionally does */
     ok( size == 0, "got size %u\n", size );
     IVectorView_Gamepad_Release( gamepads_view );
     IGamepadStatics_Release( gamepad_statics );
@@ -5216,16 +5213,12 @@ static void test_windows_gaming_input(void)
     ok( hr == S_OK, "QueryInterface returned %#lx\n", hr );
 
     hr = IRawGameController2_get_DisplayName( raw_controller2, &str );
-    todo_wine
     ok( hr == S_OK, "get_DisplayName returned %#lx\n", hr );
-    if (hr == S_OK)
-    {
-        buffer = pWindowsGetStringRawBuffer( str, &length );
-        todo_wine
-        ok( !wcscmp( buffer, L"HID-compliant game controller" ),
-            "get_DisplayName returned %s\n", debugstr_wn( buffer, length ) );
-        pWindowsDeleteString( str );
-    }
+    buffer = pWindowsGetStringRawBuffer( str, &length );
+    todo_wine
+    ok( !wcscmp( buffer, L"HID-compliant game controller" ),
+        "get_DisplayName returned %s\n", debugstr_wn( buffer, length ) );
+    pWindowsDeleteString( str );
 
     hr = IRawGameController2_get_NonRoamableId( raw_controller2, &str );
     todo_wine
@@ -5320,6 +5313,23 @@ static void test_windows_gaming_input(void)
 done:
     hid_device_stop( &desc, 1 );
     cleanup_registry_keys();
+}
+
+static void test_game_input(void)
+{
+    HMODULE gameinput = LoadLibraryW( L"gameinput.dll" );
+    HRESULT (WINAPI *pGameInputCreate)( v0_IGameInput **out );
+    v0_IGameInput *gi0;
+
+    if (!gameinput || !(pGameInputCreate = (void *)GetProcAddress( gameinput, "GameInputCreate" )))
+    {
+        win_skip( "GameInputCreate not found, skipping tests.\n" );
+        return;
+    }
+
+    gi0 = (void *)0xdeadbeef;
+    todo_wine ok_hr( S_OK, pGameInputCreate( &gi0 ) );
+    if (gi0 != (void *)0xdeadbeef) ok_ret( 0, v0_IGameInput_Release( gi0 ) );
 }
 
 static HANDLE rawinput_device_added, rawinput_device_removed, rawinput_event;
@@ -6001,6 +6011,7 @@ START_TEST( joystick8 )
         test_driving_wheel_axes();
         test_rawinput( argv );
         test_windows_gaming_input();
+        test_game_input();
     }
 
 done:

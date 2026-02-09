@@ -44,7 +44,7 @@
  *         syscalls
  */
 #define SYSCALL_ENTRY(id,name,args) __ASM_SYSCALL_FUNC( id, name )
-ALL_SYSCALLS64
+ALL_SYSCALLS
 #undef SYSCALL_ENTRY
 
 
@@ -169,6 +169,31 @@ __ASM_GLOBAL_FUNC( RtlCaptureContext,
                    "ret" );
 
 
+struct unwind_exception_frame
+{
+    EXCEPTION_REGISTRATION_RECORD frame;
+    char dummy[0x10]; /* Layout 'dispatch' accessed from unwind_exception_handler() so it is above register
+                       * save space when .seh handler is used. */
+    DISPATCHER_CONTEXT *dispatch;
+};
+C_ASSERT( sizeof(struct unwind_exception_frame) == 0x28 );
+C_ASSERT( offsetof(struct unwind_exception_frame, dispatch) == 0x20 );
+
+
+/*******************************************************************
+ *         nested_exception_handler
+ */
+EXCEPTION_DISPOSITION WINAPI nested_exception_handler( EXCEPTION_RECORD *rec, void *frame,
+                                                       CONTEXT *context, DISPATCHER_CONTEXT *dispatch )
+{
+    struct unwind_exception_frame *unwind_frame = (struct unwind_exception_frame *)frame;
+
+    if (rec->ExceptionFlags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND)) return ExceptionContinueSearch;
+    dispatch->EstablisherFrame = unwind_frame->dispatch->EstablisherFrame;
+    return ExceptionNestedException;
+}
+
+
 /***********************************************************************
  *		call_seh_handler
  */
@@ -180,6 +205,7 @@ __ASM_GLOBAL_FUNC( call_seh_handler,
                    ".seh_stackalloc 0x28\n\t"
                    ".seh_endprologue\n\t"
                    ".seh_handler nested_exception_handler, @except\n\t"
+                   "movq %r9,0x20(%rsp)\n\t"    /* unwind_exception_frame->dispatch */
                    "callq *0x50(%rsp)\n\t"      /* handler */
                    "nop\n\t"                    /* avoid epilogue so handler is called */
                    "addq $0x28, %rsp\n\t"
@@ -188,13 +214,14 @@ __ASM_GLOBAL_FUNC( call_seh_handler,
 static DWORD call_seh_handler( EXCEPTION_RECORD *rec, ULONG_PTR frame,
                                CONTEXT *context, void *dispatch, PEXCEPTION_ROUTINE handler )
 {
-    EXCEPTION_REGISTRATION_RECORD wrapper_frame;
+    struct unwind_exception_frame wrapper_frame;
     DWORD res;
 
-    wrapper_frame.Handler = (PEXCEPTION_HANDLER)nested_exception_handler;
-    __wine_push_frame( &wrapper_frame );
+    wrapper_frame.frame.Handler = (PEXCEPTION_HANDLER)nested_exception_handler;
+    wrapper_frame.dispatch = dispatch;
+    __wine_push_frame( &wrapper_frame.frame );
     res = handler( rec, (void *)frame, context, dispatch );
-    __wine_pop_frame( &wrapper_frame );
+    __wine_pop_frame( &wrapper_frame.frame );
     return res;
 }
 #endif
@@ -212,7 +239,7 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
     DISPATCHER_CONTEXT dispatch;
     CONTEXT context;
     NTSTATUS status;
-    ULONG_PTR frame;
+    ULONG_PTR frame, nested_frame;
     DWORD res;
 
     context = *orig_context;
@@ -221,6 +248,7 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
     dispatch.TargetIp      = 0;
     dispatch.ContextRecord = &context;
     dispatch.HistoryTable  = &table;
+    nested_frame = 0;
     for (;;)
     {
         status = virtual_unwind( UNW_FLAG_EHANDLER, &dispatch, &context );
@@ -243,7 +271,8 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
                    dispatch.LanguageHandler, rec, dispatch.EstablisherFrame, orig_context, &dispatch );
             res = call_seh_handler( rec, dispatch.EstablisherFrame, orig_context,
                                     &dispatch, dispatch.LanguageHandler );
-            rec->ExceptionFlags &= EXCEPTION_NONCONTINUABLE;
+            if (dispatch.EstablisherFrame == nested_frame)
+                rec->ExceptionFlags &= EXCEPTION_NONCONTINUABLE;
             TRACE( "handler at %p returned %lu\n", dispatch.LanguageHandler, res );
 
             switch (res)
@@ -255,6 +284,7 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
                 break;
             case ExceptionNestedException:
                 rec->ExceptionFlags |= EXCEPTION_NESTED_CALL;
+                nested_frame = dispatch.EstablisherFrame;
                 TRACE( "nested exception\n" );
                 break;
             case ExceptionCollidedUnwind:
@@ -272,6 +302,8 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
                    teb_frame->Handler, rec, teb_frame, orig_context, &dispatch, context.Rsp );
             res = call_seh_handler( rec, (ULONG_PTR)teb_frame, orig_context,
                                     &dispatch, (PEXCEPTION_ROUTINE)teb_frame->Handler );
+            if (dispatch.EstablisherFrame == nested_frame)
+                rec->ExceptionFlags &= EXCEPTION_NONCONTINUABLE;
             TRACE( "TEB handler at %p returned %lu\n", teb_frame->Handler, res );
 
             switch (res)
@@ -283,6 +315,7 @@ NTSTATUS call_seh_handlers( EXCEPTION_RECORD *rec, CONTEXT *orig_context )
                 break;
             case ExceptionNestedException:
                 rec->ExceptionFlags |= EXCEPTION_NESTED_CALL;
+                nested_frame = dispatch.EstablisherFrame;
                 TRACE( "nested exception\n" );
                 break;
             case ExceptionCollidedUnwind:
@@ -348,7 +381,7 @@ __ASM_GLOBAL_FUNC( KiUserExceptionDispatcher,
  */
 __ASM_GLOBAL_FUNC( KiUserApcDispatcher,
                    __ASM_SEH(".seh_pushframe\n\t")
-                   __ASM_SEH(".seh_stackalloc 0x4d0\n\t")  /* sizeof(CONTEXT) */
+                   __ASM_SEH(".seh_stackalloc 0x530\n\t")  /* machine_frame offset */
                    __ASM_SEH(".seh_savereg %rbx,0x90\n\t")
                    __ASM_SEH(".seh_savereg %rbp,0xa0\n\t")
                    __ASM_SEH(".seh_savereg %rsi,0xa8\n\t")
@@ -368,8 +401,8 @@ __ASM_GLOBAL_FUNC( KiUserApcDispatcher,
                    __ASM_CFI(".cfi_offset %r13,0xe0\n\t")
                    __ASM_CFI(".cfi_offset %r14,0xe8\n\t")
                    __ASM_CFI(".cfi_offset %r15,0xf0\n\t")
-                   __ASM_CFI(".cfi_offset %rip,0x4d0\n\t")
-                   __ASM_CFI(".cfi_offset %rsp,0x4e8\n\t")
+                   __ASM_CFI(".cfi_offset %rip,0x530\n\t")
+                   __ASM_CFI(".cfi_offset %rsp,0x548\n\t")
                    "movq 0x00(%rsp),%rcx\n\t"  /* context->P1Home = arg1 */
                    "movq 0x08(%rsp),%rdx\n\t"  /* context->P2Home = arg2 */
                    "movq 0x10(%rsp),%r8\n\t"   /* context->P3Home = arg3 */
@@ -377,8 +410,8 @@ __ASM_GLOBAL_FUNC( KiUserApcDispatcher,
                    "movq %rsp,%r9\n\t"         /* context */
                    "callq *%rax\n\t"
                    "movq %rsp,%rcx\n\t"        /* context */
-                   "movl $1,%edx\n\t"          /* alertable */
-                   "call " __ASM_NAME("NtContinue") "\n\t"
+                   "leaq 0x4f0(%rsp),%rdx\n\t" /* continue_arg */
+                   "call " __ASM_NAME("NtContinueEx") "\n\t"
                    "int3" )
 
 
@@ -423,17 +456,6 @@ BOOLEAN WINAPI RtlIsEcCode( ULONG_PTR ptr )
 {
     return FALSE;
 }
-
-
-struct unwind_exception_frame
-{
-    EXCEPTION_REGISTRATION_RECORD frame;
-    char dummy[0x10]; /* Layout 'dispatch' accessed from unwind_exception_handler() so it is above register
-                       * save space when .seh handler is used. */
-    DISPATCHER_CONTEXT *dispatch;
-};
-C_ASSERT( sizeof(struct unwind_exception_frame) == 0x28 );
-C_ASSERT( offsetof(struct unwind_exception_frame, dispatch) == 0x20 );
 
 
 /**********************************************************************
@@ -1000,7 +1022,7 @@ __ASM_GLOBAL_FUNC( signal_start_thread,
                    "movq %rcx,%rbx\n\t"        /* context */
                    /* clear the thread stack */
                    "andq $~0xfff,%rcx\n\t"     /* round down to page size */
-                   "leaq -0xf0000(%rcx),%rdi\n\t"
+                   "leaq -0xf000(%rcx),%rdi\n\t"
                    "movq %rdi,%rsp\n\t"
                    "subq %rdi,%rcx\n\t"
                    "xorl %eax,%eax\n\t"

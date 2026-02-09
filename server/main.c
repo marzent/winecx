@@ -28,13 +28,18 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
+#ifdef HAVE_SYS_RESOURCE_H
+# include <sys/resource.h>
+#endif
+#ifdef HAVE_SYS_SYSCTL_H
+# include <sys/sysctl.h>
+#endif
 
 #include "object.h"
 #include "file.h"
 #include "thread.h"
 #include "request.h"
 #include "unicode.h"
-#include "esync.h"
 #include "msync.h"
 
 /* command-line options */
@@ -214,6 +219,29 @@ static void sigterm_handler( int signum )
     exit(1);  /* make sure atexit functions get called */
 }
 
+static void init_limits(void)
+{
+#ifdef RLIMIT_NOFILE
+    struct rlimit rlimit;
+
+    if (!getrlimit( RLIMIT_NOFILE, &rlimit ))
+    {
+        rlimit.rlim_cur = rlimit.rlim_max;
+        if (!setrlimit( RLIMIT_NOFILE, &rlimit )) return;
+#ifdef __APPLE__
+        {
+            /* macOS before Big Sur fails if rlim_max is larger than maxfilesperproc */
+            unsigned int nlimit = 0;
+            size_t size = sizeof(nlimit);
+            sysctlbyname("kern.maxfilesperproc", &nlimit, &size, NULL, 0);
+            rlimit.rlim_cur = max( nlimit, OPEN_MAX );
+            setrlimit( RLIMIT_NOFILE, &rlimit );
+        }
+#endif
+    }
+#endif
+}
+
 int main( int argc, char *argv[] )
 {
     setvbuf( stderr, NULL, _IOLBF, 0 );
@@ -227,24 +255,19 @@ int main( int argc, char *argv[] )
     signal( SIGQUIT, sigterm_handler );
     signal( SIGTERM, sigterm_handler );
     signal( SIGABRT, sigterm_handler );
+    init_limits();
 
     sock_init();
+    msync_init_shm();
     open_master_socket();
-
-    if (do_msync())
-        msync_init();
-
-    if (do_esync())
-        esync_init();
-
-    if (!do_msync() && !do_esync() && debug_level)
-        fprintf( stderr, "wineserver: using server-side synchronization.\n" );
+    msync_init();
 
     if (debug_level) fprintf( stderr, "wineserver: starting (pid=%ld)\n", (long) getpid() );
     set_current_time();
     init_signals();
     init_memory();
     init_directories( load_intl_file() );
+    init_threading();
     init_registry();
     main_loop();
     return 0;

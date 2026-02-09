@@ -230,10 +230,10 @@ static INT CBGetTextAreaHeight(HEADCOMBO *lphc, BOOL clip_item_height)
     measureItem.CtlID      = id;
     measureItem.itemID     = -1;
     measureItem.itemWidth  = clientRect.right;
-    measureItem.itemHeight = item_height - 6; /* ownerdrawn cb is taller */
+    measureItem.itemHeight = item_height - 2; /* ownerdrawn cb is taller */
     measureItem.itemData   = 0;
     SendMessageW(lphc->owner, WM_MEASUREITEM, id, (LPARAM)&measureItem);
-    item_height = 6 + measureItem.itemHeight;
+    item_height = 2 + measureItem.itemHeight;
 
     /*
      * Send a second one in the case of a fixed ownerdraw list to calculate the
@@ -982,7 +982,7 @@ static void CBDropDown( LPHEADCOMBO lphc )
    if( !(lphc->wState & CBF_NOREDRAW) )
      NtUserRedrawWindow( lphc->self, NULL, 0, RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW );
 
-   EnableWindow( lphc->hWndLBox, TRUE );
+   NtUserEnableWindow( lphc->hWndLBox, TRUE );
    if (GetCapture() != lphc->self)
       NtUserSetCapture(lphc->hWndLBox);
 }
@@ -1013,7 +1013,7 @@ static void CBRollUp( LPHEADCOMBO lphc, BOOL ok, BOOL bButton )
 
            if(GetCapture() == lphc->hWndLBox)
            {
-               ReleaseCapture();
+               NtUserReleaseCapture();
            }
 
 	   if( CB_GETTYPE(lphc) == CBS_DROPDOWN )
@@ -1467,7 +1467,8 @@ static void COMBO_Size( HEADCOMBO *lphc )
 static void COMBO_Font( LPHEADCOMBO lphc, HFONT hFont, BOOL bRedraw )
 {
   lphc->hFont = hFont;
-  lphc->item_height = combo_get_text_height(lphc);
+  if (!CB_OWNERDRAWN(lphc))
+    lphc->item_height = combo_get_text_height(lphc);
 
   /*
    * Propagate to owned windows.
@@ -1574,7 +1575,7 @@ static void COMBO_LButtonDown( LPHEADCOMBO lphc, LPARAM lParam )
            if( lphc->wState & CBF_CAPTURE )
            {
                lphc->wState &= ~CBF_CAPTURE;
-               ReleaseCapture();
+               NtUserReleaseCapture();
            }
        }
        else
@@ -1610,7 +1611,7 @@ static void COMBO_LButtonUp( LPHEADCOMBO lphc )
 	       lphc->wState &= ~CBF_NOLBSELECT;
 	   }
        }
-       ReleaseCapture();
+       NtUserReleaseCapture();
        NtUserSetCapture(lphc->hWndLBox);
    }
 
@@ -1653,7 +1654,7 @@ static void COMBO_MouseMove( LPHEADCOMBO lphc, WPARAM wParam, LPARAM lParam )
    if( PtInRect(&lbRect, pt) )
    {
        lphc->wState &= ~CBF_CAPTURE;
-       ReleaseCapture();
+       NtUserReleaseCapture();
        if( CB_GETTYPE(lphc) == CBS_DROPDOWN ) CBUpdateLBox( lphc, TRUE );
 
        /* hand over pointer tracking */
@@ -1816,8 +1817,8 @@ LRESULT ComboWndProc_common( HWND hwnd, UINT message, WPARAM wParam, LPARAM lPar
 		return COMBO_ItemOp(lphc, message, lParam);
 	case WM_ENABLE:
 		if( lphc->wState & CBF_EDIT )
-		    EnableWindow( lphc->hWndEdit, (BOOL)wParam );
-		EnableWindow( lphc->hWndLBox, (BOOL)wParam );
+		    NtUserEnableWindow( lphc->hWndEdit, (BOOL)wParam );
+		NtUserEnableWindow( lphc->hWndLBox, (BOOL)wParam );
 
 		/* Force the control to repaint when the enabled state changes. */
 		NtUserInvalidateRect(lphc->self, NULL, TRUE);

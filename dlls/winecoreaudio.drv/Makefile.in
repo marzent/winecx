@@ -7,6 +7,4 @@ UNIX_LIBS    = $(COREAUDIO_LIBS) -framework AppKit $(AVFOUNDATION_LIBS)
 SOURCES = \
 	authorization.m \
 	coreaudio.c \
-	coremidi.c \
-	midi.c \
-	mmdevdrv.c
+	coremidi.c

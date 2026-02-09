@@ -27,6 +27,8 @@
 #include <assert.h>
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
+#include "winternl.h"
+#include "ddk/wdm.h"
 #include "win32u_private.h"
 #include "ntuser_private.h"
 #include "winnls.h"
@@ -40,12 +42,60 @@ WINE_DEFAULT_DEBUG_CHANNEL(msg);
 WINE_DECLARE_DEBUG_CHANNEL(key);
 WINE_DECLARE_DEBUG_CHANNEL(relay);
 
+#define QS_DRIVER       0x80000000
+#define QS_HARDWARE     0x40000000
+#define QS_INTERNAL     (QS_DRIVER | QS_HARDWARE)
+
+static const struct _KUSER_SHARED_DATA *user_shared_data = (struct _KUSER_SHARED_DATA *)0x7ffe0000;
+
+static LONG atomic_load_long( const volatile LONG *ptr )
+{
+#if defined(__i386__) || defined(__x86_64__)
+    return *ptr;
+#else
+    return __atomic_load_n( ptr, __ATOMIC_SEQ_CST );
+#endif
+}
+
+static ULONG atomic_load_ulong( const volatile ULONG *ptr )
+{
+#if defined(__i386__) || defined(__x86_64__)
+    return *ptr;
+#else
+    return __atomic_load_n( ptr, __ATOMIC_SEQ_CST );
+#endif
+}
+
+static UINT64 get_tick_count(void)
+{
+    ULONG high, low;
+
+    do
+    {
+        high = atomic_load_long( &user_shared_data->TickCount.High1Time );
+        low = atomic_load_ulong( &user_shared_data->TickCount.LowPart );
+    }
+    while (high != atomic_load_long( &user_shared_data->TickCount.High2Time ));
+    /* note: we ignore TickCountMultiplier */
+    return (UINT64)high << 32 | low;
+}
+
 #define MAX_WINPROC_RECURSION  64
 
 #define WM_NCMOUSEFIRST WM_NCMOUSEMOVE
 #define WM_NCMOUSELAST  (WM_NCMOUSEFIRST+(WM_MOUSELAST-WM_MOUSEFIRST))
 
 #define MAX_PACK_COUNT 4
+
+struct peek_message_filter
+{
+    HWND hwnd;
+    UINT first;
+    UINT last;
+    UINT mask;
+    UINT flags;
+    BOOL internal;
+};
 
 /* info about the message currently being received by the current thread */
 struct received_message_info
@@ -390,13 +440,9 @@ static BOOL init_window_call_params( struct win_proc_params *params, HWND hwnd, 
 
     user_check_not_lock();
 
+    if (!is_current_thread_window( hwnd )) return FALSE;
     if (!(win = get_win_ptr( hwnd ))) return FALSE;
     if (win == WND_OTHER_PROCESS || win == WND_DESKTOP) return FALSE;
-    if (win->tid != GetCurrentThreadId())
-    {
-        release_win_ptr( win );
-        return FALSE;
-    }
     params->func = win->winproc;
     params->ansi_dst = !(win->flags & WIN_ISUNICODE);
     is_dialog = win->dlgInfo != NULL;
@@ -420,11 +466,14 @@ static LRESULT dispatch_win_proc_params( struct win_proc_params *params, size_t 
     LRESULT result = 0;
     void *ret_ptr;
     ULONG ret_len;
+    NTSTATUS status;
 
     if (thread_info->recursion_count > MAX_WINPROC_RECURSION) return 0;
     thread_info->recursion_count++;
-    KeUserModeCallback( NtUserCallWinProc, params, size, &ret_ptr, &ret_len );
+    status = KeUserModeCallback( NtUserCallWinProc, params, size, &ret_ptr, &ret_len );
     thread_info->recursion_count--;
+
+    if (status) return result;
 
     if (ret_len >= sizeof(result))
     {
@@ -1694,7 +1743,11 @@ size_t user_message_size( HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
     case WM_COPYDATA:
     {
         const COPYDATASTRUCT *cds = lparam_ptr;
-        size = sizeof(*cds) + cds->cbData;
+        /* If cbData <= 2048 bytes, pack the data at the end of the message. Otherwise, pack the data
+         * in an extra user buffer to avoid potential stack overflows when calling KeUserModeCallback()
+         * because cbData can be very large. Manual tests of KiUserCallbackDispatcher() when receiving
+         * WM_COPYDATA messages show that Windows does similar things */
+        size = cds->cbData <= 2048 ? sizeof(*cds) + cds->cbData : sizeof(*cds);
         break;
     }
     case WM_HELP:
@@ -1783,14 +1836,19 @@ size_t user_message_size( HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
  *           pack_user_message
  *
  * Copy message to a buffer for passing to client.
+ *
+ * ret_extra_buffer returns an extra user buffer allocated to store large message data, for example,
+ * for WM_COPYDATA. Call NtFreeVirtualMemory() for *ret_extra_buffer when done using it if it's not NULL.
  */
 void pack_user_message( void *buffer, size_t size, UINT message,
-                        WPARAM wparam, LPARAM lparam, BOOL ansi )
+                        WPARAM wparam, LPARAM lparam, BOOL ansi, void **ret_extra_buffer )
 {
     const void *lparam_ptr = (const void *)lparam;
     void const *inline_ptr = (void *)0xffffffff;
 
     if (!size) return;
+
+    *ret_extra_buffer = NULL;
 
     switch (message)
     {
@@ -1828,9 +1886,47 @@ void pack_user_message( void *buffer, size_t size, UINT message,
     case WM_COPYDATA:
     {
         const COPYDATASTRUCT *cds = lparam_ptr;
-        if (cds->lpData && cds->cbData)
-            memcpy( (char *)buffer + sizeof(*cds), cds->lpData, cds->cbData );
-        size = sizeof(*cds);
+
+        if (!cds->lpData)
+        {
+            size = sizeof(*cds);
+        }
+        else
+        {
+            /* If cbData <= 2048 bytes, pack the data at the end of the message. Otherwise, pack the data
+             * in an extra user buffer to avoid potential stack overflow when calling KeUserModeCallback()
+             * because cbData can be very large. Manual tests of KiUserCallbackDispatcher() when receiving
+             * WM_COPYDATA messages show that Windows does similar things */
+            if (cds->cbData <= 2048)
+            {
+                memcpy( (char *)buffer + sizeof(*cds), cds->lpData, cds->cbData );
+                size = sizeof(*cds);
+            }
+            else
+            {
+                COPYDATASTRUCT *tmp_cds = buffer;
+                SIZE_T extra_buffer_size;
+                unsigned int status;
+
+                memcpy( tmp_cds, cds, sizeof(*cds) );
+
+                extra_buffer_size = cds->cbData;
+                status = NtAllocateVirtualMemory( GetCurrentProcess(), ret_extra_buffer, zero_bits,
+                                                  &extra_buffer_size, MEM_RESERVE | MEM_COMMIT,
+                                                  PAGE_READWRITE );
+                if (!status)
+                {
+                    memcpy( *ret_extra_buffer, cds->lpData, cds->cbData );
+                    tmp_cds->lpData = *ret_extra_buffer;
+                }
+                else
+                {
+                    tmp_cds->lpData = NULL;
+                    tmp_cds->cbData = 0;
+                }
+                return;
+            }
+        }
         break;
     }
     case EM_GETSEL:
@@ -2040,11 +2136,11 @@ static void reply_message( struct received_message_info *info, LRESULT result, M
 }
 
 /***********************************************************************
- *           reply_message_result
+ *           NtUserReplyMessage  (win32u.@)
  *
  * Send a reply to a sent message and update thread receive info.
  */
-BOOL reply_message_result( LRESULT result )
+BOOL WINAPI NtUserReplyMessage( LRESULT result )
 {
     struct user_thread_info *thread_info = get_user_thread_info();
     struct received_message_info *info = thread_info->receive_info;
@@ -2102,7 +2198,7 @@ static LRESULT handle_internal_message( HWND hwnd, UINT msg, WPARAM wparam, LPAR
         return set_window_long( hwnd, (short)LOWORD(wparam), HIWORD(wparam), lparam, FALSE );
     case WM_WINE_SETSTYLE:
         if (is_desktop_window( hwnd )) return 0;
-        return set_window_style( hwnd, wparam, lparam );
+        return set_window_style_bits( hwnd, wparam, lparam );
     case WM_WINE_SETACTIVEWINDOW:
     {
         HWND prev;
@@ -2134,29 +2230,47 @@ static LRESULT handle_internal_message( HWND hwnd, UINT msg, WPARAM wparam, LPAR
     }
     case WM_WINE_WINDOW_STATE_CHANGED:
     {
-        UINT state_cmd, config_cmd;
+        UINT state_cmd, swp_flags;
         RECT window_rect;
+        HWND foreground;
 
-        if (!user_driver->pGetWindowStateUpdates( hwnd, &state_cmd, &config_cmd, &window_rect )) return 0;
-        if (state_cmd)
-        {
-            if (LOWORD(state_cmd) == SC_RESTORE && HIWORD(state_cmd)) NtUserSetActiveWindow( hwnd );
-            send_message( hwnd, WM_SYSCOMMAND, LOWORD(state_cmd), 0 );
+        if (!user_driver->pGetWindowStateUpdates( hwnd, &state_cmd, &swp_flags, &window_rect, &foreground )) return 0;
+        window_rect = map_rect_raw_to_virt( window_rect, get_thread_dpi() );
 
-            /* state change might have changed the window config already, check again */
-            user_driver->pGetWindowStateUpdates( hwnd, &state_cmd, &config_cmd, &window_rect );
-            if (state_cmd) WARN( "window %p state needs another update, ignoring\n", hwnd );
-        }
-        if (config_cmd)
+        if (foreground) set_foreground_window( foreground, FALSE, TRUE );
+        switch (state_cmd)
         {
-            if (LOWORD(config_cmd) == SC_MOVE) NtUserSetRawWindowPos( hwnd, window_rect, HIWORD(config_cmd), FALSE );
-            else send_message( hwnd, WM_SYSCOMMAND, LOWORD(config_cmd), 0 );
+        case SC_RESTORE:
+            NtUserSetInternalWindowPos( hwnd, SW_SHOW, &window_rect, NULL );
+            /* fallthrough */
+        default:
+            send_message( hwnd, WM_SYSCOMMAND, state_cmd, 0 );
+            break;
+        case 0:
+            if (!swp_flags) break;
+            NtUserSetWindowPos( hwnd, 0, window_rect.left, window_rect.top, window_rect.right - window_rect.left,
+                                window_rect.bottom - window_rect.top, swp_flags );
+            break;
         }
+
         return 0;
     }
     case WM_WINE_UPDATEWINDOWSTATE:
         update_window_state( hwnd );
         return 0;
+    case WM_WINE_SETPIXELFORMAT:
+        set_window_pixel_format( hwnd, wparam, lparam );
+        return 0;
+    case WM_WINE_TRACKMOUSEEVENT:
+    {
+        TRACKMOUSEEVENT info;
+
+        info.cbSize = sizeof(info);
+        info.hwndTrack = hwnd;
+        info.dwFlags = wparam;
+        info.dwHoverTime = lparam;
+        return NtUserTrackMouseEvent( &info );
+    }
     case WM_WINE_FLUSHSHMSURFACE: /* CX HACK 23950 */
         process_surface_message( (struct flush_shm_surface_params *)lparam );
         return 1;
@@ -2225,10 +2339,11 @@ static LRESULT call_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
     struct win_proc_params p, *params = &p;
     BOOL ansi = ansi_dst && type == MSG_ASCII;
     size_t packed_size = 0, offset = sizeof(*params), reply_size;
+    void *ret_ptr, *extra_buffer = NULL;
+    SIZE_T extra_buffer_size = 0;
     LRESULT result = 0;
     CWPSTRUCT cwp;
     CWPRETSTRUCT cwpret;
-    void *ret_ptr;
     size_t ret_len = 0;
 
     if (msg & 0x80000000)
@@ -2260,10 +2375,12 @@ static LRESULT call_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
 
     if (type == MSG_OTHER_PROCESS) params->ansi = FALSE;
     if (packed_size)
-        pack_user_message( (char *)params + offset, packed_size, msg, wparam, lparam, ansi );
+        pack_user_message( (char *)params + offset, packed_size, msg, wparam, lparam, ansi, &extra_buffer );
 
     result = dispatch_win_proc_params( params, offset + packed_size, &ret_ptr, &ret_len );
     if (params != &p) free( params );
+    if (extra_buffer)
+        NtFreeVirtualMemory( GetCurrentProcess(), &extra_buffer, &extra_buffer_size, MEM_RELEASE );
 
     copy_user_result( ret_ptr, min( ret_len, reply_size ), result, msg, wparam, lparam, ansi );
 
@@ -2476,14 +2593,14 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
     {
         HWND orig = msg->hwnd;
 
-        msg->hwnd = window_from_point( msg->hwnd, msg->pt, &hittest );
+        msg->hwnd = window_from_point( msg->hwnd, msg->pt, &hittest, TRUE );
         if (!msg->hwnd) /* As a heuristic, try the next window if it's the owner of orig */
         {
             HWND next = get_window_relative( orig, GW_HWNDNEXT );
 
             if (next && get_window_relative( orig, GW_OWNER ) == next &&
                 is_current_thread_window( next ))
-                msg->hwnd = window_from_point( next, msg->pt, &hittest );
+                msg->hwnd = window_from_point( next, msg->pt, &hittest, TRUE );
         }
     }
 
@@ -2492,6 +2609,7 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
         accept_hardware_message( hw_id );
         return FALSE;
     }
+    update_current_mouse_window( msg->hwnd, hittest, msg->pt );
 
     msg->pt = point_phys_to_win_dpi( msg->hwnd, msg->pt );
     set_thread_dpi_awareness_context( get_window_dpi_awareness_context( msg->hwnd ));
@@ -2638,7 +2756,7 @@ static BOOL process_mouse_message( MSG *msg, UINT hw_id, ULONG_PTR extra_info, H
                     /* fall through */
                 case MA_ACTIVATE:
                 case 0:
-                    if (!set_foreground_window( hwndTop, TRUE )) eat_msg = TRUE;
+                    if (!set_foreground_window( hwndTop, TRUE, FALSE )) eat_msg = TRUE;
                     break;
                 default:
                     WARN( "unknown WM_MOUSEACTIVATE code %d\n", ret );
@@ -2705,7 +2823,7 @@ static BOOL process_hardware_message( MSG *msg, UINT hw_id, const struct hardwar
  * returns FALSE if we need to make a server request to update the queue masks or bits
  */
 static BOOL check_queue_bits( UINT wake_mask, UINT changed_mask, UINT signal_bits, UINT clear_bits,
-                              UINT *wake_bits, UINT *changed_bits )
+                              UINT *wake_bits, UINT *changed_bits, BOOL internal )
 {
     struct object_lock lock = OBJECT_LOCK_INIT;
     const queue_shm_t *queue_shm;
@@ -2714,8 +2832,9 @@ static BOOL check_queue_bits( UINT wake_mask, UINT changed_mask, UINT signal_bit
 
     while ((status = get_shared_queue( &lock, &queue_shm )) == STATUS_PENDING)
     {
+        if (internal) skip = !(queue_shm->internal_bits & QS_HARDWARE);
         /* if the masks need an update */
-        if (queue_shm->wake_mask != wake_mask) skip = FALSE;
+        else if (queue_shm->wake_mask != wake_mask) skip = FALSE;
         else if (queue_shm->changed_mask != changed_mask) skip = FALSE;
         /* or if some bits need to be cleared, or queue is signaled */
         else if (queue_shm->wake_bits & signal_bits) skip = FALSE;
@@ -2724,7 +2843,7 @@ static BOOL check_queue_bits( UINT wake_mask, UINT changed_mask, UINT signal_bit
         {
             *wake_bits = queue_shm->wake_bits;
             *changed_bits = queue_shm->changed_bits;
-            skip = TRUE;
+            skip = get_tick_count() - (UINT64)queue_shm->access_time / 10000 < 3000; /* avoid hung queue */
         }
     }
 
@@ -2739,13 +2858,14 @@ static BOOL check_queue_bits( UINT wake_mask, UINT changed_mask, UINT signal_bit
  * available; -1 on error.
  * All pending sent messages are processed before returning.
  */
-int peek_message( MSG *msg, const struct peek_message_filter *filter )
+static int peek_message( MSG *msg, const struct peek_message_filter *filter )
 {
     LRESULT result;
     HWND hwnd = filter->hwnd;
     UINT first = filter->first, last = filter->last, flags = filter->flags;
     struct user_thread_info *thread_info = get_user_thread_info();
     INPUT_MESSAGE_SOURCE prev_source = thread_info->client_info.msg_source;
+    HANDLE idle_event = thread_info->idle_event;
     struct received_message_info info;
     unsigned int hw_id = 0;  /* id of previous hardware message */
     unsigned char buffer_init[1024];
@@ -2779,9 +2899,8 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
         thread_info->client_info.msg_source = prev_source;
         wake_mask = filter->mask & (QS_SENDMESSAGE | QS_SMRESULT);
 
-        if (NtGetTickCount() - thread_info->last_getmsg_time < 3000 && /* avoid hung queue */
-            check_queue_bits( wake_mask, filter->mask, wake_mask | signal_bits, filter->mask | clear_bits,
-                              &wake_bits, &changed_bits ))
+        if (check_queue_bits( wake_mask, filter->mask, wake_mask | signal_bits, filter->mask | clear_bits,
+                              &wake_bits, &changed_bits, filter->internal ))
             res = STATUS_PENDING;
         else SERVER_START_REQ( get_message )
         {
@@ -2794,7 +2913,6 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
             req->wake_mask = wake_mask;
             req->changed_mask = filter->mask;
             wine_server_set_reply( req, buffer, buffer_size );
-            thread_info->last_getmsg_time = NtGetTickCount();
             if (!(res = wine_server_call( req )))
             {
                 size = wine_server_reply_size( reply );
@@ -2815,7 +2933,11 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
         if (res)
         {
             if (buffer != buffer_init) free( buffer );
-            if (res == STATUS_PENDING) return 0;
+            if (res == STATUS_PENDING)
+            {
+                if (hwnd == (HWND)-1 && idle_event) NtSetEvent( idle_event, NULL );
+                return 0;
+            }
             if (res != STATUS_BUFFER_OVERFLOW)
             {
                 RtlSetLastWin32Error( RtlNtStatusToDosError(res) );
@@ -2898,14 +3020,19 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
                 hook.time        = info.msg.time;
                 hook.dwExtraInfo = msg_data->hardware.info;
                 TRACE( "calling keyboard LL hook vk %x scan %x flags %x time %u info %lx\n",
-                       (int)hook.vkCode, (int)hook.scanCode, (int)hook.flags,
-                       (int)hook.time, (long)hook.dwExtraInfo );
+                       hook.vkCode, hook.scanCode, hook.flags,
+                       hook.time, hook.dwExtraInfo );
                 result = call_hooks( WH_KEYBOARD_LL, HC_ACTION, info.msg.wParam,
                                      (LPARAM)&hook, sizeof(hook) );
             }
             else if (info.msg.message == WH_MOUSE_LL && size >= sizeof(msg_data->hardware))
             {
+                RECT rect = {info.msg.pt.x, info.msg.pt.y, info.msg.pt.x, info.msg.pt.y};
                 MSLLHOOKSTRUCT hook;
+
+                rect = map_rect_raw_to_virt( rect, 0 );
+                info.msg.pt.x = rect.left;
+                info.msg.pt.y = rect.top;
 
                 hook.pt          = info.msg.pt;
                 hook.mouseData   = info.msg.lParam;
@@ -2913,8 +3040,8 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
                 hook.time        = info.msg.time;
                 hook.dwExtraInfo = msg_data->hardware.info;
                 TRACE( "calling mouse LL hook pos %d,%d data %x flags %x time %u info %lx\n",
-                       (int)hook.pt.x, (int)hook.pt.y, (int)hook.mouseData, (int)hook.flags,
-                       (int)hook.time, (long)hook.dwExtraInfo );
+                       hook.pt.x, hook.pt.y, hook.mouseData, hook.flags,
+                       hook.time, hook.dwExtraInfo );
                 result = call_hooks( WH_MOUSE_LL, HC_ACTION, info.msg.wParam,
                                      (LPARAM)&hook, sizeof(hook) );
             }
@@ -3008,6 +3135,10 @@ int peek_message( MSG *msg, const struct peek_message_filter *filter )
                     info.msg.lParam = result->lparam;
                 }
             }
+            if (info.msg.message == WM_TIMER || info.msg.message == WM_SYSTIMER)
+            {
+                if (!(flags & PM_NOYIELD) && idle_event) NtSetEvent( idle_event, NULL );
+            }
             /* CXHACK 19488 */
             if (info.msg.message == WM_PAINT &&
                     flags == (PM_REMOVE | PM_QS_INPUT | PM_QS_POSTMESSAGE | PM_QS_PAINT | PM_QS_SENDMESSAGE) &&
@@ -3072,13 +3203,93 @@ static HANDLE get_server_queue_handle(void)
         SERVER_START_REQ( get_msg_queue_handle )
         {
             wine_server_call( req );
-            ret = wine_server_ptr_handle( reply->handle );
+            thread_info->server_queue = wine_server_ptr_handle( reply->handle );
+            thread_info->idle_event = wine_server_ptr_handle( reply->idle_event );
         }
         SERVER_END_REQ;
-        thread_info->server_queue = ret;
-        if (!ret) ERR( "Cannot get server thread queue\n" );
+        if (!(ret = thread_info->server_queue)) ERR( "Cannot get server thread queue\n" );
     }
     return ret;
+}
+
+static BOOL is_queue_signaled(void)
+{
+    struct object_lock lock = OBJECT_LOCK_INIT;
+    const queue_shm_t *queue_shm;
+    BOOL signaled = FALSE;
+    UINT status;
+
+    while ((status = get_shared_queue( &lock, &queue_shm )) == STATUS_PENDING)
+        signaled = (queue_shm->wake_bits & queue_shm->wake_mask) ||
+                   (queue_shm->changed_bits & queue_shm->changed_mask);
+    if (status) return FALSE;
+
+    return signaled;
+}
+
+static BOOL check_queue_masks( UINT wake_mask, UINT changed_mask )
+{
+    struct object_lock lock = OBJECT_LOCK_INIT;
+    const queue_shm_t *queue_shm;
+    BOOL skip = FALSE;
+    UINT status;
+
+    while ((status = get_shared_queue( &lock, &queue_shm )) == STATUS_PENDING)
+    {
+        if (queue_shm->wake_mask != wake_mask || queue_shm->changed_mask != changed_mask) skip = FALSE;
+        else skip = get_tick_count() - (UINT64)queue_shm->access_time / 10000 < 3000; /* avoid hung queue */
+    }
+
+    if (status) return FALSE;
+    return skip;
+}
+
+static BOOL check_internal_bits( UINT mask )
+{
+    struct object_lock lock = OBJECT_LOCK_INIT;
+    const queue_shm_t *queue_shm;
+    BOOL signaled = FALSE;
+    UINT status;
+
+    while ((status = get_shared_queue( &lock, &queue_shm )) == STATUS_PENDING)
+        signaled = queue_shm->internal_bits & mask;
+    if (status) return FALSE;
+
+    return signaled;
+}
+
+static BOOL process_driver_events( UINT events_mask, UINT wake_mask, UINT changed_mask )
+{
+    BOOL drained = FALSE;
+
+    if (check_internal_bits( QS_DRIVER )) drained = user_driver->pProcessEvents( events_mask );
+
+    if (drained || !check_queue_masks( wake_mask, changed_mask ))
+    {
+        SERVER_START_REQ( set_queue_mask )
+        {
+            req->poll_events = drained;
+            req->wake_mask = wake_mask;
+            req->changed_mask = changed_mask;
+            wine_server_call( req );
+        }
+        SERVER_END_REQ;
+    }
+
+    /* process every pending internal hardware messages */
+    if (check_internal_bits( QS_HARDWARE ))
+    {
+        struct peek_message_filter filter = {.internal = TRUE};
+        MSG msg;
+        peek_message( &msg, &filter );
+    }
+
+    return is_queue_signaled();
+}
+
+void check_for_events( UINT flags )
+{
+    if (!process_driver_events( flags, 0, 0 ) && !(flags & QS_PAINT)) flush_window_surfaces( TRUE );
 }
 
 /* monotonic timer tick for throttling driver event checks */
@@ -3095,7 +3306,7 @@ static inline void check_for_driver_events(void)
     if (get_user_thread_info()->last_driver_time != get_driver_check_time())
     {
         flush_window_surfaces( FALSE );
-        user_driver->pProcessEvents( QS_ALLINPUT );
+        process_driver_events( QS_ALLINPUT, 0, 0 );
         get_user_thread_info()->last_driver_time = get_driver_check_time();
     }
 }
@@ -3109,13 +3320,21 @@ static inline LARGE_INTEGER *get_nt_timeout( LARGE_INTEGER *time, DWORD timeout 
 }
 
 /* wait for message or signaled handle */
-static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DWORD mask, DWORD flags )
+static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DWORD wake_mask, DWORD changed_mask, DWORD flags )
 {
     struct thunk_lock_params params = {.dispatch.callback = thunk_lock_callback};
-    LARGE_INTEGER time;
-    DWORD ret;
+    WAIT_TYPE type = flags & MWMO_WAITALL ? WaitAll : WaitAny;
+    LARGE_INTEGER time, now, *abs;
     void *ret_ptr;
     ULONG ret_len;
+    HANDLE event;
+    DWORD ret;
+
+    if ((abs = get_nt_timeout( &time, timeout )))
+    {
+        NtQuerySystemTime( &now );
+        abs->QuadPart = now.QuadPart - abs->QuadPart;
+    }
 
     if (!KeUserDispatchCallback( &params.dispatch, sizeof(params), &ret_ptr, &ret_len ) &&
         ret_len == sizeof(params.locks))
@@ -3124,17 +3343,16 @@ static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DW
         params.restore = TRUE;
     }
 
-    if (user_driver->pProcessEvents( mask )) ret = count - 1;
-    else
+    process_driver_events( QS_ALLINPUT, wake_mask, changed_mask );
+    if (!(changed_mask & QS_SMRESULT) && (event = get_user_thread_info()->idle_event)) NtSetEvent( event, NULL );
+
+    do ret = NtWaitForMultipleObjects( count, handles, type, !!(flags & MWMO_ALERTABLE), abs );
+    while (ret == count - 1 && !process_driver_events( QS_ALLINPUT, wake_mask, changed_mask ));
+
+    if (HIWORD(ret)) /* is it an error code? */
     {
-        ret = NtWaitForMultipleObjects( count, handles, !(flags & MWMO_WAITALL),
-                                        !!(flags & MWMO_ALERTABLE), get_nt_timeout( &time, timeout ));
-        if (ret == count - 1) user_driver->pProcessEvents( mask );
-        else if (HIWORD(ret)) /* is it an error code? */
-        {
-            RtlSetLastWin32Error( RtlNtStatusToDosError(ret) );
-            ret = WAIT_FAILED;
-        }
+        RtlSetLastWin32Error( RtlNtStatusToDosError(ret) );
+        ret = WAIT_FAILED;
     }
 
     if (ret == WAIT_TIMEOUT && !count && !timeout) NtYieldExecution();
@@ -3143,23 +3361,6 @@ static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DW
     KeUserDispatchCallback( &params.dispatch, sizeof(params), &ret_ptr, &ret_len );
 
     return ret;
-}
-
-/***********************************************************************
- *           check_queue_masks
- */
-static BOOL check_queue_masks( UINT wake_mask, UINT changed_mask )
-{
-    struct object_lock lock = OBJECT_LOCK_INIT;
-    const queue_shm_t *queue_shm;
-    BOOL skip = FALSE;
-    UINT status;
-
-    while ((status = get_shared_queue( &lock, &queue_shm )) == STATUS_PENDING)
-        skip = queue_shm->wake_mask == wake_mask && queue_shm->changed_mask == changed_mask;
-
-    if (status) return FALSE;
-    return skip;
 }
 
 /***********************************************************************
@@ -3174,19 +3375,7 @@ static DWORD wait_objects( DWORD count, const HANDLE *handles, DWORD timeout,
 
     flush_window_surfaces( TRUE );
 
-    if (!check_queue_masks( wake_mask, changed_mask ))
-    {
-        SERVER_START_REQ( set_queue_mask )
-        {
-            req->wake_mask    = wake_mask;
-            req->changed_mask = changed_mask;
-            req->skip_wait    = 0;
-            wine_server_call( req );
-        }
-        SERVER_END_REQ;
-    }
-
-    return wait_message( count, handles, timeout, changed_mask, flags );
+    return wait_message( count, handles, timeout, wake_mask, changed_mask, flags );
 }
 
 static HANDLE normalize_std_handle( HANDLE handle )
@@ -3495,13 +3684,12 @@ static void wait_message_reply( UINT flags )
         UINT wake_bits, changed_bits;
 
         if (check_queue_bits( wake_mask, wake_mask, wake_mask, wake_mask,
-                              &wake_bits, &changed_bits ))
+                              &wake_bits, &changed_bits, FALSE ))
             wake_bits = wake_bits & wake_mask;
         else SERVER_START_REQ( set_queue_mask )
         {
             req->wake_mask    = wake_mask;
             req->changed_mask = wake_mask;
-            req->skip_wait    = 1;
             wine_server_call( req );
             wake_bits = reply->wake_bits & wake_mask;
         }
@@ -3515,7 +3703,7 @@ static void wait_message_reply( UINT flags )
             continue;
         }
 
-        wait_message( 1, &server_queue, INFINITE, wake_mask, 0 );
+        wait_message( 1, &server_queue, INFINITE, wake_mask, wake_mask, 0 );
     }
 }
 
@@ -3734,9 +3922,9 @@ NTSTATUS send_hardware_message( HWND hwnd, UINT flags, const INPUT *input, LPARA
 }
 
 /***********************************************************************
- *		post_quit_message
+ *		NtUserPostQuitMessage  (win32u.@)
  */
-BOOL post_quit_message( int exit_code )
+BOOL WINAPI NtUserPostQuitMessage( INT exit_code )
 {
     SERVER_START_REQ( post_quit_message )
     {
@@ -3949,8 +4137,7 @@ static LRESULT call_messageAtoW( winproc_callback_t callback, HWND hwnd, UINT ms
 {
     LRESULT ret = 0;
 
-    TRACE( "(hwnd=%p,msg=%s,wp=%#lx,lp=%#lx)\n", hwnd, debugstr_msg_name( msg, hwnd ),
-           (long)wparam, (long)lparam );
+    TRACE( "(hwnd=%p,msg=%s,wp=%#lx,lp=%#lx)\n", hwnd, debugstr_msg_name( msg, hwnd ), (long)wparam, lparam );
 
     switch(msg)
     {
@@ -4156,7 +4343,9 @@ static BOOL process_message( struct send_message_info *info, DWORD_PTR *res_ptr,
     thread_info->msg_source = msg_source_unavailable;
     spy_enter_message( SPY_SENDMESSAGE, info->hwnd, info->msg, info->wparam, info->lparam );
 
-    if (info->dest_tid != GetCurrentThreadId())
+    if (info->dest_tid != GetCurrentThreadId() ||
+        /* When the callback pointer is NULL and the data is 1, don't wait for the result */
+        (info->type == MSG_CALLBACK && !info->callback && info->data == 1))
     {
         if (dest_pid != GetCurrentProcessId() && (info->type == MSG_ASCII || info->type == MSG_UNICODE))
             info->type = MSG_OTHER_PROCESS;
@@ -4263,8 +4452,10 @@ BOOL WINAPI NtUserKillTimer( HWND hwnd, UINT_PTR id )
     return ret;
 }
 
-/* see KillSystemTimer */
-BOOL kill_system_timer( HWND hwnd, UINT_PTR id )
+/***********************************************************************
+ *           NtUserKillSystemTimer (win32u.@)
+ */
+BOOL WINAPI NtUserKillSystemTimer( HWND hwnd, UINT_PTR id )
 {
     BOOL ret;
 
@@ -4534,8 +4725,11 @@ LRESULT WINAPI NtUserMessageCall( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
     case NtUserPostDdeCall:
         return post_dde_message_call( hwnd, msg, wparam, lparam, result_info );
 
+    case NtUserWintabDriverCall:
+        return user_driver->pWintabProc( hwnd, msg, wparam, lparam, result_info );
+
     default:
-        FIXME( "%p %x %lx %lx %p %x %x\n", hwnd, msg, (long)wparam, lparam, result_info, (int)type, ansi );
+        FIXME( "%p %x %lx %lx %p %x %x\n", hwnd, msg, (long)wparam, lparam, result_info, type, ansi );
     }
     return 0;
 }
@@ -4597,5 +4791,21 @@ BOOL WINAPI NtUserTranslateMessage( const MSG *msg, UINT flags )
         for (i = 0; i < len; i++)
             NtUserPostMessage( msg->hwnd, message, wp[i], msg->lParam );
     }
+    return TRUE;
+}
+
+/***********************************************************************
+ *           NtUserGetCurrentInputMessageSource (win32u.@)
+ */
+BOOL WINAPI NtUserGetCurrentInputMessageSource( INPUT_MESSAGE_SOURCE *source )
+{
+    TRACE( "source %p.\n", source );
+
+    if (!source)
+    {
+        RtlSetLastWin32Error( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    *source = NtUserGetThreadInfo()->msg_source;
     return TRUE;
 }

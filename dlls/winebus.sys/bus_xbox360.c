@@ -85,6 +85,7 @@
 #endif /* HAVE_IOKIT_USB_IOUSBLIB_H */
 
 #include <pthread.h>
+#include <sys/utsname.h>
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -599,6 +600,19 @@ static void handle_IOServiceTerminatedCallback(void *refcon, io_iterator_t iter)
     }
 }
 
+static BOOL sequoia_or_later(void)
+{
+    int result;
+    struct utsname name;
+    unsigned major, minor;
+
+    result = (uname( &name ) == 0 &&
+              sscanf( name.release, "%u.%u", &major, &minor ) == 2 &&
+              major >= 24 /* macOS 15 Sequoia */);
+
+    return (result == 1) ? TRUE : FALSE;
+}
+
 NTSTATUS xbox_bus_init(void *args)
 {
     IONotificationPortRef notificationObject;
@@ -608,6 +622,13 @@ NTSTATUS xbox_bus_init(void *args)
     io_object_t object;
 
     TRACE("args %p\n", args);
+
+    /* In Sequoia and later, GameController.framework supports wired XBOX 360 controllers */
+    if (sequoia_or_later())
+    {
+        TRACE("disabled: running on macOS Sequoia or later\n");
+        return STATUS_SUCCESS;
+    }
 
     options = *(struct xbox_bus_options *)args;
 
@@ -644,6 +665,13 @@ NTSTATUS xbox_bus_wait(void *args)
 
     /* cleanup previously returned event */
     bus_event_cleanup(result);
+
+    /* In Sequoia and later, GameController.framework supports wired XBOX 360 controllers */
+    if (sequoia_or_later())
+    {
+        TRACE("disabled: running on macOS Sequoia or later\n");
+        return STATUS_SUCCESS;
+    }
 
     do
     {

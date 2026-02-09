@@ -350,41 +350,6 @@ extern int _dyld_func_lookup( const char *dyld_func_name, void **address );
 
 /* replacement for libc functions */
 
-#ifdef __i386__ /* CrossOver Hack #16371 */
-static inline size_t wld_strlen( const char *str )
-{
-    size_t len;
-    for (len = 0; str[len]; ++len)
-        /* nothing */;
-    return len;
-}
-
-static inline int wld_tolower( int c )
-{
-    if ('A' <= c && c <= 'Z')
-        return c - 'A' + 'a';
-    return c;
-}
-
-static inline int wld_strncasecmp( const char *str1, const char *str2, size_t len )
-{
-    if (len <= 0) return 0;
-    while ((--len > 0) && *str1 && (wld_tolower(*str1) == wld_tolower(*str2))) { str1++; str2++; }
-    return wld_tolower(*str1) - wld_tolower(*str2);
-}
-
-static inline const char * wld_strcasestr( const char *haystack, const char *needle )
-{
-    size_t len = wld_strlen(needle);
-    for ( ; *haystack ; ++haystack)
-    {
-        if (!wld_strncasecmp(haystack, needle, len))
-            return haystack;
-    }
-    return NULL;
-}
-#endif
-
 void * memmove( void *dst, const void *src, size_t len )
 {
     char *d = dst;
@@ -750,19 +715,6 @@ void *wld_start( void *stack, int *is_unix_thread )
     LOAD_POSIX_DYLD_FUNC( dlsym );
     LOAD_POSIX_DYLD_FUNC( dladdr );
     LOAD_MACHO_DYLD_FUNC( _dyld_get_image_slide );
-
-#ifdef __i386__ /* CrossOver Hack #16371 */
-    {
-        const char *qw;
-        if (*pargc >= 3 && (qw = wld_strcasestr(argv[2], "qw")) && wld_strcasestr(qw + 2, "patch.exe"))
-        {
-            if (preload_info[3].addr == (void *)0x00110000 && preload_info[3].size == 0x67ef0000)
-                preload_info[3].size = 0x70ef0000;
-            else
-                wld_printf( "warning: detected Quicken patcher (%s) but preload_info is not as expected; not applying adjustment", argv[2] );
-        }
-    }
-#endif
 
     /* reserve memory that Wine needs */
     if (reserve) preload_reserve( reserve );

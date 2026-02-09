@@ -29,6 +29,7 @@
 #include "winbase.h"
 #include "winreg.h"
 #include "ntuser.h"
+#include "ntgdi.h"
 #include "malloc.h"
 
 #include "unixlib.h"
@@ -36,7 +37,7 @@
 
 #include "wine/glu.h"
 #include "wine/debug.h"
-#include "wine/wgl_driver.h"
+#include "wine/opengl_driver.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(opengl);
 WINE_DECLARE_DEBUG_CHANNEL(fps);
@@ -124,6 +125,7 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
     PIXELFORMATDESCRIPTOR format, best;
     int i, count, best_format;
     int bestDBuffer = -1, bestStereo = -1;
+    DWORD is_memdc;
 
     TRACE( "%p %p: size %u version %u flags %lu type %u color %u %u,%u,%u,%u "
            "accum %u depth %u stencil %u aux %u\n",
@@ -134,6 +136,8 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
     count = wglDescribePixelFormat( hdc, 0, 0, NULL );
     if (!count) return 0;
 
+    if (!NtGdiGetDCDword( hdc, NtGdiIsMemDC, &is_memdc )) is_memdc = 0;
+
     best_format = 0;
     best.dwFlags = 0;
     best.cAlphaBits = -1;
@@ -141,6 +145,7 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
     best.cDepthBits = -1;
     best.cStencilBits = -1;
     best.cAuxBuffers = -1;
+    best.cAccumBits = -1;
 
     for (i = 1; i <= count; i++)
     {
@@ -171,6 +176,11 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
         if ((ppfd->dwFlags & PFD_SUPPORT_OPENGL) && !(format.dwFlags & PFD_SUPPORT_OPENGL))
         {
             TRACE( "PFD_SUPPORT_OPENGL required but not found for iPixelFormat=%d\n", i );
+            continue;
+        }
+        if (is_memdc && ppfd->cColorBits == 16 && ppfd->cAlphaBits != 1)
+        {
+            TRACE( "Ignoring iPixelFormat=%d RGB565 format on memory DC\n", i );
             continue;
         }
 
@@ -285,6 +295,18 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
                 continue;
             }
         }
+        if (ppfd->cAccumBits)
+        {
+            if (((ppfd->cAccumBits > best.cAccumBits) && (format.cAccumBits > best.cAccumBits)) ||
+                ((format.cAccumBits >= ppfd->cAccumBits) && (format.cAccumBits < best.cAccumBits)))
+                goto found;
+
+            if (best.cAccumBits != format.cAccumBits)
+            {
+                TRACE( "cAccumBits mismatch for iPixelFormat=%d\n", i );
+                continue;
+            }
+        }
         if (ppfd->dwFlags & PFD_DEPTH_DONTCARE)
         {
             if (format.cDepthBits < best.cDepthBits)
@@ -314,6 +336,14 @@ static struct wgl_pixel_format *get_pixel_formats( HDC hdc, UINT *num_formats,
     struct get_pixel_formats_params args = { .teb = NtCurrentTeb(), .hdc = hdc };
     PVOID *glReserved = NtCurrentTeb()->glReserved1;
     NTSTATUS status;
+    DWORD is_memdc;
+
+    *num_formats = *num_onscreen_formats = 0;
+    if (!NtGdiGetDCDword( hdc, NtGdiIsMemDC, &is_memdc ))
+    {
+        SetLastError( ERROR_INVALID_HANDLE );
+        return NULL;
+    }
 
     if (glReserved[WINE_GL_RESERVED_FORMATS_HDC] == hdc)
     {
@@ -328,6 +358,8 @@ static struct wgl_pixel_format *get_pixel_formats( HDC hdc, UINT *num_formats,
     if (!(args.formats = calloc( args.num_formats, sizeof(*args.formats) ))) goto error;
     args.max_formats = args.num_formats;
     if ((status = UNIX_CALL( get_pixel_formats, &args ))) goto error;
+
+    if (is_memdc) args.num_onscreen_formats = args.num_formats;
 
     *num_formats = args.num_formats;
     *num_onscreen_formats = args.num_onscreen_formats;
@@ -511,7 +543,6 @@ static enum attrib_match wgl_attrib_match_criteria( int attrib )
     case WGL_NEED_PALETTE_ARB:
     case WGL_NEED_SYSTEM_PALETTE_ARB:
     case WGL_SWAP_LAYER_BUFFERS_ARB:
-    case WGL_SWAP_METHOD_ARB:
     case WGL_SHARE_DEPTH_ARB:
     case WGL_SHARE_STENCIL_ARB:
     case WGL_SHARE_ACCUM_ARB:
@@ -557,6 +588,7 @@ static enum attrib_match wgl_attrib_match_criteria( int attrib )
     case WGL_TRANSPARENT_BLUE_VALUE_ARB:
     case WGL_TRANSPARENT_ALPHA_VALUE_ARB:
     case WGL_TRANSPARENT_INDEX_VALUE_ARB:
+    case WGL_SWAP_METHOD_ARB:
         return ATTRIB_MATCH_IGNORE;
     default:
         return ATTRIB_MATCH_INVALID;
@@ -572,14 +604,15 @@ static void filter_format_array( const struct wgl_pixel_format **array,
 
     assert(match != ATTRIB_MATCH_INVALID);
 
-    if (match == ATTRIB_MATCH_IGNORE) return;
+    if (match == ATTRIB_MATCH_IGNORE && attrib != WGL_SWAP_METHOD_ARB) return;
 
     for (i = 0; i < num_formats; ++i)
     {
         if (!array[i]) continue;
         if (!wgl_pixel_format_get_attrib( array[i], attrib, &fmt_value ) ||
             (match == ATTRIB_MATCH_EXACT && fmt_value != value) ||
-            (match == ATTRIB_MATCH_MINIMUM && fmt_value < value))
+            (match == ATTRIB_MATCH_MINIMUM && fmt_value < value) ||
+            (attrib == WGL_SWAP_METHOD_ARB && ((fmt_value == WGL_SWAP_COPY_ARB) ^ (value == WGL_SWAP_COPY_ARB))))
         {
             array[i] = NULL;
         }
@@ -703,9 +736,12 @@ BOOL WINAPI wglChoosePixelFormatARB( HDC hdc, const int *attribs_int, const FLOA
     UINT i, num_wgl_formats, num_wgl_onscreen_formats;
     const struct wgl_pixel_format **format_array;
     struct compare_formats_ctx ctx = { 0 };
+    DWORD is_memdc;
 
     TRACE( "hdc %p, attribs_int %p, attribs_float %p, max_formats %u, formats %p, num_formats %p\n",
            hdc, attribs_int, attribs_float, max_formats, formats, num_formats );
+
+    if (!NtGdiGetDCDword( hdc, NtGdiIsMemDC, &is_memdc )) is_memdc = 0;
 
     wgl_formats = get_pixel_formats( hdc, &num_wgl_formats, &num_wgl_onscreen_formats );
 
@@ -746,7 +782,12 @@ BOOL WINAPI wglChoosePixelFormatARB( HDC hdc, const int *attribs_int, const FLOA
     /* Initialize the format_array with (pointers to) all wgl formats */
     format_array = malloc( num_wgl_formats * sizeof(*format_array) );
     if (!format_array) return FALSE;
-    for (i = 0; i < num_wgl_formats; ++i) format_array[i] = &wgl_formats[i];
+    for (i = 0; i < num_wgl_formats; ++i)
+    {
+        struct wgl_pixel_format *format = wgl_formats + i;
+        if (is_memdc && format->pfd.cColorBits == 16 && format->pfd.cAlphaBits != 1) format_array[i] = NULL;
+        else format_array[i] = &wgl_formats[i];
+    }
 
     /* Remove formats that are not acceptable */
     for (i = 0; i < ctx.num_attribs; ++i)
@@ -781,7 +822,7 @@ INT WINAPI wglDescribePixelFormat( HDC hdc, int index, UINT size, PIXELFORMATDES
     struct wgl_pixel_format *formats;
     UINT num_formats, num_onscreen_formats;
 
-    TRACE( "hdc %p, index %d, size %u, ppfd %p\n", hdc, index, index, ppfd );
+    TRACE( "hdc %p, index %d, size %u, ppfd %p\n", hdc, index, size, ppfd );
 
     if (!(formats = get_pixel_formats( hdc, &num_formats, &num_onscreen_formats ))) return 0;
     if (!ppfd) return num_onscreen_formats;
@@ -1645,7 +1686,7 @@ const GLchar * WINAPI wglQueryRendererStringWINE( HDC dc, GLint renderer, GLenum
     TRACE( "dc %p, renderer %d, attribute %d\n", dc, renderer, attribute );
 
 #ifndef _WIN64
-    if (UNIX_CALL( wglQueryCurrentRendererStringWINE, &args ) == STATUS_BUFFER_TOO_SMALL) args.ret = wow64_str = malloc( (size_t)args.ret );
+    if (UNIX_CALL( wglQueryRendererStringWINE, &args ) == STATUS_BUFFER_TOO_SMALL) args.ret = wow64_str = malloc( (size_t)args.ret );
 #endif
     if ((status = UNIX_CALL( wglQueryRendererStringWINE, &args ))) WARN( "wglQueryRendererStringWINE returned %#lx\n", status );
 #ifndef _WIN64
@@ -1653,238 +1694,6 @@ const GLchar * WINAPI wglQueryRendererStringWINE( HDC dc, GLint renderer, GLenum
     else if (args.ret) append_wow64_string( wow64_str );
 #endif
     return args.ret;
-}
-
-#ifndef _WIN64
-static void *get_buffer_pointer( GLenum target )
-{
-    void (WINAPI *p_glGetBufferPointerv)( GLenum target, GLenum pname, void **params );
-    void *ptr;
-    if (!(p_glGetBufferPointerv = (void *)wglGetProcAddress( "glGetBufferPointerv" ))) return 0;
-    p_glGetBufferPointerv( target, GL_BUFFER_MAP_POINTER, &ptr );
-    return ptr;
-}
-
-static void *get_named_buffer_pointer( GLint buffer )
-{
-    void (WINAPI *p_glGetNamedBufferPointerv)( GLuint buffer, GLenum pname, void **params );
-    void *ptr;
-    if (!(p_glGetNamedBufferPointerv = (void *)wglGetProcAddress( "glGetNamedBufferPointerv" ))) return 0;
-    p_glGetNamedBufferPointerv( buffer, GL_BUFFER_MAP_POINTER, &ptr );
-    return ptr;
-}
-#endif
-
-static void *gl_map_buffer( enum unix_funcs code, GLenum target, GLenum access )
-{
-    struct glMapBuffer_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .target = target,
-        .access = access,
-    };
-    NTSTATUS status;
-
-    TRACE( "target %d, access %d\n", target, access );
-
-    if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Unable to map wow64 buffer directly, using copy buffer!\n" );
-        if (!(args.ret = _aligned_malloc( (size_t)args.ret, 16 ))) status = STATUS_NO_MEMORY;
-        else if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-        _aligned_free( args.ret );
-    }
-#endif
-    WARN( "glMapBuffer returned %#lx\n", status );
-    return args.ret;
-}
-
-void * WINAPI glMapBuffer( GLenum target, GLenum access )
-{
-    return gl_map_buffer( unix_glMapBuffer, target, access );
-}
-
-void * WINAPI glMapBufferARB( GLenum target, GLenum access )
-{
-    return gl_map_buffer( unix_glMapBufferARB, target, access );
-}
-
-void * WINAPI glMapBufferRange( GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access )
-{
-    struct glMapBufferRange_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .target = target,
-        .offset = offset,
-        .length = length,
-        .access = access,
-    };
-    NTSTATUS status;
-
-    TRACE( "target %d, offset %Id, length %Id, access %d\n", target, offset, length, access );
-
-    if (!(status = UNIX_CALL( glMapBufferRange, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Unable to map wow64 buffer directly, using copy buffer!\n" );
-        if (!(args.ret = _aligned_malloc( length, 16 ))) status = STATUS_NO_MEMORY;
-        else if (!(status = UNIX_CALL( glMapBufferRange, &args ))) return args.ret;
-        _aligned_free( args.ret );
-    }
-#endif
-    WARN( "glMapBufferRange returned %#lx\n", status );
-    return args.ret;
-}
-
-static void *gl_map_named_buffer( enum unix_funcs code, GLuint buffer, GLenum access )
-{
-    struct glMapNamedBuffer_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .buffer = buffer,
-        .access = access,
-    };
-    NTSTATUS status;
-
-    TRACE( "(%d, %d)\n", buffer, access );
-
-    if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Unable to map wow64 buffer directly, using copy buffer!\n" );
-        if (!(args.ret = _aligned_malloc( (size_t)args.ret, 16 ))) status = STATUS_NO_MEMORY;
-        else if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-        _aligned_free( args.ret );
-    }
-#endif
-    WARN( "glMapNamedBuffer returned %#lx\n", status );
-    return args.ret;
-}
-
-void * WINAPI glMapNamedBuffer( GLuint buffer, GLenum access )
-{
-    return gl_map_named_buffer( unix_glMapNamedBuffer, buffer, access );
-}
-
-void * WINAPI glMapNamedBufferEXT( GLuint buffer, GLenum access )
-{
-    return gl_map_named_buffer( unix_glMapNamedBufferEXT, buffer, access );
-}
-
-static void *gl_map_named_buffer_range( enum unix_funcs code, GLuint buffer, GLintptr offset, GLsizeiptr length, GLbitfield access )
-{
-    struct glMapNamedBufferRange_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .buffer = buffer,
-        .offset = offset,
-        .length = length,
-        .access = access,
-    };
-    NTSTATUS status;
-
-    TRACE( "buffer %d, offset %Id, length %Id, access %d\n", buffer, offset, length, access );
-
-    if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Unable to map wow64 buffer directly, using copy buffer!\n" );
-        if (!(args.ret = _aligned_malloc( length, 16 ))) status = STATUS_NO_MEMORY;
-        else if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-        _aligned_free( args.ret );
-    }
-#endif
-    WARN( "glMapNamedBufferRange returned %#lx\n", status );
-    return args.ret;
-}
-
-void * WINAPI glMapNamedBufferRange( GLuint buffer, GLintptr offset, GLsizeiptr length, GLbitfield access )
-{
-    return gl_map_named_buffer_range( unix_glMapNamedBufferRange, buffer, offset, length, access );
-}
-
-void * WINAPI glMapNamedBufferRangeEXT( GLuint buffer, GLintptr offset, GLsizeiptr length, GLbitfield access )
-{
-    return gl_map_named_buffer_range( unix_glMapNamedBufferRangeEXT, buffer, offset, length, access );
-}
-
-static GLboolean gl_unmap_buffer( enum unix_funcs code, GLenum target )
-{
-    struct glUnmapBuffer_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .target = target,
-    };
-    NTSTATUS status;
-#ifndef _WIN64
-    void *ptr = get_buffer_pointer( target );
-#endif
-
-    TRACE( "target %d\n", target );
-
-    if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Releasing wow64 copy buffer %p\n", ptr );
-        _aligned_free( ptr );
-        return args.ret;
-    }
-#endif
-    WARN( "glUnmapBuffer returned %#lx\n", status );
-    return args.ret;
-}
-
-GLboolean WINAPI glUnmapBuffer( GLenum target )
-{
-    return gl_unmap_buffer( unix_glUnmapBuffer, target );
-}
-
-GLboolean WINAPI glUnmapBufferARB( GLenum target )
-{
-    return gl_unmap_buffer( unix_glUnmapBufferARB, target );
-}
-
-static GLboolean gl_unmap_named_buffer( enum unix_funcs code, GLuint buffer )
-{
-    struct glUnmapNamedBuffer_params args =
-    {
-        .teb = NtCurrentTeb(),
-        .buffer = buffer,
-    };
-    NTSTATUS status;
-#ifndef _WIN64
-    void *ptr = get_named_buffer_pointer( buffer );
-#endif
-
-    TRACE( "buffer %d\n", buffer );
-
-    if (!(status = WINE_UNIX_CALL( code, &args ))) return args.ret;
-#ifndef _WIN64
-    if (status == STATUS_INVALID_ADDRESS)
-    {
-        TRACE( "Releasing wow64 copy buffer %p\n", ptr );
-        _aligned_free( ptr );
-        return args.ret;
-    }
-#endif
-    WARN( "glUnmapNamedBuffer returned %#lx\n", status );
-    return args.ret;
-}
-
-GLboolean WINAPI glUnmapNamedBuffer( GLuint buffer )
-{
-    return gl_unmap_named_buffer( unix_glUnmapNamedBuffer, buffer );
-}
-
-GLboolean WINAPI glUnmapNamedBufferEXT( GLuint buffer )
-{
-    return gl_unmap_named_buffer( unix_glUnmapNamedBufferEXT, buffer );
 }
 
 typedef void (WINAPI *gl_debug_message)(GLenum, GLenum, GLuint, GLenum, GLsizei, const GLchar *, const void *);

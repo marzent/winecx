@@ -678,8 +678,6 @@ static BOOL try_application_url(LPCWSTR url)
     DWORD res, type;
     HRESULT hres;
 
-    static const WCHAR wszURLProtocol[] = {'U','R','L',' ','P','r','o','t','o','c','o','l',0};
-
     hres = CoInternetParseUrl(url, PARSE_SCHEMA, 0, app, ARRAY_SIZE(app), NULL, 0);
     if(FAILED(hres))
         return FALSE;
@@ -688,7 +686,7 @@ static BOOL try_application_url(LPCWSTR url)
     if(res != ERROR_SUCCESS)
         return FALSE;
 
-    res = RegQueryValueExW(hkey, wszURLProtocol, NULL, &type, NULL, NULL);
+    res = RegQueryValueExW(hkey, L"URL Protocol", NULL, &type, NULL, NULL);
     RegCloseKey(hkey);
     if(res != ERROR_SUCCESS || type != REG_SZ)
         return FALSE;
@@ -851,6 +849,32 @@ static void doc_navigate_proc(DocHost *This, task_header_t *t)
     }
 }
 
+/* CW Hack 24590, 24557 */
+static void hack_pump_messages(void)
+{
+    static int enabled = -1;
+    MSG msg;
+
+    if (enabled == -1)
+    {
+        const char *sgi = getenv("SteamGameId");
+
+        enabled = sgi && !strcmp(sgi, "2767030");
+        if (enabled)
+            ERR("HACK: injecting PeekMessage loop in async_doc_navigate.\n");
+    }
+
+    if (!enabled)
+        return;
+
+    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
+    {
+        TRACE("dispatching.\n");
+        DispatchMessageW(&msg);
+    }
+    TRACE("no more messages.\n");
+}
+
 static HRESULT async_doc_navigate(DocHost *This, LPCWSTR url, LPCWSTR headers, PBYTE post_data, ULONG post_data_size,
         BOOL async_notif)
 {
@@ -899,6 +923,7 @@ static HRESULT async_doc_navigate(DocHost *This, LPCWSTR url, LPCWSTR headers, P
 
     task->async_notif = async_notif;
     abort_dochost_tasks(This, doc_navigate_proc);
+    hack_pump_messages();  /* CW Hack 24590, 24557 */
     push_dochost_task(This, &task->header, doc_navigate_proc, doc_navigate_task_destr, FALSE);
     return S_OK;
 }
@@ -1102,22 +1127,16 @@ HRESULT go_home(DocHost *This)
     HKEY hkey;
     DWORD res, type, size;
     WCHAR wszPageName[MAX_PATH];
-    static const WCHAR wszAboutBlank[] = {'a','b','o','u','t',':','b','l','a','n','k',0};
-    static const WCHAR wszStartPage[] = {'S','t','a','r','t',' ','P','a','g','e',0};
-    static const WCHAR wszSubKey[] = {'S','o','f','t','w','a','r','e','\\',
-                                      'M','i','c','r','o','s','o','f','t','\\',
-                                      'I','n','t','e','r','n','e','t',' ','E','x','p','l','o','r','e','r','\\',
-                                      'M','a','i','n',0};
 
-    res = RegOpenKeyW(HKEY_CURRENT_USER, wszSubKey, &hkey);
+    res = RegOpenKeyW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Internet Explorer\\Main", &hkey);
     if (res != ERROR_SUCCESS)
-        return navigate_url(This, wszAboutBlank, NULL, NULL, NULL, NULL);
+        return navigate_url(This, L"about:blank", NULL, NULL, NULL, NULL);
 
     size = sizeof(wszPageName);
-    res = RegQueryValueExW(hkey, wszStartPage, NULL, &type, (LPBYTE)wszPageName, &size);
+    res = RegQueryValueExW(hkey, L"Start Page", NULL, &type, (LPBYTE)wszPageName, &size);
     RegCloseKey(hkey);
     if (res != ERROR_SUCCESS || type != REG_SZ)
-        return navigate_url(This, wszAboutBlank, NULL, NULL, NULL, NULL);
+        return navigate_url(This, L"about:blank", NULL, NULL, NULL, NULL);
 
     return navigate_url(This, wszPageName, NULL, NULL, NULL, NULL);
 }

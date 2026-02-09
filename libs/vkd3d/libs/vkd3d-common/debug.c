@@ -40,8 +40,6 @@
 #define VKD3D_DEBUG_BUFFER_COUNT 64
 #define VKD3D_DEBUG_BUFFER_SIZE 512
 
-extern const char *const vkd3d_dbg_env_name;
-
 static const char *const debug_level_names[] =
 {
     [VKD3D_DBG_LEVEL_NONE ] =   "none",
@@ -52,7 +50,7 @@ static const char *const debug_level_names[] =
     [VKD3D_DBG_LEVEL_TRACE] =   "trace",
 };
 
-enum vkd3d_dbg_level vkd3d_dbg_get_level(void)
+enum vkd3d_dbg_level vkd3d_dbg_get_level(const char *vkd3d_dbg_env_name)
 {
     static unsigned int level = ~0u;
     const char *vkd3d_debug;
@@ -97,17 +95,31 @@ static void vkd3d_dbg_output(const char *fmt, ...)
     va_end(args);
 }
 
-void vkd3d_dbg_printf(enum vkd3d_dbg_level level, const char *function, const char *fmt, ...)
+#if HAVE_PTHREAD_THREADID_NP
+static uint64_t get_pthread_threadid(void)
+{
+    uint64_t thread_id;
+
+    pthread_threadid_np(NULL, &thread_id);
+
+    return thread_id;
+}
+#endif
+
+void vkd3d_dbg_printf(const char *vkd3d_dbg_env_name,
+        enum vkd3d_dbg_level level, const char *function, const char *fmt, ...)
 {
     va_list args;
 
-    if (vkd3d_dbg_get_level() < level)
+    if (vkd3d_dbg_get_level(vkd3d_dbg_env_name) < level)
         return;
 
 #ifdef _WIN32
     vkd3d_dbg_output("vkd3d:%04lx:%s:%s ", GetCurrentThreadId(), debug_level_names[level], function);
 #elif HAVE_GETTID
     vkd3d_dbg_output("vkd3d:%u:%s:%s ", gettid(), debug_level_names[level], function);
+#elif HAVE_PTHREAD_THREADID_NP
+    vkd3d_dbg_output("vkd3d:%"PRIu64":%s:%s ", get_pthread_threadid(), debug_level_names[level], function);
 #else
     vkd3d_dbg_output("vkd3d:%s:%s ", debug_level_names[level], function);
 #endif

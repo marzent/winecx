@@ -347,24 +347,8 @@ INT WINAPI NtUserGetPriorityClipboardFormat( UINT *list, INT count )
  */
 INT WINAPI NtUserGetClipboardFormatName( UINT format, WCHAR *buffer, INT maxlen )
 {
-    char buf[sizeof(ATOM_BASIC_INFORMATION) + MAX_ATOM_LEN * sizeof(WCHAR)];
-    ATOM_BASIC_INFORMATION *abi = (ATOM_BASIC_INFORMATION *)buf;
-    UINT length = 0;
-
-    if (format < MAXINTATOM || format > 0xffff) return 0;
-    if (maxlen <= 0)
-    {
-        RtlSetLastWin32Error( ERROR_MORE_DATA );
-        return 0;
-    }
-    if (!set_ntstatus( NtQueryInformationAtom( format, AtomBasicInformation,
-                                               buf, sizeof(buf), NULL )))
-        return 0;
-
-    length = min( abi->NameLength / sizeof(WCHAR), maxlen - 1 );
-    if (length) memcpy( buffer, abi->Name, length * sizeof(WCHAR) );
-    buffer[length] = 0;
-    return length;
+    UNICODE_STRING str = {.Buffer = buffer, .MaximumLength = maxlen};
+    return NtUserGetAtomName( format, &str );
 }
 
 /**************************************************************************
@@ -487,8 +471,10 @@ DWORD WINAPI NtUserGetClipboardSequenceNumber(void)
     return seqno;
 }
 
-/* see EnumClipboardFormats */
-UINT enum_clipboard_formats( UINT format )
+/**************************************************************************
+ *	     NtUserEnumClipboardFormats    (win32u.@)
+ */
+UINT WINAPI NtUserEnumClipboardFormats( UINT format )
 {
     UINT ret = 0;
 

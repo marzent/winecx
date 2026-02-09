@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <fenv.h>
 #include <fpieee.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
@@ -468,7 +469,7 @@ double CDECL MSVCRT_tanh( double x )
 }
 #endif
 
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__i386__)
+#ifdef __i386__
 
 #define CREATE_FPU_FUNC1(name, call) \
     __ASM_GLOBAL_FUNC(name, \
@@ -582,7 +583,7 @@ __ASM_GLOBAL_FUNC(_ftol,
         __ASM_CFI(".cfi_same_value %ebp\n\t")
         "ret")
 
-#endif /* (defined(__GNUC__) || defined(__clang__)) && defined(__i386__) */
+#endif /* __i386__ */
 
 /*********************************************************************
  *		_fpclass (MSVCRT.@)
@@ -731,7 +732,6 @@ static void set_mxcsr( unsigned int val )
 static void _setfp_sse( unsigned int *cw, unsigned int cw_mask,
         unsigned int *sw, unsigned int sw_mask )
 {
-#if defined(__GNUC__) || defined(__clang__)
     unsigned int old_fpword, fpword = get_mxcsr();
     unsigned int flags;
 
@@ -815,18 +815,13 @@ static void _setfp_sse( unsigned int *cw, unsigned int cw_mask,
     }
 
     if (fpword != old_fpword) set_mxcsr( fpword );
-#else
-    FIXME("not implemented\n");
-    if (cw) *cw = 0;
-    if (sw) *sw = 0;
-#endif
 }
 #endif
 
 static void _setfp( unsigned int *cw, unsigned int cw_mask,
         unsigned int *sw, unsigned int sw_mask )
 {
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__i386__)
+#ifdef __i386__
     unsigned long oldcw = 0, newcw = 0;
     unsigned long oldsw = 0, newsw = 0;
     unsigned int flags;
@@ -1414,15 +1409,25 @@ int CDECL fegetenv(fenv_t *env)
 }
 
 /*********************************************************************
+ *      feraiseexcept (MSVCR120.@)
+ */
+int CDECL feraiseexcept(int flags)
+{
+    fenv_t env;
+
+    flags &= FE_ALL_EXCEPT;
+    fegetenv(&env);
+    env._Fe_stat |= fenv_encode(flags, flags);
+    return fesetenv(&env);
+}
+
+/*********************************************************************
  *		feupdateenv (MSVCR120.@)
  */
 int CDECL feupdateenv(const fenv_t *env)
 {
-    fenv_t set;
-    fegetenv(&set);
-    set._Fe_ctl = env->_Fe_ctl;
-    set._Fe_stat |= env->_Fe_stat;
-    return fesetenv(&set);
+    int except = fetestexcept(FE_ALL_EXCEPT);
+    return fesetenv(env) || feraiseexcept(except);
 }
 
 /*********************************************************************
@@ -1447,19 +1452,6 @@ int CDECL fesetexceptflag(const fexcept_t *status, int excepts)
     fegetenv(&env);
     env._Fe_stat &= ~fenv_encode(excepts, excepts);
     env._Fe_stat |= *status & fenv_encode(excepts, excepts);
-    return fesetenv(&env);
-}
-
-/*********************************************************************
- *      feraiseexcept (MSVCR120.@)
- */
-int CDECL feraiseexcept(int flags)
-{
-    fenv_t env;
-
-    flags &= FE_ALL_EXCEPT;
-    fegetenv(&env);
-    env._Fe_stat |= fenv_encode(flags, flags);
     return fesetenv(&env);
 }
 
@@ -1548,7 +1540,7 @@ int CDECL _finite(double num)
  */
 void CDECL _fpreset(void)
 {
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__i386__)
+#ifdef __i386__
     const unsigned int x86_cw = 0x27f;
     __asm__ __volatile__( "fninit; fldcw %0" : : "m" (x86_cw) );
     if (sse2_supported)
@@ -1624,23 +1616,6 @@ int CDECL _isnan(double num)
 #if _MSVCR_VER>=120
 
 /*********************************************************************
- *      rint (MSVCR120.@)
- */
-double CDECL MSVCRT_rint(double x)
-{
-    unsigned cw;
-    double y;
-
-    cw = _controlfp(0, 0);
-    if ((cw & _MCW_PC) != _PC_53)
-        _controlfp(_PC_53, _MCW_PC);
-    y = rint(x);
-    if ((cw & _MCW_PC) != _PC_53)
-        _controlfp(cw, _MCW_PC);
-    return y;
-}
-
-/*********************************************************************
  *		_nearbyint (MSVCR120.@)
  *
  * Based on musl: src/math/nearbyteint.c
@@ -1658,7 +1633,7 @@ double CDECL nearbyint(double x)
         cw |= _EM_INEXACT;
         _setfp(&cw, _EM_INEXACT, NULL, 0);
     }
-    x = MSVCRT_rint(x);
+    x = rint(x);
     if (update_cw || update_sw)
     {
         sw = 0;
@@ -2090,6 +2065,20 @@ lldiv_t CDECL lldiv(__int64 num, __int64 denom)
   ret.quot = num / denom;
   ret.rem = num % denom;
 
+  return ret;
+}
+#endif
+
+#if _MSVCR_VER>=120
+/*********************************************************************
+ *              imaxdiv (MSVCR100.@)
+ */
+imaxdiv_t CDECL imaxdiv(intmax_t num, intmax_t denom)
+{
+  imaxdiv_t ret;
+
+  ret.quot = num / denom;
+  ret.rem = num % denom;
   return ret;
 }
 #endif
@@ -2591,7 +2580,7 @@ __msvcrt_long CDECL lrint(double x)
 {
     double d;
 
-    d = MSVCRT_rint(x);
+    d = rint(x);
     if ((d < 0 && d != (double)(__msvcrt_long)d)
             || (d >= 0 && d != (double)(__msvcrt_ulong)d)) {
         *_errno() = EDOM;
@@ -2623,7 +2612,7 @@ __int64 CDECL llrint(double x)
 {
     double d;
 
-    d = MSVCRT_rint(x);
+    d = rint(x);
     if ((d < 0 && d != (double)(__int64)d)
             || (d >= 0 && d != (double)(unsigned __int64)d)) {
         *_errno() = EDOM;
@@ -2958,16 +2947,58 @@ double CDECL _except1(DWORD fpe, _FP_OPERATION_CODE op, double arg, double res, 
     return res;
 }
 
-_Dcomplex* CDECL _Cbuild(_Dcomplex *ret, double r, double i)
+_Dcomplex CDECL _Cbuild(double r, double i)
 {
-    ret->_Val[0] = r;
-    ret->_Val[1] = i;
+    _Dcomplex ret;
+    ret._Val[0] = r;
+    ret._Val[1] = i;
     return ret;
 }
 
-double CDECL MSVCR120_creal(_Dcomplex z)
+double CDECL creal(_Dcomplex z)
 {
     return z._Val[0];
+}
+
+double CDECL cimag(_Dcomplex z)
+{
+    return z._Val[1];
+}
+
+#if !defined(__i386__) || defined(__MINGW32__) || defined(_MSC_VER)
+_Fcomplex CDECL _FCbuild(float r, float i)
+{
+    _Fcomplex ret;
+    ret._Val[0] = r;
+    ret._Val[1] = i;
+    return ret;
+}
+#else
+#undef _FCbuild
+ULONGLONG CDECL _FCbuild(float r, float i)
+{
+    union
+    {
+        _Fcomplex c;
+        ULONGLONG ull;
+    } ret;
+
+    C_ASSERT(sizeof(_Fcomplex) == sizeof(ULONGLONG));
+
+    ret.c._Val[0] = r;
+    ret.c._Val[1] = i;
+    return ret.ull;
+}
+#endif
+
+float CDECL crealf(_Fcomplex z)
+{
+    return z._Val[0];
+}
+
+float CDECL cimagf(_Fcomplex z)
+{
+    return z._Val[1];
 }
 
 #endif /* _MSVCR_VER>=120 */

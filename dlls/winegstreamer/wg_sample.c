@@ -338,8 +338,7 @@ HRESULT wg_transform_push_mf(wg_transform_t transform, IMFSample *sample,
     return hr;
 }
 
-HRESULT wg_transform_read_mf(wg_transform_t transform, IMFSample *sample,
-        DWORD sample_size, DWORD *flags)
+HRESULT wg_transform_read_mf(wg_transform_t transform, IMFSample *sample, DWORD *flags, bool *preserve_timestamps)
 {
     struct wg_sample *wg_sample;
     IMFMediaBuffer *buffer;
@@ -368,6 +367,8 @@ HRESULT wg_transform_read_mf(wg_transform_t transform, IMFSample *sample,
         IMFSample_SetUINT32(sample, &MFSampleExtension_CleanPoint, 1);
     if (wg_sample->flags & WG_SAMPLE_FLAG_DISCONTINUITY)
         IMFSample_SetUINT32(sample, &MFSampleExtension_Discontinuity, 1);
+    if (preserve_timestamps)
+        *preserve_timestamps = !!(wg_sample->flags & WG_SAMPLE_FLAG_PRESERVE_TIMESTAMPS);
 
     if (SUCCEEDED(hr = IMFSample_ConvertToContiguousBuffer(sample, &buffer)))
     {
@@ -429,7 +430,7 @@ HRESULT wg_transform_read_quartz(wg_transform_t transform, struct wg_sample *wg_
     }
 
     if (FAILED(hr = IMediaSample_SetActualDataLength(sample->u.quartz.sample, wg_sample->size)))
-        return hr;
+        ERR("SetActualDataLength() returned %#lx.\n", hr);
 
     if (wg_sample->flags & WG_SAMPLE_FLAG_HAS_PTS)
     {

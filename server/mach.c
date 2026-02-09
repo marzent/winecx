@@ -48,7 +48,6 @@
 #include <mach/thread_act.h>
 #include <mach/mach_vm.h>
 #include <servers/bootstrap.h>
-#include <sys/sysctl.h>
 
 static mach_port_t server_mach_port;
 
@@ -156,6 +155,9 @@ void init_process_tracing( struct process *process )
                 mach_port_deallocate( mach_task_self(), msg.task_port.name );
         }
     }
+    /* On Mach thread priorities depend on having the process port available, so
+     * reapply all thread priorities here after process tracing is initialized */
+    set_process_base_priority( process, process->base_priority );
 }
 
 /* terminate the per-process tracing mechanism */
@@ -171,26 +173,6 @@ void finish_process_tracing( struct process *process )
 /* initialize registers in new thread if necessary */
 void init_thread_context( struct thread *thread )
 {
-}
-
-/* CX HACK 21217 */
-static int is_apple_silicon( void )
-{
-    static int apple_silicon_status, did_check = 0;
-    if (!did_check)
-    {
-        /* returns 0 for native process or on error, 1 for translated */
-        int ret = 0;
-        size_t size = sizeof(ret);
-        if (sysctlbyname( "sysctl.proc_translated", &ret, &size, NULL, 0 ) == -1)
-            apple_silicon_status = 0;
-        else
-            apple_silicon_status = ret;
-
-        did_check = 1;
-    }
-
-    return apple_silicon_status;
 }
 
 /* retrieve the thread x86 registers */
@@ -270,13 +252,6 @@ void get_thread_context( struct thread *thread, struct context_data *context, un
             set_error( STATUS_INVALID_PARAMETER );
             goto done;
         }
-        context->flags |= SERVER_CTX_DEBUG_REGISTERS;
-    }
-    else if (is_apple_silicon())
-    {
-        /* CX HACK 21217: Fake debug registers on Apple Silicon */
-        fprintf( stderr, "%04x: thread_get_state failed on Apple Silicon - faking zero debug registers\n", thread->id );
-        memset( &context->debug, 0, sizeof(context->debug) );
         context->flags |= SERVER_CTX_DEBUG_REGISTERS;
     }
     else
@@ -440,12 +415,14 @@ int read_process_memory( struct process *process, client_ptr_t ptr, data_size_t 
 }
 
 /* write data to a process memory space */
-int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t size, const char *src )
+int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t size, const char *src,
+                          data_size_t *written )
 {
     kern_return_t ret;
-    unsigned int page_size = get_page_size();
     mach_port_t process_port = get_process_port( process );
     mach_vm_offset_t data;
+
+    if (written) *written = 0;
 
     if (!process_port)
     {
@@ -457,7 +434,7 @@ int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t
         set_error( STATUS_ACCESS_DENIED );
         return 0;
     }
-    if (posix_memalign( (void **)&data, page_size, size ))
+    if (posix_memalign( (void **)&data, get_page_size(), size ))
     {
         set_error( STATUS_NO_MEMORY );
         return 0;
@@ -478,7 +455,7 @@ int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t
         mach_vm_address_t current_address = (mach_vm_address_t)ptr;
         mach_vm_address_t region_address = current_address;
         mach_vm_size_t region_size, write_size;
-        vm_region_basic_info_data_t info;
+        vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
         mach_port_t object_name;
         data_size_t remaining_size = size;
@@ -554,8 +531,9 @@ int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t
                     info.protection );
             if (ret != KERN_SUCCESS) break;
 
-            current_address += write_size;
-            remaining_size  -= write_size;
+            if (written) *written += write_size;
+            current_address       += write_size;
+            remaining_size        -= write_size;
         }
 
         task_resume( process_port );
@@ -564,48 +542,8 @@ int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t
 out:
     free( (void *)data );
     mach_set_error( ret );
+    if (ret == KERN_SUCCESS && written) *written = size;
     return (ret == KERN_SUCCESS);
-}
-
-/* retrieve an LDT selector entry */
-void get_selector_entry( struct thread *thread, int entry, unsigned int *base,
-                         unsigned int *limit, unsigned char *flags )
-{
-    const unsigned int total_size = (2 * sizeof(int) + 1) * 8192;
-    struct process *process = thread->process;
-    mach_vm_address_t data;
-    kern_return_t ret;
-    mach_vm_size_t bytes_read;
-    mach_port_t process_port = get_process_port( thread->process );
-
-    if (!process->ldt_copy || !process_port)
-    {
-        set_error( STATUS_ACCESS_DENIED );
-        return;
-    }
-    if (entry >= 8192)
-    {
-        set_error( STATUS_ACCESS_VIOLATION );
-        return;
-    }
-
-    if (!(data = (mach_vm_address_t)malloc( total_size )))
-    {
-        set_error( STATUS_NO_MEMORY );
-        return;
-    }
-
-    ret = mach_vm_read_overwrite( process_port, (mach_vm_address_t)process->ldt_copy, (mach_vm_size_t)total_size, data, &bytes_read );
-    if (ret != KERN_SUCCESS) mach_set_error( ret );
-    else
-    {
-        const int *ldt = (const int *)data;
-        memcpy( base, ldt + entry, sizeof(int) );
-        memcpy( limit, ldt + entry + 8192, sizeof(int) );
-        memcpy( flags, (char *)(ldt + 2 * 8192) + entry, 1 );
-    }
-
-    free( (void *)data );
 }
 
 #endif  /* USE_MACH */

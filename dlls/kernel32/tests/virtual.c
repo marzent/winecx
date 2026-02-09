@@ -54,6 +54,7 @@ static NTSTATUS (WINAPI *pNtProtectVirtualMemory)(HANDLE, PVOID *, SIZE_T *, ULO
 static NTSTATUS (WINAPI *pNtReadVirtualMemory)(HANDLE,const void *,void *,SIZE_T, SIZE_T *);
 static NTSTATUS (WINAPI *pNtWriteVirtualMemory)(HANDLE, void *, const void *, SIZE_T, SIZE_T *);
 static BOOL  (WINAPI *pPrefetchVirtualMemory)(HANDLE, ULONG_PTR, PWIN32_MEMORY_RANGE_ENTRY, ULONG);
+static void  (WINAPI *pFlushProcessWriteBuffers)(void);
 
 /* ############################### */
 
@@ -150,8 +151,7 @@ static void test_VirtualAllocEx(void)
     bytes_written = 0xdeadbeef;
     b = WriteProcessMemory(hProcess, addr1, src, alloc_size, &bytes_written);
     ok( !b, "WriteProcessMemory succeeded\n" );
-    ok( GetLastError() == ERROR_NOACCESS ||
-        GetLastError() == ERROR_PARTIAL_COPY, /* vista */
+    ok( GetLastError() == ERROR_PARTIAL_COPY, /* vista */
         "wrong error %lu\n", GetLastError() );
     ok( bytes_written == 0, "%Iu bytes written\n", bytes_written );
     bytes_read = 0xdeadbeef;
@@ -210,10 +210,10 @@ static void test_VirtualAllocEx(void)
     if (!b) ok( GetLastError() == ERROR_NOACCESS, "wrong error %lu\n", GetLastError() );
     ok( bytes_written == 0xdeadbeef, "%Iu bytes written\n", bytes_written );
     status = pNtWriteVirtualMemory( hProcess, addr1, src, alloc_size, &bytes_written );
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( status == STATUS_PARTIAL_COPY || broken(status == STATUS_ACCESS_VIOLATION),
         "wrong status %lx\n", status );
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( bytes_written == 0, "%Iu bytes written\n", bytes_written );
 
     b = VirtualProtectEx( hProcess, addr1, alloc_size, PAGE_EXECUTE_READ, &old_prot );
@@ -224,21 +224,21 @@ static void test_VirtualAllocEx(void)
     ok( bytes_written == alloc_size, "%Iu bytes written\n", bytes_written );
     bytes_written = 0xdeadbeef;
     status = pNtWriteVirtualMemory( hProcess, addr1, src, alloc_size, &bytes_written );
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( status == STATUS_PARTIAL_COPY || broken(status == STATUS_ACCESS_VIOLATION),
         "wrong status %lx\n", status );
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( bytes_written == 0, "%Iu bytes written\n", bytes_written );
 
     b = VirtualProtectEx( hProcess, addr1, 0x2000, PAGE_EXECUTE_READWRITE, &old_prot );
     ok( b, "VirtualProtectEx, error %lu\n", GetLastError() );
     bytes_written = 0xdeadbeef;
     b = WriteProcessMemory(hProcess, addr1, src, alloc_size, &bytes_written);
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( !b || broken(b), /* <= win10 1507 */ "WriteProcessMemory succeeded\n" );
     bytes_written = 0xdeadbeef;
     status = pNtWriteVirtualMemory( hProcess, addr1, src, alloc_size, &bytes_written );
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( status == STATUS_PARTIAL_COPY || broken(status == STATUS_SUCCESS), /* <= win10 1507 */
         "wrong status %lx\n", status );
     ok( bytes_written == (status ? 0x2000 : alloc_size), "%Iu bytes written\n", bytes_written );
@@ -247,10 +247,10 @@ static void test_VirtualAllocEx(void)
     ok( b, "VirtualProtectEx, error %lu\n", GetLastError() );
     bytes_written = 0xdeadbeef;
     b = WriteProcessMemory(hProcess, addr1, src, alloc_size, &bytes_written);
-    todo_wine
+    todo_wine_if(status == STATUS_SUCCESS)
     ok( !b || broken(b), /* <= win10 1507 */ "WriteProcessMemory succeeded\n" );
     status = pNtWriteVirtualMemory( hProcess, addr1, src, alloc_size, &bytes_written );
-    todo_wine
+    todo_wine_if(b)
     ok( status == STATUS_PARTIAL_COPY || broken(status == STATUS_SUCCESS), /* <= win10 1507 */
         "wrong status %lx\n", status );
     ok( bytes_written == (status ? 0x2000 : alloc_size), "%Iu bytes written\n", bytes_written );
@@ -1628,7 +1628,7 @@ static void test_IsBadReadPtr(void)
 {
     BOOL ret;
     void *ptr = (void *)0xdeadbeef;
-    char stackvar;
+    char stackvar = 0;
 
     ret = IsBadReadPtr(NULL, 0);
     ok(ret == FALSE, "Expected IsBadReadPtr to return FALSE, got %d\n", ret);
@@ -1735,7 +1735,7 @@ static void test_write_watch(void)
     MEMORY_BASIC_INFORMATION info;
     HANDLE readpipe, writepipe, file;
     OVERLAPPED overlapped, *overlapped2;
-    void *results[64];
+    void *results[2048];
     ULONG_PTR count;
     ULONG i, pagesize;
     BOOL success;
@@ -1798,6 +1798,7 @@ static void test_write_watch(void)
     ok( results[0] == base + pagesize, "wrong result %p\n", results[0] );
 
     count = 64;
+    results[0] = (void *)0xdeadbeef;
     ret = pGetWriteWatch( WRITE_WATCH_FLAG_RESET, base, size, results, &count, &pagesize );
     ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
     ok( count == 1, "wrong count %Iu\n", count );
@@ -2207,6 +2208,15 @@ static void test_write_watch(void)
 
     base = VirtualAlloc( 0, size, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_NOACCESS );
     ok( base != NULL, "VirtualAlloc failed %lu\n", GetLastError() );
+
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 0, "wrong count %Iu\n", count );
+
+    ret = pResetWriteWatch( base, size );
+    ok( !ret, "pResetWriteWatch failed %lu\n", GetLastError() );
+
     base = VirtualAlloc( base, size, MEM_COMMIT, PAGE_NOACCESS );
     ok( base != NULL, "VirtualAlloc failed %lu\n", GetLastError() );
 
@@ -2231,15 +2241,162 @@ static void test_write_watch(void)
     ok( count == 1, "wrong count %Iu\n", count );
     ok( results[0] == base + 5*pagesize, "wrong result %p\n", results[0] );
 
+    ret = pResetWriteWatch( base, size );
+    ok( !ret, "pResetWriteWatch failed %lu\n", GetLastError() );
+    ret = pResetWriteWatch( base + 6*pagesize, size - 6 * pagesize );
+    ok( !ret, "pResetWriteWatch failed %lu\n", GetLastError() );
+
+    count = 64;
+    results[0] = (void *)0xdeadbeef;
+    ret = pGetWriteWatch( WRITE_WATCH_FLAG_RESET, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 0, "wrong count %Iu\n", count );
+    ok( results[0] == (void *)0xdeadbeef, "wrong result %p\n", results[0] );
+
+    ret = VirtualFree( base + pagesize, pagesize, MEM_DECOMMIT );
+    ok( ret, "VirtualFree failed %lu\n", GetLastError() );
+
+    ret = VirtualProtect( base + 2*pagesize, pagesize, PAGE_READWRITE, &old_prot );
+    ok( ret, "VirtualProtect failed error %lu\n", GetLastError() );
+    ok( old_prot == PAGE_NOACCESS, "wrong old prot %lx\n", old_prot );
+
+    count = 64;
+    results[0] = (void *)0xdeadbeef;
+    ret = pGetWriteWatch( WRITE_WATCH_FLAG_RESET, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 0, "wrong count %Iu\n", count );
+    ok( results[0] == (void *)0xdeadbeef, "wrong result %p\n", results[0] );
+
+    base[2*pagesize + 200] = 3;
+    count = 64;
+    results[0] = (void *)0xdeadbeef;
+    ret = pGetWriteWatch( WRITE_WATCH_FLAG_RESET, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 1, "wrong count %Iu\n", count );
+    ok( results[0] == base + 2*pagesize, "wrong result %p\n", results[0] );
+
+    base = VirtualAlloc( base, size, MEM_COMMIT, PAGE_NOACCESS );
+    ok( !!base, "VirtualFree failed %lu\n", GetLastError() );
+
+    ret = VirtualProtect( base, 6*pagesize, PAGE_READWRITE, &old_prot );
+    ok( ret, "VirtualProtect failed error %lu\n", GetLastError() );
+    ok( old_prot == PAGE_NOACCESS, "wrong old prot %lx\n", old_prot );
+
+    base[3*pagesize + 200] = 3;
+    base[5*pagesize + 200] = 3;
+
     ret = VirtualFree( base, size, MEM_DECOMMIT );
     ok( ret, "VirtualFree failed %lu\n", GetLastError() );
 
     count = 64;
     ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
     ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
-    ok( count == 1 || broken(count == 0), /* win98 */
-        "wrong count %Iu\n", count );
-    if (count) ok( results[0] == base + 5*pagesize, "wrong result %p\n", results[0] );
+    todo_wine_if(count == 2) ok( !count, "wrong count %Iu\n", count );
+
+    base = VirtualAlloc( base, size, MEM_COMMIT, PAGE_READWRITE );
+    ok(!!base, "VirtualAlloc failed.\n");
+
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    todo_wine_if(count == 2) ok( !count, "wrong count %Iu\n", count );
+
+    /* Looks like VirtualProtect latches write watch state somewhere, so if pages are decommitted after,
+     * (which normally clears write watch state), a page from range which previously had protection change
+     * is still reported as dirty. */
+    base[3*pagesize + 200] = 3;
+    ret = VirtualProtect( base, 6*pagesize, PAGE_READWRITE, &old_prot );
+    ok( ret, "VirtualProtect failed error %lu\n", GetLastError() );
+    ok( old_prot == PAGE_READWRITE, "wrong old prot %lx\n", old_prot );
+
+    base[5*pagesize + 200] = 3;
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 2, "wrong count %Iu\n", count );
+    ok( results[0] == base + 3*pagesize && results[1] == base + 5*pagesize, "wrong result %p\n", results[0] );
+
+    ret = VirtualFree( base, size, MEM_DECOMMIT );
+    ok( ret, "VirtualFree failed %lu\n", GetLastError() );
+
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    todo_wine ok( count == 1, "wrong count %Iu\n", count );
+    ok( results[0] == base + 3*pagesize, "wrong result %p\n", results[0] );
+
+    base = VirtualAlloc( base, size, MEM_COMMIT, PAGE_READWRITE );
+    ok(!!base, "VirtualAlloc failed.\n");
+
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    todo_wine ok( count == 1, "wrong count %Iu\n", count );
+    ok( results[0] == base + 3*pagesize, "wrong result %p\n", results[0] );
+
+    base[4*pagesize + 200] = 4;
+    base[2*pagesize + 200] = 4;
+    base[6*pagesize + 200] = 4;
+
+    count = 64;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    todo_wine ok( count == 4, "wrong count %Iu\n", count );
+    ok( results[0] == base + 2*pagesize, "wrong result %p\n", results[0] );
+    i = 1;
+    if (count >= 4)
+    {
+        ok( results[i] == base + 3*pagesize, "wrong result %p\n", results[i] );
+        ++i;
+    }
+    ok( results[i] == base + 4*pagesize, "wrong result %p\n", results[i] );
+    ++i;
+    todo_wine_if(count == 5) ok( results[i] == base + 6*pagesize, "wrong result %p\n", results[i] );
+
+    VirtualFree( base, 0, MEM_RELEASE );
+
+    /* Test longer range */
+    size = 2048 * pagesize;
+    base = VirtualAlloc( 0, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE );
+    ok( base != NULL, "VirtualAlloc failed %lu\n", GetLastError() );
+
+    count = 2048;
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 0, "wrong count %Iu\n", count );
+
+    count = 2048;
+    for (i = 0; i < count; i += 2)
+        ++base[i * pagesize];
+
+    ret = VirtualProtect( base, size / 2, PAGE_READONLY, &old_prot );
+    ok( ret, "VirtualProtect failed error %lu\n", GetLastError() );
+
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 1024, "wrong count %Iu\n", count );
+
+    for (i = 0; i < count; ++i)
+    {
+        ok( results[i] == base + i * 2 * pagesize, "wrong result %p\n", results[i] );
+        if (results[i] != base + i * 2 * pagesize)
+            break;
+    }
+
+    ret = pGetWriteWatch( WRITE_WATCH_FLAG_RESET, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 1024, "wrong count %Iu\n", count );
+
+    for (i = 0; i < count; ++i)
+    {
+        ok( results[i] == base + i * 2 * pagesize, "wrong result %p\n", results[i] );
+        if (results[i] != base + i * 2 * pagesize)
+            break;
+    }
+
+    ret = pGetWriteWatch( 0, base, size, results, &count, &pagesize );
+    ok( !ret, "GetWriteWatch failed %lu\n", GetLastError() );
+    ok( count == 0, "wrong count %Iu\n", count );
 
     VirtualFree( base, 0, MEM_RELEASE );
 }
@@ -3825,7 +3982,7 @@ static void *map_view_of_file(HANDLE handle, DWORD access)
     protect = file_access_to_prot( access );
     addr = NULL;
     status = pNtMapViewOfSection(handle, GetCurrentProcess(), &addr, 0, 0, &offset,
-                                 &count, 1 /* ViewShare */, 0, protect);
+                                 &count, ViewShare, 0, protect);
     if ((int)status < 0) addr = NULL;
     return addr;
 }
@@ -4057,15 +4214,12 @@ static void test_mapping( HANDLE hfile, DWORD sec_flags, BOOL readonly )
                         continue;
                     }
 
-                    todo_wine_if(readonly && page_prot[k] == PAGE_WRITECOPY && view[j].prot != PAGE_WRITECOPY)
                     ok(ret, "VirtualProtect error %ld, map %#lx, view %#lx, requested prot %#lx\n", GetLastError(), page_prot[i], view[j].prot, page_prot[k]);
-                    todo_wine_if(readonly && page_prot[k] == PAGE_WRITECOPY && view[j].prot != PAGE_WRITECOPY)
                     ok(old_prot == prev_prot, "got %#lx, expected %#lx\n", old_prot, prev_prot);
                     prev_prot = actual_prot;
 
                     ret = VirtualQuery(base, &info, sizeof(info));
                     ok(ret, "%ld: VirtualQuery failed %ld\n", j, GetLastError());
-                    todo_wine_if(readonly && page_prot[k] == PAGE_WRITECOPY && view[j].prot != PAGE_WRITECOPY)
                     ok(info.Protect == actual_prot,
                        "VirtualProtect wrong prot, map %#lx, view %#lx, requested prot %#lx got %#lx\n",
                        page_prot[i], view[j].prot, page_prot[k], info.Protect );
@@ -4120,7 +4274,6 @@ static void test_mapping( HANDLE hfile, DWORD sec_flags, BOOL readonly )
             if (!anon_mapping && is_compatible_protection(alloc_prot, PAGE_WRITECOPY))
             {
                 ret = VirtualProtect(base, sec_flags & SEC_IMAGE ? si.dwPageSize : 2*si.dwPageSize, PAGE_WRITECOPY, &old_prot);
-                todo_wine_if(readonly && view[j].prot != PAGE_WRITECOPY)
                 ok(ret, "VirtualProtect error %ld, map %#lx, view %#lx\n", GetLastError(), page_prot[i], view[j].prot);
                 if (ret) *(DWORD*)base = 0xdeadbeef;
                 ret = VirtualQuery(base, &info, sizeof(info));
@@ -4139,7 +4292,6 @@ static void test_mapping( HANDLE hfile, DWORD sec_flags, BOOL readonly )
                 {
                     ret = VirtualQuery((char*)base + si.dwPageSize, &info, sizeof(info));
                     ok(ret, "%ld: VirtualQuery failed %ld\n", j, GetLastError());
-                    todo_wine_if(readonly && view[j].prot != PAGE_WRITECOPY)
                     ok(info.Protect == PAGE_WRITECOPY, "wrong prot, map %#lx, view %#lx got %#lx\n",
                        page_prot[i], view[j].prot, info.Protect);
                 }
@@ -4159,9 +4311,7 @@ static void test_mapping( HANDLE hfile, DWORD sec_flags, BOOL readonly )
                             continue;
                         }
 
-                        todo_wine_if(readonly && page_prot[k] == PAGE_WRITECOPY && view[j].prot != PAGE_WRITECOPY)
                         ok(ret, "VirtualProtect error %ld, map %#lx, view %#lx, requested prot %#lx\n", GetLastError(), page_prot[i], view[j].prot, page_prot[k]);
-                        todo_wine_if(readonly && page_prot[k] == PAGE_WRITECOPY && view[j].prot != PAGE_WRITECOPY)
                         ok(old_prot == prev_prot, "got %#lx, expected %#lx\n", old_prot, prev_prot);
 
                         ret = VirtualQuery(base, &info, sizeof(info));
@@ -4268,9 +4418,7 @@ static void test_shared_memory(BOOL is_child)
         sprintf(cmdline, "\"%s\" virtual sharedmem", argv[0]);
         ret = CreateProcessA(argv[0], cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
         ok(ret, "CreateProcess(%s) error %ld\n", cmdline, GetLastError());
-        wait_child_process(pi.hProcess);
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
+        wait_child_process(&pi);
     }
 
     UnmapViewOfFile(p);
@@ -4308,9 +4456,7 @@ static void test_shared_memory_ro(BOOL is_child, DWORD child_access)
         sprintf(cmdline, "\"%s\" virtual sharedmemro %lx", argv[0], child_access);
         ret = CreateProcessA(argv[0], cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
         ok(ret, "CreateProcess(%s) error %ld\n", cmdline, GetLastError());
-        wait_child_process(pi.hProcess);
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
+        wait_child_process(&pi);
 
         if(child_access & FILE_MAP_WRITE)
             ok(*p == 0xdeadbeef, "*p = %lx, expected 0xdeadbeef\n", *p);
@@ -4332,7 +4478,7 @@ static void test_PrefetchVirtualMemory(void)
 
     if (!pPrefetchVirtualMemory)
     {
-        skip("no PrefetchVirtualMemory in kernelbase\n");
+        win_skip("no PrefetchVirtualMemory in kernelbase\n");
         return;
     }
 
@@ -4395,8 +4541,10 @@ static void test_ReadProcessMemory(void)
     ok(ret, "ReadProcessMemory failed %lu\n", GetLastError());
     ok(copied == si.dwPageSize, "copied = %Id\n", copied);
 
+    copied = 1;
     ret = ReadProcessMemory(hproc, ptr, buf, 2 * si.dwPageSize, &copied);
-    todo_wine ok(!ret, "ReadProcessMemory succeeded\n");
+    todo_wine_if(ret) ok(!ret, "ReadProcessMemory succeeded\n");
+    todo_wine_if(ret) ok(!copied, "copied = %Id\n", copied);
 
     ret = ReadProcessMemory(hproc, ptr, buf, si.dwPageSize, &copied);
     ok(ret, "ReadProcessMemory failed %lu\n", GetLastError());
@@ -4406,6 +4554,180 @@ static void test_ReadProcessMemory(void)
     ok(ret, "VirtualFree failed %lu\n", GetLastError());
     CloseHandle(hproc);
     free(buf);
+}
+
+struct sbtestshared
+{
+    /* Number of slots per thread */
+    unsigned int num_slots;
+
+    /* Number of generations (iterations per each slot) */
+    unsigned int num_generations;
+
+    /* Stores from threads */
+    LONG *wrote;
+
+    /* Observations from threads */
+    LONG *read;
+
+    /* Number of observed reorderings (witnesses) in the SB litmus test.
+     * Note: unobservable reorderings are not counted. */
+    LONG *reorderings;
+};
+
+struct sbtestparams
+{
+    struct sbtestshared *shared;
+    unsigned int th_id;
+    void (WINAPI *barrier)(void);
+};
+
+static DWORD CALLBACK sbtest_thread_proc( void *arg )
+{
+    const struct sbtestparams *params = arg;
+    const struct sbtestshared s = *params->shared;
+    const unsigned int th_id = params->th_id;
+    void (WINAPI *const barrier)(void) = params->barrier;
+    unsigned int slot = 0, gen = 0;
+
+    for (;;)
+    {
+        LONG read_l, read_r;
+
+        /* Access slots in reverse order to avoid prefetching */
+        if (!slot--)
+        {
+            if (gen++ >= s.num_generations) break;
+            slot = s.num_slots - 1;
+        }
+
+        WriteRelease(&s.wrote[th_id * s.num_slots + slot], gen);
+        (*barrier)();
+        read_l = (gen << 1) | (ReadAcquire(&s.wrote[(th_id ^ 1) * s.num_slots + slot]) == gen);
+
+        WriteRelease(&s.read[th_id * s.num_slots + slot], read_l);
+
+        while (((read_r = ReadAcquire(&s.read[(th_id ^ 1) * s.num_slots + slot])) & ~1) != (gen << 1))
+            YieldProcessor();
+
+        /* fairly distribute testing overhead across threads */
+        if ((slot & 1) == th_id)
+        {
+            if (!(read_l & 1) && !(read_r & 1))
+                InterlockedIncrement( s.reorderings );
+        }
+    }
+
+    return 0;
+}
+
+#if defined(_MSC_VER) && !defined(__clang__)
+
+#pragma intrinsic(_ReadWriteBarrier)
+void _ReadWriteBarrier(void);
+
+static void WINAPI compiler_barrier(void)
+{
+#pragma warning(suppress:4996)
+    _ReadWriteBarrier();
+}
+
+#else  /* defined(_MSC_VER) && !defined(__clang__) */
+
+static void WINAPI compiler_barrier(void)
+{
+    __asm__ __volatile__("" ::: "memory");
+}
+
+#endif  /* defined(_MSC_VER) && !defined(__clang__) */
+
+static LONG store_buffer_litmus_test( void (*WINAPI barrier0)(void), void (*WINAPI barrier1)(void) )
+{
+    LONG reorderings = 0;
+    struct sbtestshared shared = {
+        /* Should be big enough to avoid false sharing */
+        .num_slots = 64,
+
+        /* Increase if flaky, decrease if slow */
+        .num_generations = 4096,
+
+        .reorderings = &reorderings,
+    };
+    struct sbtestparams pars[2];
+    HANDLE threads[2];
+    unsigned int i;
+    DWORD ret;
+
+    shared.wrote = VirtualAlloc( NULL, ARRAY_SIZE(threads) * shared.num_slots * sizeof(*shared.wrote),
+                                 MEM_COMMIT, PAGE_READWRITE );
+    ok( shared.wrote != NULL, "VirtualAlloc failed: %lu\n", GetLastError() );
+
+    shared.read = VirtualAlloc( NULL, ARRAY_SIZE(threads) * shared.num_slots * sizeof(*shared.read),
+                                MEM_COMMIT, PAGE_READWRITE );
+    ok( shared.read != NULL, "VirtualAlloc failed: %lu\n", GetLastError() );
+
+    for (i = 0; i < ARRAY_SIZE(threads); i++)
+    {
+        pars[i].shared = &shared;
+        pars[i].th_id = i;
+        pars[i].barrier = i == 0 ? barrier0 : barrier1;
+        threads[i] = CreateThread( NULL, 0, sbtest_thread_proc, &pars[i], 0, NULL );
+        ok( threads[i] != NULL, "CreateThread failed: %lu\n", GetLastError() );
+    }
+
+    ret = WaitForMultipleObjects( ARRAY_SIZE(threads), threads, TRUE, INFINITE );
+    ok( ret == WAIT_OBJECT_0, "WaitForMultipleObjects failed: %lu\n", GetLastError() );
+
+    for (i = 0; i < ARRAY_SIZE(threads); i++)
+    {
+        CloseHandle( threads[i] );
+    }
+
+    ret = VirtualFree( shared.read, 0, MEM_RELEASE );
+    ok( ret, "VirtualFree failed: %lu\n", GetLastError() );
+
+    ret = VirtualFree( shared.wrote, 0, MEM_RELEASE );
+    ok( ret, "VirtualFree failed: %lu\n", GetLastError() );
+
+    return reorderings;
+}
+
+static void test_FlushProcessWriteBuffers(void)
+{
+    LONG reorderings;
+    unsigned int i;
+
+    if (!pFlushProcessWriteBuffers)
+    {
+        win_skip("no FlushProcessWriteBuffers in kernel32\n");
+        return;
+    }
+
+    /* simple stress test */
+    for (i = 0; i < 128; i++)
+    {
+        pFlushProcessWriteBuffers();
+    }
+
+    if (si.dwNumberOfProcessors == 1)
+    {
+        skip( "single-processor system, cannot test store buffering behavior\n" );
+        return;
+    }
+
+    /* NOTE: Avoid passing the loop count directly as a parameter to ensure
+     * NOTE: that each test is independent of the differing loop count.
+     */
+
+    reorderings = 0;
+    for (i = 0; i < 8; i++)  /* run multiple times to reduce flakiness */
+        reorderings += store_buffer_litmus_test( compiler_barrier, compiler_barrier );
+    ok( reorderings, "expected write-read reordering with compiler barrier only (got %ld reorderings)\n", reorderings );
+
+    reorderings = 0;
+    for (i = 0; i < 2; i++)  /* TODO: FlushProcessWriteBuffers() is slow on macOS */
+        reorderings += store_buffer_litmus_test( compiler_barrier, pFlushProcessWriteBuffers );
+    ok( !reorderings, "expected sequential consistency with FlushProcessWriteBuffers (got %ld reorderings)\n", reorderings );
 }
 
 START_TEST(virtual)
@@ -4465,6 +4787,7 @@ START_TEST(virtual)
     pNtReadVirtualMemory = (void *)GetProcAddress( hntdll, "NtReadVirtualMemory" );
     pNtWriteVirtualMemory = (void *)GetProcAddress( hntdll, "NtWriteVirtualMemory" );
     pPrefetchVirtualMemory = (void *)GetProcAddress( hkernelbase, "PrefetchVirtualMemory" );
+    pFlushProcessWriteBuffers = (void *)GetProcAddress( hkernel32, "FlushProcessWriteBuffers" );
 
     GetSystemInfo(&si);
     trace("system page size %#lx\n", si.dwPageSize);
@@ -4490,6 +4813,7 @@ START_TEST(virtual)
     test_write_watch();
     test_PrefetchVirtualMemory();
     test_ReadProcessMemory();
+    test_FlushProcessWriteBuffers();
 #if defined(__i386__) || defined(__x86_64__)
     test_stack_commit();
 #endif

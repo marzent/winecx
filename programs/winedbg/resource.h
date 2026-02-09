@@ -20,7 +20,6 @@
 
 #include <windef.h>
 #include <winuser.h>
-#include "distversion.h"
 
 #define IDD_CRASH_DLG   100
 #define IDD_DETAILS_DLG 101

@@ -30,7 +30,6 @@
 #include "evntprov.h"
 #include "ddk/csq.h"
 #include "wine/server.h"
-#include "wine/heap.h"
 #include "wine/svcctl.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntoskrnl);
@@ -2122,7 +2121,7 @@ BOOLEAN WINAPI IoCancelIrp( IRP *irp )
     irp->Cancel = TRUE;
     if (!(cancel_routine = IoSetCancelRoutine( irp, NULL )))
     {
-        IoReleaseCancelSpinLock( irp->CancelIrql );
+        IoReleaseCancelSpinLock( irql );
         return FALSE;
     }
 
@@ -2572,7 +2571,7 @@ PRKTHREAD WINAPI KeGetCurrentThread(void)
 
         /* FIXME: we shouldn't need it, GetCurrentThread() should be client thread already */
         if (GetCurrentThreadId() == request_thread)
-            handle = OpenThread( THREAD_QUERY_INFORMATION, FALSE, client_tid );
+            handle = OpenThread( MAXIMUM_ALLOWED, FALSE, client_tid );
 
         kernel_object_from_handle( handle, PsThreadType, (void**)&thread );
         if (handle != GetCurrentThread()) NtClose( handle );
@@ -2951,6 +2950,18 @@ PVOID WINAPI MmMapIoSpace( PHYSICAL_ADDRESS PhysicalAddress, DWORD NumberOfBytes
 VOID WINAPI MmLockPagableSectionByHandle(PVOID ImageSectionHandle)
 {
     FIXME("stub %p\n", ImageSectionHandle);
+}
+
+/***********************************************************************
+ *           MmMapLockedPages   (NTOSKRNL.EXE.@)
+ */
+PVOID WINAPI MmMapLockedPages( MDL *mdl, KPROCESSOR_MODE mode )
+{
+    TRACE( "%p %u\n", mdl, mode );
+
+    mdl->MdlFlags |= MDL_MAPPED_TO_SYSTEM_VA;
+    mdl->MappedSystemVa = (char *)mdl->StartVa + mdl->ByteOffset;
+    return mdl->MappedSystemVa;
 }
 
 /***********************************************************************
@@ -3968,7 +3979,7 @@ static HMODULE load_driver( const WCHAR *driver_name, const UNICODE_STRING *keyn
             HeapFree( GetProcessHeap(), 0, path );
             path = str;
         }
-        else if (RtlDetermineDosPathNameType_U( path ) == RELATIVE_PATH)
+        else if (RtlDetermineDosPathNameType_U( path ) == RtlPathTypeRelative)
         {
             str = get_windir_path( path );
             HeapFree( GetProcessHeap(), 0, path );
@@ -4074,7 +4085,7 @@ static BOOLEAN get_drv_name( UNICODE_STRING *drv_name, const UNICODE_STRING *ser
     static const WCHAR driverW[] = {'\\','D','r','i','v','e','r','\\',0};
     WCHAR *str;
 
-    if (!(str = heap_alloc( sizeof(driverW) + service_name->Length - lstrlenW(servicesW)*sizeof(WCHAR) )))
+    if (!(str = HeapAlloc( GetProcessHeap(), 0, sizeof(driverW) + service_name->Length - lstrlenW(servicesW)*sizeof(WCHAR) )))
         return FALSE;
 
     lstrcpyW( str, driverW );
@@ -4498,27 +4509,18 @@ void WINAPI KeGenericCallDpc(PKDEFERRED_ROUTINE routine, void *context)
     reverse_barrier.TotalProcessors = cpu_count;
     cpu_count_barrier = cpu_count;
 
-    if (contexts)
+    if (last_cpu_count < cpu_count)
     {
-        if (last_cpu_count < cpu_count)
+        struct generic_call_dpc_context *new_contexts;
+        if (!(new_contexts = realloc(contexts, sizeof(*contexts) * cpu_count)))
         {
-            static struct generic_call_dpc_context *new_contexts;
-            if (!(new_contexts = heap_realloc(contexts, sizeof(*contexts) * cpu_count)))
-            {
-                ERR("No memory.\n");
-                LeaveCriticalSection(&dpc_call_cs);
-                return;
-            }
-            contexts = new_contexts;
-            SetThreadpoolThreadMinimum(dpc_call_tp, cpu_count);
-            SetThreadpoolThreadMaximum(dpc_call_tp, cpu_count);
+            ERR("No memory.\n");
+            LeaveCriticalSection(&dpc_call_cs);
+            return;
         }
-    }
-    else if (!(contexts = heap_alloc(sizeof(*contexts) * cpu_count)))
-    {
-        ERR("No memory.\n");
-        LeaveCriticalSection(&dpc_call_cs);
-        return;
+        contexts = new_contexts;
+        SetThreadpoolThreadMinimum(dpc_call_tp, cpu_count);
+        SetThreadpoolThreadMaximum(dpc_call_tp, cpu_count);
     }
 
     memset(contexts, 0, sizeof(*contexts) * cpu_count);

@@ -151,10 +151,11 @@ static struct voice_information_vector all_voices =
  * ISpeechSynthesisStream
  *
  */
-
 struct synthesis_stream
 {
     ISpeechSynthesisStream ISpeechSynthesisStream_iface;
+    IRandomAccessStream IRandomAccessStream_iface;
+    IInputStream IInputStream_iface;
     LONG ref;
 
     IVector_IMediaMarker *markers;
@@ -177,6 +178,20 @@ HRESULT WINAPI synthesis_stream_QueryInterface( ISpeechSynthesisStream *iface, R
         IsEqualGUID(iid, &IID_ISpeechSynthesisStream))
     {
         IInspectable_AddRef((*out = &impl->ISpeechSynthesisStream_iface));
+        return S_OK;
+    }
+
+    if (IsEqualGUID(iid, &IID_IRandomAccessStream))
+    {
+        IRandomAccessStream_AddRef(&impl->IRandomAccessStream_iface);
+        *out = &impl->IRandomAccessStream_iface;
+        return S_OK;
+    }
+
+    if (IsEqualGUID(iid, &IID_IInputStream))
+    {
+        IInputStream_AddRef(&impl->IInputStream_iface);
+        *out = &impl->IInputStream_iface;
         return S_OK;
     }
 
@@ -246,6 +261,452 @@ static const struct ISpeechSynthesisStreamVtbl synthesis_stream_vtbl =
 };
 
 
+static inline struct synthesis_stream *impl_from_IRandomAccessStream( IRandomAccessStream *iface )
+{
+    return CONTAINING_RECORD(iface, struct synthesis_stream, IRandomAccessStream_iface);
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_QueryInterface( IRandomAccessStream *iface, REFIID iid, void **out )
+{
+    struct synthesis_stream *impl = impl_from_IRandomAccessStream(iface);
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
+
+    return ISpeechSynthesisStream_QueryInterface( &impl->ISpeechSynthesisStream_iface, iid, out );
+}
+
+static ULONG WINAPI synthesis_stream_random_access_AddRef( IRandomAccessStream *iface )
+{
+    struct synthesis_stream *impl = impl_from_IRandomAccessStream(iface);
+
+    TRACE( "iface %p.\n", iface );
+    return ISpeechSynthesisStream_AddRef( &impl->ISpeechSynthesisStream_iface );
+}
+
+static ULONG WINAPI synthesis_stream_random_access_Release( IRandomAccessStream *iface )
+{
+    struct synthesis_stream *impl = impl_from_IRandomAccessStream(iface);
+
+    TRACE( "iface %p.\n", iface );
+    return ISpeechSynthesisStream_Release( &impl->ISpeechSynthesisStream_iface );
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_GetIids( IRandomAccessStream *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub.\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_GetRuntimeClassName( IRandomAccessStream *iface, HSTRING *class_name )
+{
+    FIXME( "iface %p, class_name %p stub.\n", iface, class_name );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_GetTrustLevel( IRandomAccessStream *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub.\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_get_Size( IRandomAccessStream *iface, UINT64 *value )
+{
+    FIXME( "iface %p, value %p stub.\n", iface, value );
+
+    *value = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_put_Size( IRandomAccessStream *iface, UINT64 value )
+{
+    FIXME( "iface %p, value %I64u stub.\n", iface, value );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_GetInputStreamAt( IRandomAccessStream *iface, UINT64 position,
+        IInputStream **stream )
+{
+    FIXME( "iface %p, position %I64u, stream %p stub.\n", iface, position, stream );
+
+    *stream = NULL;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_GetOutputStreamAt( IRandomAccessStream *iface, UINT64 position,
+        IOutputStream **stream )
+{
+    FIXME( "iface %p, position %I64u, stream %p stub.\n", iface, position, stream );
+
+    *stream = NULL;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_get_Position( IRandomAccessStream *iface, UINT64 *value )
+{
+    FIXME( "iface %p, value %p stub.\n", iface, value );
+
+    *value = 0;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_Seek( IRandomAccessStream *iface, UINT64 position )
+{
+    FIXME( "iface %p, position %I64u stub.\n", iface, position );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_CloneStream( IRandomAccessStream *iface, IRandomAccessStream **stream )
+{
+    FIXME( "iface %p, stream %p stub.\n", iface, stream );
+
+    *stream = NULL;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_get_CanRead( IRandomAccessStream *iface, BOOLEAN *value )
+{
+    FIXME( "iface %p, value %p stub.\n", iface, value );
+
+    *value = FALSE;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_random_access_get_CanWrite( IRandomAccessStream *iface, BOOLEAN *value )
+{
+    FIXME( "iface %p, value %p stub.\n", iface, value );
+
+    *value = FALSE;
+    return E_NOTIMPL;
+}
+
+static const struct IRandomAccessStreamVtbl synthesis_stream_random_access_vtbl =
+{
+    /* IUnknown methods */
+    synthesis_stream_random_access_QueryInterface,
+    synthesis_stream_random_access_AddRef,
+    synthesis_stream_random_access_Release,
+    /* IInspectable methods */
+    synthesis_stream_random_access_GetIids,
+    synthesis_stream_random_access_GetRuntimeClassName,
+    synthesis_stream_random_access_GetTrustLevel,
+    /* IRandomAccessStream methods */
+    synthesis_stream_random_access_get_Size,
+    synthesis_stream_random_access_put_Size,
+    synthesis_stream_random_access_GetInputStreamAt,
+    synthesis_stream_random_access_GetOutputStreamAt,
+    synthesis_stream_random_access_get_Position,
+    synthesis_stream_random_access_Seek,
+    synthesis_stream_random_access_CloneStream,
+    synthesis_stream_random_access_get_CanRead,
+    synthesis_stream_random_access_get_CanWrite,
+};
+
+
+struct synthesis_stream_async_operation
+{
+    IAsyncOperationWithProgress_IBuffer_UINT32 ISynthesisSteamBufferAsync_iface;
+    IAsyncInfo IAsyncInfo_iface;
+    IBuffer *buffer;
+    IInputStream *inp_stream;
+
+    LONG ref;
+};
+
+static inline struct synthesis_stream_async_operation *impl_from_ISynthesisSteamBufferAsync( IAsyncOperationWithProgress_IBuffer_UINT32 *iface )
+{
+    return CONTAINING_RECORD( iface, struct synthesis_stream_async_operation, ISynthesisSteamBufferAsync_iface );
+}
+
+static HRESULT WINAPI async_with_progress_uint32_QueryInterface( IAsyncOperationWithProgress_IBuffer_UINT32 *iface, REFIID iid, void **out )
+{
+    struct synthesis_stream_async_operation *impl = impl_from_ISynthesisSteamBufferAsync( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IAsyncOperationWithProgress_IBuffer_UINT32 ))
+    {
+        *out = &impl->ISynthesisSteamBufferAsync_iface;
+        IAsyncOperationWithProgress_IBuffer_UINT32_AddRef( &impl->ISynthesisSteamBufferAsync_iface );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IAsyncInfo ))
+    {
+        *out = &impl->IAsyncInfo_iface;
+        IAsyncInfo_AddRef( &impl->IAsyncInfo_iface );
+        return S_OK;
+    }
+
+    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid) );
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI async_with_progress_uint32_AddRef( IAsyncOperationWithProgress_IBuffer_UINT32 *iface )
+{
+    struct synthesis_stream_async_operation *impl = impl_from_ISynthesisSteamBufferAsync( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI async_with_progress_uint32_Release( IAsyncOperationWithProgress_IBuffer_UINT32 *iface )
+{
+    struct synthesis_stream_async_operation *impl = impl_from_ISynthesisSteamBufferAsync( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        /* guard against re-entry if inner releases an outer iface */
+        IBuffer_Release( impl->buffer );
+        IInputStream_Release( impl->inp_stream );
+        free( impl );
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_GetIids( IAsyncOperationWithProgress_IBuffer_UINT32 *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_GetRuntimeClassName( IAsyncOperationWithProgress_IBuffer_UINT32 *iface, HSTRING *class_name )
+{
+    FIXME( "iface %p, class_name %p stub.\n", iface, class_name );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_GetTrustLevel( IAsyncOperationWithProgress_IBuffer_UINT32 *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_put_Progress( IAsyncOperationWithProgress_IBuffer_UINT32 *iface,
+        IAsyncOperationProgressHandler_IBuffer_UINT32 *handler )
+{
+    FIXME( "iface %p, handler %p stub.\n", iface, handler );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_get_Progress( IAsyncOperationWithProgress_IBuffer_UINT32 *iface,
+        IAsyncOperationProgressHandler_IBuffer_UINT32 **handler )
+{
+    FIXME( "iface %p, handler %p stub.\n", iface, handler );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_put_Completed( IAsyncOperationWithProgress_IBuffer_UINT32 *iface,
+        IAsyncOperationWithProgressCompletedHandler_IBuffer_UINT32 *handler )
+{
+    FIXME( "iface %p, handler %p stub.\n", iface, handler );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_get_Completed( IAsyncOperationWithProgress_IBuffer_UINT32 *iface,
+        IAsyncOperationWithProgressCompletedHandler_IBuffer_UINT32 **handler )
+{
+    FIXME( "iface %p, handler %p stub.\n", iface, handler );
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_with_progress_uint32_GetResults( IAsyncOperationWithProgress_IBuffer_UINT32 *iface,
+        IBuffer **results )
+{
+    struct synthesis_stream_async_operation *impl = impl_from_ISynthesisSteamBufferAsync( iface );
+
+    TRACE( "iface %p, results %p.\n", iface, results );
+
+    IBuffer_AddRef( impl->buffer );
+    *results = impl->buffer;
+    return S_OK;
+}
+
+IAsyncOperationWithProgress_IBuffer_UINT32Vtbl async_with_progress_uint32_vtbl =
+{
+    /* IUnknown methods */
+    async_with_progress_uint32_QueryInterface,
+    async_with_progress_uint32_AddRef,
+    async_with_progress_uint32_Release,
+    /* IInspectable methods */
+    async_with_progress_uint32_GetIids,
+    async_with_progress_uint32_GetRuntimeClassName,
+    async_with_progress_uint32_GetTrustLevel,
+    /* IAsyncOperationWithProgress<Windows.Storage.Streams.IBuffer *,UINT32> */
+    async_with_progress_uint32_put_Progress,
+    async_with_progress_uint32_get_Progress,
+    async_with_progress_uint32_put_Completed,
+    async_with_progress_uint32_get_Completed,
+    async_with_progress_uint32_GetResults,
+};
+
+DEFINE_IINSPECTABLE(async_info, IAsyncInfo, struct synthesis_stream_async_operation, ISynthesisSteamBufferAsync_iface)
+
+static HRESULT WINAPI async_info_get_Id( IAsyncInfo *iface, UINT32 *id )
+{
+    TRACE( "iface %p, id %p.\n", iface, id );
+
+    *id = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_info_get_Status( IAsyncInfo *iface, AsyncStatus *status )
+{
+    TRACE( "iface %p, status %p.\n", iface, status );
+
+    *status = Completed;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_info_get_ErrorCode( IAsyncInfo *iface, HRESULT *error_code )
+{
+    FIXME( "iface %p, error_code %p.\n", iface, error_code );
+
+    *error_code = S_OK;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_info_Cancel( IAsyncInfo *iface )
+{
+    FIXME( "iface %p.\n", iface );
+
+    return S_OK;
+}
+
+static HRESULT WINAPI async_info_Close( IAsyncInfo *iface )
+{
+    FIXME( "iface %p.\n", iface );
+
+    return S_OK;
+}
+
+
+static const struct IAsyncInfoVtbl async_info_vtbl =
+{
+    /* IUnknown methods */
+    async_info_QueryInterface,
+    async_info_AddRef,
+    async_info_Release,
+    /* IInspectable methods */
+    async_info_GetIids,
+    async_info_GetRuntimeClassName,
+    async_info_GetTrustLevel,
+    /* IAsyncInfo */
+    async_info_get_Id,
+    async_info_get_Status,
+    async_info_get_ErrorCode,
+    async_info_Cancel,
+    async_info_Close,
+};
+
+static HRESULT async_operation_with_progress_buffer_uint32_create( IInputStream *inp_stream,
+        IBuffer *buffer,
+        IAsyncOperationWithProgress_IBuffer_UINT32 **out)
+{
+    struct synthesis_stream_async_operation *impl;
+
+    if (!inp_stream || !buffer || !out) return E_POINTER;
+
+    *out = NULL;
+    if (!(impl = calloc(1, sizeof(*impl))))
+        return E_OUTOFMEMORY;
+
+    impl->ref = 1;
+    IBuffer_AddRef( buffer );
+    impl->buffer = buffer;
+    IInputStream_AddRef( inp_stream );
+    impl->inp_stream = inp_stream;
+    impl->ISynthesisSteamBufferAsync_iface.lpVtbl = &async_with_progress_uint32_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = &async_info_vtbl;
+    *out = &impl->ISynthesisSteamBufferAsync_iface;
+    return S_OK;
+}
+
+
+static inline struct synthesis_stream *impl_from_IInputStream( IInputStream *iface )
+{
+    return CONTAINING_RECORD(iface, struct synthesis_stream, IInputStream_iface);
+}
+
+static HRESULT WINAPI synthesis_stream_input_QueryInterface( IInputStream *iface, REFIID iid, void **out )
+{
+    struct synthesis_stream *impl = impl_from_IInputStream(iface);
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
+
+    return ISpeechSynthesisStream_QueryInterface( &impl->ISpeechSynthesisStream_iface, iid, out );
+}
+
+static ULONG WINAPI synthesis_stream_input_AddRef( IInputStream *iface )
+{
+    struct synthesis_stream *impl = impl_from_IInputStream(iface);
+
+    TRACE( "iface %p.\n", iface );
+    return ISpeechSynthesisStream_AddRef( &impl->ISpeechSynthesisStream_iface );
+}
+
+static ULONG WINAPI synthesis_stream_input_Release( IInputStream *iface )
+{
+    struct synthesis_stream *impl = impl_from_IInputStream(iface);
+
+    TRACE( "iface %p.\n", iface );
+    return ISpeechSynthesisStream_Release( &impl->ISpeechSynthesisStream_iface );
+}
+
+static HRESULT WINAPI synthesis_stream_input_GetIids( IInputStream *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub.\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_input_GetRuntimeClassName( IInputStream *iface, HSTRING *class_name )
+{
+    FIXME( "iface %p, class_name %p stub.\n", iface, class_name );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_input_GetTrustLevel( IInputStream *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub.\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI synthesis_stream_input_ReadAsync( IInputStream *iface, IBuffer *buffer, UINT32 count,
+        InputStreamOptions options, IAsyncOperationWithProgress_IBuffer_UINT32 **operation)
+{
+    FIXME( "iface %p, buffer %p, count %u, options %d, operation %p stub.\n", iface, buffer, count, options, operation );
+    return async_operation_with_progress_buffer_uint32_create( iface, buffer, operation );
+}
+
+static const struct IInputStreamVtbl synthesis_stream_input_vtbl =
+{
+    /* IUnknown methods */
+    synthesis_stream_input_QueryInterface,
+    synthesis_stream_input_AddRef,
+    synthesis_stream_input_Release,
+    /* IInspectable methods */
+    synthesis_stream_input_GetIids,
+    synthesis_stream_input_GetRuntimeClassName,
+    synthesis_stream_input_GetTrustLevel,
+    /* IInputStream methods */
+    synthesis_stream_input_ReadAsync
+};
+
+
 static HRESULT synthesis_stream_create( ISpeechSynthesisStream **out )
 {
     struct synthesis_stream *impl;
@@ -267,6 +728,8 @@ static HRESULT synthesis_stream_create( ISpeechSynthesisStream **out )
     }
 
     impl->ISpeechSynthesisStream_iface.lpVtbl = &synthesis_stream_vtbl;
+    impl->IRandomAccessStream_iface.lpVtbl = &synthesis_stream_random_access_vtbl;
+    impl->IInputStream_iface.lpVtbl = &synthesis_stream_input_vtbl;
     impl->ref = 1;
     if (FAILED(hr = vector_inspectable_create(&markers_iids, (IVector_IInspectable**)&impl->markers)))
         goto error;
@@ -375,29 +838,49 @@ static HRESULT WINAPI synthesizer_GetTrustLevel( ISpeechSynthesizer *iface, Trus
     return E_NOTIMPL;
 }
 
-static HRESULT synthesizer_synthesize_text_to_stream_async( IInspectable *invoker, IInspectable **result )
+static HRESULT synthesizer_synthesize_text_to_stream_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
 {
-    return synthesis_stream_create((ISpeechSynthesisStream **)result);
+    ISpeechSynthesisStream *stream;
+    HRESULT hr;
+
+    if (!called_async) return STATUS_PENDING;
+
+    if (SUCCEEDED(hr = synthesis_stream_create(&stream)))
+    {
+        result->vt = VT_UNKNOWN;
+        result->punkVal = (IUnknown *)stream;
+    }
+    return hr;
 }
 
 static HRESULT WINAPI synthesizer_SynthesizeTextToStreamAsync( ISpeechSynthesizer *iface, HSTRING text,
                                                                IAsyncOperation_SpeechSynthesisStream **operation )
 {
     TRACE("iface %p, text %p, operation %p.\n", iface, text, operation);
-    return async_operation_inspectable_create(&IID_IAsyncOperation_SpeechSynthesisStream, NULL,
+    return async_operation_inspectable_create(&IID_IAsyncOperation_SpeechSynthesisStream, NULL, NULL,
                                               synthesizer_synthesize_text_to_stream_async, (IAsyncOperation_IInspectable **)operation);
 }
 
-static HRESULT synthesizer_synthesize_ssml_to_stream_async( IInspectable *invoker, IInspectable **result )
+static HRESULT synthesizer_synthesize_ssml_to_stream_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
 {
-    return synthesis_stream_create((ISpeechSynthesisStream **)result);
+    ISpeechSynthesisStream *stream;
+    HRESULT hr;
+
+    if (!called_async) return STATUS_PENDING;
+
+    if (SUCCEEDED(hr = synthesis_stream_create(&stream)))
+    {
+        result->vt = VT_UNKNOWN;
+        result->punkVal = (IUnknown *)stream;
+    }
+    return hr;
 }
 
 static HRESULT WINAPI synthesizer_SynthesizeSsmlToStreamAsync( ISpeechSynthesizer *iface, HSTRING ssml,
                                                                IAsyncOperation_SpeechSynthesisStream **operation )
 {
     TRACE("iface %p, ssml %p, operation %p.\n", iface, ssml, operation);
-    return async_operation_inspectable_create(&IID_IAsyncOperation_SpeechSynthesisStream, NULL,
+    return async_operation_inspectable_create(&IID_IAsyncOperation_SpeechSynthesisStream, NULL, NULL,
                                               synthesizer_synthesize_ssml_to_stream_async, (IAsyncOperation_IInspectable **)operation);
 }
 

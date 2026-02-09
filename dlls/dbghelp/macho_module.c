@@ -37,7 +37,6 @@
 #include "ddk/mountmgr.h"
 
 #include "wine/debug.h"
-#include "wine/heap.h"
 
 struct dyld_image_info32
 {
@@ -1190,7 +1189,7 @@ static void macho_finish_stabs(struct module* module, struct hash_table* ht_symt
             if (ste->is_code)
             {
                 symt_new_function(module, ste->compiland, ste->ht_elt.name,
-                    ste->addr, 0, NULL);
+                                  ste->addr, 0, 0, 0);
             }
             else
             {
@@ -1200,7 +1199,7 @@ static void macho_finish_stabs(struct module* module, struct hash_table* ht_symt
                 loc.reg = 0;
                 loc.offset = ste->addr;
                 symt_new_global_variable(module, ste->compiland, ste->ht_elt.name,
-                                         !ste->is_global, loc, 0, NULL);
+                                         !ste->is_global, loc, 0, 0);
             }
 
             ste->used = 1;
@@ -1479,11 +1478,17 @@ static BOOL macho_fetch_file_info(struct process* process, const WCHAR* name, UL
 /******************************************************************
  *              macho_module_remove
  */
-static void macho_module_remove(struct process* pcs, struct module_format* modfmt)
+static void macho_module_remove(struct module_format* modfmt)
 {
     macho_unmap_file(&modfmt->u.macho_info->file_map);
     HeapFree(GetProcessHeap(), 0, modfmt);
 }
+
+static const struct module_format_vtable macho_module_format_vtable =
+{
+    macho_module_remove,
+    NULL,
+};
 
 /******************************************************************
  *              macho_load_file
@@ -1538,8 +1543,7 @@ static BOOL macho_load_file(struct process* pcs, const WCHAR* filename,
         macho_info->module->format_info[DFI_MACHO] = modfmt;
 
         modfmt->module       = macho_info->module;
-        modfmt->remove       = macho_module_remove;
-        modfmt->loc_compute  = NULL;
+        modfmt->vtable       = &macho_module_format_vtable;
         modfmt->u.macho_info = macho_module_info;
 
         macho_module_info->load_addr = load_addr;
@@ -1944,12 +1948,8 @@ static BOOL macho_search_loader(struct process* pcs, struct macho_info* macho_in
 
     if (!ret)
     {
-        WCHAR* loader = get_wine_loader_name(pcs);
-        if (loader)
-        {
-            ret = macho_search_and_load_file(pcs, loader, 0, macho_info);
-            HeapFree(GetProcessHeap(), 0, loader);
-        }
+        const WCHAR *loader = get_wine_loader_name(pcs);
+        if (loader) ret = macho_search_and_load_file(pcs, loader, 0, macho_info);
     }
     return ret;
 }

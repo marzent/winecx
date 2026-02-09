@@ -188,7 +188,6 @@ struct WebBrowser {
     LONG ref;
 
     INT version;
-    DWORD tid;
 
     IOleClientSite *client;
     IOleClientSite *client_closed;
@@ -293,7 +292,6 @@ void notify_download_state(DocHost*,BOOL);
 void update_navigation_commands(DocHost *dochost);
 
 #define WM_DOCHOSTTASK (WM_USER+0x300)
-#define WM_GETMARSHALEDDOC (WM_USER+0x400)
 void push_dochost_task(DocHost*,task_header_t*,task_proc_t,task_destr_t,BOOL);
 void abort_dochost_tasks(DocHost*,task_proc_t);
 LRESULT process_dochost_tasks(DocHost*);

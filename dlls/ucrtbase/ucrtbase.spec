@@ -14,14 +14,14 @@
 @ cdecl -arch=i386 _CIsqrt()
 @ cdecl -arch=i386 _CItan()
 @ cdecl -arch=i386 _CItanh()
-@ cdecl _Cbuild(ptr double double)
+@ cdecl -norelay _Cbuild(double double)
 @ stub _Cmulcc
 @ stub _Cmulcr
 @ cdecl _CreateFrameInfo(ptr ptr)
 @ stdcall _CxxThrowException(ptr ptr)
 @ cdecl -arch=i386 -norelay _EH_prolog()
 @ cdecl _Exit(long) _exit
-@ stub _FCbuild
+@ cdecl -norelay _FCbuild(float float)
 @ stub _FCmulcc
 @ stub _FCmulcr
 @ cdecl _FindAndUnlinkFrame(ptr)
@@ -48,7 +48,7 @@
 @ cdecl __AdjustPointer(ptr ptr)
 @ stub __BuildCatchObject
 @ stub __BuildCatchObjectHelper
-@ stdcall -arch=!i386 __C_specific_handler(ptr long ptr ptr) ntdll.__C_specific_handler
+@ stdcall -arch=!i386 __C_specific_handler(ptr long ptr ptr)
 @ cdecl __CxxDetectRethrow(ptr)
 @ cdecl __CxxExceptionFilter(ptr ptr long ptr)
 @ cdecl -norelay __CxxFrameHandler(ptr ptr ptr ptr)
@@ -1758,9 +1758,9 @@
 @ cdecl _o_remquol(double double ptr) remquo
 @ cdecl _o_rename(str str) rename
 @ cdecl _o_rewind(ptr) rewind
-@ cdecl _o_rint(double) MSVCRT_rint
+@ cdecl _o_rint(double) rint
 @ cdecl _o_rintf(float) rintf
-@ cdecl _o_rintl(double) MSVCRT_rint
+@ cdecl _o_rintl(double) rint
 @ cdecl _o_round(double) round
 @ cdecl _o_roundf(float) roundf
 @ cdecl _o_roundl(double) round
@@ -2192,8 +2192,8 @@
 @ stub cacoshl
 @ stub cacosl
 @ cdecl calloc(long long)
-@ stub carg
-@ stub cargf
+@ cdecl carg(int128)
+@ cdecl cargf(int64)
 @ stub cargl
 @ stub casin
 @ stub casinf
@@ -2218,11 +2218,11 @@
 @ stub ccosl
 @ cdecl ceil(double)
 @ cdecl -arch=!i386 ceilf(float)
-@ stub cexp
+@ cdecl -norelay cexp(int128)
 @ stub cexpf
 @ stub cexpl
-@ stub cimag
-@ stub cimagf
+@ cdecl cimag(int128)
+@ cdecl cimagf(int64)
 @ stub cimagl
 @ cdecl clearerr(ptr)
 @ cdecl clearerr_s(ptr)
@@ -2249,8 +2249,8 @@
 @ stub cproj
 @ stub cprojf
 @ stub cprojl
-@ cdecl creal(int128) MSVCR120_creal
-@ stub crealf
+@ cdecl creal(int128)
+@ cdecl crealf(int64)
 @ stub creall
 @ stub csin
 @ stub csinf
@@ -2348,7 +2348,7 @@
 @ cdecl ilogbf(float)
 @ cdecl ilogbl(double) ilogb
 @ cdecl -ret64 imaxabs(int64)
-@ stub imaxdiv
+@ cdecl -norelay imaxdiv(int64 int64)
 @ cdecl is_wctype(long long) iswctype
 @ cdecl isalnum(long)
 @ cdecl isalpha(long)
@@ -2472,9 +2472,9 @@
 @ cdecl rename(str str)
 @ cdecl -arch=i386 rewind(ptr) rewind_preserve_stack
 @ cdecl -arch=!i386 rewind(ptr)
-@ cdecl rint(double) MSVCRT_rint
+@ cdecl rint(double)
 @ cdecl rintf(float)
-@ cdecl rintl(double) MSVCRT_rint
+@ cdecl rintl(double) rint
 @ cdecl round(double)
 @ cdecl roundf(float)
 @ cdecl roundl(double) round
