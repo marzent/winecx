@@ -467,6 +467,26 @@ static void post_ime_update( HWND hwnd, UINT cursor_pos, WCHAR *comp_str, WCHAR 
     else
     {
         update->scan = data->ime_process_scan;
+
+        // If this update doesn't have a vkey, but the previous one does, merge them together so that the comp/result strings are not lost.
+        if (data->update && !update->result_str && data->update->result_str)
+        {
+            UINT prev_result_len = wcslen( data->update->result_str ) + 1;
+            struct ime_update *merged;
+
+            if ((merged = malloc( offsetof(struct ime_update, buffer[comp_len + prev_result_len]) )))
+            {
+                merged->vkey = update->vkey;
+                merged->scan = update->scan;
+                merged->cursor_pos = update->cursor_pos;
+                merged->comp_str = comp_len ? memcpy( merged->buffer, comp_str, comp_len * sizeof(WCHAR) ) : NULL;
+                merged->result_str = memcpy( merged->buffer + comp_len, data->update->result_str,
+                                             prev_result_len * sizeof(WCHAR) );
+                free( update );
+                update = merged;
+            }
+        }
+
         free( data->update );
         data->update = update;
     }
