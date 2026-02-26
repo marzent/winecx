@@ -2871,6 +2871,11 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
         shapeLayer.anchorPoint = self.contentView.layer.anchorPoint;
         shapeLayer.fillColor = CGColorGetConstantColor(kCGColorBlack);
 
+        rect.origin.x /= self.contentView.layer.contentsScale;
+        rect.origin.y /= self.contentView.layer.contentsScale;
+        rect.size.width /= self.contentView.layer.contentsScale;
+        rect.size.height /= self.contentView.layer.contentsScale;
+
         CGMutablePathRef path = CGPathCreateMutable();
         /* left/right */
         if (rect.origin.x > 0.0)
