@@ -2883,10 +2883,10 @@ static CVReturn WineDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTi
 
         /* top/bottom */
         if (rect.origin.y > 0.0)
-            CGPathAddRect(path, NULL, CGRectMake(0, 0, shapeLayer.bounds.size.width, rect.origin.y));
+            CGPathAddRect(path, NULL, CGRectMake(0, shapeLayer.bounds.size.height - rect.origin.y,
+                                                 shapeLayer.bounds.size.width, rect.origin.y));
         if (rect.origin.y + rect.size.height < shapeLayer.bounds.size.height)
-            CGPathAddRect(path, NULL, CGRectMake(0,
-                                                 rect.origin.y + rect.size.height,
+            CGPathAddRect(path, NULL, CGRectMake(0, 0,
                                                  shapeLayer.bounds.size.width,
                                                  shapeLayer.bounds.size.height - (rect.origin.y + rect.size.height)));
 
