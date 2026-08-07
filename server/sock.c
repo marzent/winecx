@@ -2035,6 +2035,18 @@ static int init_socket( struct sock *sock, int family, int type, int protocol )
     sock->type   = type;
     sock->family = family;
 
+    /* Windows reports AF_UNIX with an empty path for an unbound socket, so the
+     * family has to be present before bind() ever runs. */
+    if (family == WS_AF_UNIX)
+    {
+        memset( &sock->addr.un, 0, sizeof(sock->addr.un) );
+        sock->addr.un.sun_family = WS_AF_UNIX;
+        sock->addr_len = sizeof(sock->addr.un);
+        memset( &sock->peer_addr.un, 0, sizeof(sock->peer_addr.un) );
+        sock->peer_addr.un.sun_family = WS_AF_UNIX;
+        sock->peer_addr_len = sizeof(sock->peer_addr.un);
+    }
+
     if (is_tcp_socket( sock ))
     {
         value = 1;
