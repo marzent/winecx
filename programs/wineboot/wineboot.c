@@ -1547,8 +1547,24 @@ static void install_root_pnp_devices(void)
         if (!SetupDiCreateDeviceInfoA( set, root_devices[i].name, &GUID_NULL, NULL, NULL, 0, &device))
         {
             if (GetLastError() != ERROR_DEVINST_ALREADY_EXISTS)
+            {
                 WINE_ERR("Failed to create device %s, error %#lx.\n", debugstr_a(root_devices[i].name), GetLastError());
-            continue;
+                continue;
+            }
+
+            /* The device node was already created by a previous run, but that
+             * does not mean the driver was ever successfully installed for it
+             * -- e.g. an earlier UpdateDriverForPlugAndPlayDevices() call may
+             * have failed part-way through and left it in that state
+             * permanently, since we would always take this branch and skip
+             * reinstallation on every subsequent boot. Open the existing
+             * device info instead of skipping the rest of the installation,
+             * so a genuinely incomplete install gets retried. */
+            if (!SetupDiOpenDeviceInfoA(set, root_devices[i].name, NULL, 0, &device))
+            {
+                WINE_ERR("Failed to open existing device %s, error %#lx.\n", debugstr_a(root_devices[i].name), GetLastError());
+                continue;
+            }
         }
 
         if (!SetupDiSetDeviceRegistryPropertyA(set, &device, SPDRP_HARDWAREID,
