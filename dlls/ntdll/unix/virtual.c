@@ -6858,6 +6858,34 @@ NTSTATUS WINAPI NtReadVirtualMemory( HANDLE process, const void *addr, void *buf
     return status;
 }
 
+#ifdef __APPLE__
+/* CW HACK 18947
+ * If mach_vm_write() is used to modify code cross-process (which is how we implement
+ * NtWriteVirtualMemory), Rosetta won't notice the change and will execute the "old" code.
+ *
+ * To work around this, after the write completes,
+ * toggle the executable bit (from inside the target process) on/off for any executable
+ * pages that were modified, to force Rosetta to re-translate it.
+ */
+static void toggle_executable_pages_for_rosetta( HANDLE process, void *addr, SIZE_T size )
+{
+    MEMORY_BASIC_INFORMATION info;
+    NTSTATUS status;
+    SIZE_T ret;
+
+    status = NtQueryVirtualMemory( process, addr, MemoryBasicInformation, &info, sizeof(info), &ret );
+
+    if (!status && (info.AllocationProtect & 0xf0))
+    {
+        DWORD origprot, noexec;
+        noexec = info.AllocationProtect & ~0xf0;
+        if (!noexec) noexec = PAGE_NOACCESS;
+
+        NtProtectVirtualMemory( process, &addr, &size, noexec, &origprot );
+        NtProtectVirtualMemory( process, &addr, &size, origprot, &noexec );
+    }
+}
+#endif
 
 /***********************************************************************
  *             NtWriteVirtualMemory   (NTDLL.@)
@@ -7222,6 +7250,10 @@ NTSTATUS WINAPI NtWow64ReadVirtualMemory64( HANDLE process, ULONG64 addr, void *
             if ((status = wine_server_call( req ))) size = 0;
         }
         SERVER_END_REQ;
+
+#ifdef __APPLE__
+        toggle_executable_pages_for_rosetta( process, addr, size );
+#endif
     }
     else
     {
