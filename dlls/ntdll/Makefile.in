@@ -56,6 +56,7 @@ SOURCES = \
 	unix/file.c \
 	unix/loader.c \
 	unix/loadorder.c \
+	unix/msync.c \
 	unix/process.c \
 	unix/registry.c \
 	unix/security.c \

@@ -54,6 +54,7 @@
 
 #include "file.h"
 #include "handle.h"
+#include "msync.h"
 #include "process.h"
 #include "thread.h"
 #include "request.h"
@@ -2382,6 +2383,12 @@ DECL_HANDLER(get_inproc_alert_fd)
     if ((fd = get_inproc_sync_fd( current->alert_sync )) < 0) set_error( STATUS_INVALID_PARAMETER );
     else
     {
+        if (do_msync())
+        {
+            reply->handle = (unsigned int)fd;
+            return;
+        }
+
         reply->handle = get_thread_id( current ) | 1; /* arbitrary token */
         send_client_fd( current->process, fd, reply->handle );
     }

@@ -16,6 +16,7 @@ SOURCES = \
 	event.c \
 	fd.c \
 	file.c \
+	msync.c \
 	handle.c \
 	hook.c \
 	inproc_sync.c \
