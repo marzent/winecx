@@ -1495,6 +1495,7 @@ static BOOL start_services_process(void)
     return TRUE;
 }
 
+#if 0
 static void set_wait_dialog_text( HWND hwnd, HWND text, const WCHAR *string )
 {
     RECT win_rect, old_rect, new_rect;
@@ -1552,6 +1553,7 @@ static HWND show_wait_window(void)
     ShowWindow( hwnd, SW_SHOWNORMAL );
     return hwnd;
 }
+#endif
 
 static HANDLE start_rundll32( const WCHAR *inf_path, const WCHAR *install, WORD machine )
 {
@@ -1701,7 +1703,9 @@ static void update_wineprefix( BOOL force )
 
         if ((process = start_rundll32( inf_path, L"PreInstall", IMAGE_FILE_MACHINE_TARGET_HOST )))
         {
+#if 0
             HWND hwnd = show_wait_window();
+#endif
             for (;;)
             {
                 if (process)
@@ -1722,7 +1726,9 @@ static void update_wineprefix( BOOL force )
                     process = start_rundll32( inf_path, L"Wow64Install", machines[count].Machine );
                 count++;
             }
+#if 0
             DestroyWindow( hwnd );
+#endif
         }
         install_root_pnp_devices();
         update_user_profile();
