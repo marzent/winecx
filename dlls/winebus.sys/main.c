@@ -1228,7 +1228,7 @@ static void bus_options_init(void)
 {
     options.disable_sdl = !check_bus_option(L"Enable SDL", 1);
     if (options.disable_sdl) TRACE("SDL devices disabled in registry\n");
-    options.disable_hidraw = check_bus_option(L"DisableHidraw", 0);
+    options.disable_hidraw = check_bus_option(L"DisableHidraw", 1);
     if (options.disable_hidraw) TRACE("IOHID and UDEV hidraw devices disabled in registry\n");
     options.disable_input = check_bus_option(L"DisableInput", 0);
     if (options.disable_input) TRACE("UDEV input devices disabled in registry\n");
