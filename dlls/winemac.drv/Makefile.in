@@ -26,6 +26,7 @@ SOURCES = \
 	cocoa_opengl.m \
 	cocoa_status_item.m \
 	cocoa_window.m \
+	d3dmetal.c \
 	display.c \
 	dllmain.c \
 	event.c \

@@ -279,6 +279,8 @@ W32KAPI void client_surface_release( struct client_surface *surface );
 W32KAPI void client_surface_present( struct client_surface *surface );
 W32KAPI void update_client_surfaces( HWND hwnd );
 W32KAPI void detach_client_surfaces( HWND hwnd );
+W32KAPI void use_window_client_surface( struct client_surface *surface, BOOL use );
+W32KAPI struct client_surface *get_unused_client_surface( HWND hwnd, int format, BOOL raw );
 
 static inline const char *debugstr_client_surface( struct client_surface *surface )
 {
