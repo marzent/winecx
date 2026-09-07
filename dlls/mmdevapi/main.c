@@ -50,6 +50,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(mmdevapi);
 
 DriverFuncs drvs;
 static DriverFuncs midi_driver;
+static HRESULT driver_init_hr = S_OK;
 
 #define MIDI_CALL(code,args)  __wine_unix_call( midi_driver.module_unixlib, code, args )
 
@@ -75,6 +76,8 @@ static BOOL load_driver(const WCHAR *name, DriverFuncs *driver)
     NTSTATUS status;
     WCHAR driver_module[264], path[MAX_PATH];
     struct test_connect_params params;
+
+    driver->native_notifications = FALSE;
 
     lstrcpyW(driver_module, L"wine");
     lstrcatW(driver_module, name);
@@ -186,9 +189,28 @@ static BOOL WINAPI init_driver(INIT_ONCE *once, void *param, void **context)
         }
         else midi_driver = drvs;
 
-        load_devices_from_reg();
-        load_driver_devices(eRender);
-        load_driver_devices(eCapture);
+        driver_init_hr = start_device_notifications();
+        if (driver_init_hr == E_NOTIMPL)
+        {
+            driver_init_hr = S_OK;
+            load_devices_from_reg();
+            load_driver_devices(eRender);
+            load_driver_devices(eCapture);
+        }
+        else if (FAILED(driver_init_hr))
+        {
+            ERR("Failed to initialize audio device notifications: %08lx\n", driver_init_hr);
+            if (midi_driver.module_unixlib && midi_driver.module != drvs.module)
+            {
+                MIDI_CALL( process_detach, NULL );
+                FreeLibrary( midi_driver.module );
+            }
+            wine_unix_call( process_detach, NULL );
+            FreeLibrary( drvs.module );
+            midi_driver = (DriverFuncs){0};
+            drvs = (DriverFuncs){0};
+            return TRUE;
+        }
     }
 
     if (drvs.module == 0)
@@ -209,6 +231,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
             DisableThreadLibraryCalls(hinstDLL);
             break;
         case DLL_PROCESS_DETACH:
+            if (drvs.native_notifications) break;
             if (drvs.module_unixlib)
             {
                 wine_unix_call( process_detach, NULL );
@@ -319,6 +342,7 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     TRACE("(%s, %s, %p)\n", debugstr_guid(rclsid), debugstr_guid(riid), ppv);
 
     InitOnceExecuteOnce(&init_once, init_driver, NULL, NULL);
+    if (FAILED(driver_init_hr)) return driver_init_hr;
 
     if (ppv == NULL) {
         WARN("invalid parameter\n");
@@ -378,6 +402,7 @@ static DWORD WINAPI notify_thread( void *p )
 LRESULT WINAPI DriverProc( DWORD_PTR id, HANDLE driver, UINT msg, LPARAM param1, LPARAM param2 )
 {
     InitOnceExecuteOnce( &init_once, init_driver, NULL, NULL );
+    if (FAILED(driver_init_hr)) return 0;
     if (!midi_driver.module_unixlib) return 0;
 
     switch(msg)

@@ -47,6 +47,16 @@ DEFINE_GUID(GUID_NULL,0,0,0,0,0,0,0,0,0,0,0);
 static HKEY key_render;
 static HKEY key_capture;
 
+static CRITICAL_SECTION devices_lock;
+static CRITICAL_SECTION_DEBUG devices_lock_debug =
+{
+    0, 0, &devices_lock,
+    { &devices_lock_debug.ProcessLocksList, &devices_lock_debug.ProcessLocksList },
+    0, 0, { (DWORD_PTR)(__FILE__ ": devices_lock") }
+};
+static CRITICAL_SECTION devices_lock = { &devices_lock_debug, -1, 0, 0, 0, 0 };
+
+
 typedef struct MMDevPropStoreImpl
 {
     IPropertyStore IPropertyStore_iface;
@@ -150,16 +160,20 @@ static void add_device_to_cache( const GUID *guid, const char *name, EDataFlow f
     dev->guid = *guid;
     dev->flow = flow;
     strcpy( dev->name, name );
+    EnterCriticalSection(&devices_lock);
     list_add_tail( &devices_cache, &dev->entry );
+    LeaveCriticalSection(&devices_lock);
 }
 
 static struct device *find_device_in_cache( const GUID *guid )
 {
-    struct device *dev;
+    struct device *dev, *found = NULL;
 
+    EnterCriticalSection(&devices_lock);
     LIST_FOR_EACH_ENTRY( dev, &devices_cache, struct device, entry )
-        if (IsEqualGUID( guid, &dev->guid )) return dev;
-    return NULL;
+        if (IsEqualGUID( guid, &dev->guid )) { found = dev; break; }
+    LeaveCriticalSection(&devices_lock);
+    return found;
 }
 
 BOOL get_device_name_from_guid( const GUID *guid, char **name, EDataFlow *flow )
@@ -445,7 +459,7 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
 {
     HKEY key, root;
     MMDevice *device, *cur = NULL;
-    WCHAR guidstr[39];
+    WCHAR guidstr[39], *copy;
 
     static const PROPERTYKEY deviceinterface_key = {
         {0x233164c8, 0x1b2c, 0x4c7d, {0xbc, 0x68, 0xb6, 0x71, 0x68, 0x7a, 0x25, 0x67}}, 1
@@ -454,6 +468,8 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
     static const PROPERTYKEY devicepath_key = {
         {0xb3f8fa53, 0x0004, 0x438e, {0x90, 0x03, 0x51, 0xa4, 0x6e, 0x13, 0x9b, 0xfc}}, 2
     };
+
+    if (!(copy = wcsdup(name))) return NULL;
 
     LIST_FOR_EACH_ENTRY(device, &device_list, MMDevice, entry)
     {
@@ -466,18 +482,17 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
     if(!cur){
         /* No device found, allocate new one */
         cur = calloc(1, sizeof(*cur));
-        if (!cur)
-            return NULL;
+        if (!cur) { free(copy); return NULL; }
 
         cur->IMMDevice_iface.lpVtbl = &MMDeviceVtbl;
         cur->IMMEndpoint_iface.lpVtbl = &MMEndpointVtbl;
 
         list_add_tail(&device_list, &cur->entry);
-    }else if(cur->ref > 0)
+    }else if(cur->ref > 0 && !drvs.native_notifications)
         WARN("Modifying an MMDevice with postitive reference count!\n");
 
     free(cur->drv_id);
-    cur->drv_id = wcsdup(name);
+    cur->drv_id = copy;
 
     cur->flow = flow;
     cur->state = state;
@@ -566,7 +581,7 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
 HRESULT load_devices_from_reg(void)
 {
     DWORD i = 0;
-    HKEY root, cur;
+    HKEY root = NULL, cur;
     LONG ret;
     DWORD curflow;
 
@@ -577,7 +592,7 @@ HRESULT load_devices_from_reg(void)
         ret = RegCreateKeyExW(root, L"Capture", 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_capture, NULL);
     if (ret == ERROR_SUCCESS)
         ret = RegCreateKeyExW(root, L"Render", 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_render, NULL);
-    RegCloseKey(root);
+    if (root) RegCloseKey(root);
     cur = key_capture;
     curflow = eCapture;
     if (ret != ERROR_SUCCESS)
@@ -653,39 +668,137 @@ static HRESULT set_format(MMDevice *dev)
     return S_OK;
 }
 
+static HRESULT query_driver_devices(EDataFlow flow, struct get_endpoint_ids_params *params)
+{
+    void *buffer;
+
+    params->flow = flow;
+    params->size = 1024;
+    params->endpoints = NULL;
+    do
+    {
+        if (!(buffer = realloc(params->endpoints, params->size))) return E_OUTOFMEMORY;
+        params->endpoints = buffer;
+        if (__wine_unix_call(drvs.module_unixlib, get_endpoint_ids, params)) return E_FAIL;
+    } while (params->result == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
+    return params->result;
+}
+
+static HRESULT register_driver_devices(const struct get_endpoint_ids_params *params)
+{
+    UINT i;
+
+    for (i = 0; i < params->num; ++i)
+    {
+        GUID guid = GUID_NULL;
+        MMDevice *dev;
+        const WCHAR *name = (WCHAR *)((char *)params->endpoints + params->endpoints[i].name);
+        const char *dev_name = (char *)params->endpoints + params->endpoints[i].device;
+
+        get_device_guid(params->flow, dev_name, &guid);
+        if (IsEqualGUID(&guid, &GUID_NULL)) return E_FAIL;
+        dev = MMDevice_Create(name, &guid, params->flow, DEVICE_STATE_ACTIVE, params->default_idx == i);
+        if (!dev) return E_OUTOFMEMORY;
+        dev->present = TRUE;
+        set_format(dev);
+    }
+    return S_OK;
+}
+
 HRESULT load_driver_devices(EDataFlow flow)
 {
     struct get_endpoint_ids_params params;
-    UINT i;
+    HRESULT hr;
 
-    params.flow = flow;
-    params.size = 1024;
-    params.endpoints = NULL;
-    do {
-        free(params.endpoints);
-        params.endpoints = malloc(params.size);
-        __wine_unix_call(drvs.module_unixlib, get_endpoint_ids, &params);
+    hr = query_driver_devices(flow, &params);
+    if (SUCCEEDED(hr)) hr = register_driver_devices(&params);
+    free(params.endpoints);
+    return hr;
+}
+
+static HRESULT rescan_devices(void)
+{
+    struct get_endpoint_ids_params params[2] = {{0}};
+    MMDevice *dev, *old_play, *old_rec;
+    HRESULT hr;
+
+    if (FAILED(hr = query_driver_devices(eRender, &params[eRender])) ||
+        FAILED(hr = query_driver_devices(eCapture, &params[eCapture]))) goto done;
+
+    EnterCriticalSection(&devices_lock);
+    old_play = MMDevice_def_play;
+    old_rec = MMDevice_def_rec;
+    MMDevice_def_play = MMDevice_def_rec = NULL;
+    LIST_FOR_EACH_ENTRY(dev, &device_list, MMDevice, entry) dev->present = FALSE;
+    hr = register_driver_devices(&params[eRender]);
+    if (SUCCEEDED(hr)) hr = register_driver_devices(&params[eCapture]);
+    if (SUCCEEDED(hr))
+    {
+        /* Retain objects held by applications instead of freeing them during a rescan. */
+        LIST_FOR_EACH_ENTRY(dev, &device_list, MMDevice, entry)
+            if (!dev->present) dev->state = DEVICE_STATE_NOTPRESENT;
+    }
+    else
+    {
+        MMDevice_def_play = old_play;
+        MMDevice_def_rec = old_rec;
+    }
+    LeaveCriticalSection(&devices_lock);
+done:
+    free(params[eRender].endpoints);
+    free(params[eCapture].endpoints);
+    return hr;
+}
+
+static HRESULT sync_default_output(void)
+{
+    struct get_default_output_params params = {NULL, 256, E_FAIL};
+    struct device *cached;
+    MMDevice *dev;
+    char *buffer;
+    HRESULT hr;
+
+    do
+    {
+        if (!(buffer = realloc(params.device, params.size)))
+        {
+            free(params.device);
+            return E_OUTOFMEMORY;
+        }
+        params.device = buffer;
+        if (__wine_unix_call(drvs.module_unixlib, get_default_output, &params))
+            params.result = E_FAIL;
     } while (params.result == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
 
-    if (FAILED(params.result))
-        goto end;
-
-    for (i = 0; i < params.num; i++) {
-        GUID guid;
-        MMDevice *dev;
-        const WCHAR *name = (WCHAR *)((char *)params.endpoints + params.endpoints[i].name);
-        const char *dev_name = (char *)params.endpoints + params.endpoints[i].device;
-
-        get_device_guid( flow, dev_name, &guid );
-
-        dev = MMDevice_Create(name, &guid, flow, DEVICE_STATE_ACTIVE, params.default_idx == i);
-        set_format(dev);
+    hr = params.result;
+    if (FAILED(hr)) goto done;
+    EnterCriticalSection(&devices_lock);
+    if (hr == S_FALSE)
+    {
+        MMDevice_def_play = NULL;
+        hr = S_OK;
     }
-
-end:
-    free(params.endpoints);
-
-    return params.result;
+    else
+    {
+        hr = E_NOTFOUND;
+        LIST_FOR_EACH_ENTRY(cached, &devices_cache, struct device, entry)
+        {
+            if (cached->flow != eRender || strcmp(cached->name, params.device)) continue;
+            LIST_FOR_EACH_ENTRY(dev, &device_list, MMDevice, entry)
+            {
+                if (dev->flow != eRender || dev->state != DEVICE_STATE_ACTIVE ||
+                    !IsEqualGUID(&dev->devguid, &cached->guid)) continue;
+                MMDevice_def_play = dev;
+                hr = S_OK;
+                break;
+            }
+            break;
+        }
+    }
+    LeaveCriticalSection(&devices_lock);
+done:
+    free(params.device);
+    return hr;
 }
 
 static void MMDevice_Destroy(MMDevice *This)
@@ -871,7 +984,9 @@ static HRESULT WINAPI MMDevice_GetState(IMMDevice *iface, DWORD *state)
 
     if (!state)
         return E_POINTER;
+    EnterCriticalSection(&devices_lock);
     *state = This->state;
+    LeaveCriticalSection(&devices_lock);
     return S_OK;
 }
 
@@ -946,6 +1061,7 @@ static HRESULT MMDevCol_Create(IMMDeviceCollection **ppv, EDataFlow flow, DWORD 
     This->devices_count = 0;
     *ppv = &This->IMMDeviceCollection_iface;
 
+    EnterCriticalSection(&devices_lock);
     LIST_FOR_EACH_ENTRY(cur, &device_list, MMDevice, entry)
     {
         if ((cur->flow == flow || flow == eAll) && (cur->state & state))
@@ -955,8 +1071,13 @@ static HRESULT MMDevCol_Create(IMMDeviceCollection **ppv, EDataFlow flow, DWORD 
     if (This->devices_count)
     {
         This->devices = malloc(This->devices_count * sizeof(IMMDevice *));
-        if (!This->devices_count)
+        if (!This->devices)
+        {
+            LeaveCriticalSection(&devices_lock);
+            free(This);
+            *ppv = NULL;
             return E_OUTOFMEMORY;
+        }
 
         LIST_FOR_EACH_ENTRY(cur, &device_list, MMDevice, entry)
         {
@@ -969,6 +1090,7 @@ static HRESULT MMDevCol_Create(IMMDeviceCollection **ppv, EDataFlow flow, DWORD 
         }
     }
 
+    LeaveCriticalSection(&devices_lock);
     return S_OK;
 }
 
@@ -1073,8 +1195,13 @@ void MMDevEnum_Free(void)
         MMDevice_Destroy(device);
     RegCloseKey(key_render);
     RegCloseKey(key_capture);
+    key_render = key_capture = NULL;
+    MMDevice_def_play = MMDevice_def_rec = NULL;
     LIST_FOR_EACH_ENTRY_SAFE(dev, dev_next, &devices_cache, struct device, entry)
-        free( dev );
+    {
+        list_remove(&dev->entry);
+        free(dev);
+    }
 }
 
 static HRESULT WINAPI MMDevEnum_QueryInterface(IMMDeviceEnumerator *iface, REFIID riid, void **ppv)
@@ -1180,7 +1307,8 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
             TRACE("Unable to find voice device %s\n", wine_dbgstr_w(def_id));
         }
 
-        if(RegQueryValueExW(key, reg_x_name, 0, NULL,
+        if((!drvs.native_notifications || flow != eRender) &&
+                RegQueryValueExW(key, reg_x_name, 0, NULL,
                     (BYTE*)def_id, &size) == ERROR_SUCCESS){
             hr = IMMDeviceEnumerator_GetDevice(iface, def_id, device);
             if(SUCCEEDED(hr)){
@@ -1197,15 +1325,15 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
         RegCloseKey(key);
     }
 
+    if (*device) IMMDevice_Release(*device);
+    EnterCriticalSection(&devices_lock);
     if (flow == eRender)
-        *device = &MMDevice_def_play->IMMDevice_iface;
+        *device = MMDevice_def_play ? &MMDevice_def_play->IMMDevice_iface : NULL;
     else
-        *device = &MMDevice_def_rec->IMMDevice_iface;
-
-    if (!*device)
-        return E_NOTFOUND;
-    IMMDevice_AddRef(*device);
-    return S_OK;
+        *device = MMDevice_def_rec ? &MMDevice_def_rec->IMMDevice_iface : NULL;
+    if (*device) IMMDevice_AddRef(*device);
+    LeaveCriticalSection(&devices_lock);
+    return *device ? S_OK : E_NOTFOUND;
 }
 
 static HRESULT WINAPI MMDevEnum_GetDevice(IMMDeviceEnumerator *iface, const WCHAR *name, IMMDevice **device)
@@ -1219,6 +1347,8 @@ static HRESULT WINAPI MMDevEnum_GetDevice(IMMDeviceEnumerator *iface, const WCHA
     if(!name || !device)
         return E_POINTER;
 
+    *device = NULL;
+    EnterCriticalSection(&devices_lock);
     LIST_FOR_EACH_ENTRY(impl, &device_list, MMDevice, entry)
     {
         HRESULT hr;
@@ -1236,10 +1366,12 @@ static HRESULT WINAPI MMDevEnum_GetDevice(IMMDeviceEnumerator *iface, const WCHA
             CoTaskMemFree(str);
             IMMDevice_AddRef(dev);
             *device = dev;
+            LeaveCriticalSection(&devices_lock);
             return S_OK;
         }
         CoTaskMemFree(str);
     }
+    LeaveCriticalSection(&devices_lock);
     TRACE("Could not find device %s\n", debugstr_w(name));
     return E_INVALIDARG;
 }
@@ -1282,7 +1414,14 @@ static BOOL notify_if_changed(EDataFlow flow, ERole role, HKEY key,
     HRESULT hr;
 
     size = sizeof(new_val);
-    if(RegQueryValueExW(key, val_name, 0, NULL,
+    if (!key)
+    {
+        id = NULL;
+        if (def_dev && FAILED(IMMDevice_GetId(def_dev, &id))) return FALSE;
+        lstrcpynW(new_val, id ? id : L"", ARRAY_SIZE(new_val));
+        CoTaskMemFree(id);
+    }
+    else if(RegQueryValueExW(key, val_name, 0, NULL,
                 (BYTE*)new_val, &size) != ERROR_SUCCESS){
         if(old_val[0] != 0){
             /* set by user -> system default */
@@ -1337,12 +1476,27 @@ static BOOL notify_if_changed(EDataFlow flow, ERole role, HKEY key,
 
 static DWORD WINAPI notif_thread_proc(void *user)
 {
-    HKEY key;
+    HKEY key = NULL;
     WCHAR reg_key[256];
     WCHAR out_name[64], vout_name[64], in_name[64], vin_name[64];
     DWORD size;
+    struct device_notifications_wait_params wait = {INFINITE};
+    UINT pending = 0;
+    HRESULT hr;
 
     SetThreadDescription(GetCurrentThread(), L"wine_mmdevapi_notification");
+
+    if (drvs.native_notifications)
+    {
+        WCHAR *id = NULL;
+        out_name[0] = 0;
+        if (MMDevice_def_play && SUCCEEDED(IMMDevice_GetId(&MMDevice_def_play->IMMDevice_iface, &id)))
+        {
+            lstrcpynW(out_name, id, ARRAY_SIZE(out_name));
+            CoTaskMemFree(id);
+        }
+        goto monitor;
+    }
 
     lstrcpyW(reg_key, drv_keyW);
     lstrcatW(reg_key, L"\\");
@@ -1370,8 +1524,30 @@ static DWORD WINAPI notif_thread_proc(void *user)
     if(RegQueryValueExW(key, L"DefaultVoiceInput", 0, NULL, (BYTE*)vin_name, &size) != ERROR_SUCCESS)
         vin_name[0] = 0;
 
+monitor:
     while(1){
-        if(RegNotifyChangeKeyValue(key, FALSE, REG_NOTIFY_CHANGE_LAST_SET,
+        if (drvs.native_notifications)
+        {
+            if (__wine_unix_call(drvs.module_unixlib, device_notifications_wait, &wait))
+            { Sleep(100); continue; }
+            if (wait.result == E_ABORT) break;
+            if (FAILED(wait.result)) { Sleep(100); continue; }
+            pending |= wait.changes;
+            if (pending & DEVICE_CHANGE_LIST)
+            {
+                if (FAILED(rescan_devices())) { wait.timeout = 100; continue; }
+                pending = (pending & ~DEVICE_CHANGE_LIST) | DEVICE_CHANGE_DEFAULT_OUTPUT;
+            }
+            if (pending & DEVICE_CHANGE_DEFAULT_OUTPUT)
+            {
+                hr = sync_default_output();
+                if (hr == E_NOTFOUND) pending |= DEVICE_CHANGE_LIST;
+                if (SUCCEEDED(hr)) pending &= ~DEVICE_CHANGE_DEFAULT_OUTPUT;
+            }
+            wait.timeout = pending ? 100 : INFINITE;
+            if (wait.timeout != INFINITE) continue;
+        }
+        else if(RegNotifyChangeKeyValue(key, FALSE, REG_NOTIFY_CHANGE_LAST_SET,
                     NULL, FALSE) != ERROR_SUCCESS){
             ERR("RegNotifyChangeKeyValue failed: %lu\n", GetLastError());
             RegCloseKey(key);
@@ -1381,23 +1557,61 @@ static DWORD WINAPI notif_thread_proc(void *user)
 
         EnterCriticalSection(&g_notif_lock);
 
-        notify_if_changed(eRender, eConsole, key, L"DefaultOutput",
-                out_name, &MMDevice_def_play->IMMDevice_iface);
-        notify_if_changed(eRender, eCommunications, key, L"DefaultVoiceOutput",
-                vout_name, &MMDevice_def_play->IMMDevice_iface);
-        notify_if_changed(eCapture, eConsole, key, L"DefaultInput",
-                in_name, &MMDevice_def_rec->IMMDevice_iface);
-        notify_if_changed(eCapture, eCommunications, key, L"DefaultVoiceInput",
-                vin_name, &MMDevice_def_rec->IMMDevice_iface);
+        if (drvs.native_notifications)
+            notify_if_changed(eRender, eConsole, NULL, NULL, out_name,
+                    MMDevice_def_play ? &MMDevice_def_play->IMMDevice_iface : NULL);
+        else
+        {
+            notify_if_changed(eRender, eConsole, key, L"DefaultOutput",
+                    out_name, MMDevice_def_play ? &MMDevice_def_play->IMMDevice_iface : NULL);
+            notify_if_changed(eRender, eCommunications, key, L"DefaultVoiceOutput",
+                    vout_name, MMDevice_def_play ? &MMDevice_def_play->IMMDevice_iface : NULL);
+            notify_if_changed(eCapture, eConsole, key, L"DefaultInput",
+                    in_name, MMDevice_def_rec ? &MMDevice_def_rec->IMMDevice_iface : NULL);
+            notify_if_changed(eCapture, eCommunications, key, L"DefaultVoiceInput",
+                    vin_name, MMDevice_def_rec ? &MMDevice_def_rec->IMMDevice_iface : NULL);
+
+        }
 
         LeaveCriticalSection(&g_notif_lock);
     }
 
-    RegCloseKey(key);
+    if (key) RegCloseKey(key);
 
     g_notif_thread = NULL;
 
     return 0;
+}
+
+HRESULT start_device_notifications(void)
+{
+    struct device_notifications_start_params params = {E_NOTIMPL};
+    HMODULE module;
+    HANDLE thread;
+    HRESULT hr;
+
+    if (__wine_unix_call(drvs.module_unixlib, device_notifications_start, &params)) return E_FAIL;
+    if (FAILED(params.result)) return params.result;
+    drvs.native_notifications = TRUE;
+    if (FAILED(hr = load_devices_from_reg()) || FAILED(hr = rescan_devices())) goto failed;
+    if (!(thread = g_notif_thread = CreateThread(NULL, 0, notif_thread_proc, NULL, 0, NULL)))
+    { hr = HRESULT_FROM_WIN32(GetLastError()); goto failed; }
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                           (const WCHAR *)start_device_notifications, &module))
+    {
+        hr = HRESULT_FROM_WIN32(GetLastError());
+        wine_unix_call(device_notifications_stop, NULL);
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+        g_notif_thread = NULL;
+        goto failed;
+    }
+    return S_OK;
+failed:
+    wine_unix_call(device_notifications_stop, NULL);
+    MMDevEnum_Free();
+    drvs.native_notifications = FALSE;
+    return hr;
 }
 
 static HRESULT WINAPI MMDevEnum_RegisterEndpointNotificationCallback(IMMDeviceEnumerator *iface, IMMNotificationClient *client)
@@ -1420,7 +1634,7 @@ static HRESULT WINAPI MMDevEnum_RegisterEndpointNotificationCallback(IMMDeviceEn
 
     list_add_tail(&g_notif_clients, &wrapper->entry);
 
-    if(!g_notif_thread){
+    if(!g_notif_thread && !drvs.native_notifications){
         g_notif_thread = CreateThread(NULL, 0, notif_thread_proc, NULL, 0, NULL);
         if(!g_notif_thread)
             ERR("CreateThread failed: %lu\n", GetLastError());

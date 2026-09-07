@@ -1674,6 +1674,10 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     oss_midi_in_message,
     oss_midi_notify_wait,
     oss_aux_message,
+    oss_not_implemented,
+    oss_not_implemented,
+    oss_not_implemented,
+    oss_not_implemented,
 };
 
 C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);
@@ -2170,6 +2174,10 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     oss_wow64_midi_in_message,
     oss_wow64_midi_notify_wait,
     oss_wow64_aux_message,
+    oss_not_implemented,
+    oss_not_implemented,
+    oss_not_implemented,
+    oss_not_implemented,
 };
 
 C_ASSERT(ARRAYSIZE(__wine_unix_call_wow64_funcs) == funcs_count);

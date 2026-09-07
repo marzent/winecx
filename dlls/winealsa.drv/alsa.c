@@ -2454,6 +2454,10 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     alsa_midi_in_message,
     alsa_midi_notify_wait,
     alsa_not_implemented,
+    alsa_not_implemented,
+    alsa_not_implemented,
+    alsa_not_implemented,
+    alsa_not_implemented,
 };
 
 C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);
@@ -2910,6 +2914,10 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     alsa_wow64_midi_out_message,
     alsa_wow64_midi_in_message,
     alsa_wow64_midi_notify_wait,
+    alsa_not_implemented,
+    alsa_not_implemented,
+    alsa_not_implemented,
+    alsa_not_implemented,
     alsa_not_implemented,
 };
 
