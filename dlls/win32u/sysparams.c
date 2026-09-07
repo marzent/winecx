@@ -165,7 +165,7 @@ static INT64 last_query_display_time;
 static UINT64 monitor_update_serial;
 static pthread_mutex_t display_lock = PTHREAD_MUTEX_INITIALIZER;
 
-BOOL emulate_modeset = FALSE;
+BOOL emulate_modeset = TRUE;
 BOOL decorated_mode = TRUE;
 UINT64 thunk_lock_callback = 0;
 
