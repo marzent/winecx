@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>wine</string>
     <key>CFBundleIdentifier</key>
-    <string>org.winehq.wine</string>
+    <string>dezent.XIV-on-Mac.wine</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
