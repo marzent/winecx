@@ -1302,11 +1302,14 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
                     RegCloseKey(key);
                     return S_OK;
                 }
+                IMMDevice_Release(*device);
+                *device = NULL;
             }
 
             TRACE("Unable to find voice device %s\n", wine_dbgstr_w(def_id));
         }
 
+        size = sizeof(def_id);
         if((!drvs.native_notifications || flow != eRender) &&
                 RegQueryValueExW(key, reg_x_name, 0, NULL,
                     (BYTE*)def_id, &size) == ERROR_SUCCESS){

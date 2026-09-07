@@ -480,7 +480,8 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
     size = sizeof(default_id);
     sc = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size, &default_id);
     if(sc != noErr){
-        WARN("Getting _DefaultInputDevice property failed: %x\n", (int)sc);
+        WARN("Getting %s property failed: %x\n",
+                params->flow == eRender ? "_DefaultOutputDevice" : "_DefaultInputDevice", (int)sc);
         params->result = osstatus_to_hresult(sc);
         return STATUS_SUCCESS;
     }
