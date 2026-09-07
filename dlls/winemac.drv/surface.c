@@ -124,7 +124,7 @@ static BOOL macdrv_surface_flush(struct window_surface *window_surface, const RE
     /* The window may have been previously drawn with client_surface, for example, when the window
      * had been a target for a D3D swapchain. Hide the client_view so that it doesn't occlude the
      * content in the window_surface */
-    if ((data = get_win_data(window_surface->hwnd)))
+    /*if ((data = get_win_data(window_surface->hwnd)))
     {
         if (data->client_view)
         {
@@ -132,7 +132,7 @@ static BOOL macdrv_surface_flush(struct window_surface *window_surface, const RE
             data->client_view = NULL;
         }
         release_win_data(data);
-    }
+    } */
 
     return TRUE;
 }
