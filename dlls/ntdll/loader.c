@@ -1397,6 +1397,9 @@ static BOOL alloc_tls_slot( LDR_DATA_TABLE_ENTRY *mod )
             if (!new) return FALSE;
             if (old) memcpy( new, old, old_module_count * sizeof(*new) );
             teb->ThreadLocalStoragePointer = new;
+#ifdef __x86_64__  /* macOS-specific hack */
+            if (teb->Instrumentation[0]) ((TEB *)teb->Instrumentation[0])->ThreadLocalStoragePointer = new;
+#endif
             TRACE( "thread %04lx tls block %p -> %p\n", HandleToULong(teb->ClientId.UniqueThread), old, new );
             /* FIXME: can't free old block here, should be freed at thread exit */
         }
@@ -1642,6 +1645,10 @@ static NTSTATUS alloc_thread_tls(void)
         TRACE( "slot %u: %u/%lu bytes at %p\n", i, size, dir->SizeOfZeroFill, pointers[i] );
     }
     NtCurrentTeb()->ThreadLocalStoragePointer = pointers;
+#ifdef __x86_64__  /* macOS-specific hack */
+    if (NtCurrentTeb()->Instrumentation[0])
+        ((TEB *)NtCurrentTeb()->Instrumentation[0])->ThreadLocalStoragePointer = pointers;
+#endif
     return STATUS_SUCCESS;
 }
 
@@ -4092,6 +4099,10 @@ void WINAPI LdrShutdownThread(void)
     if ((pointers = NtCurrentTeb()->ThreadLocalStoragePointer))
     {
         NtCurrentTeb()->ThreadLocalStoragePointer = NULL;
+#ifdef __x86_64__  /* macOS-specific hack */
+        if (NtCurrentTeb()->Instrumentation[0])
+            ((TEB *)NtCurrentTeb()->Instrumentation[0])->ThreadLocalStoragePointer = NULL;
+#endif
         for (i = 0; i < tls_module_count; i++) RtlFreeHeap( GetProcessHeap(), 0, pointers[i] );
         RtlFreeHeap( GetProcessHeap(), 0, pointers );
     }
@@ -4535,6 +4546,18 @@ static void release_address_space(void)
 #endif
 }
 
+#if defined(__x86_64__) && !defined(__arm64ec__)
+extern void CDECL wine_get_host_version( const char **sysname, const char **release );
+
+static BOOL is_macos(void)
+{
+    const char *sysname;
+
+    wine_get_host_version( &sysname, NULL );
+    return !strcmp( sysname, "Darwin" );
+}
+#endif
+
 /******************************************************************
  *		loader_init
  *
@@ -4643,6 +4666,24 @@ void loader_init( CONTEXT *context, void **entry )
 
         wm = get_modref( NtCurrentTeb()->Peb->ImageBaseAddress );
     }
+
+#if defined(__x86_64__) && !defined(__arm64ec__)
+        if (is_macos() && !NtCurrentTeb()->WowTebOffset)
+        {
+            /* CW HACK 18756 */
+            /* Preallocate TlsExpansionSlots.  Otherwise, kernelbase will
+               allocate it on demand, but won't be able to do the Mac-specific poking to the
+               %gs-relative address. */
+            if (!NtCurrentTeb()->TlsExpansionSlots)
+                NtCurrentTeb()->TlsExpansionSlots = RtlAllocateHeap( GetProcessHeap(), HEAP_ZERO_MEMORY, 8 * sizeof(NtCurrentTeb()->Peb->TlsExpansionBitmapBits) * sizeof(void*) );
+            __asm__ volatile ("movq %0,%%gs:%c1"
+                              :
+                              : "r" (NtCurrentTeb()->TlsExpansionSlots), "n" (FIELD_OFFSET(TEB, TlsExpansionSlots)));
+
+            if (!attach_done) /* only the first time */
+                while (RtlFindClearBitsAndSet(NtCurrentTeb()->Peb->TlsBitmap, 1, 1) != ~0U);
+        }
+#endif
 
     NtCurrentTeb()->FlsSlots = fls_alloc_data();
 

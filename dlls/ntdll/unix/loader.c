@@ -1856,6 +1856,48 @@ static ULONG_PTR get_image_address(void)
     return 0;
 }
 
+#if defined(__APPLE__) && defined(__x86_64__)
+static __thread struct tm localtime_tls;
+struct tm *my_localtime(const time_t *timep)
+{
+    return localtime_r(timep, &localtime_tls);
+}
+
+static void hook(void *to_hook, const void *replace)
+{
+    size_t offset;
+
+    struct hooked_function
+    {
+        char jmp[8];
+        const void *dst;
+    } *hooked_function = to_hook;
+    ULONG_PTR intval = (UINT_PTR)to_hook;
+
+    intval -= (intval % 4096);
+    mprotect((void *)intval, 0x2000, PROT_EXEC | PROT_READ | PROT_WRITE);
+
+    /* The offset is from the end of the jmp instruction (6 bytes) to the start of the destination. */
+    offset = offsetof(struct hooked_function, dst) - offsetof(struct hooked_function, jmp) - 0x6;
+
+    /* jmp *(rip + offset) */
+    hooked_function->jmp[0] = 0xff;
+    hooked_function->jmp[1] = 0x25;
+    hooked_function->jmp[2] = offset;
+    hooked_function->jmp[3] = 0x00;
+    hooked_function->jmp[4] = 0x00;
+    hooked_function->jmp[5] = 0x00;
+    /* Filler */
+    hooked_function->jmp[6] = 0xcc;
+    hooked_function->jmp[7] = 0xcc;
+    /* Dest address absolute */
+    hooked_function->dst = replace;
+
+    //size = sizeof(*hooked_function);
+    //NtProtectVirtualMemory(proc, (void **)hooked_function, &size, old_protect, &old_protect);
+}
+#endif
+
 /***********************************************************************
  *           start_main_thread
  */
@@ -1877,6 +1919,13 @@ static void start_main_thread(void)
     load_ntdll();
     load_wow64_ntdll( main_image_info.Machine );
     load_apiset_dll();
+
+#if defined(__APPLE__) && defined(__x86_64__)
+    /* This is necessary because we poke PEB into pthread TLS at offset 0x60. It is normally in use by
+     * localtime(), which is called a lot by system libraries. Make localtime() go away. */
+    hook(localtime, my_localtime);
+#endif
+
     server_init_process_done();
 }
 
