@@ -311,6 +311,28 @@ struct aux_message_params
     UINT *err;
 };
 
+struct device_notifications_start_params
+{
+    HRESULT result;
+};
+
+struct device_notifications_wait_params
+{
+    UINT timeout;
+    UINT changes;
+    HRESULT result;
+};
+
+struct get_default_output_params
+{
+    char *device;
+    UINT size;
+    HRESULT result;
+};
+
+#define DEVICE_CHANGE_LIST 1
+#define DEVICE_CHANGE_DEFAULT_OUTPUT 2
+
 enum unix_funcs
 {
     process_attach,
@@ -350,5 +372,9 @@ enum unix_funcs
     midi_in_message,
     midi_notify_wait,
     aux_message,
+    device_notifications_start,
+    device_notifications_wait,
+    device_notifications_stop,
+    get_default_output,
     funcs_count
 };

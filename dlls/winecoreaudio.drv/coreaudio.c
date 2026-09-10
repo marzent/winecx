@@ -41,6 +41,7 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <fenv.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include <CoreAudio/CoreAudio.h>
@@ -108,6 +109,230 @@ static const REFERENCE_TIME def_period = 100000;
 static const REFERENCE_TIME min_period = 50000;
 
 static ULONG_PTR zero_bits = 0;
+
+static pthread_mutex_t device_notifications_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t device_notifications_cond = PTHREAD_COND_INITIALIZER;
+static BOOL device_notifications_running;
+static UINT device_notifications_pending;
+static unsigned int device_notifications_registered;
+
+static const AudioObjectPropertyAddress device_notifications_addresses[] =
+{
+    { kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain },
+    { kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain },
+};
+
+static HRESULT osstatus_to_hresult(OSStatus sc);
+
+static OSStatus device_notifications_callback(AudioObjectID object_id, UInt32 number_addresses,
+        const AudioObjectPropertyAddress *addresses, void *client_data)
+{
+    UInt32 i;
+
+    pthread_mutex_lock(&device_notifications_lock);
+    if (device_notifications_running)
+    {
+        for (i = 0; i < number_addresses; ++i)
+        {
+            if (addresses[i].mSelector == kAudioHardwarePropertyDevices)
+                device_notifications_pending |= DEVICE_CHANGE_LIST;
+            else if (addresses[i].mSelector == kAudioHardwarePropertyDefaultOutputDevice)
+                device_notifications_pending |= DEVICE_CHANGE_DEFAULT_OUTPUT;
+        }
+        if (device_notifications_pending) pthread_cond_signal(&device_notifications_cond);
+    }
+    pthread_mutex_unlock(&device_notifications_lock);
+    return noErr;
+}
+
+static void device_notifications_remove_listeners(void)
+{
+    while (device_notifications_registered)
+    {
+        --device_notifications_registered;
+        AudioObjectRemovePropertyListener(kAudioObjectSystemObject,
+                &device_notifications_addresses[device_notifications_registered],
+                device_notifications_callback, NULL);
+    }
+}
+
+static NTSTATUS unix_device_notifications_start(void *args)
+{
+    struct device_notifications_start_params *params = args;
+    OSStatus status;
+
+    pthread_mutex_lock(&device_notifications_lock);
+    if (device_notifications_running)
+    {
+        params->result = S_OK;
+        pthread_mutex_unlock(&device_notifications_lock);
+        return STATUS_SUCCESS;
+    }
+    device_notifications_running = TRUE;
+    device_notifications_pending = 0;
+    pthread_mutex_unlock(&device_notifications_lock);
+
+    /* Do not let CoreAudio dispatch callbacks through an application run loop. */
+    status = AudioObjectSetPropertyData(kAudioObjectSystemObject,
+            &(AudioObjectPropertyAddress){ kAudioHardwarePropertyRunLoop,
+                kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain },
+            0, NULL, sizeof(CFRunLoopRef), &(CFRunLoopRef){ NULL });
+    if (status != noErr) goto failed;
+
+    for (device_notifications_registered = 0;
+            device_notifications_registered < ARRAY_SIZE(device_notifications_addresses);
+            ++device_notifications_registered)
+    {
+        status = AudioObjectAddPropertyListener(kAudioObjectSystemObject,
+                &device_notifications_addresses[device_notifications_registered],
+                device_notifications_callback, NULL);
+        if (status != noErr) goto failed;
+    }
+
+    params->result = S_OK;
+    return STATUS_SUCCESS;
+
+failed:
+    device_notifications_remove_listeners();
+    pthread_mutex_lock(&device_notifications_lock);
+    device_notifications_running = FALSE;
+    pthread_cond_broadcast(&device_notifications_cond);
+    pthread_mutex_unlock(&device_notifications_lock);
+    params->result = osstatus_to_hresult(status);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_device_notifications_wait(void *args)
+{
+    struct device_notifications_wait_params *params = args;
+    int status = 0;
+
+    pthread_mutex_lock(&device_notifications_lock);
+    if (!device_notifications_running)
+    {
+        params->changes = 0;
+        pthread_mutex_unlock(&device_notifications_lock);
+        params->result = E_ABORT;
+        return STATUS_SUCCESS;
+    }
+    while (!device_notifications_pending && device_notifications_running)
+    {
+        if (params->timeout == INFINITE)
+            status = pthread_cond_wait(&device_notifications_cond, &device_notifications_lock);
+        else
+        {
+            struct timespec timeout;
+            timeout.tv_sec = params->timeout / 1000;
+            timeout.tv_nsec = (params->timeout % 1000) * 1000000;
+            status = pthread_cond_timedwait_relative_np(&device_notifications_cond,
+                    &device_notifications_lock, &timeout);
+        }
+        if (status == ETIMEDOUT) break;
+        if (status != 0)
+        {
+            pthread_mutex_unlock(&device_notifications_lock);
+            params->changes = 0;
+            params->result = E_FAIL;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    if (!device_notifications_running)
+    {
+        params->changes = 0;
+        params->result = E_ABORT;
+    }
+    else if (device_notifications_pending)
+    {
+        params->changes = device_notifications_pending;
+        device_notifications_pending = 0;
+        params->result = S_OK;
+    }
+    else
+    {
+        params->changes = 0;
+        params->result = S_FALSE;
+    }
+    pthread_mutex_unlock(&device_notifications_lock);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_device_notifications_stop(void *args)
+{
+    pthread_mutex_lock(&device_notifications_lock);
+    device_notifications_running = FALSE;
+    device_notifications_pending = 0;
+    pthread_cond_broadcast(&device_notifications_cond);
+    pthread_mutex_unlock(&device_notifications_lock);
+
+    device_notifications_remove_listeners();
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_get_default_output(void *args)
+{
+    struct get_default_output_params *params = args;
+    AudioObjectPropertyAddress address =
+    {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    AudioDeviceID device;
+    CFStringRef uid = NULL;
+    CFIndex length;
+    UInt32 size;
+    UINT capacity;
+    OSStatus status;
+
+    size = sizeof(device);
+    status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, NULL, &size, &device);
+    if (status != noErr)
+    {
+        params->result = osstatus_to_hresult(status);
+        return STATUS_SUCCESS;
+    }
+    if (device == kAudioObjectUnknown)
+    {
+        params->size = 0;
+        params->result = S_FALSE;
+        return STATUS_SUCCESS;
+    }
+
+    address.mSelector = kAudioDevicePropertyDeviceUID;
+    size = sizeof(uid);
+    status = AudioObjectGetPropertyData(device, &address, 0, NULL, &size, &uid);
+    if (status != noErr || !uid)
+    {
+        if (uid) CFRelease(uid);
+        params->result = status == noErr ? E_FAIL : osstatus_to_hresult(status);
+        return STATUS_SUCCESS;
+    }
+
+    capacity = params->size;
+    length = 0;
+    CFStringGetBytes(uid, CFRangeMake(0, CFStringGetLength(uid)), kCFStringEncodingUTF8,
+            0, false, NULL, 0, &length);
+    if (length < 0 || (SIZE_T)length >= UINT_MAX)
+    {
+        CFRelease(uid);
+        params->result = E_OUTOFMEMORY;
+        return STATUS_SUCCESS;
+    }
+    params->size = (UINT)length + 1;
+    if (!params->device || params->size > capacity)
+    {
+        CFRelease(uid);
+        params->result = HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+        return STATUS_SUCCESS;
+    }
+    CFStringGetBytes(uid, CFRangeMake(0, CFStringGetLength(uid)), kCFStringEncodingUTF8,
+            0, false, (UInt8 *)params->device, params->size - 1, NULL);
+    params->device[params->size - 1] = 0;
+    CFRelease(uid);
+    params->result = S_OK;
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS unix_not_implemented(void *args)
 {
@@ -241,7 +466,7 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
     UniChar *ptr;
 
     params->num = 0;
-    params->default_idx = 0;
+    params->default_idx = UINT_MAX;
 
     addr.mScope = kAudioObjectPropertyScopeGlobal;
     addr.mElement = kAudioObjectPropertyElementMain;
@@ -255,8 +480,10 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
     size = sizeof(default_id);
     sc = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size, &default_id);
     if(sc != noErr){
-        WARN("Getting _DefaultInputDevice property failed: %x\n", (int)sc);
-        default_id = -1;
+        WARN("Getting %s property failed: %x\n",
+                params->flow == eRender ? "_DefaultOutputDevice" : "_DefaultInputDevice", (int)sc);
+        params->result = osstatus_to_hresult(sc);
+        return STATUS_SUCCESS;
     }
 
     addr.mSelector = kAudioHardwarePropertyDevices;
@@ -268,12 +495,20 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
     }
 
     num_devices = devsize / sizeof(AudioDeviceID);
-    devices = malloc(devsize);
-    info = malloc(num_devices * sizeof(*info));
-    if(!devices || !info){
+    devices = devsize ? malloc(devsize) : NULL;
+    info = num_devices ? malloc(num_devices * sizeof(*info)) : NULL;
+    if((devsize && !devices) || (num_devices && !info)){
         free(info);
         free(devices);
         params->result = E_OUTOFMEMORY;
+        return STATUS_SUCCESS;
+    }
+
+    if (!devsize)
+    {
+        free(info);
+        free(devices);
+        params->result = S_OK;
         return STATUS_SUCCESS;
     }
 
@@ -1835,6 +2070,10 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     unix_midi_in_message,
     unix_midi_notify_wait,
     unix_not_implemented,
+    unix_device_notifications_start,
+    unix_device_notifications_wait,
+    unix_device_notifications_stop,
+    unix_get_default_output,
 };
 
 C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == funcs_count);
@@ -1879,6 +2118,25 @@ static NTSTATUS unix_wow64_get_endpoint_ids(void *args)
     params32->num = params.num;
     params32->default_idx = params.default_idx;
     return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_wow64_get_default_output(void *args)
+{
+    struct
+    {
+        PTR32 device;
+        UINT size;
+        HRESULT result;
+    } *params32 = args;
+    struct get_default_output_params params =
+    {
+        .device = ULongToPtr(params32->device),
+        .size = params32->size,
+    };
+    NTSTATUS status = unix_get_default_output(&params);
+    params32->size = params.size;
+    params32->result = params.result;
+    return status;
 }
 
 static NTSTATUS unix_wow64_create_stream(void *args)
@@ -2291,6 +2549,10 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
     unix_wow64_midi_in_message,
     unix_wow64_midi_notify_wait,
     unix_not_implemented,
+    unix_device_notifications_start,
+    unix_device_notifications_wait,
+    unix_device_notifications_stop,
+    unix_wow64_get_default_output,
 };
 
 C_ASSERT(ARRAYSIZE(__wine_unix_call_wow64_funcs) == funcs_count);

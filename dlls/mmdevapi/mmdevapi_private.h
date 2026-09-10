@@ -97,6 +97,7 @@ typedef struct _DriverFuncs {
      * priority value reflecting the likelihood that they are actually
      * valid. See enum _DriverPriority. */
     int priority;
+    BOOL native_notifications;
 } DriverFuncs;
 
 extern DriverFuncs drvs;
@@ -108,6 +109,7 @@ typedef struct MMDevice {
 
     EDataFlow flow;
     DWORD state;
+    BOOL present;
     GUID devguid;
     WCHAR *drv_id;
 
@@ -128,6 +130,7 @@ extern HRESULT SpatialAudioClient_Create(IMMDevice *device, ISpatialAudioClient 
 extern BOOL get_device_name_from_guid( const GUID *guid, char **name, EDataFlow *flow );
 extern HRESULT load_devices_from_reg(void);
 extern HRESULT load_driver_devices(EDataFlow flow);
+extern HRESULT start_device_notifications(void);
 
 extern void main_loop_stop(void);
 

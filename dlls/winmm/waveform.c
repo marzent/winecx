@@ -789,7 +789,7 @@ static HRESULT WINAPI notif_OnDefaultDeviceChanged(IMMNotificationClient *iface,
 
     TRACE("%u %u %s\n", flow, role, wine_dbgstr_w(device_id));
 
-    if(role != eConsole)
+    if(role != eConsole || !device_id)
         return S_OK;
 
     EnterCriticalSection(&g_devthread_lock);
