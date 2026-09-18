@@ -174,7 +174,7 @@ static LRESULT CALLBACK cbt_hook_proc( int code, WPARAM wparam, LPARAM lparam )
     {
         CBTACTIVATESTRUCT *data = (CBTACTIVATESTRUCT *)lparam;
         handle_foreground_lost( data->hWndActive );
-        SendMessageW( di_em_win, INPUT_THREAD_NOTIFY, NOTIFY_REFRESH_DEVICES, 0 );
+        SendNotifyMessageW( di_em_win, INPUT_THREAD_NOTIFY, NOTIFY_REFRESH_DEVICES, 0 );
     }
 
     return CallNextHookEx( 0, code, wparam, lparam );
